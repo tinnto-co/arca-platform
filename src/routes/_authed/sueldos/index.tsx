@@ -20,10 +20,12 @@ import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
 import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
 import { SueldosConceptos } from '@/components/sueldos/SueldosConceptos';
 import { SueldosSimulador } from '@/components/sueldos/SueldosSimulador';
+import { NuevoReciboView } from '@/components/sueldos/nuevo-recibo/NuevoReciboView';
+import { useLocalStorageState } from '@/lib/use-local-storage-state';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
-import { getRepresentativesForSueldos } from '@/actions/client';
+import { getClientesForSueldos } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
@@ -72,10 +74,15 @@ function RouteComponent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [editReciboData, setEditReciboData] = useState<EditReciboData | undefined>(undefined);
   const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
+  const [vistaNuevoRecibo, setVistaNuevoRecibo] = useLocalStorageState<
+    'nueva' | 'clasica'
+  >('arca:sueldos:vista-nuevo-recibo', 'nueva');
+  // Editar desde la tab Recibo abre siempre la vista clásica.
+  const usaVistaNueva = vistaNuevoRecibo === 'nueva' && !editReciboData;
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients', 'sueldos'],
-    queryFn: () => getRepresentativesForSueldos(),
+    queryFn: () => getClientesForSueldos(),
   });
 
   const { data: orgModules = [] } = useQuery({
@@ -86,8 +93,7 @@ function RouteComponent() {
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
-  const clientId = selectedOption?.representativeId ?? '';
-  const profileId = selectedOption?.clientId ?? '';
+  const clientId = selectedOption?.id ?? '';
 
   const clientOptions = clients.map((c) => ({
     value: c.id,
@@ -101,19 +107,18 @@ function RouteComponent() {
   };
 
   return (
-    <div className="space-y-0 overflow-x-hidden">
+    <div className="space-y-0 overflow-x-clip">
       {/* Header */}
       <div className="px-4 md:px-[3rem] pt-4 md:pt-[3rem] pb-0">
         {aiAgentEnabled && selectedOption && (
           <CopilotReadableEntity
-            description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId/profileId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
+            description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
             value={{
               modulo: 'sueldos',
               tabActiva: activeTab,
               cliente: {
                 optionId: selectedOption.id,
                 clientId,
-                profileId,
                 label: selectedOption.label,
               },
               mesActual: getPeriodoMesActual(),
@@ -222,12 +227,11 @@ function RouteComponent() {
           {/* Content */}
           <div className="px-4 md:px-[3rem] pt-5 pb-6">
             <TabsContent value="dashboard" className="mt-0">
-              <SueldosDashboard clientId={clientId} profileId={profileId} />
+              <SueldosDashboard clientId={clientId} />
             </TabsContent>
             <TabsContent value="empleados" className="mt-0">
               <SueldosEmpleados
                 clientId={clientId}
-                profileId={profileId}
                 onVerRecibos={(empleadoId) => {
                   setReciboFiltroEmpleadoId(empleadoId);
                   setTab('recibo');
@@ -235,25 +239,43 @@ function RouteComponent() {
               />
             </TabsContent>
             <TabsContent value="convenios" className="mt-0">
-              <SueldosConvenios clientId={clientId} profileId={profileId} />
+              <SueldosConvenios clientId={clientId} />
             </TabsContent>
             <TabsContent value="conceptos" className="mt-0">
-              <SueldosConceptos clientId={clientId} profileId={profileId} />
+              <SueldosConceptos clientId={clientId} />
             </TabsContent>
             <TabsContent value="simulador" className="mt-0">
-              <SueldosSimulador
-                clientId={clientId}
-                profileId={profileId}
-                onConfirmRecibo={() => setTab('recibo')}
-                initialData={editReciboData}
-                onReset={() => setEditReciboData(undefined)}
-              />
+              {!editReciboData && (
+                <div className="flex justify-end mb-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVistaNuevoRecibo(usaVistaNueva ? 'clasica' : 'nueva')
+                    }
+                    className="h-[28px] px-3 rounded-[9px] text-[12px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] cursor-pointer"
+                  >
+                    {usaVistaNueva ? 'Vista clásica' : 'Vista nueva'}
+                  </button>
+                </div>
+              )}
+              {usaVistaNueva ? (
+                <NuevoReciboView
+                  clientId={clientId}
+                  onConfirmRecibo={() => setTab('recibo')}
+                />
+              ) : (
+                <SueldosSimulador
+                  clientId={clientId}
+                  onConfirmRecibo={() => setTab('recibo')}
+                  initialData={editReciboData}
+                  onReset={() => setEditReciboData(undefined)}
+                />
+              )}
             </TabsContent>
             <TabsContent value="recibo" className="mt-0">
               <SueldosRecibo
                 key={reciboFiltroEmpleadoId}
                 clientId={clientId}
-                profileId={profileId}
                 initialEmpleadoId={reciboFiltroEmpleadoId || undefined}
                 onEditRecibo={(data) => {
                   setEditReciboData(data);
@@ -262,10 +284,10 @@ function RouteComponent() {
               />
             </TabsContent>
             <TabsContent value="firma-digital" className="mt-0">
-              <SueldosFirmaDigital clientId={clientId} profileId={profileId} />
+              <SueldosFirmaDigital clientId={clientId} />
             </TabsContent>
             <TabsContent value="cargas" className="mt-0">
-              <SueldosCargas clientId={clientId} profileId={profileId} />
+              <SueldosCargas clientId={clientId} />
             </TabsContent>
           </div>
         </Tabs>

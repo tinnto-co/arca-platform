@@ -36,7 +36,7 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
 
   const average =
     monthlyData.length > 0
-      ? monthlyData.reduce((s, m) => s + m.outbound + m.inbound, 0) /
+      ? monthlyData.reduce((s, m) => s + m.emitido + m.recibido, 0) /
         monthlyData.length
       : 0;
 
@@ -101,7 +101,7 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
                 stroke="#ECEAE3"
               />
               <XAxis
-                dataKey="month"
+                dataKey="mes"
                 tickLine={false}
                 axisLine={false}
                 fontSize={11}
@@ -137,14 +137,14 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
                 formatter={(value: number) => [formatArs(value), '']}
               />
               <Bar
-                dataKey="outbound"
+                dataKey="emitido"
                 fill="#1E3460"
                 radius={[5, 5, 0, 0]}
                 maxBarSize={36}
                 name="Ventas"
               />
               <Bar
-                dataKey="inbound"
+                dataKey="recibido"
                 fill="#7AA2C8"
                 radius={[5, 5, 0, 0]}
                 maxBarSize={36}

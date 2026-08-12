@@ -72,7 +72,7 @@ export function FrontendTools() {
   useFrontendTool({
     name: 'abrirCliente',
     description:
-      'Abrí la página de detalle de un cliente (sin recargar). El `clientId` es el REPRESENTANTE; `empresaId` (opcional) es la entidad fiscal específica dentro de él. Resolvé ambos desde el readable global "Lista global de clientes" según su regla (preferí SIEMPRE la EMPRESA específica: pasá clientId + empresaId; usá solo clientId si ninguna empresa coincide). ' +
+      'Abrí la página de detalle de un cliente (sin recargar). El `clientId` es el CLIENTE (entidad fiscal con CUIT propio): resolvelo desde el readable global "Lista global de clientes" buscando por nombre o CUIT con fuzzy match. ' +
       'IMPORTANTE: si el usuario menciona una SECCIÓN/módulo, pasá SIEMPRE el `tab` correspondiente. Mapeo: "facturación"/"facturas"/"comprobantes"→facturas, "deudas"→deudas, "vencimientos"→vencimientos, "notificaciones"→notificaciones, "iva"→iva, "convenio"/"multilateral"→convenio-multilateral, "resumen"/"overview"→resumen. ' +
       'NO le pidas UUIDs al usuario. NUNCA inventes un UUID.',
     parameters: [
@@ -80,15 +80,8 @@ export function FrontendTools() {
         name: 'clientId',
         type: 'string',
         description:
-          'UUID del REPRESENTANTE (agrupador). Campo `clientId` del readable. Nunca inventes un UUID.',
+          'UUID del CLIENTE. Campo `clienteId` del readable global. Nunca inventes un UUID.',
         required: true,
-      },
-      {
-        name: 'empresaId',
-        type: 'string',
-        description:
-          'UUID de la EMPRESA/entidad fiscal específica dentro del representante (campo `empresas[].empresaId` del readable). Pasalo cuando el usuario menciona una empresa puntual para que quede preseleccionada en el header. Omitilo si solo se menciona al representante en general. Nunca inventes un UUID.',
-        required: false,
       },
       {
         name: 'clientName',
@@ -105,24 +98,17 @@ export function FrontendTools() {
         required: false,
       },
     ],
-    handler: ({ clientId, empresaId, clientName, tab }) => {
+    handler: ({ clientId, clientName, tab }) => {
       if (!clientId || !UUID_LIKE.test(clientId)) {
         return 'Falta un clientId válido. Obtenelo del contexto del listado de clientes.';
       }
       const tabStr = tab ? String(tab) : undefined;
       const validTab =
         tabStr && isClientDetailTab(tabStr) ? tabStr : undefined;
-      const empresa =
-        empresaId && UUID_LIKE.test(String(empresaId))
-          ? String(empresaId)
-          : undefined;
       void navigate({
         to: '/clients/$clientId',
         params: { clientId },
-        search: {
-          ...(validTab ? { tab: validTab } : {}),
-          ...(empresa ? { client: empresa } : {}),
-        },
+        search: validTab ? { tab: validTab } : {},
       });
       const name = clientName ? `"${String(clientName)}"` : 'el cliente';
       return validTab
@@ -137,13 +123,13 @@ export function FrontendTools() {
   useFrontendTool({
     name: 'abrirSueldosCliente',
     description:
-      'Abrí el módulo de sueldos de un cliente (sin recargar). Si el usuario menciona el cliente por nombre (incluso parcial o variante, ej: "e-presis" o "epresis"), buscá el `profileId` en el readable global "Lista global de clientes habilitados para liquidación de sueldos" haciendo fuzzy match (case-insensitive, ignorá guiones/espacios extras). Si hay coincidencia única, invocá esta tool con ese `profileId`. Si hay varias, ofrecé al usuario que elija. NO le pidas el UUID al usuario, ya tenés la lista. NUNCA inventes un UUID. Si el cliente NO aparece en la lista global, avisá al usuario que ese cliente no tiene sueldos habilitados. Opcionalmente pasá `tab` para abrir directo en esa pestaña.',
+      'Abrí el módulo de sueldos de un cliente (sin recargar). Si el usuario menciona el cliente por nombre (incluso parcial o variante, ej: "e-presis" o "epresis"), buscá el `clienteId` en el readable global "Lista global de clientes habilitados para liquidación de sueldos" haciendo fuzzy match (case-insensitive, ignorá guiones/espacios extras). Si hay coincidencia única, invocá esta tool con ese `clienteId` como `profileId`. Si hay varias, ofrecé al usuario que elija. NO le pidas el UUID al usuario, ya tenés la lista. NUNCA inventes un UUID. Si el cliente NO aparece en la lista global, avisá al usuario que ese cliente no tiene sueldos habilitados. Opcionalmente pasá `tab` para abrir directo en esa pestaña.',
     parameters: [
       {
         name: 'profileId',
         type: 'string',
         description:
-          'UUID del profile habilitado para sueldos. Obtenelo del contexto del listado de sueldos. Nunca inventes un UUID.',
+          'UUID del CLIENTE habilitado para sueldos (campo `clienteId` del readable de sueldos). Nunca inventes un UUID.',
         required: true,
       },
       {

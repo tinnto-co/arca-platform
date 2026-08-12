@@ -54,7 +54,6 @@ interface EmpleadosCargaMasivaDialogProps {
   onOpenChange: (open: boolean) => void;
   clientId: string;
   /** Si se omite, el servidor usa el primer perfil del cliente con liquidación de sueldos. */
-  profileId?: string;
   onSuccess: () => void;
 }
 
@@ -66,7 +65,6 @@ export function EmpleadosCargaMasivaDialog({
   open,
   onOpenChange,
   clientId,
-  profileId,
   onSuccess,
 }: EmpleadosCargaMasivaDialogProps) {
   const queryClient = useQueryClient();
@@ -84,7 +82,7 @@ export function EmpleadosCargaMasivaDialog({
       >[0]['data']['empleados']
     ) =>
       createEmpleadosMasivo({
-        data: { clientId, profileId, empleados },
+        data: { clientId, empleados },
       }),
     onSuccess: (data) => {
       setResult(data);
@@ -130,7 +128,7 @@ export function EmpleadosCargaMasivaDialog({
           return;
         }
         const empleados = rows
-          .map((row, index) => {
+          .map((row) => {
             const apellido = getCell(row, 'Apellido', 'apellido');
             const nombre = getCell(row, 'Nombre', 'nombre');
             const cuilCuil = getCell(

@@ -23,7 +23,7 @@ export function VencimientosList({ items }: VencimientosListProps = {}) {
   // Count urgent (within 3 days)
   const now = new Date();
   const urgentCount = dueDates.filter((dd) => {
-    const diff = new Date(dd.dueDate).getTime() - now.getTime();
+    const diff = new Date(dd.venceAt).getTime() - now.getTime();
     return diff < 3 * 86400000;
   }).length;
 
@@ -53,7 +53,7 @@ export function VencimientosList({ items }: VencimientosListProps = {}) {
           </div>
         ) : (
           dueDates.map((dd) => {
-            const d = new Date(dd.dueDate);
+            const d = new Date(dd.venceAt);
             const day = String(d.getDate()).padStart(2, '0');
             const month = d.toLocaleDateString('es-AR', { month: 'short' });
             const diffMs = d.getTime() - now.getTime();
@@ -95,10 +95,10 @@ export function VencimientosList({ items }: VencimientosListProps = {}) {
                 {/* Info */}
                 <div>
                   <div className="text-[13px] font-medium text-[var(--arca-ink)]">
-                    {dd.tax || '-'}
+                    {dd.impuesto || '-'}
                   </div>
                   <div className="text-[11.5px] text-[var(--arca-ink-3)] mt-0.5">
-                    {dd.concept || '-'} · {dd.clientName || 'General'}
+                    {dd.concepto || '-'} · {dd.clienteNombre || 'General'}
                   </div>
                 </div>
 

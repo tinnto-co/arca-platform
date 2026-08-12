@@ -33,20 +33,22 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const TIPOS_RECIBO = [
-  { value: 'sueldo', label: 'Sueldo' },
+  { value: 'mensual', label: 'Sueldo' },
+  { value: 'quincenal', label: 'Quincenal' },
   { value: 'anticipo', label: 'Anticipo' },
-  { value: 'SAC', label: 'SAC' },
+  { value: 'sac', label: 'SAC' },
   { value: 'vacaciones', label: 'Vacaciones' },
-  { value: 'despido', label: 'Liquidación final' },
+  { value: 'liquidacion_final', label: 'Liquidación final' },
   { value: 'comisiones', label: 'Comisiones' },
-  { value: 'desempleo', label: 'Fondo de desempleo' },
-  { value: 'varios', label: 'Varios' },
+  { value: 'fondo_desempleo', label: 'Fondo de desempleo' },
+  { value: 'otros', label: 'Varios' },
 ] as const;
 
 const FORMA_PAGO_LABELS: Record<string, string> = {
   efectivo: 'Efectivo',
   cheque: 'Cheque',
-  acreditacion: 'Acreditación en cuenta',
+  deposito: 'Depósito en cuenta',
+  transferencia: 'Transferencia',
 };
 
 const STEPS = ['Empleado y período', 'Datos del empleado', 'Conceptos'] as const;
@@ -60,14 +62,15 @@ const formSchema = z.object({
   mes: z.string().min(2),
   quincena: z.enum(['0', '1', '2']),
   tipoRecibo: z.enum([
-    'sueldo',
+    'mensual',
+    'quincenal',
     'anticipo',
-    'SAC',
+    'sac',
     'vacaciones',
-    'despido',
+    'liquidacion_final',
     'comisiones',
-    'desempleo',
-    'varios',
+    'fondo_desempleo',
+    'otros',
   ]),
   fechaLiquidacion: z.string().min(1, 'Requerido'),
   fechaPago: z.string().min(1, 'Requerido'),
@@ -123,8 +126,7 @@ export interface ReciboFormularioSuccess {
   fechaLiquidacion: string;
   obraSocialId: string | null;
   fechaPago: string;
-  lugarPago: string | null;
-  formaPago: 'efectivo' | 'cheque' | 'acreditacion';
+  formaPago: 'efectivo' | 'deposito' | 'transferencia' | 'cheque';
   cbu: string | null;
   banco: string | null;
   periodoCargas: string;
@@ -146,7 +148,6 @@ export interface ReciboFormularioSuccess {
 
 interface ReciboFormularioProps {
   clientId: string;
-  profileId: string;
   onSuccess: (payload: ReciboFormularioSuccess) => void;
   initialValues?: Partial<ReciboFormValues>;
 }
@@ -170,17 +171,16 @@ const STEP2_FIELDS = ['fechaPago'] as const;
 
 export function ReciboFormulario({
   clientId,
-  profileId,
   onSuccess,
   initialValues,
 }: ReciboFormularioProps) {
   const [step, setStep] = useState(1);
 
   const { data: empleados = [] } = useQuery({
-    queryKey: ['import-empleados-config', clientId, profileId],
+    queryKey: ['import-empleados-config', clientId],
     queryFn: () =>
-      listImportEmpleadosConConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+      listImportEmpleadosConConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
 
   const { data: situaciones = [] } = useQuery({
@@ -198,7 +198,7 @@ export function ReciboFormulario({
       ano: defaultAno,
       mes: defaultMes,
       quincena: '0',
-      tipoRecibo: 'sueldo',
+      tipoRecibo: 'mensual',
       fechaLiquidacion: format(now, 'yyyy-MM-dd'),
       fechaPago: format(now, 'yyyy-MM-dd'),
       anoCargas: defaultAno,
@@ -226,15 +226,19 @@ export function ReciboFormulario({
     [empleados, empleadoId]
   );
 
-  const antiguedadAnios = useMemo(() => {
-    const fechaAlta = empleadoSel?.empleado.fechaAlta;
-    if (!fechaAlta) return null;
-    return differenceInYears(now, new Date(fechaAlta as unknown as string));
-  }, [empleadoSel]);
-
-  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
   const ano = form.watch('ano');
   const mes = form.watch('mes');
+
+  const antiguedadAnios = useMemo(() => {
+    const fechaAlta = empleadoSel?.empleado.fechaAlta;
+    if (!fechaAlta || !ano || !mes) return null;
+    // Antigüedad al cierre del período liquidado, no a la fecha de hoy:
+    // liquidar marzo en agosto no puede sumar el aniversario intermedio.
+    const finPeriodo = endOfMonth(new Date(Number(ano), Number(mes) - 1, 1));
+    return Math.max(0, differenceInYears(finPeriodo, new Date(fechaAlta)));
+  }, [empleadoSel, ano, mes]);
+
+  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
   const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
   const mesesDisponibles = ano === maxAno
     ? MESES.filter((m) => m.value <= maxMes)
@@ -262,7 +266,9 @@ export function ReciboFormulario({
   const onSubmit = (values: ReciboFormValues) => {
     const emp = empleados.find((e) => e.empleado.id === values.importEmpleadoId);
     const periodo = `${values.ano}-${values.mes}`;
-    const periodoCargas = `${values.anoCargas} / ${values.mesCargas}`;
+    // Antes viajaba como "YYYY / MM" (la columna era texto libre). Ahora el
+    // action hace `periodoADate(periodoCargas)`, así que tiene que ser 'YYYY-MM'.
+    const periodoCargas = `${values.anoCargas}-${values.mesCargas}`;
     onSuccess({
       importEmpleadoId: values.importEmpleadoId,
       empleadoNombre: emp?.empleado.nombre ?? '',
@@ -270,21 +276,15 @@ export function ReciboFormulario({
       copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
       tipoRecibo: values.tipoRecibo,
       antiguedadAnios,
-      fechaAlta: emp?.empleado.fechaAlta
-        ? (typeof emp.empleado.fechaAlta === 'string' ? emp.empleado.fechaAlta : (emp.empleado.fechaAlta as Date).toISOString()).slice(0, 10)
-        : null,
-      fechaIngreso: emp?.empleado.fechaIngreso
-        ? (typeof emp.empleado.fechaIngreso === 'string' ? emp.empleado.fechaIngreso : (emp.empleado.fechaIngreso as Date).toISOString()).slice(0, 10)
-        : null,
+      // `empleado.fechaIngreso` desapareció en el modelo nuevo: el alta es la
+      // única fecha de ingreso (los actions también devuelven fechaAlta en ambas).
+      fechaAlta: emp?.empleado.fechaAlta?.slice(0, 10) ?? null,
+      fechaIngreso: emp?.empleado.fechaAlta?.slice(0, 10) ?? null,
       quincena: values.quincena,
       fechaLiquidacion: values.fechaLiquidacion,
       obraSocialId: emp?.empleado.obraSocialId ?? null,
       fechaPago: values.fechaPago,
-      lugarPago: emp?.empleado.lugarPago ?? null,
-      formaPago: (emp?.empleado.formaPago ?? 'efectivo') as
-        | 'efectivo'
-        | 'cheque'
-        | 'acreditacion',
+      formaPago: emp?.empleado.formaPago ?? 'efectivo',
       cbu: emp?.empleado.cbu ?? null,
       banco: emp?.empleado.banco ?? null,
       periodoCargas,
@@ -545,10 +545,6 @@ export function ReciboFormulario({
                     label="CBU"
                     value={empleadoSel?.empleado.cbu ?? null}
                     mono
-                  />
-                  <InfoRow
-                    label="Lugar de pago"
-                    value={empleadoSel?.empleado.lugarPago ?? null}
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">

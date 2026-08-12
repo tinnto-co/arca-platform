@@ -1,6 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { Home, User, Bell, DollarSign, Menu } from 'lucide-react';
-import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useSidebar } from '@/components/ui/sidebar';
 

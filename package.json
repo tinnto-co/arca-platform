@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "vite",
-    "build": "NODE_OPTIONS=--max-old-space-size=4096 vite build",
+    "dev": "bun --bun vite",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
     "preview": "vite preview",
     "start": "bun run server.ts",
     "lint": "eslint .",
@@ -22,6 +22,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:studio:ideal": "drizzle-kit studio --config drizzle.ideal.config.ts --port 4984",
     "db:ensure-empleado-pago": "bun run src/scripts/ensure-empleado-datos-pago-columns.ts",
     "sueldos:seed-comercio-mar2026": "bun run src/scripts/seed-comercio-mar2026.ts",
     "sueldos:rebuild-feb2026-from-import": "bun run src/scripts/rebuild-sueldo-from-import-feb2026.ts",
@@ -29,9 +30,7 @@
     "db:seed-caravelle": "bun run src/scripts/run-caravelle-seed.ts",
     "sueldos:seed-gastronomico-categorias": "bun run src/scripts/seed-gastronomico-categorias.ts",
     "sueldos:seed-gastronomico-escalas": "bun run src/scripts/seed-gastronomico-escalas.ts",
-    "db:seed-catalogos-afip": "bun run src/scripts/seed-catalogos-afip.ts",
-    "db:seed-inflation-index": "bun run src/scripts/seed-inflation-index.ts",
-    "db:seed-axi-epresis": "bun run src/scripts/seed-axi-epresis-scenario.ts"
+    "db:seed-catalogos-afip": "bun run src/scripts/seed-catalogos-afip.ts"
   },
   "keywords": [],
   "author": "",
@@ -159,5 +158,8 @@
     "vite": "^7.3.1",
     "vitest": "^3.2.4",
     "web-vitals": "^5.1.0"
+  },
+  "patchedDependencies": {
+    "eventsource@3.0.7": "patches/eventsource@3.0.7.patch"
   }
 }

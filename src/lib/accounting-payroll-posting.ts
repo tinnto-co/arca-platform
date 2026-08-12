@@ -20,13 +20,14 @@ import {
   type TipoConceptoSos,
 } from './sos-recibo-totales';
 import type {
-  BuiltEntry,
-  BuiltLine,
-  RuleLike,
+  AsientoArmado,
+  LineaArmada,
+  Lado,
+  ReglaLike,
 } from './accounting-invoice-posting';
 
 /** Un concepto liquidado, tal como sale de `liquidacion_import_concepto_valor`. */
-export interface PayrollConceptLike {
+export interface ConceptoLiquidadoLike {
   /** Código SOS (1–699) o LSD importado (ej. "810000"). */
   codigo: string;
   /** Tipo persistido por el motor de liquidación; puede faltar en importados. */
@@ -35,7 +36,7 @@ export interface PayrollConceptLike {
 }
 
 /** Concepto agregado a nivel período: un renglón por código SOS. */
-export interface AggregatedConcept {
+export interface ConceptoAgregado {
   codigo: string;
   /** Tipo resuelto: el persistido si es válido, si no el inferido del rango SOS. */
   tipo: TipoConceptoSos | null;
@@ -62,8 +63,8 @@ const TIPOS_VALIDOS: readonly string[] = [
  * decidió el motor al liquidar) y cae al rango del código SOS cuando falta o no
  * es un valor conocido — el caso de los recibos importados del LSD.
  */
-export function resolveConceptTipo(
-  c: PayrollConceptLike
+export function resolverTipoConcepto(
+  c: ConceptoLiquidadoLike
 ): TipoConceptoSos | null {
   const persisted = (c.tipoLiquidacion ?? '').trim().toLowerCase();
   if (TIPOS_VALIDOS.includes(persisted)) return persisted as TipoConceptoSos;
@@ -76,10 +77,10 @@ export function resolveConceptTipo(
  * El orden de salida es estable (por código numérico asc, luego alfabético)
  * para que el asiento sea reproducible.
  */
-export function aggregatePayrollConcepts(
-  conceptos: PayrollConceptLike[]
-): AggregatedConcept[] {
-  const byCodigo = new Map<string, AggregatedConcept>();
+export function agregarConceptosSueldos(
+  conceptos: ConceptoLiquidadoLike[]
+): ConceptoAgregado[] {
+  const byCodigo = new Map<string, ConceptoAgregado>();
   for (const c of conceptos) {
     const codigo = String(c.codigo ?? '').trim();
     if (!codigo) continue;
@@ -87,11 +88,11 @@ export function aggregatePayrollConcepts(
     if (prev) {
       prev.monto = round2(prev.monto + num(c.monto));
       // Un tipo explícito gana sobre uno inferido en cualquier recibo del período.
-      prev.tipo ??= resolveConceptTipo(c);
+      prev.tipo ??= resolverTipoConcepto(c);
     } else {
       byCodigo.set(codigo, {
         codigo,
-        tipo: resolveConceptTipo(c),
+        tipo: resolverTipoConcepto(c),
         monto: round2(num(c.monto)),
       });
     }
@@ -116,12 +117,12 @@ export function aggregatePayrollConcepts(
  * Una clave no soportada hace que la regla NO matchee, igual que en facturas:
  * es preferible caer a pending_review que imputar a una cuenta equivocada.
  */
-export function ruleMatchesConcept(
-  rule: RuleLike,
-  concept: AggregatedConcept
+export function reglaMatcheaConcepto(
+  rule: ReglaLike,
+  concept: ConceptoAgregado
 ): boolean {
-  if (rule.ruleType === 'default') return true;
-  const cond = rule.condition;
+  if (rule.tipo === 'default') return true;
+  const cond = rule.condicion;
   if (!cond || typeof cond !== 'object') return true; // condicional sin condición = comodín
 
   const codigoNum = parseInt(concept.codigo, 10);
@@ -162,38 +163,38 @@ export function ruleMatchesConcept(
  * Primera regla aplicable a un concepto, por prioridad.
  * `rules` debe venir ordenado por priority asc (las más específicas primero).
  */
-export function selectRuleForConcept(
-  rules: RuleLike[],
-  concept: AggregatedConcept
-): RuleLike | null {
+export function seleccionarReglaConcepto(
+  rules: ReglaLike[],
+  concept: ConceptoAgregado
+): ReglaLike | null {
   for (const r of rules) {
-    if (ruleMatchesConcept(r, concept)) return r;
+    if (reglaMatcheaConcepto(r, concept)) return r;
   }
   return null;
 }
 
 /** Trazabilidad concepto → regla, para el log y la UI de revisión. */
-export interface ConceptMapping {
+export interface MapeoConcepto {
   codigo: string;
   tipo: TipoConceptoSos | null;
   monto: number;
-  ruleId: string | null;
-  ruleName: string | null;
+  reglaId: string | null;
+  reglaNombre: string | null;
   /** true si el concepto terminó imputado a pending_review. */
-  unmapped: boolean;
+  sinRegla: boolean;
 }
 
-export interface BuiltPayrollEntry extends BuiltEntry {
-  mappings: ConceptMapping[];
+export interface AsientoSueldosArmado extends AsientoArmado {
+  mapeos: MapeoConcepto[];
   /** Reglas efectivamente usadas, en orden de aparición. */
-  usedRuleIds: string[];
+  reglasUsadasIds: string[];
   /** Suma de los conceptos que no matchearon ninguna regla. */
-  unmappedTotal: number;
+  totalSinRegla: number;
 }
 
 /** Clave de agrupación: una línea por cuenta y lado. */
-const lineKey = (accountId: string, side: 'debit' | 'credit'): string =>
-  `${accountId}|${side}`;
+const claveLinea = (cuentaId: string, lado: Lado): string =>
+  `${cuentaId}|${lado}`;
 
 /**
  * Construye las líneas del asiento único del período.
@@ -207,139 +208,140 @@ const lineKey = (accountId: string, side: 'debit' | 'credit'): string =>
  * Las líneas se agrupan por cuenta+lado, de modo que N conceptos que apuntan a
  * "Sueldos y jornales" produzcan un único renglón.
  */
-export function buildPayrollEntryLines(
-  concepts: AggregatedConcept[],
-  rules: RuleLike[],
-  pendingReviewAccountId: string
-): BuiltPayrollEntry {
+export function armarLineasSueldos(
+  concepts: ConceptoAgregado[],
+  rules: ReglaLike[],
+  cuentaPendienteRevisionId: string
+): AsientoSueldosArmado {
   const acc = new Map<
     string,
     {
-      accountId: string;
-      side: 'debit' | 'credit';
-      amount: number;
-      description: string | null;
+      cuentaId: string;
+      lado: Lado;
+      importe: number;
+      descripcion: string | null;
     }
   >();
-  const mappings: ConceptMapping[] = [];
-  const usedRuleIds: string[] = [];
-  const fixedApplied = new Set<string>();
-  let unmappedTotal = 0;
+  const mapeos: MapeoConcepto[] = [];
+  const reglasUsadasIds: string[] = [];
+  const fijosAplicados = new Set<string>();
+  let totalSinRegla = 0;
 
   const add = (
-    accountId: string,
-    side: 'debit' | 'credit',
-    amount: number,
-    description: string | null
+    cuentaId: string,
+    lado: Lado,
+    importe: number,
+    descripcion: string | null
   ) => {
-    if (Math.abs(amount) <= 0.005) return;
-    const key = lineKey(accountId, side);
+    if (Math.abs(importe) <= 0.005) return;
+    const key = claveLinea(cuentaId, lado);
     const prev = acc.get(key);
-    if (prev) prev.amount = round2(prev.amount + amount);
-    else acc.set(key, { accountId, side, amount: round2(amount), description });
+    if (prev) prev.importe = round2(prev.importe + importe);
+    else
+      acc.set(key, { cuentaId, lado, importe: round2(importe), descripcion });
   };
 
   for (const c of concepts) {
-    const rule = selectRuleForConcept(rules, c);
-    const ruleLines = rule?.lines ?? [];
+    const rule = seleccionarReglaConcepto(rules, c);
+    const lineasRegla = rule?.lineas ?? [];
     // Una regla sin líneas no imputa nada: se trata como si no hubiera regla.
-    const usable = ruleLines.filter(
-      (l) => l.amountBasis === 'concept_value' || l.amountBasis === 'fixed'
+    const usable = lineasRegla.filter(
+      (l) => l.base === 'valor_concepto' || l.base === 'fijo'
     );
 
     if (!rule || usable.length === 0) {
-      unmappedTotal = round2(unmappedTotal + c.monto);
+      totalSinRegla = round2(totalSinRegla + c.monto);
       add(
-        pendingReviewAccountId,
-        c.monto >= 0 ? 'debit' : 'credit',
+        cuentaPendienteRevisionId,
+        c.monto >= 0 ? 'debe' : 'haber',
         Math.abs(c.monto),
         'Conceptos de sueldos sin regla aplicable'
       );
-      mappings.push({
+      mapeos.push({
         codigo: c.codigo,
         tipo: c.tipo,
         monto: c.monto,
-        ruleId: rule?.id ?? null,
-        ruleName: rule?.name ?? null,
-        unmapped: true,
+        reglaId: rule?.id ?? null,
+        reglaNombre: rule?.nombre ?? null,
+        sinRegla: true,
       });
       continue;
     }
 
-    if (!usedRuleIds.includes(rule.id)) usedRuleIds.push(rule.id);
+    if (!reglasUsadasIds.includes(rule.id)) reglasUsadasIds.push(rule.id);
 
     for (const rl of usable) {
       let amt: number;
-      if (rl.amountBasis === 'fixed') {
-        const fixedKey = `${rule.id}|${rl.accountId}|${rl.side}`;
-        if (fixedApplied.has(fixedKey)) continue;
-        fixedApplied.add(fixedKey);
-        amt = round2(num(rl.fixedAmount));
+      if (rl.base === 'fijo') {
+        const claveFijo = `${rule.id}|${rl.cuentaId}|${rl.lado}`;
+        if (fijosAplicados.has(claveFijo)) continue;
+        fijosAplicados.add(claveFijo);
+        amt = round2(num(rl.importeFijo));
       } else {
         amt = c.monto;
       }
       // Un concepto negativo (ajuste en contra) invierte el lado de la línea.
-      const side: 'debit' | 'credit' =
-        amt >= 0 ? rl.side : rl.side === 'debit' ? 'credit' : 'debit';
-      add(rl.accountId, side, Math.abs(amt), rl.description ?? null);
+      const lado: Lado =
+        amt >= 0 ? rl.lado : rl.lado === 'debe' ? 'haber' : 'debe';
+      add(rl.cuentaId, lado, Math.abs(amt), rl.descripcion ?? null);
     }
 
-    mappings.push({
+    mapeos.push({
       codigo: c.codigo,
       tipo: c.tipo,
       monto: c.monto,
-      ruleId: rule.id,
-      ruleName: rule.name,
-      unmapped: false,
+      reglaId: rule.id,
+      reglaNombre: rule.nombre,
+      sinRegla: false,
     });
   }
 
-  const lines: BuiltLine[] = [...acc.values()].map((l) => ({
-    accountId: l.accountId,
-    debit: l.side === 'debit' ? l.amount : 0,
-    credit: l.side === 'credit' ? l.amount : 0,
-    description: l.description,
+  const lineas: LineaArmada[] = [...acc.values()].map((l) => ({
+    cuentaId: l.cuentaId,
+    debe: l.lado === 'debe' ? l.importe : 0,
+    haber: l.lado === 'haber' ? l.importe : 0,
+    descripcion: l.descripcion,
   }));
 
-  let usedPendingReview = unmappedTotal !== 0;
-  let reason: string | null = usedPendingReview
+  let usoPendienteRevision = totalSinRegla !== 0;
+  let motivo: string | null = usoPendienteRevision
     ? 'Hay conceptos sin regla aplicable (imputados a pending_review)'
     : null;
 
-  if (lines.length === 0) {
+  if (lineas.length === 0) {
     return {
-      lines: [],
-      usedPendingReview: false,
-      reason: 'El período no tiene conceptos con importe',
-      mappings,
-      usedRuleIds,
-      unmappedTotal: 0,
+      lineas: [],
+      usoPendienteRevision: false,
+      motivo: 'El período no tiene conceptos con importe',
+      mapeos,
+      reglasUsadasIds,
+      totalSinRegla: 0,
     };
   }
 
   // Cierre por residuo: garantiza que el asiento balancee siempre.
-  const sumD = round2(lines.reduce((s, l) => s + l.debit, 0));
-  const sumC = round2(lines.reduce((s, l) => s + l.credit, 0));
+  const sumD = round2(lineas.reduce((s, l) => s + l.debe, 0));
+  const sumC = round2(lineas.reduce((s, l) => s + l.haber, 0));
   const residual = round2(sumD - sumC);
   if (Math.abs(residual) > 0.005) {
-    lines.push({
-      accountId: pendingReviewAccountId,
-      debit: residual > 0 ? 0 : -residual,
-      credit: residual > 0 ? residual : 0,
-      description: 'Diferencia a imputar (redondeo / regla incompleta)',
+    lineas.push({
+      cuentaId: cuentaPendienteRevisionId,
+      debe: residual > 0 ? 0 : -residual,
+      haber: residual > 0 ? residual : 0,
+      descripcion: 'Diferencia a imputar (redondeo / regla incompleta)',
     });
-    usedPendingReview = true;
-    reason =
-      reason ??
+    usoPendienteRevision = true;
+    motivo =
+      motivo ??
       'Las reglas no cubren el total del período (diferencia a pending_review)';
   }
 
   return {
-    lines,
-    usedPendingReview,
-    reason,
-    mappings,
-    usedRuleIds,
-    unmappedTotal,
+    lineas,
+    usoPendienteRevision,
+    motivo,
+    mapeos,
+    reglasUsadasIds,
+    totalSinRegla,
   };
 }

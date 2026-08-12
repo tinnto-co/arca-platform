@@ -66,7 +66,6 @@ interface EmpleadoFormDialogProps {
   onOpenChange: (open: boolean) => void;
   clientId: string;
   /** Opcional; si no se pasa, el servidor elige un perfil que liquide sueldos. */
-  profileId?: string;
   convenios: Convenio[];
   editId: string | null;
   empleado?: Empleado;
@@ -77,7 +76,6 @@ export function EmpleadoFormDialog({
   open,
   onOpenChange,
   clientId,
-  profileId,
   convenios,
   editId,
   empleado,
@@ -153,7 +151,6 @@ export function EmpleadoFormDialog({
         data: {
           ...values,
           clientId,
-          profileId,
           legajo: values.legajo?.trim() || null,
         },
       });

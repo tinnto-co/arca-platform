@@ -2,9 +2,9 @@
  * Server functions del ajuste por inflación (RT 6) y del RECPAM.
  *
  * Dos bloques:
- * 1. **Serie de índices** (`inflation_index`): dato público y global del estudio,
+ * 1. **Serie de índices** (`indice_inflacion`): dato público y global del estudio,
  *    no se scopea por empresa. Se carga desde la planilla de FACPCE o a mano.
- * 2. **Ajuste de un ejercicio** (`inflation_adjustment`): preplanilla + asiento
+ * 2. **Ajuste de un ejercicio** (`ajuste_inflacion`): preplanilla + asiento
  *    de ajuste. Sí se scopea por empresa.
  *
  * El cálculo vive en `src/lib/accounting-inflation.ts` (módulo puro, testeado
@@ -15,24 +15,19 @@ import { z } from 'zod';
 import { and, eq, inArray, sql, desc, asc } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
-  account,
-  accountingLog,
-  accountingPeriod,
-  fixedAsset,
-  fiscalYear,
-  inflationAdjustment,
-  inflationAdjustmentLine,
-  inflationIndex,
-  journalEntry,
-  journalEntryLine,
+  ajusteInflacion,
+  ajusteInflacionLinea,
+  asiento,
+  asientoLinea,
+  bienDeUso,
+  cliente,
+  cuenta,
+  ejercicio,
+  evento,
+  indiceInflacion,
+  periodoContable,
 } from '@/drizzle/schema';
-import {
-  getSessionWithOrg,
-  getMemberRole,
-  assertCanWrite,
-  ensureClientBelongsToOrg,
-  loadFiscalYearForOrg,
-} from './helpers';
+import { getSessionWithOrg, getMemberRole, assertCanWrite } from './helpers';
 import {
   computeInflationAdjustment,
   defaultInflationNature,
@@ -58,6 +53,48 @@ function assertOwner(role: string): void {
     throw new Error('Solo el Owner del estudio puede realizar esta acción');
   }
 }
+
+/**
+ * `accounting.tsx` tiene estos dos helpers, pero privados. Se repiten acá en vez
+ * de exportarlos para no tocar ese archivo mientras se porta el módulo; cuando
+ * se unifique, van a `helpers.ts`.
+ */
+async function ensureClientBelongsToOrg(
+  clientId: string,
+  orgId: string
+): Promise<void> {
+  const [row] = await db
+    .select({ id: cliente.id })
+    .from(cliente)
+    .where(and(eq(cliente.id, clientId), eq(cliente.orgId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Empresa no encontrada o no autorizada');
+}
+
+async function loadFiscalYearForOrg(fiscalYearId: string, orgId: string) {
+  const [row] = await db
+    .select()
+    .from(ejercicio)
+    .where(and(eq(ejercicio.id, fiscalYearId), eq(ejercicio.orgId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Ejercicio no encontrado o no autorizado');
+  return row;
+}
+
+/**
+ * Las columnas `date` de Postgres vuelven de Drizzle como string "YYYY-MM-DD",
+ * no como `Date`. Se convierten en el borde y en UTC: interpretarlas en la zona
+ * local correría el día para todo el hemisferio oeste, y acá el mes de una fecha
+ * decide qué coeficiente se aplica.
+ */
+const aFecha = (s: string): Date => new Date(`${s}T00:00:00Z`);
+
+/**
+ * `periodo_contable.periodo` es un date (el primer día del mes), no un par
+ * año/mes como en el modelo viejo.
+ */
+const anioDe = (d: Date) => d.getUTCFullYear();
+const mesDe = (d: Date) => d.getUTCMonth() + 1;
 
 /* ═══════════════════════ 1. Serie de índices ═══════════════════════ */
 
@@ -89,42 +126,42 @@ export interface InflationIndexList {
  * contra cualquier mes de cierre sin ir de nuevo al servidor.
  */
 export const listInflationIndexes = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ source: sourceSchema }))
+  .validator(z.object({ source: sourceSchema }))
   .handler(async (ctx): Promise<InflationIndexList> => {
     await getSessionWithOrg();
     const { source } = ctx.data;
 
     const all = await db
       .select()
-      .from(inflationIndex)
-      .where(eq(inflationIndex.source, source))
-      .orderBy(asc(inflationIndex.year), asc(inflationIndex.month));
+      .from(indiceInflacion)
+      .where(eq(indiceInflacion.fuente, source))
+      .orderBy(asc(indiceInflacion.anio), asc(indiceInflacion.mes));
 
-    const years = [...new Set(all.map((r) => r.year))].sort((a, b) => b - a);
+    const years = [...new Set(all.map((r) => r.anio))].sort((a, b) => b - a);
 
     const sourceCounts = await db
       .select({
-        source: inflationIndex.source,
+        source: indiceInflacion.fuente,
         count: sql<number>`count(*)::int`,
       })
-      .from(inflationIndex)
-      .groupBy(inflationIndex.source);
+      .from(indiceInflacion)
+      .groupBy(indiceInflacion.fuente);
 
     const rows: InflationIndexRow[] = all.map((r, i) => {
       const prev = i > 0 ? all[i - 1] : null;
-      const value = Number(r.value);
-      const prevValue = prev ? Number(prev.value) : null;
+      const value = Number(r.valor);
+      const prevValue = prev ? Number(prev.valor) : null;
       // Solo tiene sentido si el mes anterior es efectivamente el consecutivo.
       const consecutive =
         prev &&
-        (prev.year === r.year
-          ? prev.month === r.month - 1
-          : prev.year === r.year - 1 && prev.month === 12 && r.month === 1);
+        (prev.anio === r.anio
+          ? prev.mes === r.mes - 1
+          : prev.anio === r.anio - 1 && prev.mes === 12 && r.mes === 1);
       return {
         id: r.id,
-        source: r.source,
-        year: r.year,
-        month: r.month,
+        source: r.fuente,
+        year: r.anio,
+        month: r.mes,
         value,
         variation:
           consecutive && prevValue
@@ -138,13 +175,10 @@ export const listInflationIndexes = createServerFn({ method: 'GET' })
     return {
       rows,
       years,
-      sources: sourceCounts.map((s) => ({
-        source: s.source,
-        count: s.count,
-      })),
+      sources: sourceCounts.map((s) => ({ source: s.source, count: s.count })),
       total: all.length,
       lastPeriod: last
-        ? { year: last.year, month: last.month, value: Number(last.value) }
+        ? { year: last.anio, month: last.mes, value: Number(last.valor) }
         : null,
     };
   });
@@ -152,10 +186,10 @@ export const listInflationIndexes = createServerFn({ method: 'GET' })
 /**
  * Importa la serie completa desde la planilla de FACPCE. El .xlsx se parsea en
  * el navegador (evita subir el binario) y acá llegan las filas ya normalizadas.
- * Idempotente: hace upsert por (source, año, mes).
+ * Idempotente: hace upsert por (fuente, año, mes).
  */
 export const importInflationIndexes = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       source: sourceSchema,
       rows: z
@@ -186,22 +220,22 @@ export const importInflationIndexes = createServerFn({ method: 'POST' })
       const BATCH = 200;
       for (let i = 0; i < clean.length; i += BATCH) {
         await db
-          .insert(inflationIndex)
+          .insert(indiceInflacion)
           .values(
             clean.slice(i, i + BATCH).map((r) => ({
-              source,
-              year: r.year,
-              month: r.month,
-              value: r.value.toFixed(6),
+              fuente: source,
+              anio: r.year,
+              mes: r.month,
+              valor: r.value.toFixed(6),
             }))
           )
           .onConflictDoUpdate({
             target: [
-              inflationIndex.source,
-              inflationIndex.year,
-              inflationIndex.month,
+              indiceInflacion.fuente,
+              indiceInflacion.anio,
+              indiceInflacion.mes,
             ],
-            set: { value: sql`excluded.value`, updatedAt: new Date() },
+            set: { valor: sql`excluded.valor`, updatedAt: new Date() },
           });
       }
 
@@ -217,7 +251,7 @@ export const importInflationIndexes = createServerFn({ method: 'POST' })
 
 /** Alta o corrección de un índice puntual, a mano. */
 export const saveInflationIndex = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       source: sourceSchema,
       year: z.number().int().min(1900).max(2200),
@@ -230,25 +264,30 @@ export const saveInflationIndex = createServerFn({ method: 'POST' })
     assertOwner(await getMemberRole());
     const { source, year, month, value } = ctx.data;
     await db
-      .insert(inflationIndex)
-      .values({ source, year, month, value: value.toFixed(6) })
+      .insert(indiceInflacion)
+      .values({
+        fuente: source,
+        anio: year,
+        mes: month,
+        valor: value.toFixed(6),
+      })
       .onConflictDoUpdate({
         target: [
-          inflationIndex.source,
-          inflationIndex.year,
-          inflationIndex.month,
+          indiceInflacion.fuente,
+          indiceInflacion.anio,
+          indiceInflacion.mes,
         ],
-        set: { value: value.toFixed(6), updatedAt: new Date() },
+        set: { valor: value.toFixed(6), updatedAt: new Date() },
       });
     return { ok: true };
   });
 
 export const deleteInflationIndex = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx): Promise<{ ok: true }> => {
     await getSessionWithOrg();
     assertOwner(await getMemberRole());
-    await db.delete(inflationIndex).where(eq(inflationIndex.id, ctx.data.id));
+    await db.delete(indiceInflacion).where(eq(indiceInflacion.id, ctx.data.id));
     return { ok: true };
   });
 
@@ -264,7 +303,7 @@ export interface CoefficientRow {
  * compara contra su papel de trabajo.
  */
 export const getInflationCoefficients = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       source: sourceSchema,
       closingYear: z.number().int().min(1900).max(2200),
@@ -282,38 +321,38 @@ export const getInflationCoefficients = createServerFn({ method: 'GET' })
 
       const [closing] = await db
         .select()
-        .from(inflationIndex)
+        .from(indiceInflacion)
         .where(
           and(
-            eq(inflationIndex.source, source),
-            eq(inflationIndex.year, closingYear),
-            eq(inflationIndex.month, closingMonth)
+            eq(indiceInflacion.fuente, source),
+            eq(indiceInflacion.anio, closingYear),
+            eq(indiceInflacion.mes, closingMonth)
           )
         )
         .limit(1);
       if (!closing) return { rows: [], closingIndex: null };
 
-      const closingIndex = Number(closing.value);
+      const closingIndex = Number(closing.valor);
       const all = await db
         .select()
-        .from(inflationIndex)
+        .from(indiceInflacion)
         .where(
           and(
-            eq(inflationIndex.source, source),
-            sql`(${inflationIndex.year} * 12 + ${inflationIndex.month}) <= ${closingYear * 12 + closingMonth}`
+            eq(indiceInflacion.fuente, source),
+            sql`(${indiceInflacion.anio} * 12 + ${indiceInflacion.mes}) <= ${closingYear * 12 + closingMonth}`
           )
         )
-        .orderBy(desc(inflationIndex.year), desc(inflationIndex.month))
+        .orderBy(desc(indiceInflacion.anio), desc(indiceInflacion.mes))
         .limit(months);
 
       return {
         closingIndex,
         rows: all
           .map((r) => ({
-            year: r.year,
-            month: r.month,
-            index: Number(r.value),
-            coefficient: reexpressionCoefficient(closingIndex, Number(r.value)),
+            year: r.anio,
+            month: r.mes,
+            index: Number(r.valor),
+            coefficient: reexpressionCoefficient(closingIndex, Number(r.valor)),
           }))
           .reverse(),
       };
@@ -400,29 +439,28 @@ async function buildPreview(
   source: IndexSource
 ): Promise<InflationAdjustmentPreview> {
   const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
+  const fyDesde = aFecha(fy.fechaDesde);
+  const fyHasta = aFecha(fy.fechaHasta);
 
-  const closing = {
-    year: fy.endDate.getUTCFullYear(),
-    month: fy.endDate.getUTCMonth() + 1,
-  };
+  const closing = { year: anioDe(fyHasta), month: mesDe(fyHasta) };
   // Los saldos de apertura se anticúan al cierre del ejercicio anterior, que es
   // el mes previo al primer mes de este ejercicio.
-  const startYear = fy.startDate.getUTCFullYear();
-  const startMonth = fy.startDate.getUTCMonth() + 1;
+  const startYear = anioDe(fyDesde);
+  const startMonth = mesDe(fyDesde);
   const opening =
     startMonth === 1
       ? { year: startYear - 1, month: 12 }
       : { year: startYear, month: startMonth - 1 };
 
-  // Cuentas visibles para la empresa: base del estudio + custom de la empresa.
+  // Cuentas visibles para la empresa: base del estudio + propias de la empresa.
   const accounts = await db
     .select()
-    .from(account)
+    .from(cuenta)
     .where(
       and(
-        eq(account.organizationId, orgId),
-        eq(account.type, 'imputable'),
-        sql`(${account.scope} = 'base' OR ${account.clientId} = ${clientId})`
+        eq(cuenta.orgId, orgId),
+        eq(cuenta.tipo, 'imputable'),
+        sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
       )
     );
   const accById = new Map(accounts.map((a) => [a.id, a]));
@@ -430,72 +468,68 @@ async function buildPreview(
   // Saldos de apertura: los trae el asiento de apertura del ejercicio.
   const openingRows = await db
     .select({
-      accountId: journalEntryLine.accountId,
-      debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
-      credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      accountId: asientoLinea.cuentaId,
+      debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+      credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
     })
-    .from(journalEntryLine)
-    .innerJoin(
-      journalEntry,
-      eq(journalEntry.id, journalEntryLine.journalEntryId)
-    )
+    .from(asientoLinea)
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
     .where(
       and(
-        eq(journalEntry.fiscalYearId, fiscalYearId),
-        eq(journalEntry.isVoided, false),
-        eq(journalEntry.origin, 'auto_opening')
+        eq(asiento.ejercicioId, fiscalYearId),
+        eq(asiento.anulado, false),
+        eq(asiento.origenTipo, 'apertura')
       )
     )
-    .groupBy(journalEntryLine.accountId);
+    .groupBy(asientoLinea.cuentaId);
 
   // Movimientos del ejercicio agrupados por mes. Se excluyen apertura, cierre y
   // el propio ajuste (si no, regenerar lo compondría sobre sí mismo).
+  // El período cuelga del asiento, no de la línea, y es un date: el mes sale de
+  // ahí en vez de venir en dos columnas.
   const movementRows = await db
     .select({
-      accountId: journalEntryLine.accountId,
-      year: accountingPeriod.year,
-      month: accountingPeriod.month,
-      debit: sql<string>`coalesce(sum(${journalEntryLine.debit}),0)`,
-      credit: sql<string>`coalesce(sum(${journalEntryLine.credit}),0)`,
+      accountId: asientoLinea.cuentaId,
+      periodo: periodoContable.periodo,
+      debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+      credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
     })
-    .from(journalEntryLine)
-    .innerJoin(
-      journalEntry,
-      eq(journalEntry.id, journalEntryLine.journalEntryId)
-    )
-    .innerJoin(
-      accountingPeriod,
-      eq(accountingPeriod.id, journalEntryLine.periodId)
-    )
+    .from(asientoLinea)
+    .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+    .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
     .where(
       and(
-        eq(journalEntry.fiscalYearId, fiscalYearId),
-        eq(journalEntry.isVoided, false),
-        sql`${journalEntry.origin} NOT IN ('auto_opening','auto_closing','auto_inflation')`
+        eq(asiento.ejercicioId, fiscalYearId),
+        eq(asiento.anulado, false),
+        sql`${asiento.origenTipo} NOT IN ('apertura','cierre','ajuste_inflacion')`
       )
     )
-    .groupBy(
-      journalEntryLine.accountId,
-      accountingPeriod.year,
-      accountingPeriod.month
-    );
+    .groupBy(asientoLinea.cuentaId, periodoContable.periodo);
+
+  const movements = movementRows.map((r) => ({
+    accountId: r.accountId,
+    year: anioDe(aFecha(r.periodo)),
+    month: mesDe(aFecha(r.periodo)),
+    debit: r.debit,
+    credit: r.credit,
+  }));
 
   // Registro de bienes de uso: hace falta acá, y no más abajo, porque el mes de
   // alta de un bien comprado en el ejercicio también necesita índice.
   const assets = await db
     .select({
-      id: fixedAsset.id,
-      name: fixedAsset.name,
-      acquisitionDate: fixedAsset.acquisitionDate,
-      originalValue: fixedAsset.originalValue,
-      residualValue: fixedAsset.residualValue,
-      usefulLifeYears: fixedAsset.usefulLifeYears,
-      disposalDate: fixedAsset.disposalDate,
-      accumDeprAccountId: fixedAsset.accumDeprAccountId,
-      deprExpenseAccountId: fixedAsset.deprExpenseAccountId,
+      id: bienDeUso.id,
+      name: bienDeUso.nombre,
+      acquisitionDate: bienDeUso.fechaAlta,
+      originalValue: bienDeUso.valorOrigen,
+      residualValue: bienDeUso.valorResidual,
+      usefulLifeYears: bienDeUso.vidaUtilAnios,
+      disposalDate: bienDeUso.fechaBaja,
+      accumDeprAccountId: bienDeUso.cuentaAmortizacionAcumuladaId,
+      deprExpenseAccountId: bienDeUso.cuentaAmortizacionGastoId,
     })
-    .from(fixedAsset)
-    .where(eq(fixedAsset.clientId, clientId));
+    .from(bienDeUso)
+    .where(eq(bienDeUso.clienteId, clientId));
 
   // Índices necesarios: el mes de apertura + todos los meses con movimiento +
   // el mes de cierre + el mes de alta de los bienes incorporados en el ejercicio.
@@ -503,26 +537,19 @@ async function buildPreview(
     monthKey(opening.year, opening.month),
     monthKey(closing.year, closing.month),
   ]);
-  for (const m of movementRows) neededKeys.add(monthKey(m.year, m.month));
+  for (const m of movements) neededKeys.add(monthKey(m.year, m.month));
   for (const a of assets) {
-    if (a.acquisitionDate < fy.startDate || a.acquisitionDate > fy.endDate) {
-      continue;
-    }
-    neededKeys.add(
-      monthKey(
-        a.acquisitionDate.getUTCFullYear(),
-        a.acquisitionDate.getUTCMonth() + 1
-      )
-    );
+    const alta = aFecha(a.acquisitionDate);
+    if (alta < fyDesde || alta > fyHasta) continue;
+    neededKeys.add(monthKey(anioDe(alta), mesDe(alta)));
   }
 
   const indexRows = await db
     .select()
-    .from(inflationIndex)
-    .where(eq(inflationIndex.source, source));
+    .from(indiceInflacion)
+    .where(eq(indiceInflacion.fuente, source));
   const indexes: Record<string, number> = {};
-  for (const r of indexRows)
-    indexes[monthKey(r.year, r.month)] = Number(r.value);
+  for (const r of indexRows) indexes[monthKey(r.anio, r.mes)] = Number(r.valor);
 
   const missingIndexes = [...neededKeys].filter((k) => !indexes[k]).sort();
 
@@ -544,34 +571,36 @@ async function buildPreview(
 
   const existing = await db
     .select()
-    .from(inflationAdjustment)
-    .where(eq(inflationAdjustment.fiscalYearId, fiscalYearId))
+    .from(ajusteInflacion)
+    .where(eq(ajusteInflacion.ejercicioId, fiscalYearId))
     .limit(1);
   const adj = existing[0] ?? null;
 
   let entryNumber: number | null = null;
-  if (adj?.journalEntryId) {
+  if (adj?.asientoId) {
     const [je] = await db
-      .select({ number: journalEntry.number })
-      .from(journalEntry)
-      .where(eq(journalEntry.id, adj.journalEntryId))
+      .select({ numero: asiento.numero })
+      .from(asiento)
+      .where(eq(asiento.id, adj.asientoId))
       .limit(1);
-    entryNumber = je?.number ?? null;
+    entryNumber = je?.numero ?? null;
   }
 
   const fmtD = (d: Date) =>
     `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
 
   const base = {
-    status: adj?.status ?? 'draft',
+    status: (adj?.estado === 'aplicado' ? 'applied' : 'draft') as
+      | 'draft'
+      | 'applied',
     adjustmentId: adj?.id ?? null,
-    journalEntryId: adj?.journalEntryId ?? null,
+    journalEntryId: adj?.asientoId ?? null,
     journalEntryNumber: entryNumber,
-    appliedAt: adj?.appliedAt?.toISOString() ?? null,
+    appliedAt: adj?.aplicadoAt?.toISOString() ?? null,
     closing,
     opening,
-    fiscalYearNumber: fy.number,
-    periodLabel: `${fmtD(fy.startDate)} – ${fmtD(fy.endDate)}`,
+    fiscalYearNumber: fy.numero,
+    periodLabel: `${fmtD(fyDesde)} – ${fmtD(fyHasta)}`,
     missingIndexes,
     coefficients,
   };
@@ -587,8 +616,7 @@ async function buildPreview(
       accountsWithoutNature: [],
       depreciationMismatch: [],
       stale: false,
-      appliedRecpam:
-        adj?.status === 'applied' ? Number(adj.recpamAmount) : null,
+      appliedRecpam: adj?.estado === 'aplicado' ? Number(adj.recpam) : null,
     };
   }
 
@@ -602,16 +630,16 @@ async function buildPreview(
           assets: assets.map((a) => ({
             id: a.id,
             name: a.name,
-            acquisitionDate: a.acquisitionDate,
+            acquisitionDate: aFecha(a.acquisitionDate),
             originalValue: parseFloat(a.originalValue),
             residualValue: parseFloat(a.residualValue ?? '0'),
             usefulLifeYears: a.usefulLifeYears,
-            disposalDate: a.disposalDate,
+            disposalDate: a.disposalDate ? aFecha(a.disposalDate) : null,
             accumDeprAccountId: a.accumDeprAccountId,
             deprExpenseAccountId: a.deprExpenseAccountId,
           })),
-          fiscalYearStart: fy.startDate,
-          fiscalYearEnd: fy.endDate,
+          fiscalYearStart: fyDesde,
+          fiscalYearEnd: fyHasta,
           openingCoefficient: reexpressionCoefficient(
             closingIndex,
             openingIndex
@@ -631,7 +659,7 @@ async function buildPreview(
   // Armado del input del motor.
   const touched = new Set<string>([
     ...openingRows.map((r) => r.accountId),
-    ...movementRows.map((r) => r.accountId),
+    ...movements.map((r) => r.accountId),
   ]);
   const accountsWithoutNature: { code: string; name: string }[] = [];
   const engineAccounts: InflationAccountInput[] = [];
@@ -641,26 +669,26 @@ async function buildPreview(
     if (!a) continue;
     // Las cuentas viejas pueden tener el valor legacy 'no_monetaria', o ninguno.
     let nature: InflationNature;
-    if (!a.inflationNature) {
-      nature = defaultInflationNature(a.accountGroup);
-      accountsWithoutNature.push({ code: a.code, name: a.name });
-    } else if (a.inflationNature === 'no_monetaria') {
+    if (!a.naturalezaInflacion) {
+      nature = defaultInflationNature(a.rubro);
+      accountsWithoutNature.push({ code: a.codigo, name: a.nombre });
+    } else if (a.naturalezaInflacion === 'no_monetaria') {
       nature = 'no_monetaria_costo';
     } else {
-      nature = a.inflationNature;
+      nature = a.naturalezaInflacion as InflationNature;
     }
 
     const op = openingRows.find((r) => r.accountId === id);
     engineAccounts.push({
       accountId: id,
-      code: a.code,
-      name: a.name,
-      accountGroup: a.accountGroup,
+      code: a.codigo,
+      name: a.nombre,
+      accountGroup: a.rubro,
       nature,
-      targetAccountId: a.inflationTargetId,
+      targetAccountId: a.cuentaAjusteId,
       opening: op ? parseFloat(op.debit) - parseFloat(op.credit) : 0,
       monthlyCoefficient: depreciation?.byAccount.get(id) ?? null,
-      monthly: movementRows
+      monthly: movements
         .filter((r) => r.accountId === id)
         .map((r) => ({
           year: r.year,
@@ -683,22 +711,22 @@ async function buildPreview(
     for (const [accountId, register] of depreciation.registerDepreciation) {
       const a = accById.get(accountId);
       if (!a) continue;
-      const ledger = movementRows
+      const ledger = movements
         .filter((r) => r.accountId === accountId)
         .reduce((s, r) => s + parseFloat(r.debit) - parseFloat(r.credit), 0);
       // El signo depende de si la cuenta es el gasto (deudor) o la acumulada
       // (acreedora): se compara el valor absoluto.
       if (Math.abs(Math.abs(ledger) - register) < 0.05) continue;
       depreciationMismatch.push({
-        code: a.code,
-        name: a.name,
+        code: a.codigo,
+        name: a.nombre,
         ledger: Math.round(Math.abs(ledger) * 100) / 100,
         register,
       });
     }
   }
 
-  const recpamAccount = accounts.find((a) => a.code === RECPAM_CODE);
+  const recpamAccount = accounts.find((a) => a.codigo === RECPAM_CODE);
   if (!recpamAccount) {
     throw new Error(
       `Falta la cuenta ${RECPAM_CODE} (RECPAM) en el plan de cuentas. Sembrá el plan base antes de ajustar.`
@@ -718,16 +746,15 @@ async function buildPreview(
   // partida no monetaria), la cantidad de filas y el total reexpresado. Si algo
   // difiere, el ajuste quedó viejo.
   let stale = false;
-  const appliedRecpam =
-    adj?.status === 'applied' ? Number(adj.recpamAmount) : null;
-  if (adj?.status === 'applied') {
+  const appliedRecpam = adj?.estado === 'aplicado' ? Number(adj.recpam) : null;
+  if (adj?.estado === 'aplicado') {
     const persisted = await db
       .select({
         count: sql<number>`count(*)::int`,
-        total: sql<string>`coalesce(sum(abs(${inflationAdjustmentLine.difference})),0)`,
+        total: sql<string>`coalesce(sum(abs(${ajusteInflacionLinea.diferencia})),0)`,
       })
-      .from(inflationAdjustmentLine)
-      .where(eq(inflationAdjustmentLine.adjustmentId, adj.id));
+      .from(ajusteInflacionLinea)
+      .where(eq(ajusteInflacionLinea.ajusteId, adj.id));
     const currentTotal = result.lines.reduce(
       (acc, l) => acc + Math.abs(l.difference),
       0
@@ -746,12 +773,12 @@ async function buildPreview(
     lines: result.lines,
     byAccount: result.byAccount.map((s) => ({
       ...s,
-      targetCode: label(s.targetAccountId)?.code ?? s.code,
+      targetCode: label(s.targetAccountId)?.codigo ?? s.code,
     })),
     entryLines: result.entryLines.map((l) => ({
       accountId: l.accountId,
-      code: label(l.accountId)?.code ?? '',
-      name: label(l.accountId)?.name ?? '',
+      code: label(l.accountId)?.codigo ?? '',
+      name: label(l.accountId)?.nombre ?? '',
       debit: l.debit,
       credit: l.credit,
     })),
@@ -764,7 +791,7 @@ async function buildPreview(
 
 /** Preplanilla del ajuste (papel de trabajo). No escribe nada. */
 export const getInflationAdjustment = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -786,11 +813,11 @@ export const getInflationAdjustment = createServerFn({ method: 'GET' })
  * Genera el asiento de ajuste por inflación y persiste la preplanilla.
  *
  * El asiento se imputa con fecha de cierre del ejercicio y origen
- * `auto_inflation`, así los estados contables lo toman automáticamente y el
+ * `ajuste_inflacion`, así los estados contables lo toman automáticamente y el
  * toggle "histórico" puede excluirlo.
  */
 export const applyInflationAdjustment = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -823,147 +850,161 @@ async function applyAdjustment(
   fiscalYearId: string,
   source: IndexSource
 ): Promise<{ journalEntryId: string; number: number; recpam: number }> {
-  {
-    {
-      const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
-      if (fy.status === 'closed') {
-        throw new Error(
-          'El ejercicio está cerrado. Reabrilo para regenerar el ajuste por inflación.'
-        );
-      }
-
-      const preview = await buildPreview(orgId, clientId, fiscalYearId, source);
-      if (preview.missingIndexes.length > 0) {
-        throw new Error(
-          `Faltan índices de: ${preview.missingIndexes.join(', ')}. Cargá la serie antes de ajustar.`
-        );
-      }
-      if (preview.status === 'applied') {
-        throw new Error(
-          'El ejercicio ya tiene un ajuste aplicado. Anulalo antes de regenerarlo.'
-        );
-      }
-      if (preview.entryLines.length === 0) {
-        throw new Error(
-          'El ajuste no genera ningún movimiento: no hay partidas no monetarias para reexpresar.'
-        );
-      }
-      if (!preview.balanced) {
-        throw new Error(
-          'El asiento de ajuste no cuadra. Revisá la preplanilla antes de aplicarlo.'
-        );
-      }
-
-      // El asiento va en el último período del ejercicio.
-      const [period] = await db
-        .select()
-        .from(accountingPeriod)
-        .where(
-          and(
-            eq(accountingPeriod.fiscalYearId, fiscalYearId),
-            eq(accountingPeriod.year, preview.closing.year),
-            eq(accountingPeriod.month, preview.closing.month)
-          )
-        )
-        .limit(1);
-      if (!period) {
-        throw new Error(
-          'No existe el período contable del mes de cierre. Verificá el ejercicio.'
-        );
-      }
-
-      return await db.transaction(async (tx) => {
-        const number = await nextEntryNumber(tx, clientId, fiscalYearId);
-        const [je] = await tx
-          .insert(journalEntry)
-          .values({
-            clientId,
-            fiscalYearId,
-            periodId: period.id,
-            number,
-            entryDate: fy.endDate,
-            description: `Ajuste por inflación RT 6 — ejercicio ${fy.number}`,
-            origin: 'auto_inflation',
-            createdBy: userId,
-          })
-          .returning();
-
-        await tx.insert(journalEntryLine).values(
-          preview.entryLines.map((l, i) => ({
-            journalEntryId: je.id,
-            accountId: l.accountId,
-            clientId,
-            periodId: period.id,
-            debit: l.debit.toFixed(2),
-            credit: l.credit.toFixed(2),
-            description:
-              l.accountId ===
-              preview.entryLines[preview.entryLines.length - 1].accountId
-                ? 'RECPAM del ejercicio'
-                : 'Reexpresión a moneda de cierre',
-            lineOrder: i,
-          }))
-        );
-
-        const [adj] = await tx
-          .insert(inflationAdjustment)
-          .values({
-            clientId,
-            fiscalYearId,
-            source,
-            closingYear: preview.closing.year,
-            closingMonth: preview.closing.month,
-            openingYear: preview.opening.year,
-            openingMonth: preview.opening.month,
-            status: 'applied',
-            recpamAmount: preview.recpam.toFixed(2),
-            journalEntryId: je.id,
-            appliedAt: new Date(),
-            appliedBy: userId,
-          })
-          .returning();
-
-        // La preplanilla se congela: es la evidencia de cómo se llegó al asiento.
-        const BATCH = 300;
-        for (let i = 0; i < preview.lines.length; i += BATCH) {
-          await tx.insert(inflationAdjustmentLine).values(
-            preview.lines.slice(i, i + BATCH).map((l) => ({
-              adjustmentId: adj.id,
-              accountId: l.accountId,
-              year: l.year,
-              month: l.month,
-              isOpening: l.isOpening,
-              historical: l.historical.toFixed(2),
-              coefficient: l.coefficient.toFixed(4),
-              adjusted: l.adjusted.toFixed(2),
-              difference: l.difference.toFixed(2),
-            }))
-          );
-        }
-
-        await tx.insert(accountingLog).values({
-          clientId,
-          fiscalYearId,
-          eventType: 'inflation_adjustment_applied',
-          eventData: {
-            journalEntryNumber: number,
-            recpam: preview.recpam,
-            source,
-            closing: preview.closing,
-            lineas: preview.entryLines.length,
-          },
-          userId,
-        });
-
-        return { journalEntryId: je.id, number, recpam: preview.recpam };
-      });
-    }
+  const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
+  if (fy.estado === 'cerrado') {
+    throw new Error(
+      'El ejercicio está cerrado. Reabrilo para regenerar el ajuste por inflación.'
+    );
   }
+
+  const preview = await buildPreview(orgId, clientId, fiscalYearId, source);
+  if (preview.missingIndexes.length > 0) {
+    throw new Error(
+      `Faltan índices de: ${preview.missingIndexes.join(', ')}. Cargá la serie antes de ajustar.`
+    );
+  }
+  if (preview.status === 'applied') {
+    throw new Error(
+      'El ejercicio ya tiene un ajuste aplicado. Anulalo antes de regenerarlo.'
+    );
+  }
+  if (preview.entryLines.length === 0) {
+    throw new Error(
+      'El ajuste no genera ningún movimiento: no hay partidas no monetarias para reexpresar.'
+    );
+  }
+  if (!preview.balanced) {
+    throw new Error(
+      'El asiento de ajuste no cuadra. Revisá la preplanilla antes de aplicarlo.'
+    );
+  }
+
+  // El asiento va en el último período del ejercicio.
+  const [period] = await db
+    .select()
+    .from(periodoContable)
+    .where(
+      and(
+        eq(periodoContable.ejercicioId, fiscalYearId),
+        sql`extract(year from ${periodoContable.periodo}) = ${preview.closing.year}`,
+        sql`extract(month from ${periodoContable.periodo}) = ${preview.closing.month}`
+      )
+    )
+    .limit(1);
+  if (!period) {
+    throw new Error(
+      'No existe el período contable del mes de cierre. Verificá el ejercicio.'
+    );
+  }
+
+  return await db.transaction(async (tx) => {
+    // El ajuste se inserta primero: `asiento.origen_id` tiene que apuntarle, y
+    // el check `asiento_origen_coherente` no admite un origen no manual sin id.
+    const [adj] = await tx
+      .insert(ajusteInflacion)
+      .values({
+        orgId,
+        clienteId: clientId,
+        ejercicioId: fiscalYearId,
+        fuente: source,
+        cierreAnio: preview.closing.year,
+        cierreMes: preview.closing.month,
+        aperturaAnio: preview.opening.year,
+        aperturaMes: preview.opening.month,
+        estado: 'borrador',
+        recpam: preview.recpam.toFixed(2),
+      })
+      .returning();
+
+    const number = await nextEntryNumber(tx, clientId, fiscalYearId);
+
+    const [je] = await tx
+      .insert(asiento)
+      .values({
+        orgId,
+        clienteId: clientId,
+        ejercicioId: fiscalYearId,
+        periodoId: period.id,
+        numero: number,
+        fecha: fy.fechaHasta, // date: la columna espera 'YYYY-MM-DD'
+        descripcion: `Ajuste por inflación RT 6 — ejercicio ${fy.numero}`,
+        origenTipo: 'ajuste_inflacion',
+        origenId: adj.id,
+        fuente: 'calculo',
+        creadoPor: userId,
+      })
+      .returning();
+
+    const ultima = preview.entryLines[preview.entryLines.length - 1];
+    await tx.insert(asientoLinea).values(
+      preview.entryLines.map((l, i) => ({
+        asientoId: je.id,
+        cuentaId: l.accountId,
+        debe: l.debit.toFixed(2),
+        haber: l.credit.toFixed(2),
+        descripcion:
+          l.accountId === ultima.accountId
+            ? 'RECPAM del ejercicio'
+            : 'Reexpresión a moneda de cierre',
+        orden: i,
+      }))
+    );
+
+    await tx
+      .update(ajusteInflacion)
+      .set({
+        estado: 'aplicado',
+        asientoId: je.id,
+        aplicadoAt: new Date(),
+        aplicadoPor: userId,
+      })
+      .where(eq(ajusteInflacion.id, adj.id));
+
+    // La preplanilla se congela: es la evidencia de cómo se llegó al asiento.
+    const BATCH = 300;
+    for (let i = 0; i < preview.lines.length; i += BATCH) {
+      await tx.insert(ajusteInflacionLinea).values(
+        preview.lines.slice(i, i + BATCH).map((l) => ({
+          ajusteId: adj.id,
+          cuentaId: l.accountId,
+          anio: l.year,
+          mes: l.month,
+          esApertura: l.isOpening,
+          historico: l.historical.toFixed(2),
+          coeficiente: l.coefficient.toFixed(4),
+          ajustado: l.adjusted.toFixed(2),
+          diferencia: l.difference.toFixed(2),
+        }))
+      );
+    }
+
+    await tx.insert(evento).values({
+      orgId,
+      clienteId: clientId,
+      entidad: 'ajuste_inflacion',
+      entidadId: adj.id,
+      tipo: 'alta',
+      actorTipo: 'user',
+      actorId: userId,
+      detalle: {
+        // `accion` es la clave por la que filtra el log de auditoría.
+        accion: 'inflation_adjustment_applied',
+        ejercicioId: fiscalYearId,
+        asientoNumero: number,
+        recpam: preview.recpam,
+        fuente: source,
+        cierre: preview.closing,
+        lineas: preview.entryLines.length,
+      },
+    });
+
+    return { journalEntryId: je.id, number, recpam: preview.recpam };
+  });
 }
 
 /** Anula el asiento de ajuste y borra la preplanilla congelada. */
 export const voidInflationAdjustment = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -988,53 +1029,54 @@ async function voidAdjustment(
   fiscalYearId: string,
   reason?: string
 ): Promise<{ ok: true }> {
-  {
-    const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
-    if (fy.status === 'closed') {
-      throw new Error('El ejercicio está cerrado. Reabrilo para anular.');
-    }
-
-    const [adj] = await db
-      .select()
-      .from(inflationAdjustment)
-      .where(eq(inflationAdjustment.fiscalYearId, fiscalYearId))
-      .limit(1);
-    if (!adj) throw new Error('El ejercicio no tiene ajuste por inflación.');
-
-    await db.transaction(async (tx) => {
-      if (adj.journalEntryId) {
-        await tx
-          .update(journalEntry)
-          .set({
-            isVoided: true,
-            voidedAt: new Date(),
-            voidedBy: userId,
-            voidReason: reason ?? 'Anulación del ajuste por inflación',
-          })
-          .where(eq(journalEntry.id, adj.journalEntryId));
-      }
-      await tx
-        .delete(inflationAdjustmentLine)
-        .where(eq(inflationAdjustmentLine.adjustmentId, adj.id));
-      await tx
-        .delete(inflationAdjustment)
-        .where(eq(inflationAdjustment.id, adj.id));
-
-      await tx.insert(accountingLog).values({
-        clientId,
-        fiscalYearId,
-        eventType: 'inflation_adjustment_voided',
-        eventData: {
-          recpam: Number(adj.recpamAmount),
-          journalEntryId: adj.journalEntryId,
-          reason: reason ?? null,
-        },
-        userId,
-      });
-    });
-
-    return { ok: true };
+  const fy = await loadFiscalYearForOrg(fiscalYearId, orgId);
+  if (fy.estado === 'cerrado') {
+    throw new Error('El ejercicio está cerrado. Reabrilo para anular.');
   }
+
+  const [adj] = await db
+    .select()
+    .from(ajusteInflacion)
+    .where(eq(ajusteInflacion.ejercicioId, fiscalYearId))
+    .limit(1);
+  if (!adj) throw new Error('El ejercicio no tiene ajuste por inflación.');
+
+  await db.transaction(async (tx) => {
+    if (adj.asientoId) {
+      await tx
+        .update(asiento)
+        .set({
+          anulado: true,
+          anuladoAt: new Date(),
+          anuladoPor: userId,
+          motivoAnulacion: reason ?? 'Anulación del ajuste por inflación',
+        })
+        .where(eq(asiento.id, adj.asientoId));
+    }
+    await tx
+      .delete(ajusteInflacionLinea)
+      .where(eq(ajusteInflacionLinea.ajusteId, adj.id));
+    await tx.delete(ajusteInflacion).where(eq(ajusteInflacion.id, adj.id));
+
+    await tx.insert(evento).values({
+      orgId,
+      clienteId: clientId,
+      entidad: 'ajuste_inflacion',
+      entidadId: adj.id,
+      tipo: 'baja',
+      actorTipo: 'user',
+      actorId: userId,
+      detalle: {
+        accion: 'inflation_adjustment_voided',
+        ejercicioId: fiscalYearId,
+        recpam: Number(adj.recpam),
+        asientoId: adj.asientoId,
+        motivo: reason ?? null,
+      },
+    });
+  });
+
+  return { ok: true };
 }
 
 /**
@@ -1046,7 +1088,7 @@ async function voidAdjustment(
  * no pueda quedar a mitad de camino: sin ajuste y sin aviso.
  */
 export const regenerateInflationAdjustment = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       clientId: z.string().uuid(),
       fiscalYearId: z.string().uuid(),
@@ -1081,42 +1123,43 @@ export const regenerateInflationAdjustment = createServerFn({ method: 'POST' })
  * marcar las que el contador cambió.
  */
 export const listAccountInflationNatures = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const rows = await db
       .select({
-        id: account.id,
-        code: account.code,
-        name: account.name,
-        accountGroup: account.accountGroup,
-        inflationNature: account.inflationNature,
-        inflationTargetId: account.inflationTargetId,
+        id: cuenta.id,
+        code: cuenta.codigo,
+        name: cuenta.nombre,
+        accountGroup: cuenta.rubro,
+        inflationNature: cuenta.naturalezaInflacion,
+        inflationTargetId: cuenta.cuentaAjusteId,
       })
-      .from(account)
+      .from(cuenta)
       .where(
         and(
-          eq(account.organizationId, orgId),
-          eq(account.type, 'imputable'),
-          sql`(${account.scope} = 'base' OR ${account.clientId} = ${ctx.data.clientId})`
+          eq(cuenta.orgId, orgId),
+          eq(cuenta.tipo, 'imputable'),
+          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${ctx.data.clientId})`
         )
       )
-      .orderBy(asc(account.code));
+      .orderBy(asc(cuenta.codigo));
 
     return rows.map((r) => ({
       ...r,
       effectiveNature:
         r.inflationNature === 'no_monetaria'
-          ? 'no_monetaria_costo'
-          : (r.inflationNature ?? defaultInflationNature(r.accountGroup)),
+          ? ('no_monetaria_costo' as InflationNature)
+          : ((r.inflationNature as InflationNature | null) ??
+            defaultInflationNature(r.accountGroup)),
       defaultNature: defaultInflationNature(r.accountGroup),
     }));
   });
 
 /** Cambia la naturaleza de una o varias cuentas frente al ajuste. */
 export const setAccountInflationNature = createServerFn({ method: 'POST' })
-  .inputValidator(
+  .validator(
     z.object({
       accountIds: z.array(z.string().uuid()).min(1).max(500),
       nature: z.enum([
@@ -1131,38 +1174,35 @@ export const setAccountInflationNature = createServerFn({ method: 'POST' })
     const { orgId } = await getSessionWithOrg();
     assertOwner(await getMemberRole());
     const res = await db
-      .update(account)
-      .set({ inflationNature: ctx.data.nature })
+      .update(cuenta)
+      .set({ naturalezaInflacion: ctx.data.nature })
       .where(
-        and(
-          eq(account.organizationId, orgId),
-          inArray(account.id, ctx.data.accountIds)
-        )
+        and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ctx.data.accountIds))
       )
-      .returning({ id: account.id });
+      .returning({ id: cuenta.id });
     return { updated: res.length };
   });
 
 /** Ejercicios de una empresa, para el selector de la pantalla de ajuste. */
 export const listFiscalYearsForInflation = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+  .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const rows = await db
       .select({
-        id: fiscalYear.id,
-        number: fiscalYear.number,
-        startDate: fiscalYear.startDate,
-        endDate: fiscalYear.endDate,
-        status: fiscalYear.status,
+        id: ejercicio.id,
+        number: ejercicio.numero,
+        startDate: ejercicio.fechaDesde,
+        endDate: ejercicio.fechaHasta,
+        status: ejercicio.estado,
       })
-      .from(fiscalYear)
-      .where(eq(fiscalYear.clientId, ctx.data.clientId))
-      .orderBy(desc(fiscalYear.number));
+      .from(ejercicio)
+      .where(eq(ejercicio.clienteId, ctx.data.clientId))
+      .orderBy(desc(ejercicio.numero));
     return rows.map((r) => ({
       ...r,
-      startDate: r.startDate.toISOString(),
-      endDate: r.endDate.toISOString(),
+      startDate: aFecha(r.startDate).toISOString(),
+      endDate: aFecha(r.endDate).toISOString(),
     }));
   });

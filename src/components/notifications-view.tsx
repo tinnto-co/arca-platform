@@ -47,33 +47,31 @@ import {
   classifyNotification,
   classifyUnclassifiedNotifications,
 } from '@/actions/notification';
-import { getRepresentatives } from '@/actions/client';
+import { getCredenciales } from '@/actions/client';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
 import { userQuery } from '../lib/user-query';
 
+/** Valores del enum `notificacion_severidad` en BD. */
 const SEVERITY_ORDER: Record<string, number> = {
-  critical: 0,
-  medium: 1,
-  low: 2,
-  informational: 3,
-  unclassified: 4,
+  urgente: 0,
+  accion_requerida: 1,
+  informativa: 2,
+  sin_clasificar: 3,
 };
 
 function SeverityBadge({ severity }: { severity: string | null }) {
-  if (!severity || severity === 'unclassified') return null;
+  if (!severity || severity === 'sin_clasificar') return null;
   const styles: Record<string, string> = {
-    critical: 'bg-red-100 text-red-700',
-    medium: 'bg-orange-100 text-orange-700',
-    low: 'bg-blue-100 text-blue-700',
-    informational: 'bg-gray-100 text-gray-600',
+    urgente: 'bg-red-100 text-red-700',
+    accion_requerida: 'bg-orange-100 text-orange-700',
+    informativa: 'bg-gray-100 text-gray-600',
   };
   const labels: Record<string, string> = {
-    critical: 'Crítica',
-    medium: 'Media',
-    low: 'Baja',
-    informational: 'Info',
+    urgente: 'Urgente',
+    accion_requerida: 'Acción requerida',
+    informativa: 'Info',
   };
   const cls = styles[severity] ?? 'bg-gray-100 text-gray-500';
   return (
@@ -85,33 +83,23 @@ function SeverityBadge({ severity }: { severity: string | null }) {
   );
 }
 
-interface NotificationData {
-  id: string;
-  externalId: string;
-  message: string;
-  expirationDate: Date;
-  publicationDate: Date;
-  opened: boolean;
-  clientId: string | null;
-  clientName: string | null;
-  clientEmail: string | null;
-  profileId?: string | null;
-  profileName?: string | null;
-  profileIdentityNumber?: string | null;
-  severity?: string | null;
-  category?: string | null;
-  aiSummary?: string | null;
-  assignedToUserId?: string | null;
-  resolvedAt?: Date | null;
-  resolvedByUserId?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+/** Fila de la lista, tal cual la devuelve `getNotifications`. */
+type NotificationRow = Awaited<
+  ReturnType<typeof getNotifications>
+>['notifications'][number];
 
 interface NotificationsViewProps {
-  /** When set, only show notifications for this client and hide client filter */
+  /**
+   * Login de AFIP (`credencial_afip`) al que se acotan las notificaciones.
+   * @deprecated El nombre viene del modelo viejo (`representative`); el valor
+   * que se pasa es el id de la credencial.
+   */
   clientId?: string;
-  /** When set (junto con clientId), fuerza el filtro de empresa/perfil y oculta su selector. */
+  /**
+   * Cliente (entidad fiscal) al que se acotan las notificaciones.
+   * @deprecated El nombre viene del modelo viejo (`profile`); el valor que se
+   * pasa es el id del `cliente`.
+   */
   profileId?: string;
   /** When set, opens this notification on mount (used via ?notificationId= query param) */
   initialNotificationId?: string;
@@ -122,8 +110,8 @@ interface NotificationsViewProps {
 }
 
 export function NotificationsView({
-  clientId: clientIdProp,
-  profileId: profileIdProp,
+  clientId: credencialIdProp,
+  profileId: clienteIdProp,
   initialNotificationId,
   toolbar,
   className,
@@ -142,48 +130,48 @@ export function NotificationsView({
     string | null
   >(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [clientFilter, setClientFilter] = useState<string>(
-    clientIdProp ?? 'all'
+  const [credencialFilter, setCredencialFilter] = useState<string>(
+    credencialIdProp ?? 'all'
   );
-  const [profileFilter, setProfileFilter] = useState<string>('all');
+  const [clienteFilter, setClienteFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [onlyUnresolved, setOnlyUnresolved] = useState(false);
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
   >(initialNotificationId ?? null);
-  const [notificationDetails, setNotificationDetails] = useState<any>(null);
 
-  // Get representatives for filter dropdown (only when not scoped to a single representative)
-  const { data: representatives = [] } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => getRepresentatives(),
-    enabled: !clientIdProp,
+  // Las notificaciones cuelgan del login de AFIP (credencial); el select sólo
+  // aparece cuando la vista no está ya acotada a uno.
+  const { data: credenciales = [] } = useQuery({
+    queryKey: ['credenciales'],
+    queryFn: () => getCredenciales(),
+    enabled: !credencialIdProp,
   });
 
-  const effectiveClientFilter = clientIdProp ?? clientFilter;
-  const effectiveProfileFilter = profileIdProp
-    ? profileIdProp
-    : clientIdProp && profileFilter !== 'all'
-      ? profileFilter
+  const effectiveCredencialFilter = credencialIdProp ?? credencialFilter;
+  const effectiveClienteFilter = clienteIdProp
+    ? clienteIdProp
+    : credencialIdProp && clienteFilter !== 'all'
+      ? clienteFilter
       : undefined;
 
-  // Pre-filtrar por el perfil elegido en el header. Si no hay perfil del header
-  // (cambio de cliente sin perfil), volver a "todos". El usuario puede sobreescribir
-  // el filtro con el select interno hasta que el header vuelva a cambiar.
+  // Pre-filtrar por el cliente elegido en el header. Si no hay cliente del header,
+  // volver a "todos". El usuario puede sobreescribir el filtro con el select
+  // interno hasta que el header vuelva a cambiar.
   useEffect(() => {
-    if (clientIdProp) {
-      setProfileFilter(profileIdProp ?? 'all');
+    if (credencialIdProp) {
+      setClienteFilter(clienteIdProp ?? 'all');
     }
-  }, [clientIdProp, profileIdProp]);
+  }, [credencialIdProp, clienteIdProp]);
 
   // Get notifications
   const { data: notificationsData, isLoading } = useQuery({
-    queryKey: clientIdProp
+    queryKey: credencialIdProp
       ? [
           'clientNotifications',
           orgKey,
-          clientIdProp,
-          effectiveProfileFilter,
+          credencialIdProp,
+          effectiveClienteFilter,
           categoryFilter,
           onlyUnresolved,
           searchTerm,
@@ -192,7 +180,7 @@ export function NotificationsView({
           'notifications',
           orgKey,
           1,
-          clientFilter,
+          credencialFilter,
           '',
           '',
           categoryFilter,
@@ -204,11 +192,13 @@ export function NotificationsView({
         data: {
           page: 1,
           limit: 100,
-          representativeFilter:
-            effectiveClientFilter === 'all' ? undefined : effectiveClientFilter,
-          clientId: effectiveProfileFilter,
+          credencialFilter:
+            effectiveCredencialFilter === 'all'
+              ? undefined
+              : effectiveCredencialFilter,
+          clienteId: effectiveClienteFilter,
           search: searchTerm || undefined,
-          category: categoryFilter === 'all' ? undefined : categoryFilter,
+          categoria: categoryFilter === 'all' ? undefined : categoryFilter,
           onlyUnresolved: onlyUnresolved || undefined,
         },
       }),
@@ -229,11 +219,11 @@ export function NotificationsView({
 
   const invalidateNotificationQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    if (clientIdProp) {
-      // La key real es ['clientNotifications', orgKey, clientIdProp, ...]:
+    if (credencialIdProp) {
+      // La key real es ['clientNotifications', orgKey, credencialIdProp, ...]:
       // invalidamos por el prefijo correcto para que la lista se refresque.
       queryClient.invalidateQueries({
-        queryKey: ['clientNotifications', orgKey, clientIdProp],
+        queryKey: ['clientNotifications', orgKey, credencialIdProp],
       });
     }
     if (selectedNotificationId) {
@@ -253,7 +243,6 @@ export function NotificationsView({
       setNotificationToDelete(null);
       if (selectedNotificationId === notificationToDelete) {
         setSelectedNotificationId(null);
-        setNotificationDetails(null);
       }
     },
     onError: (error) => {
@@ -327,10 +316,10 @@ export function NotificationsView({
 
   const classifyMutation = useMutation({
     mutationFn: (id: string) => classifyNotification({ data: { id } }),
-    onSuccess: (result: any) => {
+    onSuccess: (result) => {
       invalidateNotificationQueries();
       toast.success(
-        `Clasificada: severity=${result?.severity}, category=${result?.category}`
+        `Clasificada: severidad=${result.severidad}, categoría=${result.categoria}`
       );
     },
     onError: (err: unknown) => {
@@ -353,10 +342,10 @@ export function NotificationsView({
 
   const handleNotificationClick = (notification: {
     id: string;
-    opened?: boolean;
+    leida: boolean;
   }) => {
     setSelectedNotificationId(notification.id);
-    if (notification.opened === false) {
+    if (!notification.leida) {
       markOpenedMutation.mutate(notification.id);
     }
   };
@@ -382,7 +371,8 @@ export function NotificationsView({
     document.body.removeChild(link);
   };
 
-  const formatDate = (date: Date | string) => {
+  const formatDate = (date: Date | string | null) => {
+    if (!date) return '-';
     const dateObj = typeof date === 'string' ? new Date(date) : date;
     return dateObj.toLocaleDateString('es-ES', {
       year: 'numeric',
@@ -393,7 +383,8 @@ export function NotificationsView({
     });
   };
 
-  const formatDateShort = (date: Date | string) => {
+  const formatDateShort = (date: Date | string | null) => {
+    if (!date) return '-';
     const dateObj = typeof date === 'string' ? new Date(date) : date;
     const today = new Date();
     const notificationDate = new Date(dateObj);
@@ -420,31 +411,34 @@ export function NotificationsView({
     }
   };
 
-  const rawNotifications = notificationsData?.notifications || [];
-  const filteredNotifications = clientIdProp
-    ? rawNotifications.filter(
-        (n: any) => n.profileName || n.profileIdentityNumber
-      )
-    : rawNotifications.filter((n: any) => n.clientName || n.clientId);
-  const notifications = [...filteredNotifications].sort((a: any, b: any) => {
-    const sa = SEVERITY_ORDER[a.severity ?? 'unclassified'] ?? 4;
-    const sb = SEVERITY_ORDER[b.severity ?? 'unclassified'] ?? 4;
+  const rawNotifications: NotificationRow[] =
+    notificationsData?.notifications ?? [];
+  // Embebida en un cliente: sólo las que AFIP pudo atribuir a una empresa.
+  // Vista global: las que tienen cliente o al menos un login identificable.
+  const filteredNotifications = credencialIdProp
+    ? rawNotifications.filter((n) => n.clienteRazonSocial || n.clienteCuit)
+    : rawNotifications.filter(
+        (n) => n.clienteRazonSocial || n.clienteId || n.credencialNombre
+      );
+  const notifications = [...filteredNotifications].sort((a, b) => {
+    const sa = SEVERITY_ORDER[a.severidad ?? 'sin_clasificar'] ?? 3;
+    const sb = SEVERITY_ORDER[b.severidad ?? 'sin_clasificar'] ?? 3;
     if (sa !== sb) return sa - sb;
     return (
-      new Date(b.publicationDate).getTime() -
-      new Date(a.publicationDate).getTime()
+      new Date(b.publicadaAt ?? 0).getTime() -
+      new Date(a.publicadaAt ?? 0).getTime()
     );
   });
 
   const unreadForCopilot = aiAgentEnabled
     ? notifications
-        .filter((n: any) => n.opened === false)
+        .filter((n) => !n.leida)
         .slice(0, 20)
-        .map((n: any) => ({
+        .map((n) => ({
           id: n.id,
-          message: n.message,
-          publicationDate: n.publicationDate,
-          clientName: n.clientName ?? null,
+          mensaje: n.mensaje,
+          publicadaAt: n.publicadaAt,
+          cliente: n.clienteRazonSocial ?? n.credencialNombre ?? null,
         }))
     : [];
 
@@ -453,7 +447,7 @@ export function NotificationsView({
       className={cn(
         'border rounded-xl bg-white shadow-sm overflow-hidden',
         toolbar ? 'flex flex-col' : 'flex',
-        clientIdProp ? 'min-h-[400px] flex-1' : 'h-full',
+        credencialIdProp ? 'min-h-[400px] flex-1' : 'h-full',
         className
       )}
     >
@@ -511,16 +505,19 @@ export function NotificationsView({
                 <TooltipContent>Clasificar pendientes con IA</TooltipContent>
               </Tooltip>
             </div>
-            {!clientIdProp && (
+            {!credencialIdProp && (
               <SearchableSelect
                 options={[
-                  { value: 'all', label: 'Todos los clientes' },
-                  ...representatives.map((c) => ({ value: c.id, label: c.name })),
+                  { value: 'all', label: 'Todos los logins' },
+                  ...credenciales.map((c) => ({
+                    value: c.id,
+                    label: c.nombre ?? c.cuit,
+                  })),
                 ]}
-                value={clientFilter}
-                onValueChange={setClientFilter}
-                placeholder="Filtrar por cliente"
-                searchPlaceholder="Buscar cliente..."
+                value={credencialFilter}
+                onValueChange={setCredencialFilter}
+                placeholder="Filtrar por login AFIP"
+                searchPlaceholder="Buscar login..."
                 width="100%"
               />
             )}
@@ -573,14 +570,14 @@ export function NotificationsView({
                         'p-4 cursor-pointer hover:bg-muted/50 transition-colors',
                         selectedNotificationId === notification.id &&
                           'bg-muted border-l-4 border-l-primary',
-                        notification.opened === false && 'bg-primary/5',
-                        (notification as any).resolvedAt && 'opacity-50'
+                        !notification.leida && 'bg-primary/5',
+                        notification.resueltaAt && 'opacity-50'
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            {notification.opened === false && (
+                            {!notification.leida && (
                               <span
                                 className="h-2 w-2 rounded-full bg-primary flex-shrink-0 mt-1.5"
                                 aria-hidden
@@ -590,36 +587,36 @@ export function NotificationsView({
                             <p
                               className={cn(
                                 'text-sm truncate',
-                                notification.opened === false
+                                !notification.leida
                                   ? 'font-semibold'
                                   : 'font-medium'
                               )}
                             >
-                              {clientIdProp
-                                ? notification.profileName ||
-                                  notification.profileIdentityNumber ||
-                                  'Sin perfil'
-                                : notification.profileName ||
-                                  notification.profileIdentityNumber ||
-                                  notification.clientName ||
+                              {credencialIdProp
+                                ? notification.clienteRazonSocial ||
+                                  notification.clienteCuit ||
+                                  'Sin cliente'
+                                : notification.clienteRazonSocial ||
+                                  notification.clienteCuit ||
+                                  notification.credencialNombre ||
                                   'Sin cliente'}
                             </p>
                             <SeverityBadge
-                              severity={(notification as any).severity ?? null}
+                              severity={notification.severidad ?? null}
                             />
                           </div>
-                          {(notification as any).aiSummary ? (
+                          {notification.aiResumen ? (
                             <p className="text-xs text-muted-foreground italic line-clamp-1 mb-1">
-                              {(notification as any).aiSummary}
+                              {notification.aiResumen}
                             </p>
                           ) : null}
                           <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                            {notification.message}
+                            {notification.mensaje}
                           </p>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
                             <Calendar className="h-3 w-3" />
                             <span>
-                              {formatDateShort(notification.publicationDate)}
+                              {formatDateShort(notification.publicadaAt)}
                             </span>
                           </div>
                         </div>
@@ -629,7 +626,7 @@ export function NotificationsView({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (notification.opened) {
+                                if (notification.leida) {
                                   markUnreadMutation.mutate(notification.id);
                                 } else {
                                   markOpenedMutation.mutate(notification.id);
@@ -637,7 +634,7 @@ export function NotificationsView({
                               }}
                               className="shrink-0 cursor-pointer p-1 rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                             >
-                              {notification.opened ? (
+                              {notification.leida ? (
                                 <MailOpen className="h-3.5 w-3.5" />
                               ) : (
                                 <Mail className="h-3.5 w-3.5" />
@@ -645,7 +642,7 @@ export function NotificationsView({
                             </button>
                           </TooltipTrigger>
                           <TooltipContent>
-                            {notification.opened
+                            {notification.leida
                               ? 'Marcar como no leída'
                               : 'Marcar como leída'}
                           </TooltipContent>
@@ -669,15 +666,15 @@ export function NotificationsView({
                   <div className="flex-1">
                     <div className="items-center gap-2 mb-2">
                       <h2 className="text-xl font-semibold">
-                        {(selectedNotification as any).profileName ||
-                          (selectedNotification as any).profileIdentityNumber ||
-                          selectedNotification.clientName ||
+                        {selectedNotification.clienteRazonSocial ||
+                          selectedNotification.clienteCuit ||
+                          selectedNotification.credencialNombre ||
                           'Sin cliente'}
                       </h2>
-                      {(selectedNotification as any).profileName &&
-                        selectedNotification.clientName && (
+                      {selectedNotification.clienteRazonSocial &&
+                        selectedNotification.credencialNombre && (
                           <p className="text-xs text-muted-foreground">
-                            {selectedNotification.clientName}
+                            Login: {selectedNotification.credencialNombre}
                           </p>
                         )}
                       <span className="font-light text-muted-foreground text-xs">
@@ -687,12 +684,14 @@ export function NotificationsView({
                     <div className="flex items-center gap-4 text-sm text-muted-foreground">
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4" />
-                        <span>{selectedNotification.clientEmail || 'N/A'}</span>
+                        <span>
+                          {selectedNotification.credencialEmail || 'N/A'}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4" />
                         <span>
-                          {formatDate(selectedNotification.publicationDate)}
+                          {formatDate(selectedNotification.publicadaAt)}
                         </span>
                       </div>
                     </div>
@@ -723,10 +722,7 @@ export function NotificationsView({
                             label: m.name || m.email,
                           })),
                         ]}
-                        value={
-                          (selectedNotification as any).assignedToUserId ??
-                          '__none__'
-                        }
+                        value={selectedNotification.asignadaA ?? '__none__'}
                         onValueChange={(val) =>
                           assignMutation.mutate({
                             id: selectedNotification.id,
@@ -738,9 +734,8 @@ export function NotificationsView({
                         width="100%"
                       />
                     </div>
-                    {(!(selectedNotification as any).severity ||
-                      (selectedNotification as any).severity ===
-                        'unclassified') && (
+                    {(!selectedNotification.severidad ||
+                      selectedNotification.severidad === 'sin_clasificar') && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -755,7 +750,7 @@ export function NotificationsView({
                           : 'Clasificar con IA'}
                       </Button>
                     )}
-                    {(selectedNotification as any).resolvedAt ? (
+                    {selectedNotification.resueltaAt ? (
                       <Button
                         variant="outline"
                         size="sm"
@@ -787,7 +782,7 @@ export function NotificationsView({
                     <h3 className="text-sm font-semibold mb-2">Mensaje</h3>
                     <div className="p-4 bg-muted rounded-lg">
                       <p className="text-sm whitespace-pre-wrap">
-                        {selectedNotification.message}
+                        {selectedNotification.mensaje}
                       </p>
                     </div>
                   </div>
@@ -799,50 +794,49 @@ export function NotificationsView({
                         Fecha de Expiración
                       </h3>
                       <p className="text-sm text-muted-foreground">
-                        {formatDate(selectedNotification.expirationDate)}
+                        {formatDate(selectedNotification.venceAt)}
                       </p>
                     </div>
                   </div>
 
-                  {/* Attachments */}
-                  {selectedNotification.attachments &&
-                    selectedNotification.attachments.length > 0 && (
+                  {/* Adjuntos — los archivos viven en R2 y se sirven vía
+                      /api/documents/{documentoId} (endpoint autenticado). */}
+                  {selectedNotification.adjuntos &&
+                    selectedNotification.adjuntos.length > 0 && (
                       <div className="space-y-4">
-                        {selectedNotification.attachments.map(
-                          (attachment: any) => {
-                            const isPdf = /\.pdf$/i.test(
-                              attachment.documentName ?? ''
-                            );
-                            return (
-                              <div key={attachment.id} className="space-y-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-sm font-medium truncate">
-                                    {attachment.documentName}
-                                  </span>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() =>
-                                      handleDownloadAttachment(
-                                        attachment.documentUrl,
-                                        attachment.documentName
-                                      )
-                                    }
-                                  >
-                                    Descargar
-                                  </Button>
-                                </div>
-                                {isPdf && (
-                                  <iframe
-                                    src={attachment.documentUrl}
-                                    title={attachment.documentName}
-                                    className="w-full h-[600px] rounded-lg border border-[var(--arca-border)]"
-                                  />
-                                )}
+                        {selectedNotification.adjuntos.map((adjunto) => {
+                          const nombre = adjunto.nombre ?? 'adjunto';
+                          const isPdf =
+                            adjunto.mimeType === 'application/pdf' ||
+                            /\.pdf$/i.test(nombre);
+                          return (
+                            <div key={adjunto.id} className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium truncate">
+                                  {nombre}
+                                </span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={!adjunto.url}
+                                  onClick={() =>
+                                    adjunto.url &&
+                                    handleDownloadAttachment(adjunto.url, nombre)
+                                  }
+                                >
+                                  Descargar
+                                </Button>
                               </div>
-                            );
-                          }
-                        )}
+                              {isPdf && adjunto.url && (
+                                <iframe
+                                  src={adjunto.url}
+                                  title={nombre}
+                                  className="w-full h-[600px] rounded-lg border border-[var(--arca-border)]"
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                 </div>

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { KeyRound, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCredentialAlerts } from '@/actions/dashboard';
-import { updateRepresentativePassword } from '@/actions/client';
+import { updateCredencialPassword } from '@/actions/client';
 import {
   Dialog,
   DialogContent,
@@ -15,13 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-interface CredentialAlert {
-  alertId: string;
-  representativeId: string | null;
-  name: string | null;
-  cuit: string | null;
-  description: string | null;
-}
+type CredentialAlert = Awaited<ReturnType<typeof getCredentialAlerts>>[number];
 
 export function CredentialAlertBanner() {
   const [expanded, setExpanded] = useState(false);
@@ -37,7 +31,7 @@ export function CredentialAlertBanner() {
 
   const updatePasswordMutation = useMutation({
     mutationFn: (data: { id: string; password: string }) =>
-      updateRepresentativePassword({ data }),
+      updateCredencialPassword({ data }),
     onSuccess: () => {
       toast.success('Contrasena actualizada correctamente');
       void queryClient.invalidateQueries({ queryKey: ['credentialAlerts'] });
@@ -50,9 +44,9 @@ export function CredentialAlertBanner() {
   });
 
   const handleSubmit = () => {
-    if (!selected?.representativeId || !password.trim()) return;
+    if (!selected?.credencialId || !password.trim()) return;
     updatePasswordMutation.mutate({
-      id: selected.representativeId,
+      id: selected.credencialId,
       password: password.trim(),
     });
   };
@@ -83,8 +77,8 @@ export function CredentialAlertBanner() {
             className="text-[14px] font-semibold leading-tight"
             style={{ color: 'var(--arca-accent-neg)' }}
           >
-            {alerts.length} representante{alerts.length !== 1 ? 's' : ''} con
-            credenciales invalidas
+            {alerts.length} credencial{alerts.length !== 1 ? 'es' : ''} con clave
+            invalida
           </div>
           <div className="text-[11px] text-[var(--arca-ink-3)] leading-tight mt-0.5">
             No se scrappean hasta que se actualicen las claves
@@ -109,7 +103,7 @@ export function CredentialAlertBanner() {
             <thead>
               <tr className="border-b border-[var(--arca-border)]">
                 <th className="text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] py-1.5">
-                  Representante
+                  Credencial
                 </th>
                 <th className="text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] py-1.5">
                   Motivo
@@ -120,22 +114,22 @@ export function CredentialAlertBanner() {
             <tbody>
               {alerts.map((a) => (
                 <tr
-                  key={a.alertId}
+                  key={a.alertaId}
                   className="border-b border-[var(--arca-border)] last:border-0"
                 >
                   <td className="py-1.5">
                     <div className="font-medium text-[var(--arca-ink)]">
-                      {a.name ?? '(sin nombre)'}
+                      {a.nombre ?? '(sin nombre)'}
                     </div>
                     <div className="text-[11px] text-[var(--arca-ink-4)] font-mono">
                       {a.cuit}
                     </div>
                   </td>
                   <td className="py-1.5 text-[var(--arca-ink-3)]">
-                    {a.description ?? 'Credenciales invalidas'}
+                    {a.descripcion ?? 'Credenciales invalidas'}
                   </td>
                   <td className="py-1.5 text-right">
-                    {a.representativeId && (
+                    {a.credencialId && (
                       <Button
                         type="button"
                         variant="outline"
@@ -170,7 +164,7 @@ export function CredentialAlertBanner() {
           <DialogHeader>
             <DialogTitle>Actualizar clave fiscal</DialogTitle>
             <DialogDescription>
-              {selected?.name ?? '(sin nombre)'} · {selected?.cuit}
+              {selected?.nombre ?? '(sin nombre)'} · {selected?.cuit}
             </DialogDescription>
           </DialogHeader>
           <form

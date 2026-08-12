@@ -1,10 +1,26 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
-import axios from 'axios';
 import { db } from '@/lib/db';
-import { job, representative, jobLog, client } from '@/drizzle/schema';
-import { getSessionWithOrg, getMemberRole, assertCanWrite } from '@/actions/helpers';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { scrapperPost } from '@/lib/scrapper-api';
+import {
+  job,
+  jobLog,
+  credencialAfip,
+  cliente,
+  clienteCredencial,
+  comprobante,
+  ivaDeclaracion,
+  notificacion,
+  deuda,
+  vencimiento,
+  escalaSalarial,
+} from '@/drizzle/schema';
+import {
+  getSessionWithOrg,
+  getMemberRole,
+  assertCanWrite,
+} from '@/actions/helpers';
+import { and, asc, desc, eq, inArray, sql, type AnyColumn } from 'drizzle-orm';
 import {
   classifyStoredFailedReason,
   CATEGORY_LABELS,
@@ -26,6 +42,8 @@ const jobTypeEnum = z.enum([
   'notificaciones',
   'deuda',
   'vencimientos',
+  'escalas',
+  'tope_imponible',
 ]);
 
 export type JobStatus = z.infer<typeof jobStatusEnum>;
@@ -35,10 +53,12 @@ export interface JobRow {
   id: string;
   status: JobStatus;
   type: JobType;
-  representativeId: string;
-  representativeName: string | null;
-  /** Empresas (clientes) del representante. */
-  clients: { id: string; name: string }[];
+  /** Null en los jobs que no usan credencial de AFIP, como `escalas`. */
+  credencialId: string | null;
+  credencialNombre: string | null;
+  credencialCuit: string | null;
+  /** Clientes a los que da acceso esa credencial; vacío si no hay credencial. */
+  clientes: { id: string; razonSocial: string }[];
   params: Record<string, {}> | null;
   result: Record<string, {}> | null;
   failedReason: string | null;
@@ -65,14 +85,42 @@ export interface JobLogRow {
   createdAt: Date;
 }
 
-export const getJobs = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(
+/**
+ * Los clientes de cada credencial, para mostrarlos debajo del job.
+ * Acepta nulls porque hay jobs sin credencial —`escalas` scrapea las páginas
+ * públicas de los CCT y no se loguea a ninguna cuenta de AFIP—: se descartan.
+ */
+async function getClientesPorCredencial(credencialIds: (string | null)[]) {
+  const byCredencial = new Map<string, { id: string; razonSocial: string }[]>();
+  const ids = credencialIds.filter((id): id is string => id !== null);
+  if (ids.length === 0) return byCredencial;
+
+  const rows = await db
+    .select({
+      id: cliente.id,
+      razonSocial: cliente.razonSocial,
+      credencialId: clienteCredencial.credencialId,
+    })
+    .from(clienteCredencial)
+    .innerJoin(cliente, eq(clienteCredencial.clienteId, cliente.id))
+    .where(inArray(clienteCredencial.credencialId, ids))
+    .orderBy(asc(cliente.razonSocial));
+
+  for (const r of rows) {
+    const entry = { id: r.id, razonSocial: r.razonSocial };
+    const list = byCredencial.get(r.credencialId);
+    if (list) list.push(entry);
+    else byCredencial.set(r.credencialId, [entry]);
+  }
+  return byCredencial;
+}
+
+export const getJobs = createServerFn({ method: 'GET' })
+  .validator(
     z.object({
       page: z.number().default(1),
       limit: z.number().default(20),
-      representativeId: z.string().optional(),
+      credencialId: z.string().optional(),
       status: jobStatusEnum.optional(),
       type: jobTypeEnum.optional(),
       date: z.string().optional(), // YYYY-MM-DD
@@ -81,39 +129,13 @@ export const getJobs = createServerFn({
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
+    const { page, limit, credencialId, status, type, date, fromTime } =
+      ctx.data;
 
-    const { page, limit, representativeId, status, type, date, fromTime } = ctx.data;
-    const offset = (page - 1) * limit;
-
-    const userClients = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const clientIds = userClients.map((c) => c.id);
-    if (clientIds.length === 0) {
-      return {
-        jobs: [],
-        totalCount: 0,
-        totalPages: 0,
-        currentPage: page,
-      };
-    }
-
-    const conditions = [inArray(job.representativeId, clientIds)];
-
-    if (representativeId) {
-      conditions.push(eq(job.representativeId, representativeId));
-    }
-
-    if (status) {
-      conditions.push(eq(job.status, status));
-    }
-
-    if (type) {
-      conditions.push(eq(job.type, type));
-    }
-
+    const conditions = [eq(job.orgId, orgId)];
+    if (credencialId) conditions.push(eq(job.credencialId, credencialId));
+    if (status) conditions.push(eq(job.status, status));
+    if (type) conditions.push(eq(job.type, type));
     if (date && fromTime) {
       conditions.push(
         sql`${job.createdAt} >= (${`${date} ${fromTime}`}::timestamp AT TIME ZONE 'America/Argentina/Buenos_Aires')`
@@ -127,7 +149,7 @@ export const getJobs = createServerFn({
     const whereCondition = and(...conditions);
 
     const [{ count }] = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: sql<number>`count(*)::int` })
       .from(job)
       .where(whereCondition);
 
@@ -136,8 +158,9 @@ export const getJobs = createServerFn({
         id: job.id,
         status: job.status,
         type: job.type,
-        representativeId: job.representativeId,
-        representativeName: representative.name,
+        credencialId: job.credencialId,
+        credencialNombre: credencialAfip.nombre,
+        credencialCuit: credencialAfip.cuit,
         params: job.params,
         result: job.result,
         failedReason: job.failedReason,
@@ -148,49 +171,34 @@ export const getJobs = createServerFn({
         progress: job.progress,
       })
       .from(job)
-      .leftJoin(representative, eq(job.representativeId, representative.id))
+      // leftJoin: los jobs de `escalas` no usan credencial de AFIP (scrapean
+      // las páginas públicas de los CCT) y con inner quedaban invisibles.
+      .leftJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
       .where(whereCondition)
       .orderBy(
         sql`CASE ${job.status} WHEN 'running' THEN 0 WHEN 'failed' THEN 1 WHEN 'finished' THEN 2 ELSE 3 END`,
         desc(job.createdAt)
       )
       .limit(limit)
-      .offset(offset);
+      .offset((page - 1) * limit);
 
-    // Empresas (clientes) de cada representante para mostrar debajo.
-    const repIds = [...new Set(rawJobs.map((j) => j.representativeId))];
-    const clientRows =
-      repIds.length > 0
-        ? await db
-            .select({
-              id: client.id,
-              name: client.name,
-              representativeId: client.representativeId,
-            })
-            .from(client)
-            .where(inArray(client.representativeId, repIds))
-            .orderBy(asc(client.name))
-        : [];
-    const clientsByRep = new Map<string, { id: string; name: string }[]>();
-    for (const c of clientRows) {
-      if (!c.representativeId) continue;
-      const list = clientsByRep.get(c.representativeId);
-      const entry = { id: c.id, name: c.name };
-      if (list) list.push(entry);
-      else clientsByRep.set(c.representativeId, [entry]);
-    }
+    const clientesPorCredencial = await getClientesPorCredencial([
+      ...new Set(rawJobs.map((j) => j.credencialId)),
+    ]);
 
     const jobs: JobRow[] = rawJobs.map((j) => ({
       ...j,
       // El enum de la DB incluye 'batch' pero la UI solo maneja JobType.
       type: j.type as JobType,
-      clients: clientsByRep.get(j.representativeId) ?? [],
+      clientes: j.credencialId
+        ? (clientesPorCredencial.get(j.credencialId) ?? [])
+        : [],
       params: (j.params ?? null) as Record<string, {}> | null,
       result: (j.result ?? null) as Record<string, {}> | null,
     }));
 
     const response: JobsResponse = {
-      jobs: jobs,
+      jobs,
       totalCount: count,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
@@ -199,10 +207,8 @@ export const getJobs = createServerFn({
     return response;
   });
 
-export const getJobLogs = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(
+export const getJobLogs = createServerFn({ method: 'GET' })
+  .validator(
     z.object({
       jobId: z.string().uuid(),
       limit: z.number().default(100),
@@ -210,28 +216,15 @@ export const getJobLogs = createServerFn({
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-
     const { jobId, limit } = ctx.data;
 
-    const userClients = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const clientIds = userClients.map((c) => c.id);
-    if (clientIds.length === 0) {
-      return [] as JobLogRow[];
-    }
-
     const [jobRow] = await db
-      .select({ id: job.id, clientId: job.representativeId })
+      .select({ id: job.id })
       .from(job)
-      .where(eq(job.id, jobId))
+      .where(and(eq(job.id, jobId), eq(job.orgId, orgId)))
       .limit(1);
 
-    if (!jobRow || !clientIds.includes(jobRow.clientId)) {
-      return [] as JobLogRow[];
-    }
+    if (!jobRow) return [] as JobLogRow[];
 
     const logs = await db
       .select({
@@ -254,8 +247,8 @@ export interface ActiveJobRow {
   id: string;
   type: JobType;
   status: 'pending' | 'running';
-  representativeId: string;
-  representativeName: string | null;
+  credencialId: string;
+  credencialNombre: string | null;
   progress: number | null;
   createdAt: Date;
 }
@@ -264,8 +257,8 @@ export interface FinishedJobRow {
   id: string;
   type: JobType;
   status: 'finished' | 'failed';
-  representativeId: string;
-  representativeName: string | null;
+  credencialId: string;
+  credencialNombre: string | null;
   failedReason: string | null;
   finishedAt: Date | null;
 }
@@ -279,56 +272,46 @@ export const getActiveJobsSummary = createServerFn({ method: 'GET' }).handler(
   async (): Promise<ActiveJobsSummary> => {
     const { orgId } = await getSessionWithOrg();
 
-    const userClients = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const clientIds = userClients.map((c) => c.id);
-    if (clientIds.length === 0) {
-      return { active: [], recentlyFinished: [] };
-    }
-
     const active = await db
       .select({
         id: job.id,
         type: job.type,
         status: job.status,
-        representativeId: job.representativeId,
-        representativeName: representative.name,
+        credencialId: job.credencialId,
+        credencialNombre: credencialAfip.nombre,
         progress: job.progress,
         createdAt: job.createdAt,
       })
       .from(job)
-      .leftJoin(representative, eq(job.representativeId, representative.id))
+      .innerJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
       .where(
-        and(
-          inArray(job.representativeId, clientIds),
-          inArray(job.status, ['pending', 'running'])
-        )
+        and(eq(job.orgId, orgId), inArray(job.status, ['pending', 'running']))
       )
       .orderBy(asc(job.createdAt));
+
+    // Un job puede terminar por finished, failed o simplemente actualizarse.
+    const terminadoAt = sql<Date | null>`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt})`;
 
     const recentlyFinished = await db
       .select({
         id: job.id,
         type: job.type,
         status: job.status,
-        representativeId: job.representativeId,
-        representativeName: representative.name,
+        credencialId: job.credencialId,
+        credencialNombre: credencialAfip.nombre,
         failedReason: job.failedReason,
-        finishedAt: sql<Date | null>`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt})`,
+        finishedAt: terminadoAt,
       })
       .from(job)
-      .leftJoin(representative, eq(job.representativeId, representative.id))
+      .innerJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
       .where(
         and(
-          inArray(job.representativeId, clientIds),
+          eq(job.orgId, orgId),
           inArray(job.status, ['finished', 'failed']),
-          sql`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt}) > now() - interval '10 minutes'`
+          sql`${terminadoAt} > now() - interval '10 minutes'`
         )
       )
-      .orderBy(desc(sql`COALESCE(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt})`))
+      .orderBy(desc(terminadoAt))
       .limit(100);
 
     return {
@@ -339,34 +322,25 @@ export const getActiveJobsSummary = createServerFn({ method: 'GET' }).handler(
 );
 
 export const dispatchAllJobs = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ limit: z.number().int().positive().optional() }))
+  .validator(z.object({ limit: z.number().int().positive().optional() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    assertCanWrite(await getMemberRole());
 
-    let representatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
+    let credenciales = await db
+      .select({ id: credencialAfip.id })
+      .from(credencialAfip)
+      .where(eq(credencialAfip.orgId, orgId));
 
-    if (ctx.data.limit) {
-      representatives = representatives.slice(0, ctx.data.limit);
-    }
-
-    if (representatives.length === 0)
+    if (ctx.data.limit) credenciales = credenciales.slice(0, ctx.data.limit);
+    if (credenciales.length === 0)
       return { success: true, dispatched: 0, errors: 0 };
-
-    const representativeIds = representatives.map((c) => c.id);
 
     const [activeJobs] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(job)
       .where(
-        and(
-          inArray(job.representativeId, representativeIds),
-          sql`${job.status} IN ('running', 'pending')`
-        )
+        and(eq(job.orgId, orgId), inArray(job.status, ['running', 'pending']))
       );
 
     if (activeJobs.count > 0) {
@@ -382,13 +356,14 @@ export const dispatchAllJobs = createServerFn({ method: 'POST' })
       'comprobantes_full',
       'iva',
     ] as const;
-    const jobs = representatives.flatMap((c) =>
-      types.map((type) => ({ type, representativeId: c.id }))
+    const jobs = credenciales.flatMap((c) =>
+      types.map((type) => ({ type, credencialId: c.id }))
     );
 
-    const { data } = await axios.post(`${JOBS_API_URL}/api/jobs/batch`, {
-      jobs,
-    });
+    const data = await scrapperPost<{ created?: number; errors?: number }>(
+      `${JOBS_API_URL}/api/jobs/batch`,
+      { jobs }
+    );
     const created = data?.created ?? 0;
     const errors = data?.errors ?? 0;
     return { success: errors === 0, dispatched: created, errors };
@@ -402,26 +377,26 @@ export interface ErrorGroup {
   count: number;
   /** Hasta 3 failedReason distintos de ejemplo. */
   sampleReasons: string[];
-  representatives: {
+  credenciales: {
     id: string;
-    name: string | null;
+    nombre: string | null;
     count: number;
-    clients: { id: string; name: string }[];
+    clientes: { id: string; razonSocial: string }[];
   }[];
 }
 
 export interface JobErrorSummary {
   totalFailed: number;
   totalJobs: number;
-  affectedRepresentatives: number;
+  affectedCredenciales: number;
   topCategory: { label: string; count: number } | null;
   groups: ErrorGroup[];
 }
 
 export const getJobErrorSummary = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
-      representativeId: z.string().optional(),
+      credencialId: z.string().optional(),
       type: jobTypeEnum.optional(),
       date: z.string().optional(), // YYYY-MM-DD
       fromTime: z.string().optional(), // HH:mm
@@ -429,25 +404,10 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
   )
   .handler(async (ctx): Promise<JobErrorSummary> => {
     const { orgId } = await getSessionWithOrg();
-    const { representativeId, type, date, fromTime } = ctx.data;
+    const { credencialId, type, date, fromTime } = ctx.data;
 
-    const emptySummary: JobErrorSummary = {
-      totalFailed: 0,
-      totalJobs: 0,
-      affectedRepresentatives: 0,
-      topCategory: null,
-      groups: [],
-    };
-
-    const orgReps = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-    const orgRepIds = orgReps.map((r) => r.id);
-    if (orgRepIds.length === 0) return emptySummary;
-
-    const baseConditions = [inArray(job.representativeId, orgRepIds)];
-    if (representativeId) baseConditions.push(eq(job.representativeId, representativeId));
+    const baseConditions = [eq(job.orgId, orgId)];
+    if (credencialId) baseConditions.push(eq(job.credencialId, credencialId));
     if (type) baseConditions.push(eq(job.type, type));
     if (date && fromTime) {
       baseConditions.push(
@@ -468,58 +428,62 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
       .select({
         id: job.id,
         failedReason: job.failedReason,
-        representativeId: job.representativeId,
-        representativeName: representative.name,
+        credencialId: job.credencialId,
+        credencialNombre: credencialAfip.nombre,
       })
       .from(job)
-      .leftJoin(representative, eq(job.representativeId, representative.id))
+      .leftJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
       .where(and(...baseConditions, eq(job.status, 'failed')))
       .limit(2000);
 
-    if (failedRows.length === 0) return { ...emptySummary, totalJobs };
+    if (failedRows.length === 0) {
+      return {
+        totalFailed: 0,
+        totalJobs,
+        affectedCredenciales: 0,
+        topCategory: null,
+        groups: [],
+      };
+    }
 
     // Agrupar por categoría normalizada.
     type GroupAcc = {
       classification: ErrorClassification;
       count: number;
       reasons: Map<string, number>;
-      reps: Map<string, { name: string | null; count: number }>;
+      credenciales: Map<string, { nombre: string | null; count: number }>;
     };
     const groupsByCategory = new Map<ErrorCategory, GroupAcc>();
     for (const row of failedRows) {
       const classification = classifyStoredFailedReason(row.failedReason);
       let acc = groupsByCategory.get(classification.category);
       if (!acc) {
-        acc = { classification, count: 0, reasons: new Map(), reps: new Map() };
+        acc = {
+          classification,
+          count: 0,
+          reasons: new Map(),
+          credenciales: new Map(),
+        };
         groupsByCategory.set(classification.category, acc);
       }
       acc.count++;
       const reason = row.failedReason ?? 'Sin motivo registrado';
       acc.reasons.set(reason, (acc.reasons.get(reason) ?? 0) + 1);
-      const rep = acc.reps.get(row.representativeId);
-      if (rep) rep.count++;
-      else acc.reps.set(row.representativeId, { name: row.representativeName, count: 1 });
+      // Un job sin credencial (`escalas`) suma a la categoría pero no agrupa
+      // por credencial: no hay ninguna a la que atribuirle el error.
+      if (row.credencialId) {
+        const cred = acc.credenciales.get(row.credencialId);
+        if (cred) cred.count++;
+        else
+          acc.credenciales.set(row.credencialId, {
+            nombre: row.credencialNombre,
+            count: 1,
+          });
+      }
     }
 
-    // Clientes por representante afectado (mismo patrón que getJobs).
-    const affectedRepIds = [...new Set(failedRows.map((r) => r.representativeId))];
-    const clientRows = await db
-      .select({
-        id: client.id,
-        name: client.name,
-        representativeId: client.representativeId,
-      })
-      .from(client)
-      .where(inArray(client.representativeId, affectedRepIds))
-      .orderBy(asc(client.name));
-    const clientsByRep = new Map<string, { id: string; name: string }[]>();
-    for (const c of clientRows) {
-      if (!c.representativeId) continue;
-      const list = clientsByRep.get(c.representativeId);
-      const entry = { id: c.id, name: c.name };
-      if (list) list.push(entry);
-      else clientsByRep.set(c.representativeId, [entry]);
-    }
+    const affectedIds = [...new Set(failedRows.map((r) => r.credencialId))];
+    const clientesPorCredencial = await getClientesPorCredencial(affectedIds);
 
     const groups: ErrorGroup[] = [...groupsByCategory.entries()]
       .map(([category, acc]) => ({
@@ -532,12 +496,12 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
           .sort((a, b) => b[1] - a[1])
           .slice(0, 3)
           .map(([reason]) => reason),
-        representatives: [...acc.reps.entries()]
-          .map(([id, rep]) => ({
+        credenciales: [...acc.credenciales.entries()]
+          .map(([id, cred]) => ({
             id,
-            name: rep.name,
-            count: rep.count,
-            clients: clientsByRep.get(id) ?? [],
+            nombre: cred.nombre,
+            count: cred.count,
+            clientes: clientesPorCredencial.get(id) ?? [],
           }))
           .sort((a, b) => b.count - a.count),
       }))
@@ -546,8 +510,120 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
     return {
       totalFailed: failedRows.length,
       totalJobs,
-      affectedRepresentatives: affectedRepIds.length,
-      topCategory: groups[0] ? { label: groups[0].label, count: groups[0].count } : null,
+      affectedCredenciales: affectedIds.length,
+      topCategory: groups[0]
+        ? { label: groups[0].label, count: groups[0].count }
+        : null,
       groups,
     };
   });
+
+/** Una fuente de datos scrapeada: última corrida y última actualización real. */
+export interface FuenteDatoRow {
+  id: string;
+  nombre: string;
+  /** Último job terminado OK (ISO) o null si nunca corrió. */
+  ultimoOkAt: string | null;
+  /** Último job fallido (ISO) o null. */
+  ultimoErrorAt: string | null;
+  /** max(updated_at) de la tabla destino (ISO) o null si está vacía. */
+  datosActualizadosAt: string | null;
+}
+
+// max(timestamptz) crudo vuelve como string no-ISO del driver → patrón to_json.
+const isoMax = (col: AnyColumn) =>
+  sql<string | null>`to_json(max(${col}))#>>'{}'`;
+
+export const getFuentesDatos = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<FuenteDatoRow[]> => {
+    const { orgId } = await getSessionWithOrg();
+
+    const jobsPorTipo = await db
+      .select({
+        type: job.type,
+        ultimoOkAt: sql<
+          string | null
+        >`to_json(max(${job.finishedAt}) filter (where ${job.status} = 'finished'))#>>'{}'`,
+        ultimoErrorAt: sql<
+          string | null
+        >`to_json(max(coalesce(${job.failedAt}, ${job.updatedAt})) filter (where ${job.status} = 'failed'))#>>'{}'`,
+      })
+      .from(job)
+      .where(eq(job.orgId, orgId))
+      .groupBy(job.type);
+
+    const porTipo = new Map(jobsPorTipo.map((r) => [r.type as string, r]));
+
+    // Última actualización real de cada tabla destino (RLS scopea por org;
+    // escala_salarial es catálogo por convenio, scopeada a 2 saltos).
+    const [[comp], [ivaDecl], [notif], [deu], [venc], [esc]] =
+      await Promise.all([
+        db.select({ at: isoMax(comprobante.updatedAt) }).from(comprobante),
+        db
+          .select({ at: isoMax(ivaDeclaracion.updatedAt) })
+          .from(ivaDeclaracion),
+        db.select({ at: isoMax(notificacion.updatedAt) }).from(notificacion),
+        db.select({ at: isoMax(deuda.updatedAt) }).from(deuda),
+        db.select({ at: isoMax(vencimiento.updatedAt) }).from(vencimiento),
+        db
+          .select({ at: isoMax(escalaSalarial.updatedAt) })
+          .from(escalaSalarial),
+      ]);
+
+    // Combina varios job types en una fuente (ej. comprobantes + full).
+    const jobsDe = (tipos: string[]) => {
+      let ultimoOkAt: string | null = null;
+      let ultimoErrorAt: string | null = null;
+      for (const t of tipos) {
+        const r = porTipo.get(t);
+        if (r?.ultimoOkAt && (!ultimoOkAt || r.ultimoOkAt > ultimoOkAt))
+          ultimoOkAt = r.ultimoOkAt;
+        if (
+          r?.ultimoErrorAt &&
+          (!ultimoErrorAt || r.ultimoErrorAt > ultimoErrorAt)
+        )
+          ultimoErrorAt = r.ultimoErrorAt;
+      }
+      return { ultimoOkAt, ultimoErrorAt };
+    };
+
+    return [
+      {
+        id: 'comprobantes',
+        nombre: 'Comprobantes',
+        ...jobsDe(['comprobantes', 'comprobantes_full']),
+        datosActualizadosAt: comp.at,
+      },
+      {
+        id: 'iva',
+        nombre: 'IVA (F2051)',
+        ...jobsDe(['iva']),
+        datosActualizadosAt: ivaDecl.at,
+      },
+      {
+        id: 'notificaciones',
+        nombre: 'Notificaciones',
+        ...jobsDe(['notificaciones']),
+        datosActualizadosAt: notif.at,
+      },
+      {
+        id: 'deuda',
+        nombre: 'Deudas',
+        ...jobsDe(['deuda']),
+        datosActualizadosAt: deu.at,
+      },
+      {
+        id: 'vencimientos',
+        nombre: 'Vencimientos',
+        ...jobsDe(['vencimientos']),
+        datosActualizadosAt: venc.at,
+      },
+      {
+        id: 'escalas',
+        nombre: 'Escalas salariales',
+        ...jobsDe(['escalas']),
+        datosActualizadosAt: esc.at,
+      },
+    ];
+  }
+);

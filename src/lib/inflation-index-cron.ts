@@ -19,7 +19,7 @@
  */
 import { desc, eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { inflationIndex } from '@/drizzle/schema';
+import { indiceInflacion } from '@/drizzle/schema';
 import {
   fetchFacpceSeries,
   upsertInflationIndexes,
@@ -32,10 +32,10 @@ const FIRST_RUN_DELAY_MS = 5 * 60 * 1000;
 /** Último mes con índice publicado, como "AAAA-MM". null si la serie está vacía. */
 async function latestPeriod(): Promise<string | null> {
   const [row] = await db
-    .select({ year: inflationIndex.year, month: inflationIndex.month })
-    .from(inflationIndex)
-    .where(eq(inflationIndex.source, 'facpce_rt6'))
-    .orderBy(desc(inflationIndex.year), desc(inflationIndex.month))
+    .select({ year: indiceInflacion.anio, month: indiceInflacion.mes })
+    .from(indiceInflacion)
+    .where(eq(indiceInflacion.fuente, 'facpce_rt6'))
+    .orderBy(desc(indiceInflacion.anio), desc(indiceInflacion.mes))
     .limit(1);
   return row ? `${row.year}-${String(row.month).padStart(2, '0')}` : null;
 }

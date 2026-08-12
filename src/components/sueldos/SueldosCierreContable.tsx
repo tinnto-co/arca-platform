@@ -31,10 +31,8 @@ import {
 } from '@/actions/sueldos';
 
 interface Props {
-  /** Representante (agrupador). */
+  /** Empresa (cliente.id) — el mismo id que usa contabilidad. */
   clientId: string;
-  /** Empresa con CUIT propio. */
-  profileId: string;
   periodo: string;
 }
 
@@ -53,28 +51,27 @@ const errMsg = (e: unknown) =>
  * Cierre contable de la liquidación del período (US 3.3.1): previsualiza y
  * genera el asiento automático `auto_payroll`, o lo reabre.
  */
-export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
+export function SueldosCierreContable({ clientId, periodo }: Props) {
   const queryClient = useQueryClient();
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
 
   const { data: estado, isLoading } = useQuery({
-    queryKey: ['cierreLiquidacion', clientId, profileId, periodo],
-    queryFn: () =>
-      getCierreLiquidacion({ data: { clientId, profileId, periodo } }),
+    queryKey: ['cierreLiquidacion', clientId, periodo],
+    queryFn: () => getCierreLiquidacion({ data: { clientId, periodo } }),
   });
 
   const cerrado = estado?.cierre ?? null;
 
   const invalidate = () =>
     queryClient.invalidateQueries({
-      queryKey: ['cierreLiquidacion', clientId, profileId, periodo],
+      queryKey: ['cierreLiquidacion', clientId, periodo],
     });
 
   const previewMut = useMutation({
     mutationFn: () =>
-      previewAsientoLiquidacion({ data: { clientId, profileId, periodo } }),
+      previewAsientoLiquidacion({ data: { clientId, periodo } }),
     onSuccess: (r) => setPreview(r),
     onError: (e) => {
       setPreview(null);
@@ -83,8 +80,7 @@ export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
   });
 
   const cerrarMut = useMutation({
-    mutationFn: () =>
-      cerrarLiquidacionPeriodo({ data: { clientId, profileId, periodo } }),
+    mutationFn: () => cerrarLiquidacionPeriodo({ data: { clientId, periodo } }),
     onSuccess: (r) => {
       setConfirmOpen(false);
       setPreview(null);
@@ -104,11 +100,13 @@ export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
 
   const reabrirMut = useMutation({
     mutationFn: () =>
-      reabrirLiquidacionPeriodo({ data: { clientId, profileId, periodo } }),
+      reabrirLiquidacionPeriodo({ data: { clientId, periodo } }),
     onSuccess: () => {
       setReopenOpen(false);
       void invalidate();
-      toast.success(`Liquidación de ${periodo} reabierta. El asiento fue anulado.`);
+      toast.success(
+        `Liquidación de ${periodo} reabierta. El asiento fue anulado.`
+      );
     },
     onError: (e) => {
       setReopenOpen(false);
@@ -155,7 +153,7 @@ export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
             <>
               <Link
                 to="/accounting"
-                search={{ clientId: profileId, tab: 'asientos' }}
+                search={{ clientId, tab: 'asientos' }}
                 className="inline-flex items-center gap-2 border border-[#DFDCD3] bg-white text-[#12131A] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[#FBFAF6] transition-colors"
               >
                 <BookOpen style={{ width: 15, height: 15 }} />
@@ -277,7 +275,9 @@ export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
                     Totales
                   </td>
                   <td className="py-1.5 pl-3 text-right">{money(totalDebe)}</td>
-                  <td className="py-1.5 pl-3 text-right">{money(totalHaber)}</td>
+                  <td className="py-1.5 pl-3 text-right">
+                    {money(totalHaber)}
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -287,7 +287,7 @@ export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
             <p className="mt-3 text-[12.5px] text-[#B45309]">
               Conceptos sin regla:{' '}
               {preview.mappings
-                .filter((m) => m.unmapped)
+                .filter((m) => m.sinRegla)
                 .map((m) => m.codigo)
                 .join(', ')}
               . Configurá reglas de mapeo de sueldos para imputarlos a sus
@@ -300,7 +300,9 @@ export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cerrar la liquidación de {periodo}</AlertDialogTitle>
+            <AlertDialogTitle>
+              Cerrar la liquidación de {periodo}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               Se generará un asiento contable con los recibos confirmados del
               período. Los conceptos sin regla se imputan a Pendiente de
@@ -328,7 +330,9 @@ export function SueldosCierreContable({ clientId, profileId, periodo }: Props) {
       <AlertDialog open={reopenOpen} onOpenChange={setReopenOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reabrir la liquidación de {periodo}</AlertDialogTitle>
+            <AlertDialogTitle>
+              Reabrir la liquidación de {periodo}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               El asiento generado se marcará como anulado (no se borra, queda
               como historial) y vas a poder volver a cerrar el período.

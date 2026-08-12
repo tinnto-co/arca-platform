@@ -60,7 +60,7 @@ const XLSX = XLSXRaw as unknown as {
   };
 };
 
-type Target = 'base' | 'custom';
+type Target = 'base' | 'propia';
 type Mode = 'complementar' | 'reemplazar';
 
 /* Botones con estilo arca, consistentes con el resto del módulo. */
@@ -280,7 +280,7 @@ export function ImportarPlanDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="base">Plan base del estudio</SelectItem>
-                    <SelectItem value="custom">
+                    <SelectItem value="propia">
                       Cuentas propias de la empresa
                     </SelectItem>
                   </SelectContent>

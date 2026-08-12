@@ -70,11 +70,8 @@ export const Route = createFileRoute('/_authed/chat/')({
 });
 
 // ─── Types & helpers ─────────────────────────────────────────────────
-interface Conv {
-  id: string;
-  title: string;
-  updatedAt: Date | string;
-}
+/** Forma mínima común a la lista y a la búsqueda de conversaciones. */
+type Conv = Awaited<ReturnType<typeof searchConversations>>[number];
 
 function groupByDate(convs: Conv[]): { label: string; items: Conv[] }[] {
   const now = new Date();
@@ -316,9 +313,9 @@ function ChatSidebar({
     },
   });
 
-  const displayList = searchTerm.trim()
-    ? ((searchResults as Conv[] | undefined) ?? [])
-    : (conversations as Conv[]);
+  const displayList: Conv[] = searchTerm.trim()
+    ? (searchResults ?? [])
+    : conversations;
 
   const grouped = searchTerm.trim() ? null : groupByDate(displayList);
 
@@ -469,7 +466,7 @@ function SidebarItem({
           'text-[12.5px] truncate',
           isSelected ? 'font-semibold text-[var(--arca-ink)]' : 'font-medium text-[var(--arca-ink-2)]'
         )}>
-          {conv.title || 'Sin título'}
+          {conv.titulo || 'Sin título'}
         </div>
         <div className="text-[10.5px] text-[var(--arca-ink-4)] mt-0.5">
           {formatTime(conv.updatedAt)}

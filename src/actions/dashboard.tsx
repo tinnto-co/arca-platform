@@ -1,8 +1,26 @@
+/**
+ * Dashboard del estudio.
+ *
+ * Todo se acota por `org_id`, que ahora viaja en las propias tablas de hechos:
+ * ya no hace falta juntar la lista de logins de AFIP de la organización para
+ * después filtrar por ella. Las deudas y los vencimientos siguen colgando de la
+ * credencial (AFIP los publica por CUIT de login), así que su `cliente_id`
+ * puede venir vacío y el nombre se resuelve con un left join.
+ */
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { representative, invoice, debt, dueDate, notification, alert, job } from '@/drizzle/schema';
-import { eq, and, gte, lte, sql, inArray, isNull, desc } from 'drizzle-orm';
+import {
+  cliente,
+  credencialAfip,
+  comprobante,
+  deuda,
+  vencimiento,
+  notificacion,
+  alerta,
+  job,
+} from '@/drizzle/schema';
+import { eq, and, gte, lte, sql, isNull, desc } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -13,18 +31,38 @@ function parseDateParam(s: string | undefined, fallback: Date): Date {
   return isNaN(d.getTime()) ? fallback : d;
 }
 
-// Drizzle expression: amount converted to ARS (USD × rate, else as-is)
-// Uses LOWER() for case-insensitive currency comparison (DB values may be 'USD', 'usd', etc.)
-const arsAmount = sql<number>`CASE
-  WHEN LOWER(${invoice.currency}) = 'usd'
-  THEN CAST(${invoice.amount} AS DECIMAL) * CAST(${invoice.cureencyRate} AS DECIMAL)
-  ELSE CAST(${invoice.amount} AS DECIMAL)
-END`;
+/**
+ * `YYYY-MM-DD` en hora local. Las columnas `date` de la BD son strings y los
+ * rangos se arman con fechas locales: pasar por UTC correría un día.
+ */
+function aFecha(d: Date): string {
+  const mes = String(d.getMonth() + 1).padStart(2, '0');
+  const dia = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+/** El total en pesos: los comprobantes en moneda extranjera traen su cotización. */
+const totalEnPesos = sql<number>`(${comprobante.total} * ${comprobante.cotizacion})`;
+
+const MESES = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+];
 
 // ── getDashboardStats ──────────────────────────────────────────────────────
 
 export const getDashboardStats = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       from: z.string().optional(),
       to: z.string().optional(),
@@ -33,110 +71,85 @@ export const getDashboardStats = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) {
-      return {
-        totalRepresentatives: 0,
-        totalSales: 0,
-        totalPurchases: 0,
-        totalInvoices: 0,
-        monthlySales: 0,
-        monthlyPurchases: 0,
-        monthlyInvoices: 0,
-        previousMonthSales: 0,
-        previousMonthPurchases: 0,
-      };
-    }
-
     const now = new Date();
 
-    // Current period bounds
-    const currentFrom = parseDateParam(
+    // Período actual
+    const desde = parseDateParam(
       ctx.data.from,
       new Date(now.getFullYear(), now.getMonth(), 1)
     );
-    const currentTo = parseDateParam(
+    const hasta = parseDateParam(
       ctx.data.to,
-      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+      new Date(now.getFullYear(), now.getMonth() + 1, 0)
     );
-    currentTo.setHours(23, 59, 59, 999);
 
-    // Previous period: same duration ending just before currentFrom
-    const rangeMs = currentTo.getTime() - currentFrom.getTime();
-    const previousTo = new Date(currentFrom.getTime() - 1);
-    const previousFrom = new Date(previousTo.getTime() - rangeMs);
+    // Período anterior: misma duración, terminando justo antes del actual.
+    const rangoMs = hasta.getTime() - desde.getTime();
+    const anteriorHasta = new Date(desde.getTime() - 86400000);
+    const anteriorDesde = new Date(anteriorHasta.getTime() - rangoMs);
 
-    // Run all 3 aggregate queries in parallel
-    const [currentStats, previousStats, totalStats] = await Promise.all([
-      // Current period aggregation (SQL-level, no full table scan)
+    const ventas = sql<number>`COALESCE(SUM(CASE WHEN ${comprobante.direccion} = 'emitido' THEN ${totalEnPesos} ELSE 0 END), 0)`;
+    const compras = sql<number>`COALESCE(SUM(CASE WHEN ${comprobante.direccion} = 'recibido' THEN ${totalEnPesos} ELSE 0 END), 0)`;
+
+    const [actual, anterior, total, clientes] = await Promise.all([
       db
         .select({
-          sales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          purchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          invoiceCount: sql<number>`COUNT(*)`,
+          ventas,
+          compras,
+          comprobantes: sql<number>`COUNT(*)`,
         })
-        .from(invoice)
+        .from(comprobante)
         .where(
           and(
-            inArray(invoice.representativeId, userRepresentativeIds),
-            gte(invoice.emitionDate, currentFrom),
-            lte(invoice.emitionDate, currentTo)
+            eq(comprobante.orgId, orgId),
+            gte(comprobante.fechaEmision, aFecha(desde)),
+            lte(comprobante.fechaEmision, aFecha(hasta))
           )
         ),
 
-      // Previous period aggregation
       db
-        .select({
-          sales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          purchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-        })
-        .from(invoice)
+        .select({ ventas, compras })
+        .from(comprobante)
         .where(
           and(
-            inArray(invoice.representativeId, userRepresentativeIds),
-            gte(invoice.emitionDate, previousFrom),
-            lte(invoice.emitionDate, previousTo)
+            eq(comprobante.orgId, orgId),
+            gte(comprobante.fechaEmision, aFecha(anteriorDesde)),
+            lte(comprobante.fechaEmision, aFecha(anteriorHasta))
           )
         ),
 
-      // All-time totals for mini KPIs
       db
         .select({
-          totalSales: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'outbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          totalPurchases: sql<number>`COALESCE(SUM(CASE WHEN LOWER(${invoice.direction}) = 'inbound' THEN ${arsAmount} ELSE 0 END), 0)`,
-          totalInvoices: sql<number>`COUNT(*)`,
+          ventas,
+          compras,
+          comprobantes: sql<number>`COUNT(*)`,
         })
-        .from(invoice)
-        .where(inArray(invoice.representativeId, userRepresentativeIds)),
+        .from(comprobante)
+        .where(eq(comprobante.orgId, orgId)),
+
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(cliente)
+        .where(and(eq(cliente.orgId, orgId), eq(cliente.estado, 'activo'))),
     ]);
 
-    const cur = currentStats[0];
-    const prev = previousStats[0];
-    const total = totalStats[0];
-
     return {
-      totalRepresentatives: userRepresentativeIds.length,
-      totalSales: Number(total?.totalSales ?? 0),
-      totalPurchases: Number(total?.totalPurchases ?? 0),
-      totalInvoices: Number(total?.totalInvoices ?? 0),
-      monthlySales: Number(cur?.sales ?? 0),
-      monthlyPurchases: Number(cur?.purchases ?? 0),
-      monthlyInvoices: Number(cur?.invoiceCount ?? 0),
-      previousMonthSales: Number(prev?.sales ?? 0),
-      previousMonthPurchases: Number(prev?.purchases ?? 0),
+      totalClientes: Number(clientes[0]?.count ?? 0),
+      totalVentas: Number(total[0]?.ventas ?? 0),
+      totalCompras: Number(total[0]?.compras ?? 0),
+      totalComprobantes: Number(total[0]?.comprobantes ?? 0),
+      ventasDelPeriodo: Number(actual[0]?.ventas ?? 0),
+      comprasDelPeriodo: Number(actual[0]?.compras ?? 0),
+      comprobantesDelPeriodo: Number(actual[0]?.comprobantes ?? 0),
+      ventasPeriodoAnterior: Number(anterior[0]?.ventas ?? 0),
+      comprasPeriodoAnterior: Number(anterior[0]?.compras ?? 0),
     };
   });
 
 // ── getMonthlyEvolution ────────────────────────────────────────────────────
 
 export const getMonthlyEvolution = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       from: z.string().optional(),
       to: z.string().optional(),
@@ -146,108 +159,59 @@ export const getMonthlyEvolution = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) return [];
-
     const now = new Date();
-    const monthCount = ctx.data.months ?? 6;
+    const cantidadMeses = ctx.data.months ?? 6;
 
-    const to = parseDateParam(
+    const hasta = parseDateParam(
       ctx.data.to,
-      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+      new Date(now.getFullYear(), now.getMonth() + 1, 0)
     );
-    const from = parseDateParam(
+    const desde = parseDateParam(
       ctx.data.from,
-      new Date(to.getFullYear(), to.getMonth() - (monthCount - 1), 1)
+      new Date(hasta.getFullYear(), hasta.getMonth() - (cantidadMeses - 1), 1)
     );
 
-    // Fetch only invoices in the date range (key optimization vs full table scan)
-    const invoicesInRange = await db
+    // La agrupación la hace la BD: `periodo` es el mes de la fecha de emisión.
+    const filas = await db
       .select({
-        direction: invoice.direction,
-        amount: invoice.amount,
-        currency: invoice.currency,
-        currencyRate: invoice.cureencyRate,
-        emitionDate: invoice.emitionDate,
+        periodo: comprobante.periodo,
+        emitido: sql<number>`COALESCE(SUM(CASE WHEN ${comprobante.direccion} = 'emitido' THEN ${totalEnPesos} ELSE 0 END), 0)`,
+        recibido: sql<number>`COALESCE(SUM(CASE WHEN ${comprobante.direccion} = 'recibido' THEN ${totalEnPesos} ELSE 0 END), 0)`,
       })
-      .from(invoice)
+      .from(comprobante)
       .where(
         and(
-          inArray(invoice.representativeId, userRepresentativeIds),
-          gte(invoice.emitionDate, from),
-          lte(invoice.emitionDate, to)
+          eq(comprobante.orgId, orgId),
+          gte(comprobante.fechaEmision, aFecha(desde)),
+          lte(comprobante.fechaEmision, aFecha(hasta))
         )
-      );
+      )
+      .groupBy(comprobante.periodo);
 
-    // Build monthly buckets from `from` to `to`
-    const buckets: {
-      year: number;
-      month: number;
-      outbound: number;
-      inbound: number;
-    }[] = [];
-    let cur = new Date(from.getFullYear(), from.getMonth(), 1);
-    const endBucket = new Date(to.getFullYear(), to.getMonth(), 1);
-    while (cur <= endBucket) {
+    const porPeriodo = new Map(filas.map((f) => [f.periodo?.slice(0, 7), f]));
+
+    // Se devuelven todos los meses del rango, incluso los que no tuvieron nada.
+    const buckets: { mes: string; emitido: number; recibido: number }[] = [];
+    const cursor = new Date(desde.getFullYear(), desde.getMonth(), 1);
+    const fin = new Date(hasta.getFullYear(), hasta.getMonth(), 1);
+    while (cursor <= fin) {
+      const clave = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+      const fila = porPeriodo.get(clave);
       buckets.push({
-        year: cur.getFullYear(),
-        month: cur.getMonth(),
-        outbound: 0,
-        inbound: 0,
+        mes: `${MESES[cursor.getMonth()]} ${String(cursor.getFullYear()).slice(2)}`,
+        emitido: Number(fila?.emitido ?? 0),
+        recibido: Number(fila?.recibido ?? 0),
       });
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+      cursor.setMonth(cursor.getMonth() + 1);
     }
 
-    invoicesInRange.forEach((inv) => {
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') {
-        amount = amount * parseFloat(inv.currencyRate || '1');
-      }
-
-      const d = new Date(inv.emitionDate);
-      const bucket = buckets.find(
-        (b) => b.year === d.getFullYear() && b.month === d.getMonth()
-      );
-      if (!bucket) return;
-
-      if (inv.direction?.toLowerCase() === 'outbound')
-        bucket.outbound += amount;
-      else if (inv.direction?.toLowerCase() === 'inbound')
-        bucket.inbound += amount;
-    });
-
-    const MONTH_NAMES: Record<number, string> = {
-      0: 'ene',
-      1: 'feb',
-      2: 'mar',
-      3: 'abr',
-      4: 'may',
-      5: 'jun',
-      6: 'jul',
-      7: 'ago',
-      8: 'sep',
-      9: 'oct',
-      10: 'nov',
-      11: 'dic',
-    };
-
-    return buckets.map((b) => ({
-      month: `${MONTH_NAMES[b.month]} ${String(b.year).slice(2)}`,
-      outbound: b.outbound,
-      inbound: b.inbound,
-    }));
+    return buckets;
   });
 
 // ── getUpcomingDueDates ────────────────────────────────────────────────────
 
 export const getUpcomingDueDates = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       days: z.number().default(7),
       limit: z.number().default(5),
@@ -256,49 +220,36 @@ export const getUpcomingDueDates = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
+    const hoy = new Date();
+    const futuro = new Date(hoy);
+    futuro.setDate(hoy.getDate() + ctx.data.days);
 
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) return [];
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const futureDate = new Date(today);
-    futureDate.setDate(today.getDate() + ctx.data.days);
-    futureDate.setHours(23, 59, 59, 999);
-
-    const dueDates = await db
+    return await db
       .select({
-        id: dueDate.id,
-        tax: dueDate.tax,
-        concept: dueDate.concept,
-        dueDate: dueDate.dueDate,
-        clientId: dueDate.representativeId,
-        clientName: representative.name,
+        id: vencimiento.id,
+        impuesto: vencimiento.impuesto,
+        concepto: vencimiento.concepto,
+        venceAt: vencimiento.venceAt,
+        clienteId: vencimiento.clienteId,
+        clienteNombre: cliente.razonSocial,
       })
-      .from(dueDate)
-      .leftJoin(representative, eq(dueDate.representativeId, representative.id))
+      .from(vencimiento)
+      .leftJoin(cliente, eq(vencimiento.clienteId, cliente.id))
       .where(
         and(
-          inArray(dueDate.representativeId, userRepresentativeIds),
-          gte(dueDate.dueDate, today),
-          lte(dueDate.dueDate, futureDate)
+          eq(vencimiento.orgId, orgId),
+          gte(vencimiento.venceAt, aFecha(hoy)),
+          lte(vencimiento.venceAt, aFecha(futuro))
         )
       )
-      .orderBy(dueDate.dueDate)
+      .orderBy(vencimiento.venceAt)
       .limit(ctx.data.limit);
-
-    return dueDates;
   });
 
 // ── getOverdueDebts ────────────────────────────────────────────────────────
 
 export const getOverdueDebts = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       limit: z.number().default(5),
     })
@@ -306,41 +257,27 @@ export const getOverdueDebts = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) return [];
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const debts = await db
+    return await db
       .select({
-        id: debt.id,
-        tax: debt.tax,
-        concept: debt.concept,
-        dueDate: debt.dueDate,
-        balance: debt.balance,
-        clientId: debt.representativeId,
-        clientName: representative.name,
+        id: deuda.id,
+        impuesto: deuda.impuesto,
+        concepto: deuda.concepto,
+        venceAt: deuda.venceAt,
+        saldo: deuda.saldo,
+        clienteId: deuda.clienteId,
+        clienteNombre: cliente.razonSocial,
       })
-      .from(debt)
-      .leftJoin(representative, eq(debt.representativeId, representative.id))
-      .where(and(inArray(debt.representativeId, userRepresentativeIds), lte(debt.dueDate, today)))
-      .orderBy(debt.dueDate)
+      .from(deuda)
+      .leftJoin(cliente, eq(deuda.clienteId, cliente.id))
+      .where(and(eq(deuda.orgId, orgId), lte(deuda.venceAt, aFecha(new Date()))))
+      .orderBy(deuda.venceAt)
       .limit(ctx.data.limit);
-
-    return debts;
   });
 
 // ── getRecentInvoices ──────────────────────────────────────────────────────
 
 export const getRecentInvoices = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       limit: z.number().default(5),
       from: z.string().optional(),
@@ -350,50 +287,40 @@ export const getRecentInvoices = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) return [];
-
-    const conditions = [inArray(invoice.representativeId, userRepresentativeIds)];
-
+    const condiciones = [eq(comprobante.orgId, orgId)];
     if (ctx.data.from) {
-      conditions.push(gte(invoice.emitionDate, new Date(ctx.data.from)));
+      condiciones.push(
+        gte(comprobante.fechaEmision, aFecha(new Date(ctx.data.from)))
+      );
     }
     if (ctx.data.to) {
-      const to = new Date(ctx.data.to);
-      to.setHours(23, 59, 59, 999);
-      conditions.push(lte(invoice.emitionDate, to));
+      condiciones.push(
+        lte(comprobante.fechaEmision, aFecha(new Date(ctx.data.to)))
+      );
     }
 
-    const invoices = await db
+    return await db
       .select({
-        id: invoice.id,
-        type: invoice.type,
-        direction: invoice.direction,
-        amount: invoice.amount,
-        currency: invoice.currency,
-        emitionDate: invoice.emitionDate,
-        clientId: invoice.representativeId,
-        clientName: representative.name,
+        id: comprobante.id,
+        tipo: comprobante.tipo,
+        direccion: comprobante.direccion,
+        total: comprobante.total,
+        moneda: comprobante.moneda,
+        fechaEmision: comprobante.fechaEmision,
+        clienteId: comprobante.clienteId,
+        clienteNombre: cliente.razonSocial,
       })
-      .from(invoice)
-      .leftJoin(representative, eq(invoice.representativeId, representative.id))
-      .where(and(...conditions))
-      .orderBy(sql`${invoice.createdAt} DESC`)
+      .from(comprobante)
+      .innerJoin(cliente, eq(comprobante.clienteId, cliente.id))
+      .where(and(...condiciones))
+      .orderBy(desc(comprobante.createdAt))
       .limit(ctx.data.limit);
-
-    return invoices;
   });
 
-// ── getTopRepresentatives ──────────────────────────────────────────────────────────
+// ── getTopClientes ─────────────────────────────────────────────────────────
 
-export const getTopRepresentatives = createServerFn({ method: 'GET' })
-  .inputValidator(
+export const getTopClientes = createServerFn({ method: 'GET' })
+  .validator(
     z.object({
       limit: z.number().default(5),
       from: z.string().optional(),
@@ -403,96 +330,79 @@ export const getTopRepresentatives = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({
-        id: representative.id,
-        name: representative.name,
-        cuit: representative.cuit,
-      })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) return [];
-
     const now = new Date();
-    const rangeFrom = parseDateParam(
+    const desde = parseDateParam(
       ctx.data.from,
       new Date(now.getFullYear(), now.getMonth(), 1)
     );
-    const rangeTo = parseDateParam(
+    const hasta = parseDateParam(
       ctx.data.to,
-      new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+      new Date(now.getFullYear(), now.getMonth() + 1, 0)
     );
-    rangeTo.setHours(23, 59, 59, 999);
 
-    const clientInvoices = await db
+    const facturado = await db
       .select({
-        clientId: invoice.representativeId,
-        totalAmount: sql<string>`SUM(${invoice.amount}::numeric)`,
-        invoiceCount: sql<number>`COUNT(*)`,
-        lastActivity: sql<string>`MAX(${invoice.createdAt})`,
+        clienteId: comprobante.clienteId,
+        nombre: cliente.razonSocial,
+        cuit: cliente.cuit,
+        total: sql<string>`SUM(${totalEnPesos})`,
+        comprobantes: sql<number>`COUNT(*)::int`,
+        ultimaActividad: sql<string>`MAX(${comprobante.createdAt})`,
       })
-      .from(invoice)
+      .from(comprobante)
+      .innerJoin(cliente, eq(comprobante.clienteId, cliente.id))
       .where(
         and(
-          inArray(invoice.representativeId, userRepresentativeIds),
-          gte(invoice.emitionDate, rangeFrom),
-          lte(invoice.emitionDate, rangeTo)
+          eq(comprobante.orgId, orgId),
+          gte(comprobante.fechaEmision, aFecha(desde)),
+          lte(comprobante.fechaEmision, aFecha(hasta))
         )
       )
-      .groupBy(invoice.representativeId)
-      .orderBy(sql`SUM(${invoice.amount}::numeric) DESC`)
+      .groupBy(comprobante.clienteId, cliente.razonSocial, cliente.cuit)
+      .orderBy(desc(sql`SUM(${totalEnPesos})`))
       .limit(ctx.data.limit);
 
-    const overdueDebts = await db
+    const vencidas = await db
       .select({
-        clientId: debt.representativeId,
-        overdueCount: sql<number>`COUNT(*)`,
-        maxOverdueDays: sql<number>`MAX(EXTRACT(EPOCH FROM NOW() - ${debt.dueDate}::timestamptz) / 86400)`,
+        clienteId: deuda.clienteId,
+        cantidad: sql<number>`COUNT(*)::int`,
+        diasMaximos: sql<number>`MAX(NOW()::date - ${deuda.venceAt})`,
       })
-      .from(debt)
+      .from(deuda)
       .where(
-        and(inArray(debt.representativeId, userRepresentativeIds), lte(debt.dueDate, new Date()))
+        and(
+          eq(deuda.orgId, orgId),
+          eq(deuda.estado, 'abierta'),
+          lte(deuda.venceAt, aFecha(new Date()))
+        )
       )
-      .groupBy(debt.representativeId)
-      .catch(
-        () =>
-          [] as {
-            clientId: string | null;
-            overdueCount: number;
-            maxOverdueDays: number;
-          }[]
-      );
+      .groupBy(deuda.clienteId);
 
-    const clientMap = new Map(userRepresentatives.map((c) => [c.id, c]));
-    const overdueMap = new Map(overdueDebts.map((d) => [d.clientId, d]));
+    const porCliente = new Map(vencidas.map((d) => [d.clienteId, d]));
 
-    return clientInvoices.map((ci) => {
-      const clientInfo = clientMap.get(ci.clientId);
-      const overdue = overdueMap.get(ci.clientId);
-      let status: 'ok' | 'pend' | 'late' = 'ok';
-      let statusLabel = 'Al día';
-      if (overdue && overdue.overdueCount > 0) {
-        if (overdue.maxOverdueDays > 7) {
-          status = 'late';
-          statusLabel = `Vencido +${Math.round(overdue.maxOverdueDays)}d`;
+    return facturado.map((f) => {
+      const atraso = porCliente.get(f.clienteId);
+      let estado: 'ok' | 'pend' | 'late' = 'ok';
+      let estadoLabel = 'Al día';
+      if (atraso && atraso.cantidad > 0) {
+        if (Number(atraso.diasMaximos) > 7) {
+          estado = 'late';
+          estadoLabel = `Vencido +${Math.round(Number(atraso.diasMaximos))}d`;
         } else {
-          status = 'pend';
-          statusLabel = 'Pendiente';
+          estado = 'pend';
+          estadoLabel = 'Pendiente';
         }
       }
 
       return {
-        clientId: ci.clientId,
-        name: clientInfo?.name || '-',
-        cuit: clientInfo?.cuit || '-',
-        totalAmount: parseFloat(ci.totalAmount || '0'),
-        invoiceCount: ci.invoiceCount,
-        lastActivity: ci.lastActivity,
-        status,
-        statusLabel,
+        clienteId: f.clienteId,
+        nombre: f.nombre,
+        cuit: f.cuit,
+        total: Number(f.total ?? 0),
+        comprobantes: f.comprobantes,
+        ultimaActividad: f.ultimaActividad,
+        estado,
+        estadoLabel,
       };
     });
   });
@@ -504,32 +414,20 @@ export const getPendingNotificationsCount = createServerFn({
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 
-  const userRepresentatives = await db
-    .select({ id: representative.id })
-    .from(representative)
-    .where(eq(representative.organizationId, orgId));
-
-  const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-  if (userRepresentativeIds.length === 0) return { count: 0 };
-
   const [result] = await db
     .select({ count: sql<number>`count(*)` })
-    .from(notification)
+    .from(notificacion)
     .where(
-      and(
-        inArray(notification.representativeId, userRepresentativeIds),
-        eq(notification.opened, false)
-      )
+      and(eq(notificacion.orgId, orgId), eq(notificacion.leida, false))
     );
 
-  return { count: result?.count ?? 0 };
+  return { count: Number(result?.count ?? 0) };
 });
 
 // ── getCalendarDueDates ──────────────────────────────────────────────────
 
 export const getCalendarDueDates = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
       from: z.string(),
       to: z.string(),
@@ -538,62 +436,53 @@ export const getCalendarDueDates = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
+    const desde = aFecha(new Date(ctx.data.from));
+    const hasta = aFecha(new Date(ctx.data.to));
 
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-    if (userRepresentativeIds.length === 0) return { dueDates: [], debts: [] };
-
-    const from = new Date(ctx.data.from);
-    const to = new Date(ctx.data.to);
-    to.setHours(23, 59, 59, 999);
-
-    const [dueDates, debts] = await Promise.all([
+    const [vencimientos, deudas] = await Promise.all([
       db
         .select({
-          id: dueDate.id,
-          tax: dueDate.tax,
-          concept: dueDate.concept,
-          dueDate: dueDate.dueDate,
-          clientId: dueDate.representativeId,
-          clientName: representative.name,
-          completedAt: dueDate.completedAt,
+          id: vencimiento.id,
+          impuesto: vencimiento.impuesto,
+          concepto: vencimiento.concepto,
+          venceAt: vencimiento.venceAt,
+          clienteId: vencimiento.clienteId,
+          clienteNombre: cliente.razonSocial,
+          completadoAt: vencimiento.completadoAt,
         })
-        .from(dueDate)
-        .leftJoin(representative, eq(dueDate.representativeId, representative.id))
+        .from(vencimiento)
+        .leftJoin(cliente, eq(vencimiento.clienteId, cliente.id))
         .where(
           and(
-            inArray(dueDate.representativeId, userRepresentativeIds),
-            gte(dueDate.dueDate, from),
-            lte(dueDate.dueDate, to)
+            eq(vencimiento.orgId, orgId),
+            gte(vencimiento.venceAt, desde),
+            lte(vencimiento.venceAt, hasta)
           )
         )
-        .orderBy(dueDate.dueDate),
+        .orderBy(vencimiento.venceAt),
       db
         .select({
-          id: debt.id,
-          tax: debt.tax,
-          concept: debt.concept,
-          dueDate: debt.dueDate,
-          balance: debt.balance,
-          clientId: debt.representativeId,
-          clientName: representative.name,
+          id: deuda.id,
+          impuesto: deuda.impuesto,
+          concepto: deuda.concepto,
+          venceAt: deuda.venceAt,
+          saldo: deuda.saldo,
+          clienteId: deuda.clienteId,
+          clienteNombre: cliente.razonSocial,
         })
-        .from(debt)
-        .leftJoin(representative, eq(debt.representativeId, representative.id))
+        .from(deuda)
+        .leftJoin(cliente, eq(deuda.clienteId, cliente.id))
         .where(
           and(
-            inArray(debt.representativeId, userRepresentativeIds),
-            gte(debt.dueDate, from),
-            lte(debt.dueDate, to)
+            eq(deuda.orgId, orgId),
+            gte(deuda.venceAt, desde),
+            lte(deuda.venceAt, hasta)
           )
         )
-        .orderBy(debt.dueDate),
+        .orderBy(deuda.venceAt),
     ]);
 
-    return { dueDates, debts };
+    return { vencimientos, deudas };
   });
 
 // ── getExceptionsSummary ───────────────────────────────────────────────────
@@ -602,129 +491,94 @@ export const getExceptionsSummary = createServerFn({ method: 'GET' }).handler(
   async () => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
+    const hoy = aFecha(new Date());
+    const enTresDias = new Date();
+    enTresDias.setDate(enTresDias.getDate() + 3);
 
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) {
-      return {
-        overdueDebtCount: 0,
-        criticalNotificationCount: 0,
-        upcomingDueDateCount: 0,
-        representativeErrorCount: 0,
-      };
-    }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const threeDaysFromNow = new Date(today);
-    threeDaysFromNow.setDate(today.getDate() + 3);
-    threeDaysFromNow.setHours(23, 59, 59, 999);
-
-    const [overdueDebts, criticalNotifs, upcomingDueDates, representativeErrors] =
+    const [deudasVencidas, urgentes, proximos, credenciales] =
       await Promise.all([
-        // Overdue open debts: status='open' and dueDate < today
         db
           .select({ count: sql<number>`count(*)` })
-          .from(debt)
+          .from(deuda)
           .where(
             and(
-              inArray(debt.representativeId, userRepresentativeIds),
-              eq(debt.status, 'open'),
-              lte(debt.dueDate, today)
+              eq(deuda.orgId, orgId),
+              eq(deuda.estado, 'abierta'),
+              lte(deuda.venceAt, hoy)
             )
           ),
 
-        // Critical unresolved notifications
         db
           .select({ count: sql<number>`count(*)` })
-          .from(notification)
+          .from(notificacion)
           .where(
             and(
-              inArray(notification.representativeId, userRepresentativeIds),
-              eq(notification.severity, 'critical'),
-              isNull(notification.resolvedAt)
+              eq(notificacion.orgId, orgId),
+              eq(notificacion.severidad, 'urgente'),
+              isNull(notificacion.resueltaAt)
             )
           ),
 
-        // Upcoming due dates within 3 days that are not completed
         db
           .select({ count: sql<number>`count(*)` })
-          .from(dueDate)
+          .from(vencimiento)
           .where(
             and(
-              inArray(dueDate.representativeId, userRepresentativeIds),
-              gte(dueDate.dueDate, today),
-              lte(dueDate.dueDate, threeDaysFromNow),
-              isNull(dueDate.completedAt)
+              eq(vencimiento.orgId, orgId),
+              gte(vencimiento.venceAt, hoy),
+              lte(vencimiento.venceAt, aFecha(enTresDias)),
+              isNull(vencimiento.completadoAt)
             )
           ),
 
-        // Representatives with open scraper_error alerts
         db
-          .select({ count: sql<number>`count(DISTINCT ${alert.representativeId})` })
-          .from(alert)
+          .select({
+            count: sql<number>`count(DISTINCT ${alerta.credencialId})`,
+          })
+          .from(alerta)
           .where(
             and(
-              eq(alert.organizationId, orgId),
-              eq(alert.type, 'scraper_error'),
-              eq(alert.status, 'open')
+              eq(alerta.orgId, orgId),
+              eq(alerta.tipo, 'error_scraping'),
+              eq(alerta.estado, 'abierta')
             )
           ),
       ]);
 
     return {
-      overdueDebtCount: Number(overdueDebts[0]?.count ?? 0),
-      criticalNotificationCount: Number(criticalNotifs[0]?.count ?? 0),
-      upcomingDueDateCount: Number(upcomingDueDates[0]?.count ?? 0),
-      representativeErrorCount: Number(representativeErrors[0]?.count ?? 0),
+      deudasVencidasCount: Number(deudasVencidas[0]?.count ?? 0),
+      notificacionesUrgentesCount: Number(urgentes[0]?.count ?? 0),
+      vencimientosProximosCount: Number(proximos[0]?.count ?? 0),
+      credencialesConErrorCount: Number(credenciales[0]?.count ?? 0),
     };
   }
 );
 
-// ── getTodayScrapedRepresentatives ──────────────────────────────────────────
+// ── getTodayScrapedCredenciales ────────────────────────────────────────────
 
-export const getTodayScrapedRepresentatives = createServerFn({
+export const getTodayScrapedCredenciales = createServerFn({
   method: 'GET',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
 
-  const userReps = await db
-    .select({ id: representative.id })
-    .from(representative)
-    .where(eq(representative.organizationId, orgId));
-  const repIds = userReps.map((r) => r.id);
-  if (repIds.length === 0) return [];
-
-  // Get distinct representatives that had jobs created today
-  const rows = await db
+  return await db
     .select({
-      representativeId: job.representativeId,
-      name: representative.name,
-      cuit: representative.cuit,
-      jobCount: sql<number>`count(*)::int`,
-      successCount: sql<number>`count(*) filter (where ${job.status} = 'finished')::int`,
-      failedCount: sql<number>`count(*) filter (where ${job.status} = 'failed')::int`,
-      pendingCount: sql<number>`count(*) filter (where ${job.status} in ('pending', 'running'))::int`,
+      credencialId: job.credencialId,
+      nombre: credencialAfip.nombre,
+      cuit: credencialAfip.cuit,
+      jobs: sql<number>`count(*)::int`,
+      finalizados: sql<number>`count(*) filter (where ${job.status} = 'finished')::int`,
+      fallidos: sql<number>`count(*) filter (where ${job.status} = 'failed')::int`,
+      pendientes: sql<number>`count(*) filter (where ${job.status} in ('pending', 'running'))::int`,
     })
     .from(job)
-    .innerJoin(representative, eq(job.representativeId, representative.id))
-    .where(
-      and(
-        inArray(job.representativeId, repIds),
-        gte(job.createdAt, today)
-      )
-    )
-    .groupBy(job.representativeId, representative.name, representative.cuit)
+    .innerJoin(credencialAfip, eq(job.credencialId, credencialAfip.id))
+    .where(and(eq(job.orgId, orgId), gte(job.createdAt, hoy)))
+    .groupBy(job.credencialId, credencialAfip.nombre, credencialAfip.cuit)
     .orderBy(desc(sql`max(${job.createdAt})`));
-
-  return rows;
 });
 
 // ── getCredentialAlerts ──────────────────────────────────────────────────────
@@ -733,32 +587,32 @@ export const getCredentialAlerts = createServerFn({ method: 'GET' }).handler(
   async () => {
     const { orgId } = await getSessionWithOrg();
 
-    const rows = await db
+    const filas = await db
       .select({
-        alertId: alert.id,
-        representativeId: alert.representativeId,
-        name: representative.name,
-        cuit: representative.cuit,
-        description: alert.description,
-        createdAt: alert.createdAt,
+        alertaId: alerta.id,
+        credencialId: alerta.credencialId,
+        nombre: credencialAfip.nombre,
+        cuit: credencialAfip.cuit,
+        descripcion: alerta.descripcion,
+        createdAt: alerta.createdAt,
       })
-      .from(alert)
-      .innerJoin(representative, eq(alert.representativeId, representative.id))
+      .from(alerta)
+      .innerJoin(credencialAfip, eq(alerta.credencialId, credencialAfip.id))
       .where(
         and(
-          eq(alert.organizationId, orgId),
-          eq(alert.type, 'scraper_error'),
-          eq(alert.status, 'open'),
-          sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+          eq(alerta.orgId, orgId),
+          eq(alerta.tipo, 'error_scraping'),
+          eq(alerta.estado, 'abierta'),
+          sql`${alerta.detalle}->>'errorCategory' = 'credentials'`
         )
       )
-      .orderBy(desc(alert.createdAt));
+      .orderBy(desc(alerta.createdAt));
 
-    // Deduplicate by representativeId (a rep may have alerts for multiple job types)
-    const seen = new Set<string>();
-    return rows.filter((row) => {
-      if (!row.representativeId || seen.has(row.representativeId)) return false;
-      seen.add(row.representativeId);
+    // Una credencial puede tener alertas de varios tipos de job: se muestra una.
+    const vistas = new Set<string>();
+    return filas.filter((f) => {
+      if (!f.credencialId || vistas.has(f.credencialId)) return false;
+      vistas.add(f.credencialId);
       return true;
     });
   }
@@ -827,64 +681,77 @@ export const getScheduleStatus = createServerFn({ method: 'GET' }).handler(
   async () => {
     const { orgId } = await getSessionWithOrg();
 
-    const reps = await db
-      .select({ id: representative.id, name: representative.name, cuit: representative.cuit })
-      .from(representative)
-      .where(and(eq(representative.organizationId, orgId), eq(representative.status, 'active')));
-
-    if (reps.length === 0) return [];
-
-    const repIds = reps.map((r) => r.id);
-
-    // Credential alerts
-    const credAlerts = await db
-      .select({ representativeId: alert.representativeId })
-      .from(alert)
+    // El scraping se agenda por credencial: un job es un login de AFIP.
+    const credenciales = await db
+      .select({
+        id: credencialAfip.id,
+        nombre: credencialAfip.nombre,
+        cuit: credencialAfip.cuit,
+      })
+      .from(credencialAfip)
       .where(
         and(
-          eq(alert.organizationId, orgId),
-          eq(alert.type, 'scraper_error'),
-          eq(alert.status, 'open'),
-          sql`${alert.metadata}->>'errorCategory' = 'credentials'`
+          eq(credencialAfip.orgId, orgId),
+          eq(credencialAfip.estado, 'activa')
         )
       );
-    const blockedIds = new Set(credAlerts.map((r) => r.representativeId));
 
-    // Last successful scrape per (rep, type)
-    const lastJobs = await db
+    if (credenciales.length === 0) return [];
+
+    const alertasClave = await db
+      .select({ credencialId: alerta.credencialId })
+      .from(alerta)
+      .where(
+        and(
+          eq(alerta.orgId, orgId),
+          eq(alerta.tipo, 'error_scraping'),
+          eq(alerta.estado, 'abierta'),
+          sql`${alerta.detalle}->>'errorCategory' = 'credentials'`
+        )
+      );
+    const bloqueadas = new Set(alertasClave.map((a) => a.credencialId));
+
+    const ultimos = await db
       .select({
-        representativeId: job.representativeId,
+        credencialId: job.credencialId,
         type: job.type,
         finishedAt: sql<string>`MAX(${job.finishedAt})`,
       })
       .from(job)
-      .where(
-        and(inArray(job.representativeId, repIds), eq(job.status, 'finished'))
-      )
-      .groupBy(job.representativeId, job.type);
+      .where(and(eq(job.orgId, orgId), eq(job.status, 'finished')))
+      .groupBy(job.credencialId, job.type);
 
-    const lastMap = new Map<string, string>();
-    for (const row of lastJobs) {
-      lastMap.set(`${row.representativeId}:${row.type}`, row.finishedAt);
+    const ultimoPor = new Map<string, string>();
+    for (const fila of ultimos) {
+      ultimoPor.set(`${fila.credencialId}:${fila.type}`, fila.finishedAt);
     }
 
     const now = new Date();
 
-    return reps.map((rep) => {
-      const modules: Record<string, { frequency: string; lastScrapedAt: string | null; nextScheduledAfter: string | null }> = {};
+    return credenciales.map((cred) => {
+      const modules: Record<
+        string,
+        {
+          frequency: string;
+          lastScrapedAt: string | null;
+          nextScheduledAfter: string | null;
+        }
+      > = {};
       for (const mod of ALL_MODULES) {
         const freq = MODULE_FREQ[mod];
         modules[mod] = {
           frequency: freq,
-          lastScrapedAt: lastMap.get(`${rep.id}:${mod}`) || null,
-          nextScheduledAfter: blockedIds.has(rep.id) ? null : getNextScheduledAfter(freq, now),
+          lastScrapedAt: ultimoPor.get(`${cred.id}:${mod}`) || null,
+          nextScheduledAfter: bloqueadas.has(cred.id)
+            ? null
+            : getNextScheduledAfter(freq, now),
         };
       }
       return {
-        representativeId: rep.id,
-        name: rep.name,
-        cuit: rep.cuit,
-        hasCredentialAlert: blockedIds.has(rep.id),
+        credencialId: cred.id,
+        nombre: cred.nombre,
+        cuit: cred.cuit,
+        tieneAlertaCredencial: bloqueadas.has(cred.id),
         modules,
       };
     });

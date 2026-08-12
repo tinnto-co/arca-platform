@@ -24,7 +24,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { listRecibosDetalleParaPDF } from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
-import type { ClientDataPdf, ReciboDetallePdf } from './recibo-pdf';
+import type { ClientDataPdf } from './recibo-pdf';
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -41,7 +41,6 @@ interface ImprimirRecibosDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   clientId: string;
-  profileId: string;
   clientData: ClientDataPdf | null;
   firmaEmpleadorUrl: string | null;
   empleados: Array<{
@@ -59,7 +58,6 @@ export function ImprimirRecibosDialog({
   open,
   onOpenChange,
   clientId,
-  profileId,
   clientData,
   firmaEmpleadorUrl,
   empleados,
@@ -113,7 +111,6 @@ export function ImprimirRecibosDialog({
     const data = await listRecibosDetalleParaPDF({
       data: {
         clientId,
-        profileId,
         ano,
         mes: mes || undefined,
         empleadoIds: todosEmpleados ? undefined : [...selectedIds],
@@ -150,7 +147,7 @@ export function ImprimirRecibosDialog({
       const { generarPdfBlobEmpleado } = await import('./recibo-pdf');
       const todosLosRecibos = agrupados.flatMap((a) => a.recibos);
       const blob = await generarPdfBlobEmpleado(
-        todosLosRecibos as ReciboDetallePdf[],
+        todosLosRecibos,
         clientData,
         firmaEmpleadorUrl,
       );
@@ -193,7 +190,7 @@ export function ImprimirRecibosDialog({
       const { generarYDescargar } = await import('./recibo-pdf');
 
       await generarYDescargar({
-        recibosAgrupados: agrupados as Array<{ empleadoNombre: string; recibos: ReciboDetallePdf[] }>,
+        recibosAgrupados: agrupados,
         clientData,
         firmaEmpleadorUrl,
         ano,

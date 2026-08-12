@@ -14,7 +14,7 @@ export interface DepreciableAsset {
   originalValue: number | string;
   usefulLifeYears: number;
   residualValue: number | string;
-  status: 'active' | 'sold' | 'discarded';
+  status: 'activo' | 'vendido' | 'baja';
   disposalDate?: Date | string | null;
 }
 
@@ -24,7 +24,8 @@ const num = (v: number | string | null | undefined): number => {
 };
 const round2 = (x: number): number =>
   Math.round((x + Number.EPSILON) * 100) / 100;
-const toDate = (d: Date | string): Date =>
+type DateLike = Date | string;
+const toDate = (d: DateLike): Date =>
   d instanceof Date ? d : new Date(d);
 const clamp = (x: number, lo: number, hi: number): number =>
   Math.max(lo, Math.min(hi, x));
@@ -48,13 +49,17 @@ export function monthlyDepreciation(asset: DepreciableAsset): number {
  * Meses devengados al `asOf` (default: hoy). Mes de alta inclusive; mes de baja excluido.
  * Topeado a la vida útil total (no devenga más allá del final de vida).
  */
-export function monthsAccrued(asset: DepreciableAsset, asOf: Date): number {
+export function monthsAccrued(
+  asset: DepreciableAsset,
+  asOfRaw: DateLike
+): number {
+  const asOf = toDate(asOfRaw);
   const acq = toDate(asset.acquisitionDate);
   const totalMonths = asset.usefulLifeYears * 12;
 
   let end = asOf;
   let excludeEndMonth = false;
-  if (asset.status !== 'active' && asset.disposalDate) {
+  if (asset.status !== 'activo' && asset.disposalDate) {
     end = toDate(asset.disposalDate);
     excludeEndMonth = true; // el mes de baja no amortiza
   }
@@ -71,7 +76,7 @@ export function monthsAccrued(asset: DepreciableAsset, asOf: Date): number {
 /** Amortización acumulada al `asOf` (default: hoy), topeada a la base amortizable. */
 export function accumulatedDepreciation(
   asset: DepreciableAsset,
-  asOf: Date = new Date()
+  asOf: DateLike = new Date()
 ): number {
   const accrued = round2(
     monthlyDepreciation(asset) * monthsAccrued(asset, asOf)
@@ -82,7 +87,7 @@ export function accumulatedDepreciation(
 /** Valor residual contable (valor de libros) = origen − amortización acumulada. */
 export function bookValue(
   asset: DepreciableAsset,
-  asOf: Date = new Date()
+  asOf: DateLike = new Date()
 ): number {
   return round2(
     num(asset.originalValue) - accumulatedDepreciation(asset, asOf)
@@ -100,7 +105,7 @@ export interface DepreciationSnapshot {
 /** Resumen de amortización a una fecha (todo en un cálculo, para listas/UI). */
 export function depreciationSnapshot(
   asset: DepreciableAsset,
-  asOf: Date = new Date()
+  asOf: DateLike = new Date()
 ): DepreciationSnapshot {
   const accumulated = accumulatedDepreciation(asset, asOf);
   return {
@@ -132,7 +137,7 @@ export function depreciationForMonth(
   if (target > acqIndex + totalMonths - 1) return 0;
 
   // Mes de baja (o posterior) → no amortiza.
-  if (asset.status !== 'active' && asset.disposalDate) {
+  if (asset.status !== 'activo' && asset.disposalDate) {
     const dis = toDate(asset.disposalDate);
     const disIndex = dis.getUTCFullYear() * 12 + dis.getUTCMonth();
     if (target >= disIndex) return 0;

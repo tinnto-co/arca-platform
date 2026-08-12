@@ -72,7 +72,7 @@ import {
   type JobsResponse,
   type JobLogRow,
 } from '@/actions/job';
-import { getRepresentatives } from '@/actions/client';
+import { getCredenciales } from '@/actions/client';
 import { JobsErrorSummary } from '@/components/jobs-error-summary';
 
 export function JobsTable() {
@@ -90,7 +90,11 @@ export function JobsTable() {
   const setFilter = (updates: Record<string, unknown>) => {
     routerNavigate({
       to: '/jobs',
-      search: (prev: Record<string, unknown>) => ({ ...prev, ...updates, page: 'page' in updates ? (updates.page as number) : 1 }),
+      search: (prev: Record<string, unknown>) => ({
+        ...prev,
+        ...updates,
+        page: 'page' in updates ? (updates.page as number) : 1,
+      }),
     });
   };
 
@@ -135,19 +139,27 @@ export function JobsTable() {
 
   const pageSize = 20;
 
-  const { data: representatives = [] } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => getRepresentatives(),
+  const { data: credenciales = [] } = useQuery({
+    queryKey: ['credenciales'],
+    queryFn: () => getCredenciales(),
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
-    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter, date, fromTime],
+    queryKey: [
+      'jobs',
+      currentPage,
+      statusFilter,
+      typeFilter,
+      clientFilter,
+      date,
+      fromTime,
+    ],
     queryFn: async (): Promise<JobsResponse> => {
       const response = await getJobs({
         data: {
           page: currentPage,
           limit: pageSize,
-          representativeId: clientFilter === 'all' ? undefined : clientFilter,
+          credencialId: clientFilter === 'all' ? undefined : clientFilter,
           status: statusFilter === 'all' ? undefined : statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
           date,
@@ -158,22 +170,34 @@ export function JobsTable() {
     },
   });
 
-  const STATUS_ORDER: Record<string, number> = { running: 0, failed: 1, finished: 2, pending: 3 };
+  const STATUS_ORDER: Record<string, number> = {
+    running: 0,
+    failed: 1,
+    finished: 2,
+    pending: 3,
+  };
 
   const jobs = (data?.jobs ?? [])
     .filter((job: JobRow) => {
       if (hiddenIds.has(job.id)) return false;
-      if (hideFinished && (job.status === 'finished' || job.status === 'failed')) return false;
+      if (
+        hideFinished &&
+        (job.status === 'finished' || job.status === 'failed')
+      )
+        return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
         job.id.toLowerCase().includes(term) ||
-        (job.representativeName ?? '').toLowerCase().includes(term) ||
-        job.clients.some((c) => c.name.toLowerCase().includes(term)) ||
+        (job.credencialNombre ?? '').toLowerCase().includes(term) ||
+        job.clientes.some((c) => c.razonSocial.toLowerCase().includes(term)) ||
         job.type.toLowerCase().includes(term)
       );
     })
-    .sort((a: JobRow, b: JobRow) => (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99));
+    .sort(
+      (a: JobRow, b: JobRow) =>
+        (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+    );
 
   const totalPages = data?.totalPages ?? 1;
 
@@ -287,6 +311,24 @@ export function JobsTable() {
             IVA
           </span>
         );
+      case 'escalas':
+        return (
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
+            <Receipt className="h-3 w-3" />
+            Escalas salariales
+          </span>
+        );
+      case 'tope_imponible':
+        return (
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
+            <Receipt className="h-3 w-3" />
+            Tope imponible
+          </span>
+        );
       case 'notificaciones':
         return (
           <span
@@ -329,10 +371,17 @@ export function JobsTable() {
     setLogsOpen(true);
   };
 
+  // Un job corre sobre una credencial, que puede dar acceso a varios clientes:
+  // se navega al primero y si no hay ninguno no hay adónde ir.
   const handleGoToClient = (job: JobRow) => {
+    const clienteId = job.clientes[0]?.id;
+    if (!clienteId) {
+      toast.error('La credencial de este job no tiene clientes asociados');
+      return;
+    }
     void navigate({
       to: '/clients/$clientId',
-      params: { clientId: job.representativeId },
+      params: { clientId: clienteId },
     });
   };
 
@@ -394,7 +443,7 @@ export function JobsTable() {
           <div className="relative flex-[2] min-w-[200px]">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
             <Input
-              placeholder="Buscar por ID, representante, empresa o tipo..."
+              placeholder="Buscar por ID, credencial, empresa o tipo..."
               value={searchTerm}
               onChange={(e) => setFilter({ search: e.target.value })}
               className="pl-8 w-full"
@@ -419,16 +468,16 @@ export function JobsTable() {
           <div className="flex-[2] min-w-[180px]">
             <SearchableSelect
               options={[
-                { value: 'all', label: 'Todos los representantes' },
-                ...representatives.map((c) => ({
+                { value: 'all', label: 'Todas las credenciales' },
+                ...credenciales.map((c) => ({
                   value: c.id,
-                  label: c.name ?? 'Sin nombre',
+                  label: c.nombre ?? c.cuit,
                 })),
               ]}
               value={clientFilter}
               onValueChange={(value) => setFilter({ clientId: value })}
-              placeholder="Filtrar por representante"
-              searchPlaceholder="Buscar representante..."
+              placeholder="Filtrar por credencial"
+              searchPlaceholder="Buscar credencial..."
               width="100%"
             />
           </div>
@@ -460,6 +509,8 @@ export function JobsTable() {
                 { value: 'notificaciones', label: 'Notificaciones' },
                 { value: 'deuda', label: 'Deuda' },
                 { value: 'vencimientos', label: 'Vencimientos' },
+                { value: 'escalas', label: 'Escalas salariales' },
+                { value: 'tope_imponible', label: 'Tope imponible' },
               ]}
               value={typeFilter}
               onValueChange={(value) => setFilter({ type: value })}
@@ -504,7 +555,7 @@ export function JobsTable() {
       </div>
 
       <JobsErrorSummary
-        representativeId={clientFilter === 'all' ? undefined : clientFilter}
+        credencialId={clientFilter === 'all' ? undefined : clientFilter}
         type={typeFilter === 'all' ? undefined : (typeFilter as JobType)}
         date={date || undefined}
         fromTime={fromTime || undefined}
@@ -532,7 +583,7 @@ export function JobsTable() {
                 />
               </TableHead>
               <TableHead className="w-[90px]">ID</TableHead>
-              <TableHead>Representante</TableHead>
+              <TableHead>Credencial</TableHead>
               <TableHead>Tipo</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Creado</TableHead>
@@ -573,30 +624,32 @@ export function JobsTable() {
                     </code>
                   </TableCell>
                   <TableCell>
-                    {job.representativeName ? (
+                    {job.credencialNombre ? (
                       <div className="flex flex-col">
                         <span className="font-medium">
-                          {job.representativeName}
+                          {job.credencialNombre}
                         </span>
-                        {job.clients.length > 0 && (
+                        {job.clientes.length > 0 && (
                           <span
                             className="max-w-[260px] truncate text-xs text-[var(--arca-ink-3)]"
-                            title={job.clients.map((c) => c.name).join(', ')}
+                            title={job.clientes
+                              .map((c) => c.razonSocial)
+                              .join(', ')}
                           >
-                            {job.clients.map((c) => c.name).join(', ')}
+                            {job.clientes.map((c) => c.razonSocial).join(', ')}
                           </span>
                         )}
                       </div>
                     ) : (
                       <span className="text-[var(--arca-ink-3)] text-sm">
-                        Representante desconocido
+                        {job.type === 'escalas' || job.type === 'tope_imponible'
+                          ? 'Sin credencial (páginas públicas)'
+                          : 'Credencial desconocida'}
                       </span>
                     )}
                   </TableCell>
                   <TableCell>{renderTypeBadge(job.type)}</TableCell>
-                  <TableCell>
-                    {renderStatusBadge(job.status)}
-                  </TableCell>
+                  <TableCell>{renderStatusBadge(job.status)}</TableCell>
                   <TableCell>{formatDateTime(job.createdAt)}</TableCell>
                   <TableCell>
                     {getDurationMinutes(job.startedAt, job.finishedAt)}
@@ -652,7 +705,9 @@ export function JobsTable() {
             <PaginationContent>
               <PaginationItem>
                 <PaginationPrevious
-                  onClick={() => setFilter({ page: Math.max(1, currentPage - 1) })}
+                  onClick={() =>
+                    setFilter({ page: Math.max(1, currentPage - 1) })
+                  }
                   className={
                     currentPage === 1
                       ? 'pointer-events-none opacity-50'
@@ -699,8 +754,9 @@ export function JobsTable() {
 
               <PaginationItem>
                 <PaginationNext
-                  onClick={() => setFilter({ page: Math.min(totalPages, currentPage + 1) })}
-
+                  onClick={() =>
+                    setFilter({ page: Math.min(totalPages, currentPage + 1) })
+                  }
                   className={
                     currentPage === totalPages
                       ? 'pointer-events-none opacity-50'
@@ -737,18 +793,23 @@ export function JobsTable() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-[var(--arca-ink-3)]">
-                    Representante
+                    Credencial
                   </p>
                   <p className="text-sm font-semibold">
-                    {selectedJob.representativeName ??
-                      'Representante desconocido'}
+                    {selectedJob.credencialNombre ??
+                      (selectedJob.type === 'escalas' ||
+                      selectedJob.type === 'tope_imponible'
+                        ? 'Sin credencial (páginas públicas)'
+                        : 'Credencial desconocida')}
                   </p>
                   <p className="text-xs text-[var(--arca-ink-3)] font-mono">
-                    {selectedJob.representativeId}
+                    {selectedJob.credencialId}
                   </p>
-                  {selectedJob.clients.length > 0 && (
+                  {selectedJob.clientes.length > 0 && (
                     <p className="text-xs text-[var(--arca-ink-3)]">
-                      {selectedJob.clients.map((c) => c.name).join(', ')}
+                      {selectedJob.clientes
+                        .map((c) => c.razonSocial)
+                        .join(', ')}
                     </p>
                   )}
                 </div>

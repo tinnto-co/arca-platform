@@ -43,7 +43,7 @@ const outputSchema = z.object({
 export const scanBankStatement = createServerFn({
   method: 'POST',
 })
-  .inputValidator(scanSchema)
+  .validator(scanSchema)
   .handler(async (ctx) => {
     await getSessionWithOrg();
     const role = await getMemberRole();

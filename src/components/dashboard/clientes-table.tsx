@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Users, SlidersHorizontal } from 'lucide-react';
-import { getDashboardStats, getTopRepresentatives } from '@/actions/dashboard';
+import { getDashboardStats, getTopClientes } from '@/actions/dashboard';
 import {
   ArcaCard,
   ArcaCardHead,
@@ -37,9 +37,9 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
   });
 
   const { data: representatives = [], isLoading } = useQuery({
-    queryKey: ['topRepresentatives', fromStr, toStr],
+    queryKey: ['topClientes', fromStr, toStr],
     queryFn: () =>
-      getTopRepresentatives({ data: { limit: 5, from: fromStr, to: toStr } }),
+      getTopClientes({ data: { limit: 5, from: fromStr, to: toStr } }),
   });
 
   return (
@@ -98,7 +98,7 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
           ) : (
             representatives.map((c, i) => (
               <tr
-                key={c.clientId}
+                key={c.clienteId}
                 className="border-b border-[var(--arca-border)] last:border-b-0 hover:bg-[var(--arca-surface-2)] cursor-pointer transition-colors duration-[120ms]"
               >
                 <td className="px-5 py-3">
@@ -109,11 +109,11 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
                         background: AVATAR_COLORS[i % AVATAR_COLORS.length],
                       }}
                     >
-                      {getInitials(c.name)}
+                      {getInitials(c.nombre)}
                     </div>
                     <div>
                       <div className="font-semibold text-[13px] text-[var(--arca-ink)] leading-tight">
-                        {c.name}
+                        {c.nombre}
                       </div>
                       <div className="font-mono text-[11px] text-[var(--arca-ink-4)]">
                         CUIT {c.cuit || '-'}
@@ -122,13 +122,13 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
                   </div>
                 </td>
                 <td className="px-5 py-3">
-                  <StatusTag kind={c.status}>{c.statusLabel}</StatusTag>
+                  <StatusTag kind={c.estado}>{c.estadoLabel}</StatusTag>
                 </td>
                 <td className="px-5 py-3 text-[var(--arca-ink-2)]">
-                  {c.lastActivity ? relativeTime(c.lastActivity) : '-'}
+                  {c.ultimaActividad ? relativeTime(c.ultimaActividad) : '-'}
                 </td>
                 <td className="px-5 py-3 text-right tabular-nums font-medium text-[var(--arca-ink)]">
-                  {formatArs(c.totalAmount)}
+                  {formatArs(c.total)}
                 </td>
               </tr>
             ))
@@ -137,7 +137,7 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
       </table>
 
       <ArcaCardFoot
-        leftText={`Mostrando ${representatives.length} de ${stats?.totalClients || 0} clientes`}
+        leftText={`Mostrando ${representatives.length} de ${stats?.totalClientes || 0} clientes`}
         linkText="Ver todos →"
         linkHref="/clients"
       />

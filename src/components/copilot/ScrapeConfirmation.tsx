@@ -3,7 +3,11 @@
 import * as React from 'react';
 import { AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { getRepresentative, scrapSingleJob } from '@/actions/client';
+import {
+  getCliente,
+  getClienteCredenciales,
+  scrapSingleJob,
+} from '@/actions/client';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -32,13 +36,13 @@ const JOB_TYPE_LABELS: Record<ScrapeJobType, string> = {
 type Phase = 'pending' | 'submitting' | 'done' | 'failed' | 'cancelled';
 
 interface ScrapeConfirmationProps {
-  clientId: string;
+  clienteId: string;
   jobType: ScrapeJobType;
   respond: (result: unknown) => void;
 }
 
 export function ScrapeConfirmation({
-  clientId,
+  clienteId,
   jobType,
   respond,
 }: ScrapeConfirmationProps) {
@@ -46,26 +50,41 @@ export function ScrapeConfirmation({
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
   const { data: client, isLoading: clientLoading } = useQuery({
-    queryKey: ['client', clientId],
-    queryFn: () => getRepresentative({ data: { id: clientId } }),
+    queryKey: ['cliente', clienteId],
+    queryFn: () => getCliente({ data: { id: clienteId } }),
     staleTime: 60_000,
   });
 
-  const clientName = client?.name ?? null;
+  // El scrape se dispara contra un login de AFIP, no contra el cliente: cada
+  // job recorre todas las empresas de ese login. Se usa el login preferido
+  // (`getClienteCredenciales` ya los ordena por `preferida`).
+  const { data: credenciales } = useQuery({
+    queryKey: ['clienteCredenciales', clienteId],
+    queryFn: () => getClienteCredenciales({ data: { clienteId } }),
+    staleTime: 60_000,
+  });
+
+  const clientName = client?.razonSocial ?? null;
+  const credencialId = credenciales?.[0]?.id ?? null;
   const jobLabel = JOB_TYPE_LABELS[jobType] ?? jobType;
 
   const handleConfirm = async () => {
     setPhase('submitting');
     setErrorMsg(null);
     try {
+      if (!credencialId) {
+        throw new Error(
+          'El cliente no tiene ninguna credencial de AFIP asociada.'
+        );
+      }
       const result = await scrapSingleJob({
-        data: { representativeId: clientId, jobType },
+        data: { credencialId, jobType },
       });
       setPhase('done');
       respond({
         confirmed: true,
         success: true,
-        clientId,
+        clienteId,
         clientName,
         jobType,
         result,
@@ -80,7 +99,7 @@ export function ScrapeConfirmation({
       respond({
         confirmed: true,
         success: false,
-        clientId,
+        clienteId,
         clientName,
         jobType,
         error: msg,
@@ -90,7 +109,7 @@ export function ScrapeConfirmation({
 
   const handleCancel = () => {
     setPhase('cancelled');
-    respond({ cancelled: true, clientId, jobType });
+    respond({ cancelled: true, clienteId, jobType });
   };
 
   return (
@@ -113,7 +132,7 @@ export function ScrapeConfirmation({
           ) : (
             <>
               Cliente ID:{' '}
-              <span className="font-mono text-xs">{clientId.slice(0, 8)}…</span>
+              <span className="font-mono text-xs">{clienteId.slice(0, 8)}…</span>
             </>
           )}
         </CardDescription>

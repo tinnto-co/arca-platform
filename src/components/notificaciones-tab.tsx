@@ -112,7 +112,7 @@ export function NotificacionesTab({
             setScrapingSection('notificaciones');
             try {
               await scrapSingleJob({
-                data: { representativeId, jobType: 'notificaciones' },
+                data: { credencialId: representativeId, jobType: 'notificaciones' },
               });
               await queryClient.invalidateQueries({
                 queryKey: ['clientNotifications', orgKey, representativeId],

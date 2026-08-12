@@ -1,190 +1,189 @@
+/**
+ * Bancos: cuentas, movimientos y conciliación contra comprobantes.
+ *
+ * La cuenta cuelga del **cliente** (antes colgaba del login de AFIP, que no es
+ * quien tiene la cuenta). El importe del movimiento es siempre positivo y el
+ * signo vive en `direccion`, mirado desde el cliente: `ingreso` es plata que
+ * entra, `egreso` plata que sale.
+ */
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import {
-  bankAccount,
-  bankTransaction,
-  bankInvoiceMatch,
-  invoice,
-  representative,
+  cuentaBancaria,
+  cuentaBancariaTipo,
+  movimientoBancario,
+  movimientoDireccion,
+  conciliacionComprobante,
+  comprobante,
+  cliente,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import { eq, and, desc, gte, lte, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, gte, lte, sql, inArray, type SQL } from 'drizzle-orm';
 
-/** Validate a bank account belongs to the calling user's org */
-async function ensureBankAccountBelongsToOrg(
-  bankAccountId: string,
-  orgId: string
-): Promise<{ bankAccountId: string; clientId: string }> {
+/** La cuenta, validando que sea de la organización activa. */
+async function getCuentaDeOrg(cuentaBancariaId: string, orgId: string) {
   const [row] = await db
-    .select({ bankAccountId: bankAccount.id, clientId: bankAccount.representativeId })
-    .from(bankAccount)
-    .innerJoin(representative, eq(representative.id, bankAccount.representativeId))
+    .select({ id: cuentaBancaria.id, clienteId: cuentaBancaria.clienteId })
+    .from(cuentaBancaria)
     .where(
-      and(eq(bankAccount.id, bankAccountId), eq(representative.organizationId, orgId))
+      and(
+        eq(cuentaBancaria.id, cuentaBancariaId),
+        eq(cuentaBancaria.orgId, orgId)
+      )
     )
     .limit(1);
 
-  if (!row) {
-    throw new Error('Cuenta bancaria no encontrada o no autorizada');
-  }
+  if (!row) throw new Error('Cuenta bancaria no encontrada o no autorizada');
   return row;
 }
 
-export const createBankAccount = createServerFn({ method: 'POST' })
-  .inputValidator(
+/** El cliente, validando que sea de la organización activa. */
+async function assertClienteDeOrg(clienteId: string, orgId: string) {
+  const [row] = await db
+    .select({ id: cliente.id })
+    .from(cliente)
+    .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
+    .limit(1);
+  if (!row) throw new Error('Cliente no encontrado o no autorizado');
+  return row;
+}
+
+export const createCuentaBancaria = createServerFn({ method: 'POST' })
+  .validator(
     z.object({
-      clientId: z.string().uuid(),
-      profileId: z.string().uuid().optional(),
-      bankName: z.string(),
-      accountNumber: z.string().optional(),
-      currency: z.string().default('ARS'),
-      alias: z.string().optional(),
+      clienteId: z.string().uuid(),
+      banco: z.string().min(1),
+      tipo: z.enum(cuentaBancariaTipo.enumValues).optional(),
+      numero: z.string().optional(),
       cbu: z.string().optional(),
+      alias: z.string().optional(),
+      moneda: z.string().length(3).default('ARS'),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    assertCanWrite(await getMemberRole());
+    await assertClienteDeOrg(ctx.data.clienteId, orgId);
 
-    // Validate client belongs to org
-    const [c] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-
-    if (!c) throw new Error('Cliente no encontrado o no autorizado');
-
-    const [account] = await db
-      .insert(bankAccount)
+    const [cuenta] = await db
+      .insert(cuentaBancaria)
       .values({
-        clientId: ctx.data.clientId,
-        profileId: ctx.data.profileId,
-        bankName: ctx.data.bankName,
-        accountNumber: ctx.data.accountNumber,
-        currency: ctx.data.currency,
-        alias: ctx.data.alias,
-        cbu: ctx.data.cbu,
+        orgId,
+        clienteId: ctx.data.clienteId,
+        banco: ctx.data.banco,
+        tipo: ctx.data.tipo ?? null,
+        numero: ctx.data.numero ?? null,
+        cbu: ctx.data.cbu ?? null,
+        alias: ctx.data.alias ?? null,
+        moneda: ctx.data.moneda,
       })
       .returning();
 
-    return account;
+    return cuenta;
   });
 
-export const listBankAccounts = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+export const listCuentasBancarias = createServerFn({ method: 'GET' })
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const [c] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-
-    if (!c) throw new Error('Cliente no encontrado o no autorizado');
-
     return db
       .select()
-      .from(bankAccount)
+      .from(cuentaBancaria)
       .where(
         and(
-          eq(bankAccount.representativeId, ctx.data.clientId),
-          eq(bankAccount.active, true)
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+          eq(cuentaBancaria.activa, true)
         )
       )
-      .orderBy(bankAccount.createdAt);
+      .orderBy(cuentaBancaria.createdAt);
   });
 
-export const importBankTransactions = createServerFn({ method: 'POST' })
-  .inputValidator(
+export const importMovimientos = createServerFn({ method: 'POST' })
+  .validator(
     z.object({
-      bankAccountId: z.string().uuid(),
-      transactions: z.array(
+      cuentaBancariaId: z.string().uuid(),
+      movimientos: z.array(
         z.object({
-          transactionDate: z.string(),
-          description: z.string().optional(),
-          amount: z.string(),
-          direction: z.enum(['credit', 'debit']),
-          counterpartyName: z.string().optional(),
-          counterpartyIdentityNumber: z.string().optional(),
-          externalId: z.string().optional(),
-          rawData: z.record(z.string(), z.unknown()).optional(),
+          fecha: z.string(),
+          descripcion: z.string().optional(),
+          importe: z.string(),
+          direccion: z.enum(movimientoDireccion.enumValues),
+          contraparteTexto: z.string().optional(),
+          idExterno: z.string().optional(),
+          datosCrudos: z.record(z.string(), z.unknown()).optional(),
         })
       ),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    assertCanWrite(await getMemberRole());
+    await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
 
-    await ensureBankAccountBelongsToOrg(ctx.data.bankAccountId, orgId);
+    if (ctx.data.movimientos.length === 0) return { importados: 0, salteados: 0 };
 
-    if (ctx.data.transactions.length === 0) return { imported: 0, skipped: 0 };
+    // Dedupe por el id que da el banco.
+    const idsExternos = ctx.data.movimientos
+      .map((m) => m.idExterno)
+      .filter((id): id is string => Boolean(id));
 
-    // Skip duplicates by externalId
-    const externalIds = ctx.data.transactions
-      .map((t) => t.externalId)
-      .filter(Boolean) as string[];
-
-    let existingExternalIds = new Set<string>();
-    if (externalIds.length > 0) {
-      const existing = await db
-        .select({ externalId: bankTransaction.externalId })
-        .from(bankTransaction)
+    let yaImportados = new Set<string>();
+    if (idsExternos.length > 0) {
+      const existentes = await db
+        .select({ idExterno: movimientoBancario.idExterno })
+        .from(movimientoBancario)
         .where(
           and(
-            eq(bankTransaction.bankAccountId, ctx.data.bankAccountId),
-            inArray(bankTransaction.externalId, externalIds)
+            eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId),
+            inArray(movimientoBancario.idExterno, idsExternos)
           )
         );
-      existingExternalIds = new Set(
-        existing.map((e) => e.externalId).filter(Boolean) as string[]
+      yaImportados = new Set(
+        existentes
+          .map((e) => e.idExterno)
+          .filter((id): id is string => Boolean(id))
       );
     }
 
-    const toInsert = ctx.data.transactions.filter(
-      (t) => !t.externalId || !existingExternalIds.has(t.externalId)
+    const nuevos = ctx.data.movimientos.filter(
+      (m) => !m.idExterno || !yaImportados.has(m.idExterno)
     );
 
-    if (toInsert.length === 0)
-      return { imported: 0, skipped: ctx.data.transactions.length };
+    if (nuevos.length === 0)
+      return { importados: 0, salteados: ctx.data.movimientos.length };
 
-    await db.insert(bankTransaction).values(
-      toInsert.map((t) => ({
-        bankAccountId: ctx.data.bankAccountId,
-        transactionDate: new Date(t.transactionDate),
-        description: t.description,
-        amount: t.amount,
-        direction: t.direction,
-        counterpartyName: t.counterpartyName,
-        counterpartyIdentityNumber: t.counterpartyIdentityNumber,
-        externalId: t.externalId,
-        rawData: t.rawData ?? null,
+    await db.insert(movimientoBancario).values(
+      nuevos.map((m) => ({
+        cuentaBancariaId: ctx.data.cuentaBancariaId,
+        fecha: m.fecha,
+        // El signo lo lleva `direccion`; el importe es siempre positivo.
+        importe: Math.abs(Number(m.importe)).toFixed(2),
+        direccion: m.direccion,
+        descripcion: m.descripcion ?? null,
+        contraparteTexto: m.contraparteTexto ?? null,
+        idExterno: m.idExterno ?? null,
+        datosCrudos: m.datosCrudos ?? null,
+        fuente: 'import' as const,
       }))
     );
 
     return {
-      imported: toInsert.length,
-      skipped: ctx.data.transactions.length - toInsert.length,
+      importados: nuevos.length,
+      salteados: ctx.data.movimientos.length - nuevos.length,
     };
   });
 
-export const listBankTransactions = createServerFn({ method: 'GET' })
-  .inputValidator(
+export const listMovimientos = createServerFn({ method: 'GET' })
+  .validator(
     z.object({
-      bankAccountId: z.string().uuid(),
+      cuentaBancariaId: z.string().uuid(),
       from: z.string().optional(),
       to: z.string().optional(),
       limit: z.number().int().min(1).max(500).default(100),
@@ -192,313 +191,304 @@ export const listBankTransactions = createServerFn({ method: 'GET' })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
+    await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
 
-    await ensureBankAccountBelongsToOrg(ctx.data.bankAccountId, orgId);
-
-    const conditions: ReturnType<typeof eq>[] = [
-      eq(bankTransaction.bankAccountId, ctx.data.bankAccountId) as any,
+    const conditions: SQL[] = [
+      eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId),
     ];
-    if (ctx.data.from) {
-      conditions.push(
-        gte(bankTransaction.transactionDate, new Date(ctx.data.from)) as any
-      );
-    }
-    if (ctx.data.to) {
-      conditions.push(
-        lte(bankTransaction.transactionDate, new Date(ctx.data.to)) as any
-      );
-    }
+    if (ctx.data.from)
+      conditions.push(gte(movimientoBancario.fecha, ctx.data.from));
+    if (ctx.data.to) conditions.push(lte(movimientoBancario.fecha, ctx.data.to));
 
-    // Fetch transactions with their match status
-    const transactions = await db
-      .select()
-      .from(bankTransaction)
+    const movimientos = await db
+      .select({
+        id: movimientoBancario.id,
+        fecha: movimientoBancario.fecha,
+        direccion: movimientoBancario.direccion,
+        importe: movimientoBancario.importe,
+        descripcion: movimientoBancario.descripcion,
+        saldoPosterior: movimientoBancario.saldoPosterior,
+        contraparteId: movimientoBancario.contraparteId,
+        contraparteTexto: movimientoBancario.contraparteTexto,
+        idExterno: movimientoBancario.idExterno,
+        fuente: movimientoBancario.fuente,
+        createdAt: movimientoBancario.createdAt,
+      })
+      .from(movimientoBancario)
       .where(and(...conditions))
-      .orderBy(desc(bankTransaction.transactionDate))
+      .orderBy(desc(movimientoBancario.fecha))
       .limit(ctx.data.limit);
 
-    // Get match info for these transactions
-    const txIds = transactions.map((t) => t.id);
-    const matches =
-      txIds.length > 0
+    const ids = movimientos.map((m) => m.id);
+    const conciliaciones =
+      ids.length > 0
         ? await db
-            .select()
-            .from(bankInvoiceMatch)
-            .where(inArray(bankInvoiceMatch.bankTransactionId, txIds))
+            .select({
+              id: conciliacionComprobante.id,
+              movimientoBancarioId:
+                conciliacionComprobante.movimientoBancarioId,
+              comprobanteId: conciliacionComprobante.comprobanteId,
+              importeConciliado: conciliacionComprobante.importeConciliado,
+              estado: conciliacionComprobante.estado,
+              fuente: conciliacionComprobante.fuente,
+              confianza: conciliacionComprobante.confianza,
+            })
+            .from(conciliacionComprobante)
+            .where(
+              inArray(conciliacionComprobante.movimientoBancarioId, ids)
+            )
         : [];
 
-    const matchMap = new Map<string, typeof matches>();
-    for (const m of matches) {
-      if (!matchMap.has(m.bankTransactionId))
-        matchMap.set(m.bankTransactionId, []);
-      matchMap.get(m.bankTransactionId)!.push(m);
+    const porMovimiento = new Map<string, typeof conciliaciones>();
+    for (const c of conciliaciones) {
+      const lista = porMovimiento.get(c.movimientoBancarioId) ?? [];
+      lista.push(c);
+      porMovimiento.set(c.movimientoBancarioId, lista);
     }
 
-    return transactions.map((t) => ({
-      ...t,
-      matches: matchMap.get(t.id) ?? [],
-      matched: (matchMap.get(t.id) ?? []).length > 0,
-    })) as any;
+    return movimientos.map((m) => ({
+      ...m,
+      conciliaciones: porMovimiento.get(m.id) ?? [],
+      conciliado: (porMovimiento.get(m.id) ?? []).length > 0,
+    }));
   });
 
-export const autoMatchTransactions = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ bankAccountId: z.string().uuid() }))
+const DIAS_PROXIMIDAD = 5;
+
+export const autoConciliar = createServerFn({ method: 'POST' })
+  .validator(z.object({ cuentaBancariaId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    assertCanWrite(await getMemberRole());
 
-    const { clientId } = await ensureBankAccountBelongsToOrg(
-      ctx.data.bankAccountId,
-      orgId
-    );
+    const cuenta = await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
 
-    // Get unmatched transactions
-    const allTxs = await db
-      .select()
-      .from(bankTransaction)
-      .where(eq(bankTransaction.bankAccountId, ctx.data.bankAccountId));
+    const movimientos = await db
+      .select({
+        id: movimientoBancario.id,
+        fecha: movimientoBancario.fecha,
+        importe: movimientoBancario.importe,
+        contraparteId: movimientoBancario.contraparteId,
+      })
+      .from(movimientoBancario)
+      .where(
+        eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId)
+      );
 
-    // Get already matched transaction IDs
-    const matchedTxIds = new Set(
+    if (movimientos.length === 0) return { conciliados: 0 };
+
+    const yaConciliados = new Set(
       (
         await db
-          .select({ id: bankInvoiceMatch.bankTransactionId })
-          .from(bankInvoiceMatch)
+          .select({ id: conciliacionComprobante.movimientoBancarioId })
+          .from(conciliacionComprobante)
           .where(
             inArray(
-              bankInvoiceMatch.bankTransactionId,
-              allTxs.map((t) => t.id)
+              conciliacionComprobante.movimientoBancarioId,
+              movimientos.map((m) => m.id)
             )
           )
-      ).map((r) => r.id)
+      ).map((c) => c.id)
     );
 
-    const unmatchedTxs = allTxs.filter((t) => !matchedTxIds.has(t.id));
-    if (unmatchedTxs.length === 0) return { matched: 0 };
+    const pendientes = movimientos.filter((m) => !yaConciliados.has(m.id));
+    if (pendientes.length === 0) return { conciliados: 0 };
 
-    // Get invoices for this client
-    const clientInvoices = await db
+    const comprobantes = await db
       .select({
-        id: invoice.id,
-        amount: invoice.amount,
-        emitionDate: invoice.emitionDate,
-        emitterIdentityNumber: invoice.emitterIdentityNumber,
-        recipientIdentityNumber: invoice.recipientIdentityNumber,
-        direction: invoice.direction,
+        id: comprobante.id,
+        total: comprobante.total,
+        fechaEmision: comprobante.fechaEmision,
+        contraparteId: comprobante.contraparteId,
       })
-      .from(invoice)
-      .where(eq(invoice.representativeId, clientId));
+      .from(comprobante)
+      .where(eq(comprobante.clienteId, cuenta.clienteId));
 
-    let matched = 0;
-    const toInsert: {
-      bankTransactionId: string;
-      invoiceId: string;
-      matchType: string;
-      confidence: string;
+    const aInsertar: {
+      movimientoBancarioId: string;
+      comprobanteId: string;
+      importeConciliado: string;
+      estado: 'sugerida';
+      fuente: 'calculo';
+      confianza: string;
     }[] = [];
 
-    const DATE_PROXIMITY_DAYS = 5;
+    for (const mov of pendientes) {
+      const importe = Number(mov.importe);
+      const fecha = new Date(mov.fecha).getTime();
 
-    for (const tx of unmatchedTxs) {
-      const txAmount = Math.abs(parseFloat(tx.amount));
-      const txDate = new Date(tx.transactionDate).getTime();
+      let mejor: { comprobanteId: string; confianza: number } | null = null;
 
-      let bestMatch: { invoiceId: string; confidence: number } | null = null;
+      for (const comp of comprobantes) {
+        // El importe tiene que coincidir con tolerancia de un peso.
+        if (Math.abs(importe - Number(comp.total)) >= 1) continue;
 
-      for (const inv of clientInvoices) {
-        const invAmount = Math.abs(parseFloat(inv.amount));
-        const invDate = new Date(inv.emitionDate).getTime();
+        const dias =
+          Math.abs(fecha - new Date(comp.fechaEmision).getTime()) /
+          (1000 * 60 * 60 * 24);
+        if (dias > DIAS_PROXIMIDAD) continue;
 
-        // Amount must match within 1 peso tolerance
-        const amountMatch = Math.abs(txAmount - invAmount) < 1;
-        if (!amountMatch) continue;
-
-        // Date must be within DATE_PROXIMITY_DAYS
-        const daysDiff = Math.abs(txDate - invDate) / (1000 * 60 * 60 * 24);
-        if (daysDiff > DATE_PROXIMITY_DAYS) continue;
-
-        // Compute confidence
-        let confidence = 50; // base: amount + date match
-
-        // CUIT match bonus
-        const counterpartyCuit =
-          tx.counterpartyIdentityNumber?.replace(/\D/g, '') ?? '';
-        if (counterpartyCuit) {
-          const emitterCuit =
-            inv.emitterIdentityNumber?.replace(/\D/g, '') ?? '';
-          const recipientCuit =
-            inv.recipientIdentityNumber?.replace(/\D/g, '') ?? '';
-          if (
-            counterpartyCuit === emitterCuit ||
-            counterpartyCuit === recipientCuit
-          ) {
-            confidence += 40;
-          }
+        // Base: importe + fecha. Bonus si además coincide la contraparte.
+        let confianza = 0.5;
+        if (mov.contraparteId && mov.contraparteId === comp.contraparteId) {
+          confianza += 0.4;
         }
+        confianza += (1 - dias / DIAS_PROXIMIDAD) * 0.1;
 
-        // Date proximity bonus: closer = higher confidence
-        confidence += Math.round((1 - daysDiff / DATE_PROXIMITY_DAYS) * 10);
-
-        if (!bestMatch || confidence > bestMatch.confidence) {
-          bestMatch = { invoiceId: inv.id, confidence };
+        if (!mejor || confianza > mejor.confianza) {
+          mejor = { comprobanteId: comp.id, confianza };
         }
       }
 
-      if (bestMatch && bestMatch.confidence >= 50) {
-        toInsert.push({
-          bankTransactionId: tx.id,
-          invoiceId: bestMatch.invoiceId,
-          matchType: 'auto',
-          confidence: bestMatch.confidence.toFixed(2),
+      if (mejor) {
+        aInsertar.push({
+          movimientoBancarioId: mov.id,
+          comprobanteId: mejor.comprobanteId,
+          importeConciliado: importe.toFixed(2),
+          // La sugiere el cálculo de la app: queda pendiente de que la confirme alguien.
+          estado: 'sugerida',
+          fuente: 'calculo',
+          confianza: mejor.confianza.toFixed(4),
         });
-        matched++;
       }
     }
 
-    if (toInsert.length > 0) {
-      await db.insert(bankInvoiceMatch).values(toInsert);
+    if (aInsertar.length > 0) {
+      await db.insert(conciliacionComprobante).values(aInsertar);
     }
 
-    return { matched };
+    return { conciliados: aInsertar.length };
   });
 
-export const manualMatchTransaction = createServerFn({ method: 'POST' })
-  .inputValidator(
+export const conciliarManual = createServerFn({ method: 'POST' })
+  .validator(
     z.object({
-      transactionId: z.string().uuid(),
-      invoiceId: z.string().uuid(),
+      movimientoId: z.string().uuid(),
+      comprobanteId: z.string().uuid(),
     })
   )
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
+    assertCanWrite(await getMemberRole());
 
-    // Validate transaction belongs to org
-    const [tx] = await db
+    const [mov] = await db
       .select({
-        id: bankTransaction.id,
-        bankAccountId: bankTransaction.bankAccountId,
+        id: movimientoBancario.id,
+        importe: movimientoBancario.importe,
       })
-      .from(bankTransaction)
-      .innerJoin(bankAccount, eq(bankAccount.id, bankTransaction.bankAccountId))
-      .innerJoin(representative, eq(representative.id, bankAccount.representativeId))
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
       .where(
         and(
-          eq(bankTransaction.id, ctx.data.transactionId),
-          eq(representative.organizationId, orgId)
+          eq(movimientoBancario.id, ctx.data.movimientoId),
+          eq(cuentaBancaria.orgId, orgId)
         )
       )
       .limit(1);
 
-    if (!tx) throw new Error('Transacción no encontrada o no autorizada');
+    if (!mov) throw new Error('Movimiento no encontrado o no autorizado');
 
-    // Validate invoice belongs to org
-    const [inv] = await db
-      .select({ id: invoice.id })
-      .from(invoice)
-      .innerJoin(representative, eq(representative.id, invoice.representativeId))
+    const [comp] = await db
+      .select({ id: comprobante.id })
+      .from(comprobante)
       .where(
         and(
-          eq(invoice.id, ctx.data.invoiceId),
-          eq(representative.organizationId, orgId)
+          eq(comprobante.id, ctx.data.comprobanteId),
+          eq(comprobante.orgId, orgId)
         )
       )
       .limit(1);
 
-    if (!inv) throw new Error('Comprobante no encontrado o no autorizado');
+    if (!comp) throw new Error('Comprobante no encontrado o no autorizado');
 
-    // Remove any existing match for this transaction
+    // Una conciliación manual reemplaza lo que hubiera sugerido el cálculo.
     await db
-      .delete(bankInvoiceMatch)
-      .where(eq(bankInvoiceMatch.bankTransactionId, ctx.data.transactionId));
+      .delete(conciliacionComprobante)
+      .where(
+        eq(conciliacionComprobante.movimientoBancarioId, ctx.data.movimientoId)
+      );
 
-    const [match] = await db
-      .insert(bankInvoiceMatch)
+    const [conciliacion] = await db
+      .insert(conciliacionComprobante)
       .values({
-        bankTransactionId: ctx.data.transactionId,
-        invoiceId: ctx.data.invoiceId,
-        matchType: 'manual',
-        confidence: '100.00',
-        reviewedByUserId: userId,
-        reviewedAt: new Date(),
+        movimientoBancarioId: ctx.data.movimientoId,
+        comprobanteId: ctx.data.comprobanteId,
+        importeConciliado: mov.importe,
+        estado: 'confirmada',
+        fuente: 'manual',
+        confianza: '1.0000',
+        revisadoPor: userId,
+        revisadoAt: new Date(),
       })
       .returning();
 
-    return match;
+    return conciliacion;
   });
 
-export const getReconciliationSummary = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ clientId: z.string().uuid() }))
+export const getResumenConciliacion = createServerFn({ method: 'GET' })
+  .validator(z.object({ clienteId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const [c] = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(
-        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
-      )
-      .limit(1);
-
-    if (!c) throw new Error('Cliente no encontrado o no autorizado');
-
-    // Get all bank accounts for client
-    const accounts = await db
-      .select({ id: bankAccount.id })
-      .from(bankAccount)
+    const cuentas = await db
+      .select({ id: cuentaBancaria.id })
+      .from(cuentaBancaria)
       .where(
         and(
-          eq(bankAccount.representativeId, ctx.data.clientId),
-          eq(bankAccount.active, true)
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+          eq(cuentaBancaria.activa, true)
         )
       );
 
-    if (accounts.length === 0) {
+    if (cuentas.length === 0) {
       return {
-        totalTransactions: 0,
-        matchedTransactions: 0,
-        unmatchedTransactions: 0,
-        matchRate: 0,
-        totalCredit: '0.00',
-        totalDebit: '0.00',
-        accountCount: 0,
+        movimientos: 0,
+        conciliados: 0,
+        pendientes: 0,
+        porcentajeConciliado: 0,
+        totalIngresos: '0.00',
+        totalEgresos: '0.00',
+        cuentas: 0,
       };
     }
 
-    const accountIds = accounts.map((a) => a.id);
+    const cuentaIds = cuentas.map((c) => c.id);
 
-    const [totals] = await db
+    const [totales] = await db
       .select({
-        total: sql<number>`COUNT(*)`,
-        totalCredit: sql<string>`COALESCE(SUM(CASE WHEN direction = 'credit' THEN amount::numeric ELSE 0 END), 0)::text`,
-        totalDebit: sql<string>`COALESCE(SUM(CASE WHEN direction = 'debit' THEN amount::numeric ELSE 0 END), 0)::text`,
+        total: sql<number>`count(*)::int`,
+        totalIngresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+        totalEgresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
       })
-      .from(bankTransaction)
-      .where(inArray(bankTransaction.bankAccountId, accountIds));
+      .from(movimientoBancario)
+      .where(inArray(movimientoBancario.cuentaBancariaId, cuentaIds));
 
-    const [matchedCount] = await db
+    const [conciliados] = await db
       .select({
-        count: sql<number>`COUNT(DISTINCT ${bankInvoiceMatch.bankTransactionId})`,
+        count: sql<number>`count(distinct ${conciliacionComprobante.movimientoBancarioId})::int`,
       })
-      .from(bankInvoiceMatch)
+      .from(conciliacionComprobante)
       .innerJoin(
-        bankTransaction,
-        eq(bankInvoiceMatch.bankTransactionId, bankTransaction.id)
+        movimientoBancario,
+        eq(conciliacionComprobante.movimientoBancarioId, movimientoBancario.id)
       )
-      .where(inArray(bankTransaction.bankAccountId, accountIds));
+      .where(inArray(movimientoBancario.cuentaBancariaId, cuentaIds));
 
-    const total = Number(totals?.total ?? 0);
-    const matched = Number(matchedCount?.count ?? 0);
+    const total = Number(totales?.total ?? 0);
+    const conciliado = Number(conciliados?.count ?? 0);
 
     return {
-      totalTransactions: total,
-      matchedTransactions: matched,
-      unmatchedTransactions: total - matched,
-      matchRate: total > 0 ? Math.round((matched / total) * 100) : 0,
-      totalCredit: totals?.totalCredit ?? '0.00',
-      totalDebit: totals?.totalDebit ?? '0.00',
-      accountCount: accounts.length,
+      movimientos: total,
+      conciliados: conciliado,
+      pendientes: total - conciliado,
+      porcentajeConciliado:
+        total > 0 ? Math.round((conciliado / total) * 100) : 0,
+      totalIngresos: totales?.totalIngresos ?? '0.00',
+      totalEgresos: totales?.totalEgresos ?? '0.00',
+      cuentas: cuentas.length,
     };
   });

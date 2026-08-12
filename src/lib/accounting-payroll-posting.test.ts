@@ -1,39 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import {
-  aggregatePayrollConcepts,
-  buildPayrollEntryLines,
-  resolveConceptTipo,
-  ruleMatchesConcept,
-  selectRuleForConcept,
-  type AggregatedConcept,
+  agregarConceptosSueldos,
+  armarLineasSueldos,
+  resolverTipoConcepto,
+  reglaMatcheaConcepto,
+  seleccionarReglaConcepto,
+  type ConceptoAgregado,
 } from './accounting-payroll-posting';
-import type { RuleLike } from './accounting-invoice-posting';
+import type { ReglaLike } from './accounting-invoice-posting';
 
 const PR = 'acct-pending-review';
 const SUELDOS = 'acct-sueldos';
 const A_PAGAR = 'acct-sueldos-a-pagar';
 const APORTES = 'acct-aportes-a-pagar';
 
-const rule = (over: Partial<RuleLike> & Pick<RuleLike, 'id'>): RuleLike => ({
-  name: over.name ?? over.id,
-  ruleType: 'conditional',
-  condition: null,
-  priority: 100,
-  lines: [],
+const rule = (over: Partial<ReglaLike> & Pick<ReglaLike, 'id'>): ReglaLike => ({
+  nombre: over.nombre ?? over.id,
+  tipo: 'condicional',
+  condicion: null,
+  prioridad: 100,
+  lineas: [],
   ...over,
 });
 
-const concept = (over: Partial<AggregatedConcept>): AggregatedConcept => ({
+const concept = (over: Partial<ConceptoAgregado>): ConceptoAgregado => ({
   codigo: '1',
   tipo: 'remunerativo',
   monto: 1000,
   ...over,
 });
 
-describe('resolveConceptTipo', () => {
+describe('resolverTipoConcepto', () => {
   it('prioriza el tipo persistido por el motor', () => {
     expect(
-      resolveConceptTipo({
+      resolverTipoConcepto({
         codigo: '1',
         tipoLiquidacion: 'descuento',
         monto: 10,
@@ -42,23 +42,31 @@ describe('resolveConceptTipo', () => {
   });
 
   it('infiere del rango SOS cuando falta el tipo', () => {
-    expect(resolveConceptTipo({ codigo: '1', monto: 10 })).toBe('remunerativo');
-    expect(resolveConceptTipo({ codigo: '101', monto: 10 })).toBe('descuento');
-    expect(resolveConceptTipo({ codigo: '201', monto: 10 })).toBe('retencion');
-    expect(resolveConceptTipo({ codigo: '411', monto: 10 })).toBe(
+    expect(resolverTipoConcepto({ codigo: '1', monto: 10 })).toBe(
+      'remunerativo'
+    );
+    expect(resolverTipoConcepto({ codigo: '101', monto: 10 })).toBe(
+      'descuento'
+    );
+    expect(resolverTipoConcepto({ codigo: '201', monto: 10 })).toBe(
+      'retencion'
+    );
+    expect(resolverTipoConcepto({ codigo: '411', monto: 10 })).toBe(
       'no_remunerativo'
     );
     // 500-599 suma en retenciones, igual que en totalesReciboSosDesdeMontos
-    expect(resolveConceptTipo({ codigo: '553', monto: 10 })).toBe('retencion');
+    expect(resolverTipoConcepto({ codigo: '553', monto: 10 })).toBe(
+      'retencion'
+    );
   });
 
   it('devuelve null para códigos LSD importados fuera de la numeración SOS', () => {
-    expect(resolveConceptTipo({ codigo: '810000', monto: 10 })).toBeNull();
+    expect(resolverTipoConcepto({ codigo: '810000', monto: 10 })).toBeNull();
   });
 
   it('ignora un tipoLiquidacion desconocido y cae al rango', () => {
     expect(
-      resolveConceptTipo({
+      resolverTipoConcepto({
         codigo: '101',
         tipoLiquidacion: 'basura',
         monto: 10,
@@ -67,9 +75,9 @@ describe('resolveConceptTipo', () => {
   });
 });
 
-describe('aggregatePayrollConcepts', () => {
+describe('agregarConceptosSueldos', () => {
   it('suma el mismo código a través de todos los recibos del período', () => {
-    const out = aggregatePayrollConcepts([
+    const out = agregarConceptosSueldos([
       { codigo: '1', monto: '1000.00' },
       { codigo: '1', monto: '500.50' },
       { codigo: '101', monto: '150' },
@@ -80,7 +88,7 @@ describe('aggregatePayrollConcepts', () => {
   });
 
   it('descarta conceptos en cero', () => {
-    const out = aggregatePayrollConcepts([
+    const out = agregarConceptosSueldos([
       { codigo: '1', monto: '0' },
       { codigo: '2', monto: null },
     ]);
@@ -88,7 +96,7 @@ describe('aggregatePayrollConcepts', () => {
   });
 
   it('ordena por código numérico, no alfabético', () => {
-    const out = aggregatePayrollConcepts([
+    const out = agregarConceptosSueldos([
       { codigo: '101', monto: 1 },
       { codigo: '2', monto: 1 },
       { codigo: '20', monto: 1 },
@@ -97,7 +105,7 @@ describe('aggregatePayrollConcepts', () => {
   });
 
   it('un tipo explícito en cualquier recibo gana sobre el inferido nulo', () => {
-    const out = aggregatePayrollConcepts([
+    const out = agregarConceptosSueldos([
       { codigo: '810000', monto: 100 },
       { codigo: '810000', tipoLiquidacion: 'descuento', monto: 50 },
     ]);
@@ -105,264 +113,270 @@ describe('aggregatePayrollConcepts', () => {
   });
 });
 
-describe('ruleMatchesConcept', () => {
+describe('reglaMatcheaConcepto', () => {
   it('una regla default matchea siempre', () => {
     expect(
-      ruleMatchesConcept(rule({ id: 'r', ruleType: 'default' }), concept({}))
+      reglaMatcheaConcepto(rule({ id: 'r', tipo: 'default' }), concept({}))
     ).toBe(true);
   });
 
   it('matchea por sosCode exacto y por array', () => {
-    const r = rule({ id: 'r', condition: { sosCode: [101, 102] } });
-    expect(ruleMatchesConcept(r, concept({ codigo: '101' }))).toBe(true);
-    expect(ruleMatchesConcept(r, concept({ codigo: '103' }))).toBe(false);
+    const r = rule({ id: 'r', condicion: { sosCode: [101, 102] } });
+    expect(reglaMatcheaConcepto(r, concept({ codigo: '101' }))).toBe(true);
+    expect(reglaMatcheaConcepto(r, concept({ codigo: '103' }))).toBe(false);
   });
 
   it('compara sosCode numéricamente ("0101" matchea 101)', () => {
-    const r = rule({ id: 'r', condition: { sosCode: 101 } });
-    expect(ruleMatchesConcept(r, concept({ codigo: '0101' }))).toBe(true);
+    const r = rule({ id: 'r', condicion: { sosCode: 101 } });
+    expect(reglaMatcheaConcepto(r, concept({ codigo: '0101' }))).toBe(true);
   });
 
   it('matchea por tipo', () => {
-    const r = rule({ id: 'r', condition: { tipo: 'descuento' } });
-    expect(ruleMatchesConcept(r, concept({ tipo: 'descuento' }))).toBe(true);
-    expect(ruleMatchesConcept(r, concept({ tipo: 'remunerativo' }))).toBe(
+    const r = rule({ id: 'r', condicion: { tipo: 'descuento' } });
+    expect(reglaMatcheaConcepto(r, concept({ tipo: 'descuento' }))).toBe(true);
+    expect(reglaMatcheaConcepto(r, concept({ tipo: 'remunerativo' }))).toBe(
       false
     );
   });
 
   it('un concepto sin tipo no matchea una regla por tipo', () => {
-    const r = rule({ id: 'r', condition: { tipo: 'descuento' } });
-    expect(ruleMatchesConcept(r, concept({ tipo: null }))).toBe(false);
+    const r = rule({ id: 'r', condicion: { tipo: 'descuento' } });
+    expect(reglaMatcheaConcepto(r, concept({ tipo: null }))).toBe(false);
   });
 
   it('matchea por rango de códigos', () => {
     const r = rule({
       id: 'r',
-      condition: { sosCodeFrom: 100, sosCodeTo: 199 },
+      condicion: { sosCodeFrom: 100, sosCodeTo: 199 },
     });
-    expect(ruleMatchesConcept(r, concept({ codigo: '150' }))).toBe(true);
-    expect(ruleMatchesConcept(r, concept({ codigo: '200' }))).toBe(false);
+    expect(reglaMatcheaConcepto(r, concept({ codigo: '150' }))).toBe(true);
+    expect(reglaMatcheaConcepto(r, concept({ codigo: '200' }))).toBe(false);
   });
 
   it('una clave no soportada invalida la regla (no imputa a ciegas)', () => {
-    const r = rule({ id: 'r', condition: { direction: 'sale' } });
-    expect(ruleMatchesConcept(r, concept({}))).toBe(false);
+    const r = rule({ id: 'r', condicion: { direction: 'sale' } });
+    expect(reglaMatcheaConcepto(r, concept({}))).toBe(false);
   });
 });
 
-describe('selectRuleForConcept', () => {
+describe('seleccionarReglaConcepto', () => {
   it('gana la primera aplicable según el orden recibido (priority asc)', () => {
     const rules = [
-      rule({ id: 'especifica', condition: { sosCode: 101 } }),
-      rule({ id: 'generica', condition: { tipo: 'descuento' } }),
+      rule({ id: 'especifica', condicion: { sosCode: 101 } }),
+      rule({ id: 'generica', condicion: { tipo: 'descuento' } }),
     ];
     expect(
-      selectRuleForConcept(rules, concept({ codigo: '101', tipo: 'descuento' }))
-        ?.id
+      seleccionarReglaConcepto(
+        rules,
+        concept({ codigo: '101', tipo: 'descuento' })
+      )?.id
     ).toBe('especifica');
     expect(
-      selectRuleForConcept(rules, concept({ codigo: '150', tipo: 'descuento' }))
-        ?.id
+      seleccionarReglaConcepto(
+        rules,
+        concept({ codigo: '150', tipo: 'descuento' })
+      )?.id
     ).toBe('generica');
   });
 
   it('devuelve null si ninguna aplica', () => {
-    const rules = [rule({ id: 'r', condition: { sosCode: 999 } })];
-    expect(selectRuleForConcept(rules, concept({ codigo: '1' }))).toBeNull();
+    const rules = [rule({ id: 'r', condicion: { sosCode: 999 } })];
+    expect(
+      seleccionarReglaConcepto(rules, concept({ codigo: '1' }))
+    ).toBeNull();
   });
 });
 
-describe('buildPayrollEntryLines', () => {
+describe('armarLineasSueldos', () => {
   // Escenario del ticket: haberes al Debe, neto y aportes al Haber.
-  const rulesCompletas: RuleLike[] = [
+  const rulesCompletas: ReglaLike[] = [
     rule({
       id: 'r-haberes',
-      name: 'Sueldos brutos',
-      priority: 10,
-      condition: { tipo: 'remunerativo' },
-      lines: [
+      nombre: 'Sueldos brutos',
+      prioridad: 10,
+      condicion: { tipo: 'remunerativo' },
+      lineas: [
         {
-          accountId: SUELDOS,
-          side: 'debit',
-          amountBasis: 'concept_value',
-          description: 'Sueldos y jornales',
+          cuentaId: SUELDOS,
+          lado: 'debe',
+          base: 'valor_concepto',
+          descripcion: 'Sueldos y jornales',
         },
         {
-          accountId: A_PAGAR,
-          side: 'credit',
-          amountBasis: 'concept_value',
-          description: 'Sueldos a pagar',
+          cuentaId: A_PAGAR,
+          lado: 'haber',
+          base: 'valor_concepto',
+          descripcion: 'Sueldos a pagar',
         },
       ],
     }),
     rule({
       id: 'r-desc',
-      name: 'Aportes del trabajador',
-      priority: 20,
-      condition: { tipo: 'descuento' },
-      lines: [
+      nombre: 'Aportes del trabajador',
+      prioridad: 20,
+      condicion: { tipo: 'descuento' },
+      lineas: [
         {
-          accountId: A_PAGAR,
-          side: 'debit',
-          amountBasis: 'concept_value',
-          description: 'Menor neto a pagar',
+          cuentaId: A_PAGAR,
+          lado: 'debe',
+          base: 'valor_concepto',
+          descripcion: 'Menor neto a pagar',
         },
         {
-          accountId: APORTES,
-          side: 'credit',
-          amountBasis: 'concept_value',
-          description: 'Aportes a pagar',
+          cuentaId: APORTES,
+          lado: 'haber',
+          base: 'valor_concepto',
+          descripcion: 'Aportes a pagar',
         },
       ],
     }),
   ];
 
   it('genera un único asiento balanceado agrupando por cuenta', () => {
-    const concepts = aggregatePayrollConcepts([
+    const concepts = agregarConceptosSueldos([
       { codigo: '1', monto: 1000000 }, // básico
       { codigo: '2', monto: 100000 }, // antigüedad → misma cuenta que el básico
       { codigo: '101', monto: 110000 }, // jubilación
     ]);
-    const built = buildPayrollEntryLines(concepts, rulesCompletas, PR);
+    const built = armarLineasSueldos(concepts, rulesCompletas, PR);
 
-    expect(built.usedPendingReview).toBe(false);
-    expect(built.reason).toBeNull();
+    expect(built.usoPendienteRevision).toBe(false);
+    expect(built.motivo).toBeNull();
 
-    const sumD = built.lines.reduce((s, l) => s + l.debit, 0);
-    const sumC = built.lines.reduce((s, l) => s + l.credit, 0);
+    const sumD = built.lineas.reduce((s, l) => s + l.debe, 0);
+    const sumC = built.lineas.reduce((s, l) => s + l.haber, 0);
     expect(sumD).toBeCloseTo(sumC, 2);
 
     // Los dos conceptos remunerativos colapsan en un solo renglón de Sueldos.
-    const sueldos = built.lines.filter((l) => l.accountId === SUELDOS);
+    const sueldos = built.lineas.filter((l) => l.cuentaId === SUELDOS);
     expect(sueldos).toHaveLength(1);
-    expect(sueldos[0].debit).toBeCloseTo(1100000, 2);
+    expect(sueldos[0].debe).toBeCloseTo(1100000, 2);
 
     // Sueldos a pagar: 1.100.000 al Haber menos 110.000 al Debe, en renglones distintos.
-    const aPagarCredit = built.lines.find(
-      (l) => l.accountId === A_PAGAR && l.credit > 0
+    const aPagarCredit = built.lineas.find(
+      (l) => l.cuentaId === A_PAGAR && l.haber > 0
     );
-    const aPagarDebit = built.lines.find(
-      (l) => l.accountId === A_PAGAR && l.debit > 0
+    const aPagarDebit = built.lineas.find(
+      (l) => l.cuentaId === A_PAGAR && l.debe > 0
     );
-    expect(aPagarCredit?.credit).toBeCloseTo(1100000, 2);
-    expect(aPagarDebit?.debit).toBeCloseTo(110000, 2);
+    expect(aPagarCredit?.haber).toBeCloseTo(1100000, 2);
+    expect(aPagarDebit?.debe).toBeCloseTo(110000, 2);
 
-    expect(built.lines.some((l) => l.accountId === PR)).toBe(false);
-    expect(built.usedRuleIds).toEqual(['r-haberes', 'r-desc']);
+    expect(built.lineas.some((l) => l.cuentaId === PR)).toBe(false);
+    expect(built.reglasUsadasIds).toEqual(['r-haberes', 'r-desc']);
   });
 
   it('manda a pending_review los conceptos sin regla y sigue balanceando', () => {
-    const concepts = aggregatePayrollConcepts([
+    const concepts = agregarConceptosSueldos([
       { codigo: '1', monto: 1000000 },
       { codigo: '201', monto: 50000 }, // retención: ninguna regla la cubre
     ]);
-    const built = buildPayrollEntryLines(concepts, rulesCompletas, PR);
+    const built = armarLineasSueldos(concepts, rulesCompletas, PR);
 
-    expect(built.usedPendingReview).toBe(true);
-    expect(built.unmappedTotal).toBeCloseTo(50000, 2);
-    expect(built.mappings.find((m) => m.codigo === '201')?.unmapped).toBe(true);
-    expect(built.mappings.find((m) => m.codigo === '1')?.unmapped).toBe(false);
+    expect(built.usoPendienteRevision).toBe(true);
+    expect(built.totalSinRegla).toBeCloseTo(50000, 2);
+    expect(built.mapeos.find((m) => m.codigo === '201')?.sinRegla).toBe(true);
+    expect(built.mapeos.find((m) => m.codigo === '1')?.sinRegla).toBe(false);
 
-    const sumD = built.lines.reduce((s, l) => s + l.debit, 0);
-    const sumC = built.lines.reduce((s, l) => s + l.credit, 0);
+    const sumD = built.lineas.reduce((s, l) => s + l.debe, 0);
+    const sumC = built.lineas.reduce((s, l) => s + l.haber, 0);
     expect(sumD).toBeCloseTo(sumC, 2);
-    expect(built.lines.some((l) => l.accountId === PR)).toBe(true);
+    expect(built.lineas.some((l) => l.cuentaId === PR)).toBe(true);
   });
 
   it('sin ninguna regla, todo el período cae a pending_review balanceado', () => {
-    const concepts = aggregatePayrollConcepts([{ codigo: '1', monto: 500000 }]);
-    const built = buildPayrollEntryLines(concepts, [], PR);
+    const concepts = agregarConceptosSueldos([{ codigo: '1', monto: 500000 }]);
+    const built = armarLineasSueldos(concepts, [], PR);
 
-    expect(built.usedPendingReview).toBe(true);
-    expect(built.lines.every((l) => l.accountId === PR)).toBe(true);
-    const sumD = built.lines.reduce((s, l) => s + l.debit, 0);
-    const sumC = built.lines.reduce((s, l) => s + l.credit, 0);
+    expect(built.usoPendienteRevision).toBe(true);
+    expect(built.lineas.every((l) => l.cuentaId === PR)).toBe(true);
+    const sumD = built.lineas.reduce((s, l) => s + l.debe, 0);
+    const sumC = built.lineas.reduce((s, l) => s + l.haber, 0);
     expect(sumD).toBeCloseTo(sumC, 2);
     expect(sumD).toBeCloseTo(500000, 2);
   });
 
   it('una regla cuyas líneas no cubren el total cierra el residuo en pending_review', () => {
-    const cojo: RuleLike[] = [
+    const cojo: ReglaLike[] = [
       rule({
         id: 'r-cojo',
-        condition: { tipo: 'remunerativo' },
-        lines: [
+        condicion: { tipo: 'remunerativo' },
+        lineas: [
           {
-            accountId: SUELDOS,
-            side: 'debit',
-            amountBasis: 'concept_value',
-            description: null,
+            cuentaId: SUELDOS,
+            lado: 'debe',
+            base: 'valor_concepto',
+            descripcion: null,
           },
         ],
       }),
     ];
-    const concepts = aggregatePayrollConcepts([{ codigo: '1', monto: 1000 }]);
-    const built = buildPayrollEntryLines(concepts, cojo, PR);
+    const concepts = agregarConceptosSueldos([{ codigo: '1', monto: 1000 }]);
+    const built = armarLineasSueldos(concepts, cojo, PR);
 
-    expect(built.usedPendingReview).toBe(true);
-    const pr = built.lines.find((l) => l.accountId === PR);
-    expect(pr?.credit).toBeCloseTo(1000, 2);
-    const sumD = built.lines.reduce((s, l) => s + l.debit, 0);
-    const sumC = built.lines.reduce((s, l) => s + l.credit, 0);
+    expect(built.usoPendienteRevision).toBe(true);
+    const pr = built.lineas.find((l) => l.cuentaId === PR);
+    expect(pr?.haber).toBeCloseTo(1000, 2);
+    const sumD = built.lineas.reduce((s, l) => s + l.debe, 0);
+    const sumC = built.lineas.reduce((s, l) => s + l.haber, 0);
     expect(sumD).toBeCloseTo(sumC, 2);
   });
 
   it('el monto fijo se aplica una sola vez aunque matcheen varios conceptos', () => {
-    const conFijo: RuleLike[] = [
+    const conFijo: ReglaLike[] = [
       rule({
         id: 'r-fijo',
-        condition: { tipo: 'remunerativo' },
-        lines: [
+        condicion: { tipo: 'remunerativo' },
+        lineas: [
           {
-            accountId: SUELDOS,
-            side: 'debit',
-            amountBasis: 'concept_value',
-            description: null,
+            cuentaId: SUELDOS,
+            lado: 'debe',
+            base: 'valor_concepto',
+            descripcion: null,
           },
           {
-            accountId: A_PAGAR,
-            side: 'credit',
-            amountBasis: 'concept_value',
-            description: null,
+            cuentaId: A_PAGAR,
+            lado: 'haber',
+            base: 'valor_concepto',
+            descripcion: null,
           },
           {
-            accountId: APORTES,
-            side: 'credit',
-            amountBasis: 'fixed',
-            fixedAmount: '500',
-            description: null,
+            cuentaId: APORTES,
+            lado: 'haber',
+            base: 'fijo',
+            importeFijo: '500',
+            descripcion: null,
           },
         ],
       }),
     ];
-    const concepts = aggregatePayrollConcepts([
+    const concepts = agregarConceptosSueldos([
       { codigo: '1', monto: 1000 },
       { codigo: '2', monto: 1000 },
     ]);
-    const built = buildPayrollEntryLines(concepts, conFijo, PR);
+    const built = armarLineasSueldos(concepts, conFijo, PR);
 
-    const aportes = built.lines.filter((l) => l.accountId === APORTES);
+    const aportes = built.lineas.filter((l) => l.cuentaId === APORTES);
     expect(aportes).toHaveLength(1);
-    expect(aportes[0].credit).toBeCloseTo(500, 2);
+    expect(aportes[0].haber).toBeCloseTo(500, 2);
   });
 
   it('un concepto negativo invierte el lado de sus líneas', () => {
-    const concepts = aggregatePayrollConcepts([{ codigo: '1', monto: -1000 }]);
-    const built = buildPayrollEntryLines(concepts, rulesCompletas, PR);
+    const concepts = agregarConceptosSueldos([{ codigo: '1', monto: -1000 }]);
+    const built = armarLineasSueldos(concepts, rulesCompletas, PR);
 
-    const sueldos = built.lines.find((l) => l.accountId === SUELDOS);
-    expect(sueldos?.credit).toBeCloseTo(1000, 2);
-    expect(sueldos?.debit).toBe(0);
-    const sumD = built.lines.reduce((s, l) => s + l.debit, 0);
-    const sumC = built.lines.reduce((s, l) => s + l.credit, 0);
+    const sueldos = built.lineas.find((l) => l.cuentaId === SUELDOS);
+    expect(sueldos?.haber).toBeCloseTo(1000, 2);
+    expect(sueldos?.debe).toBe(0);
+    const sumD = built.lineas.reduce((s, l) => s + l.debe, 0);
+    const sumC = built.lineas.reduce((s, l) => s + l.haber, 0);
     expect(sumD).toBeCloseTo(sumC, 2);
   });
 
   it('un período sin conceptos no genera líneas ni pending_review', () => {
-    const built = buildPayrollEntryLines([], rulesCompletas, PR);
-    expect(built.lines).toHaveLength(0);
-    expect(built.usedPendingReview).toBe(false);
-    expect(built.reason).toBe('El período no tiene conceptos con importe');
+    const built = armarLineasSueldos([], rulesCompletas, PR);
+    expect(built.lineas).toHaveLength(0);
+    expect(built.usoPendienteRevision).toBe(false);
+    expect(built.motivo).toBe('El período no tiene conceptos con importe');
   });
 });

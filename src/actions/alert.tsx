@@ -1,27 +1,42 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
-import axios from 'axios';
 import { db } from '@/lib/db';
-import { alert as alertTable, job } from '@/drizzle/schema';
+import { scrapperPost } from '@/lib/scrapper-api';
+import {
+  alerta,
+  job,
+  alertaTipo,
+  alertaSeveridad,
+  alertaEstado,
+} from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import { eq, and, desc, inArray, sql } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql, type SQL } from 'drizzle-orm';
 
 const JOBS_API_URL =
   process.env.SCRAPPER_JOBS_URL ||
   process.env.BACKEND_API_URL ||
   'http://localhost:3002';
 
+/** Lo que el scrapper deja en `alerta.detalle` para las alertas de scraping. */
+export interface AlertaDetalle {
+  retryable?: boolean;
+  errorCategory?: string;
+  errorMessage?: string;
+  failedJobIds?: string[];
+  jobId?: string;
+}
+
 export const listAlerts = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z.object({
-      status: z.string().optional(),
-      severity: z.string().optional(),
-      type: z.string().optional(),
-      representativeId: z.string().uuid().optional(),
+      estado: z.enum(alertaEstado.enumValues).optional(),
+      severidad: z.enum(alertaSeveridad.enumValues).optional(),
+      tipo: z.enum(alertaTipo.enumValues).optional(),
+      credencialId: z.string().uuid().optional(),
       errorCategory: z.string().optional(),
       limit: z.number().int().min(1).max(200).default(50),
     })
@@ -29,301 +44,226 @@ export const listAlerts = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const conditions: ReturnType<typeof eq>[] = [
-      eq(alertTable.organizationId, orgId) as any,
-    ];
+    const conditions: SQL[] = [eq(alerta.orgId, orgId)];
 
-    if (ctx.data.status) {
-      conditions.push(eq(alertTable.status, ctx.data.status) as any);
-    }
-    if (ctx.data.severity) {
-      conditions.push(eq(alertTable.severity, ctx.data.severity) as any);
-    }
-    if (ctx.data.type) {
-      conditions.push(eq(alertTable.type, ctx.data.type) as any);
-    }
-    if (ctx.data.representativeId) {
-      conditions.push(eq(alertTable.representativeId, ctx.data.representativeId) as any);
-    }
+    if (ctx.data.estado) conditions.push(eq(alerta.estado, ctx.data.estado));
+    if (ctx.data.severidad)
+      conditions.push(eq(alerta.severidad, ctx.data.severidad));
+    if (ctx.data.tipo) conditions.push(eq(alerta.tipo, ctx.data.tipo));
+    if (ctx.data.credencialId)
+      conditions.push(eq(alerta.credencialId, ctx.data.credencialId));
     if (ctx.data.errorCategory) {
       conditions.push(
-        sql`${alertTable.metadata}->>'errorCategory' = ${ctx.data.errorCategory}` as any
+        sql`${alerta.detalle}->>'errorCategory' = ${ctx.data.errorCategory}`
       );
     }
 
     return db
-      .select()
-      .from(alertTable)
-      .where(and(...conditions))
-      .orderBy(desc(alertTable.createdAt))
-      .limit(ctx.data.limit) as any;
-  });
-
-export const createAlert = createServerFn({ method: 'POST' })
-  .inputValidator(
-    z.object({
-      representativeId: z.string().uuid().optional(),
-      clientId: z.string().uuid().optional(),
-      type: z.string(),
-      severity: z.string(),
-      title: z.string(),
-      description: z.string().optional(),
-      sourceEntityType: z.string().optional(),
-      sourceEntityId: z.string().optional(),
-      dueAt: z.string().datetime().optional(),
-      metadata: z.record(z.string(), z.unknown()).optional(),
-    })
-  )
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const rows = await db
-      .insert(alertTable)
-      .values({
-        organizationId: orgId,
-        representativeId: ctx.data.representativeId,
-        clientId: ctx.data.clientId,
-        type: ctx.data.type,
-        severity: ctx.data.severity,
-        title: ctx.data.title,
-        description: ctx.data.description,
-        sourceEntityType: ctx.data.sourceEntityType,
-        sourceEntityId: ctx.data.sourceEntityId,
-        dueAt: ctx.data.dueAt ? new Date(ctx.data.dueAt) : undefined,
-        metadata: ctx.data.metadata,
-        status: 'open',
+      .select({
+        id: alerta.id,
+        credencialId: alerta.credencialId,
+        clienteId: alerta.clienteId,
+        tipo: alerta.tipo,
+        severidad: alerta.severidad,
+        titulo: alerta.titulo,
+        descripcion: alerta.descripcion,
+        origenTipo: alerta.origenTipo,
+        origenId: alerta.origenId,
+        estado: alerta.estado,
+        asignadaA: alerta.asignadaA,
+        resueltaAt: alerta.resueltaAt,
+        resueltaPor: alerta.resueltaPor,
+        detalle: sql<AlertaDetalle | null>`${alerta.detalle}`,
+        createdAt: alerta.createdAt,
+        updatedAt: alerta.updatedAt,
       })
-      .returning();
-
-    return rows[0] as any;
-  });
-
-export const acknowledgeAlert = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const rows = await db
-      .update(alertTable)
-      .set({ status: 'acknowledged', updatedAt: new Date() })
-      .where(
-        and(
-          eq(alertTable.id, ctx.data.id),
-          eq(alertTable.organizationId, orgId)
-        )
-      )
-      .returning();
-
-    return rows[0] as any;
+      .from(alerta)
+      .where(and(...conditions))
+      .orderBy(desc(alerta.createdAt))
+      .limit(ctx.data.limit);
   });
 
 export const assignAlert = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid(), userId: z.string() }))
+  .validator(z.object({ id: z.string().uuid(), userId: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const rows = await db
-      .update(alertTable)
-      .set({ assignedToUserId: ctx.data.userId, updatedAt: new Date() })
-      .where(
-        and(
-          eq(alertTable.id, ctx.data.id),
-          eq(alertTable.organizationId, orgId)
-        )
-      )
-      .returning();
+    const [row] = await db
+      .update(alerta)
+      .set({ asignadaA: ctx.data.userId, updatedAt: new Date() })
+      .where(and(eq(alerta.id, ctx.data.id), eq(alerta.orgId, orgId)))
+      .returning({ id: alerta.id });
 
-    return rows[0] as any;
+    if (!row) throw new Error('Alerta no encontrada');
+    return { success: true };
   });
 
 export const resolveAlert = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const rows = await db
-      .update(alertTable)
+    const now = new Date();
+    const [row] = await db
+      .update(alerta)
       .set({
-        status: 'resolved',
-        resolvedAt: new Date(),
-        resolvedByUserId: userId,
-        updatedAt: new Date(),
+        estado: 'resuelta',
+        resueltaAt: now,
+        resueltaPor: userId,
+        updatedAt: now,
       })
-      .where(
-        and(
-          eq(alertTable.id, ctx.data.id),
-          eq(alertTable.organizationId, orgId)
-        )
-      )
-      .returning();
+      .where(and(eq(alerta.id, ctx.data.id), eq(alerta.orgId, orgId)))
+      .returning({ id: alerta.id });
 
-    return rows[0] as any;
-  });
-
-export const bulkResolveAlerts = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ ids: z.array(z.string().uuid()) }))
-  .handler(async (ctx) => {
-    const { orgId, userId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const rows = await db
-      .update(alertTable)
-      .set({
-        status: 'resolved',
-        resolvedAt: new Date(),
-        resolvedByUserId: userId,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          inArray(alertTable.id, ctx.data.ids),
-          eq(alertTable.organizationId, orgId)
-        )
-      )
-      .returning();
-
-    return { resolved: rows.length };
+    if (!row) throw new Error('Alerta no encontrada');
+    return { success: true };
   });
 
 /**
- * Dedupea pares (representante, tipo) — un job scrapea todas las relaciones
- * del representante, así que reintentar dos jobs fallidos del mismo par sería
- * un scrape duplicado — y saltea pares que ya tienen un job pending/running.
+ * Dedupea pares (credencial, tipo) — un job scrapea todas las relaciones del
+ * login, así que reintentar dos jobs fallidos del mismo par sería un scrape
+ * duplicado — y saltea pares que ya tienen un job pending/running.
  */
 async function dedupeRetryJobs(
-  jobsToRetry: { type: string; clientId: string | null }[]
-): Promise<{ type: string; clientId: string }[]> {
-  const uniquePairs = new Map<string, { type: string; clientId: string }>();
+  jobsToRetry: { type: string; credencialId: string | null }[]
+): Promise<{ type: string; credencialId: string }[]> {
+  const uniquePairs = new Map<string, { type: string; credencialId: string }>();
   for (const j of jobsToRetry) {
-    if (!j.clientId) continue;
-    uniquePairs.set(`${j.clientId}:${j.type}`, {
+    // Los jobs sin credencial (`escalas`) quedan afuera: todo el deduplicado y
+    // el reintento están definidos por par credencial+tipo. Reintentar un
+    // scrape de escalas es otra operación y hoy no pasa por acá.
+    if (!j.credencialId) continue;
+    uniquePairs.set(`${j.credencialId}:${j.type}`, {
       type: j.type,
-      clientId: j.clientId,
+      credencialId: j.credencialId,
     });
   }
   if (uniquePairs.size === 0) return [];
 
   const pairs = [...uniquePairs.values()];
   const activeJobs = await db
-    .select({ representativeId: job.representativeId, type: job.type })
+    .select({ credencialId: job.credencialId, type: job.type })
     .from(job)
     .where(
       and(
         inArray(
-          job.representativeId,
-          pairs.map((p) => p.clientId)
+          job.credencialId,
+          pairs.map((p) => p.credencialId)
         ),
         inArray(job.status, ['pending', 'running'])
       )
     );
   const activeSet = new Set(
-    activeJobs.map((j) => `${j.representativeId}:${j.type}`)
+    activeJobs.map((j) => `${j.credencialId}:${j.type}`)
   );
 
-  return pairs.filter((p) => !activeSet.has(`${p.clientId}:${p.type}`));
+  return pairs.filter((p) => !activeSet.has(`${p.credencialId}:${p.type}`));
+}
+
+/** Los jobs a reintentar según el detalle de la alerta, ya deduplicados. */
+async function jobsDeAlertas(
+  detalles: (AlertaDetalle | null)[],
+  orgId: string
+): Promise<{ type: string; credencialId: string }[]> {
+  const failedJobIds = detalles.flatMap((d) => d?.failedJobIds ?? []);
+  if (failedJobIds.length === 0) return [];
+
+  const jobsToRetry = await db
+    .select({ type: job.type, credencialId: job.credencialId })
+    .from(job)
+    .where(and(inArray(job.id, failedJobIds), eq(job.orgId, orgId)));
+
+  return dedupeRetryJobs(jobsToRetry);
 }
 
 export const retryAlertJobs = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
+    const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
     const [alertRow] = await db
-      .select()
-      .from(alertTable)
-      .where(
-        and(
-          eq(alertTable.id, ctx.data.id),
-          eq(alertTable.organizationId, orgId)
-        )
-      )
+      .select({ detalle: sql<AlertaDetalle | null>`${alerta.detalle}` })
+      .from(alerta)
+      .where(and(eq(alerta.id, ctx.data.id), eq(alerta.orgId, orgId)))
       .limit(1);
 
-    if (!alertRow) throw new Error('Alert not found');
+    if (!alertRow) throw new Error('Alerta no encontrada');
+    if (!alertRow.detalle?.retryable)
+      throw new Error('Esta alerta no es reintentable');
 
-    const metadata = alertRow.metadata as any;
-    if (!metadata?.retryable) throw new Error('Esta alerta no es reintentable');
+    const jobs = await jobsDeAlertas([alertRow.detalle], orgId);
+    if (jobs.length === 0)
+      throw new Error('No se encontraron los jobs fallidos');
 
-    const failedJobIds: string[] = metadata.failedJobIds ?? [];
-    if (failedJobIds.length === 0) throw new Error('No hay jobs para reintentar');
+    await scrapperPost(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
 
-    const jobsToRetry = await db
-      .select({ id: job.id, type: job.type, clientId: job.representativeId })
-      .from(job)
-      .where(inArray(job.id, failedJobIds));
-
-    if (jobsToRetry.length === 0) throw new Error('No se encontraron los jobs fallidos');
-
-    const jobs = await dedupeRetryJobs(jobsToRetry);
-    if (jobs.length > 0) {
-      await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
-    }
-
+    const now = new Date();
     await db
-      .update(alertTable)
-      .set({ status: 'acknowledged', updatedAt: new Date() })
-      .where(eq(alertTable.id, ctx.data.id));
+      .update(alerta)
+      .set({
+        estado: 'resuelta',
+        resueltaAt: now,
+        resueltaPor: userId,
+        updatedAt: now,
+      })
+      .where(eq(alerta.id, ctx.data.id));
 
     return { retried: jobs.length };
   });
 
-export const retryAllRetryable = createServerFn({ method: 'POST' })
-  .handler(async () => {
-    const { orgId } = await getSessionWithOrg();
+export const retryAllRetryable = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const openAlerts = await db
-      .select()
-      .from(alertTable)
+    const abiertas = await db
+      .select({
+        id: alerta.id,
+        detalle: sql<AlertaDetalle | null>`${alerta.detalle}`,
+      })
+      .from(alerta)
       .where(
         and(
-          eq(alertTable.organizationId, orgId),
-          eq(alertTable.status, 'open'),
-          eq(alertTable.type, 'scraper_error')
+          eq(alerta.orgId, orgId),
+          eq(alerta.estado, 'abierta'),
+          eq(alerta.tipo, 'error_scraping')
         )
       );
 
-    const retryableAlerts = openAlerts.filter((a) => {
-      const meta = a.metadata as any;
-      return meta?.retryable === true;
-    });
+    const reintentables = abiertas.filter((a) => a.detalle?.retryable === true);
+    if (reintentables.length === 0) return { retried: 0, resolved: 0 };
 
-    if (retryableAlerts.length === 0) return { retried: 0, acknowledged: 0 };
-
-    const allJobIds = retryableAlerts.flatMap((a) => {
-      const meta = a.metadata as any;
-      return (meta?.failedJobIds ?? []) as string[];
-    });
-
-    if (allJobIds.length > 0) {
-      const jobsToRetry = await db
-        .select({ id: job.id, type: job.type, clientId: job.representativeId })
-        .from(job)
-        .where(inArray(job.id, allJobIds));
-
-      const jobs = await dedupeRetryJobs(jobsToRetry);
-      if (jobs.length > 0) {
-        await axios.post(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
-      }
+    const jobs = await jobsDeAlertas(
+      reintentables.map((a) => a.detalle),
+      orgId
+    );
+    if (jobs.length > 0) {
+      await scrapperPost(`${JOBS_API_URL}/api/jobs/batch`, { jobs });
     }
 
-    const alertIds = retryableAlerts.map((a) => a.id);
+    const now = new Date();
     await db
-      .update(alertTable)
-      .set({ status: 'acknowledged', updatedAt: new Date() })
-      .where(inArray(alertTable.id, alertIds));
+      .update(alerta)
+      .set({
+        estado: 'resuelta',
+        resueltaAt: now,
+        resueltaPor: userId,
+        updatedAt: now,
+      })
+      .where(
+        inArray(
+          alerta.id,
+          reintentables.map((a) => a.id)
+        )
+      );
 
-    return { retried: allJobIds.length, acknowledged: retryableAlerts.length };
-  });
+    return { retried: jobs.length, resolved: reintentables.length };
+  }
+);

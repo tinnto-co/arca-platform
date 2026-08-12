@@ -23,6 +23,7 @@ import {
   BookOpen,
   Globe,
   Percent,
+  Database,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -35,7 +36,6 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { authClient } from '@/lib/auth-client';
-import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { CreateRepresentativeDialog } from './create-client-dialog';
@@ -45,6 +45,13 @@ import { userQuery } from '../lib/user-query';
 import { getPendingNotificationsCount } from '@/actions/dashboard';
 import { listAlerts } from '@/actions/alert';
 import { listOrgModules } from '@/actions/admin';
+import { getFuentesDatos } from '@/actions/job';
+import { relativeTime } from '@/components/dashboard/shared';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 export { userQuery };
@@ -104,6 +111,88 @@ function NavItem({
   );
 }
 
+/* ─── Fuentes de datos (panel) ─── */
+function FuentesDatosItem() {
+  const [open, setOpen] = React.useState(false);
+
+  const { data: fuentes = [], isLoading } = useQuery({
+    queryKey: ['fuentes-datos'],
+    queryFn: () => getFuentesDatos(),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+
+  // Semáforo por fuente: rojo = el último run falló; ámbar = nunca corrió o
+  // el último OK tiene más de 7 días; verde = OK reciente.
+  const estadoDe = (f: (typeof fuentes)[number]) => {
+    if (f.ultimoErrorAt && (!f.ultimoOkAt || f.ultimoErrorAt > f.ultimoOkAt))
+      return 'var(--arca-accent-neg)';
+    if (
+      !f.ultimoOkAt ||
+      Date.now() - new Date(f.ultimoOkAt).getTime() > 7 * 86_400_000
+    )
+      return 'var(--arca-accent-warn)';
+    return 'var(--arca-accent-pos)';
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            'flex items-center gap-2.5 px-2.5 py-[7px] rounded-[10px] text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none w-full text-left',
+            open
+              ? 'bg-[rgba(255,255,255,0.06)] text-white'
+              : 'text-[#C6C9D3] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F2F3F7]'
+          )}
+        >
+          <Database className="w-[15px] h-[15px] shrink-0" strokeWidth={2} />
+          <span className="flex-1 min-w-0 truncate">Fuentes de datos</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" className="w-80 p-3">
+        <div className="text-[13px] font-semibold mb-2">Fuentes de datos</div>
+        {isLoading ? (
+          <div className="text-[12px] text-muted-foreground py-2">
+            Cargando…
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2.5">
+            {fuentes.map((f) => (
+              <div key={f.id} className="flex items-start gap-2.5">
+                <span
+                  className="mt-[5px] w-2 h-2 rounded-full shrink-0"
+                  style={{ background: estadoDe(f) }}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] font-medium leading-tight">
+                    {f.nombre}
+                  </div>
+                  <div className="text-[11.5px] text-muted-foreground leading-snug">
+                    {f.ultimoOkAt
+                      ? `Scrapeado ${relativeTime(f.ultimoOkAt)}`
+                      : 'Sin corridas OK'}
+                    {' · '}
+                    {f.datosActualizadosAt
+                      ? `datos ${relativeTime(f.datosActualizadosAt)}`
+                      : 'sin datos'}
+                  </div>
+                  {f.ultimoErrorAt &&
+                    (!f.ultimoOkAt || f.ultimoErrorAt > f.ultimoOkAt) && (
+                      <div className="text-[11px] leading-snug text-[var(--arca-accent-neg)]">
+                        Último intento falló {relativeTime(f.ultimoErrorAt)}
+                      </div>
+                    )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /* ─── Nav group label ─── */
 function NavGroupLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -133,10 +222,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const { data: openAlerts = [] } = useQuery({
     queryKey: ['alerts', 'open', '', '', ''],
-    queryFn: () => listAlerts({ data: { status: 'open', limit: 99 } }),
+    queryFn: () => listAlerts({ data: { estado: 'abierta', limit: 99 } }),
     staleTime: 60_000,
   });
-  const openAlertsCount = (openAlerts as unknown[]).length;
+  const openAlertsCount = openAlerts.length;
 
   const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],
@@ -347,6 +436,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <>
               <NavGroupLabel>Operaciones</NavGroupLabel>
               <NavItem to="/jobs" icon={Clock} label="Jobs" />
+              <FuentesDatosItem />
               <NavItem
                 to="/alerts"
                 icon={AlertTriangle}

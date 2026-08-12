@@ -4,6 +4,7 @@ import {
   setActiveOrganization,
 } from '@/actions/user';
 import { listOrgModules } from '@/actions/admin';
+import { getPortalSession } from '@/actions/client-portal';
 import { AppSidebar } from '@/components/app-sidebar';
 import { AgentInput } from '@/components/agent/AgentInput';
 import { MobileNavbar } from '@/components/mobile-navbar';
@@ -38,7 +39,11 @@ export const Route = createFileRoute('/_authed')({
     if (!activeOrgId) {
       const orgs = await getOrganizations();
       if (orgs.length === 0) {
-        throw redirect({ to: '/no-organization' });
+        // Un usuario del portal tampoco pertenece a ninguna organización, pero
+        // su lugar es el portal, no la pantalla de "sin organización" (sin esto
+        // cualquier deep link o refresh lo deja en un callejón sin salida).
+        const portal = await getPortalSession().catch(() => null);
+        throw redirect({ to: portal ? '/portal' : '/no-organization' });
       }
       await setActiveOrganization({ data: { organizationId: orgs[0].orgId } });
     }

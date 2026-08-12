@@ -11,7 +11,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { getCalendarDueDates } from '@/actions/dashboard';
-import { markDueDateCompleted } from '@/actions/client';
+import { markVencimientoCompletado } from '@/actions/client';
 import { cn } from '@/lib/utils';
 import {
   Select,
@@ -122,7 +122,7 @@ export function VencimientosCalendar() {
 
   const completeMutation = useMutation({
     mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
-      markDueDateCompleted({ data: { id, completed } }),
+      markVencimientoCompletado({ data: { id, completed } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: calendarQueryKey });
     },
@@ -133,34 +133,36 @@ export function VencimientosCalendar() {
     const map = new Map<string, CalendarEvent[]>();
     if (!data) return map;
 
-    for (const dd of data.dueDates) {
-      const d = new Date(dd.dueDate);
+    for (const dd of data.vencimientos) {
+      const d = new Date(dd.venceAt);
       const key = dateKey(d);
       const list = map.get(key) ?? [];
       list.push({
         id: dd.id,
         date: d,
-        title: dd.tax || 'Vencimiento',
-        subtitle: dd.concept || '',
+        title: dd.impuesto || 'Vencimiento',
+        subtitle: dd.concepto || '',
         kind: 'due',
-        clientName: dd.clientName,
-        completedAt: dd.completedAt ? new Date(dd.completedAt) : null,
+        clientName: dd.clienteNombre,
+        completedAt: dd.completadoAt ? new Date(dd.completadoAt) : null,
       });
       map.set(key, list);
     }
 
-    for (const debt of data.debts) {
-      const d = new Date(debt.dueDate);
+    for (const debt of data.deudas) {
+      // `deuda.vence_at` es nullable: sin fecha no hay día donde ubicarla.
+      if (!debt.venceAt) continue;
+      const d = new Date(debt.venceAt);
       const key = dateKey(d);
       const list = map.get(key) ?? [];
       list.push({
         id: debt.id,
         date: d,
-        title: debt.tax || 'Deuda',
-        subtitle: debt.concept || '',
+        title: debt.impuesto || 'Deuda',
+        subtitle: debt.concepto || '',
         kind: 'debt',
-        clientName: debt.clientName,
-        balance: debt.balance,
+        clientName: debt.clienteNombre,
+        balance: debt.saldo,
       });
       map.set(key, list);
     }

@@ -350,7 +350,7 @@ export function AjustePorInflacion({
                   <SelectItem key={f.id} value={f.id}>
                     Ejercicio {f.number} ·{' '}
                     {new Date(f.endDate).getUTCFullYear()}
-                    {f.status === 'closed' ? ' (cerrado)' : ''}
+                    {f.status === 'cerrado' ? ' (cerrado)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>

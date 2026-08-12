@@ -35,16 +35,18 @@ import {
   ArcaCardHead,
   formatArs,
 } from '@/components/dashboard/shared';
-import {
-  getRepresentatives,
-  getRepresentativesWithClients,
-} from '@/actions/client';
+import { getClientes } from '@/actions/client';
 import {
   getExecutiveSummary,
-  getClientsAtRisk,
+  getClientesEnRiesgo,
   getRatios,
   generateIvaProjection,
 } from '@/actions/analytics';
+
+/** Fila del ranking de riesgo, tal cual la devuelve `getClientesEnRiesgo`. */
+type RiesgoRow = Awaited<ReturnType<typeof getClientesEnRiesgo>>[number];
+/** Nivel de riesgo = enum `riesgo_nivel` de la BD. */
+type RiesgoNivel = RiesgoRow['nivel'];
 
 export const Route = createFileRoute('/_authed/analytics/')({
   beforeLoad: async () => {
@@ -81,29 +83,30 @@ function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Valores del enum `riesgo_nivel` en BD. */
 const RISK_CONFIG: Record<
-  string,
+  RiesgoNivel,
   { label: string; color: string; bg: string; fg: string }
 > = {
-  low: {
+  bajo: {
     label: 'Bajo',
     color: '#4CAF7D',
     bg: 'var(--arca-accent-pos-bg)',
     fg: 'var(--arca-accent-pos-fg)',
   },
-  medium: {
+  medio: {
     label: 'Medio',
     color: '#F59E0B',
     bg: 'var(--arca-accent-warn-bg)',
     fg: 'var(--arca-accent-warn-fg)',
   },
-  high: {
+  alto: {
     label: 'Alto',
     color: '#EF4444',
     bg: 'var(--arca-accent-neg-bg)',
     fg: 'var(--arca-accent-neg-fg)',
   },
-  critical: {
+  critico: {
     label: 'Crítico',
     color: '#7F1D1D',
     bg: 'var(--arca-accent-neg-bg)',
@@ -165,8 +168,8 @@ function SummaryKpi({
 }
 
 /* ─── Risk badge ─── */
-function RiskBadge({ level }: { level: string }) {
-  const cfg = RISK_CONFIG[level] ?? RISK_CONFIG.low;
+function RiskBadge({ level }: { level: RiesgoNivel }) {
+  const cfg = RISK_CONFIG[level];
   return (
     <span
       className="inline-flex items-center gap-[5px] px-2 py-[2px] rounded-[20px] text-[11px] font-medium"
@@ -186,22 +189,16 @@ function AnalyticsPage() {
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [ratiosFrom, setRatiosFrom] = useState(monthStart());
   const [ratiosTo, setRatiosTo] = useState(today());
-  const [riskFilter, setRiskFilter] = useState<'medium' | 'high' | 'critical'>(
-    'high'
+  const [riskFilter, setRiskFilter] = useState<'medio' | 'alto' | 'critico'>(
+    'alto'
   );
   const [riskPeriod, setRiskPeriod] = useState<string>(currentPeriod());
-  const [ivaProfileId, setIvaProfileId] = useState<string>('');
+  const [ivaClienteId, setIvaClienteId] = useState<string>('');
 
   /* Clients list for selectors */
   const { data: clients = [] } = useQuery({
-    queryKey: ['clients'],
-    queryFn: () => getRepresentatives(),
-  });
-
-  /* Clients with profiles (for IVA projection selector) */
-  const { data: clientsWithProfiles = [] } = useQuery({
-    queryKey: ['clientsWithProfiles'],
-    queryFn: () => getRepresentativesWithClients(),
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
   });
 
   /* Executive summary */
@@ -212,12 +209,12 @@ function AnalyticsPage() {
 
   /* Clients at risk */
   const { data: atRisk = [], isLoading: riskLoading } = useQuery({
-    queryKey: ['clientsAtRisk', riskFilter, riskPeriod],
+    queryKey: ['clientesEnRiesgo', riskFilter, riskPeriod],
     queryFn: () =>
-      getClientsAtRisk({
+      getClientesEnRiesgo({
         data: {
-          riskLevel: riskFilter,
-          period: riskPeriod,
+          nivelMinimo: riskFilter,
+          periodo: riskPeriod,
           limit: 20,
         },
       }),
@@ -228,19 +225,19 @@ function AnalyticsPage() {
     queryKey: ['ratios', selectedClientId, ratiosFrom, ratiosTo],
     queryFn: () =>
       getRatios({
-        data: { clientId: selectedClientId, from: ratiosFrom, to: ratiosTo },
+        data: { clienteId: selectedClientId, from: ratiosFrom, to: ratiosTo },
       }),
     enabled: !!selectedClientId,
   });
 
-  /* IVA projection for selected profile */
+  /* IVA projection for selected client */
   const { data: ivaProjection, isLoading: ivaLoading } = useQuery({
-    queryKey: ['ivaProjection', ivaProfileId],
+    queryKey: ['ivaProjection', ivaClienteId],
     queryFn: () =>
       generateIvaProjection({
-        data: { profileId: ivaProfileId, period: currentPeriod() },
+        data: { clienteId: ivaClienteId, periodo: currentPeriod() },
       }),
-    enabled: !!ivaProfileId,
+    enabled: !!ivaClienteId,
   });
 
   /* Recharts data for ratios */
@@ -248,13 +245,13 @@ function AnalyticsPage() {
     ? [
         {
           name: 'Ventas',
-          actual: ratios.totalSales,
-          prev: ratios.prevTotalSales,
+          actual: ratios.ventas,
+          prev: ratios.ventasAnterior,
         },
         {
           name: 'Compras',
-          actual: ratios.totalPurchases,
-          prev: ratios.prevTotalPurchases,
+          actual: ratios.compras,
+          prev: ratios.comprasAnterior,
         },
       ]
     : [];
@@ -278,40 +275,40 @@ function AnalyticsPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <SummaryKpi
               label="Clientes"
-              value={String(summary.totalClients)}
-              sub={`${summary.totalManagedProfiles} perfiles administrados`}
+              value={String(summary.totalClientes)}
+              sub="activos"
               icon={Users}
             />
             <SummaryKpi
               label="Deudas abiertas"
-              value={String(summary.openDebtCount)}
-              sub={formatArs(summary.openDebtTotal)}
+              value={String(summary.deudasAbiertas)}
+              sub={formatArs(summary.deudaTotal)}
               icon={DollarSign}
-              accent={summary.openDebtCount > 0 ? 'neg' : undefined}
+              accent={summary.deudasAbiertas > 0 ? 'neg' : undefined}
             />
             <SummaryKpi
-              label="Notif. críticas"
-              value={String(summary.criticalNotificationCount)}
+              label="Notif. urgentes"
+              value={String(summary.notificacionesUrgentes)}
               icon={Bell}
-              accent={summary.criticalNotificationCount > 0 ? 'neg' : undefined}
+              accent={summary.notificacionesUrgentes > 0 ? 'neg' : undefined}
             />
             <SummaryKpi
               label="Vencimientos (7d)"
-              value={String(summary.upcomingDueDateCount)}
+              value={String(summary.vencimientosProximos)}
               icon={Calendar}
-              accent={summary.upcomingDueDateCount > 0 ? 'warn' : undefined}
+              accent={summary.vencimientosProximos > 0 ? 'warn' : undefined}
             />
             <SummaryKpi
-              label="Perfiles en riesgo"
+              label="Clientes en riesgo"
               value={String(
-                summary.criticalRiskProfileCount + summary.highRiskProfileCount
+                summary.clientesRiesgoCritico + summary.clientesRiesgoAlto
               )}
-              sub={`${summary.criticalRiskProfileCount} crítico / ${summary.highRiskProfileCount} alto`}
+              sub={`${summary.clientesRiesgoCritico} crítico / ${summary.clientesRiesgoAlto} alto`}
               icon={AlertTriangle}
               accent={
-                summary.criticalRiskProfileCount > 0
+                summary.clientesRiesgoCritico > 0
                   ? 'neg'
-                  : summary.highRiskProfileCount > 0
+                  : summary.clientesRiesgoAlto > 0
                     ? 'warn'
                     : undefined
               }
@@ -329,13 +326,13 @@ function AnalyticsPage() {
           <div className="grid grid-cols-2 gap-3">
             <SummaryKpi
               label="Ventas"
-              value={formatArs(summary.currentMonthSales)}
+              value={formatArs(summary.ventasDelMes)}
               icon={TrendingUp}
               accent="pos"
             />
             <SummaryKpi
               label="Compras"
-              value={formatArs(summary.currentMonthPurchases)}
+              value={formatArs(summary.comprasDelMes)}
               icon={TrendingDown}
             />
           </div>
@@ -359,16 +356,16 @@ function AnalyticsPage() {
             <Select
               value={riskFilter}
               onValueChange={(v) =>
-                setRiskFilter(v as 'medium' | 'high' | 'critical')
+                setRiskFilter(v as 'medio' | 'alto' | 'critico')
               }
             >
               <SelectTrigger className="w-[170px] text-[13px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="medium">Medio y superior</SelectItem>
-                <SelectItem value="high">Alto y crítico</SelectItem>
-                <SelectItem value="critical">Solo crítico</SelectItem>
+                <SelectItem value="medio">Medio y superior</SelectItem>
+                <SelectItem value="alto">Alto y crítico</SelectItem>
+                <SelectItem value="critico">Solo crítico</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -376,7 +373,7 @@ function AnalyticsPage() {
         <ArcaCard>
           <ArcaCardHead>
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-              Perfiles por nivel de riesgo
+              Clientes por nivel de riesgo
             </span>
             <span className="text-[12px] text-[var(--arca-ink-3)]">
               Período: {riskPeriod}
@@ -388,42 +385,31 @@ function AnalyticsPage() {
             </div>
           ) : atRisk.length === 0 ? (
             <div className="px-5 py-8 text-center text-[13px] text-[var(--arca-ink-3)]">
-              No hay perfiles con ese nivel de riesgo en el período actual.
+              No hay clientes con ese nivel de riesgo en el período actual.
             </div>
           ) : (
             <div className="divide-y divide-[var(--arca-border)]">
-              {atRisk.map(
-                (row: {
-                  snapshotId: string;
-                  profileId: string;
-                  profileName: string;
-                  clientName: string;
-                  clientCuit?: string | null;
-                  riskLevel: string;
-                  score: number;
-                }) => (
-                  <div
-                    key={row.snapshotId}
-                    className="flex items-center justify-between px-5 py-3 hover:bg-[var(--arca-surface-2)] transition-colors"
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[13px] font-medium text-[var(--arca-ink)]">
-                        {row.profileName}
-                      </span>
-                      <span className="text-[11.5px] text-[var(--arca-ink-3)]">
-                        {row.clientName}
-                        {row.clientCuit ? ` · ${row.clientCuit}` : ''}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[13px] font-semibold tabular-nums text-[var(--arca-ink)]">
-                        {row.score.toFixed(1)}
-                      </span>
-                      <RiskBadge level={row.riskLevel} />
-                    </div>
+              {atRisk.map((row: RiesgoRow) => (
+                <div
+                  key={row.snapshotId}
+                  className="flex items-center justify-between px-5 py-3 hover:bg-[var(--arca-surface-2)] transition-colors"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-medium text-[var(--arca-ink)]">
+                      {row.razonSocial}
+                    </span>
+                    <span className="text-[11.5px] text-[var(--arca-ink-3)]">
+                      {row.cuit ?? '—'}
+                    </span>
                   </div>
-                )
-              )}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[13px] font-semibold tabular-nums text-[var(--arca-ink)]">
+                      {row.score.toFixed(1)}
+                    </span>
+                    <RiskBadge level={row.nivel} />
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </ArcaCard>
@@ -443,9 +429,9 @@ function AnalyticsPage() {
               <SelectValue placeholder="Seleccionar cliente…" />
             </SelectTrigger>
             <SelectContent>
-              {clients.map((c: { id: string; name: string }) => (
+              {clients.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
-                  {c.name}
+                  {c.razonSocial}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -482,30 +468,30 @@ function AnalyticsPage() {
                   {[
                     {
                       label: 'Ventas totales',
-                      value: formatArs(ratios.totalSales),
-                      pct: ratios.salesGrowthPct,
+                      value: formatArs(ratios.ventas),
+                      pct: ratios.variacionVentasPct,
                     },
                     {
                       label: 'Compras totales',
-                      value: formatArs(ratios.totalPurchases),
-                      pct: ratios.purchasesGrowthPct,
+                      value: formatArs(ratios.compras),
+                      pct: ratios.variacionComprasPct,
                     },
                     {
                       label: 'Posición neta',
-                      value: formatArs(ratios.netPosition),
+                      value: formatArs(ratios.posicionNeta),
                       pct: null,
                     },
                     {
                       label: 'Ratio ventas/compras',
                       value:
-                        ratios.salesPurchasesRatio !== null
-                          ? ratios.salesPurchasesRatio.toFixed(2)
+                        ratios.ratioVentasCompras !== null
+                          ? ratios.ratioVentasCompras.toFixed(2)
                           : '—',
                       pct: null,
                     },
                     {
-                      label: 'Facturas',
-                      value: String(ratios.invoiceCount),
+                      label: 'Comprobantes',
+                      value: String(ratios.comprobantes),
                       pct: null,
                     },
                   ].map((row) => (
@@ -629,30 +615,20 @@ function AnalyticsPage() {
           <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--arca-ink-3)]">
             Proyección IVA
           </h2>
-          <Select
-            value={ivaProfileId}
-            onValueChange={(v) => setIvaProfileId(v)}
-          >
+          <Select value={ivaClienteId} onValueChange={(v) => setIvaClienteId(v)}>
             <SelectTrigger className="w-[260px] text-[13px]">
-              <SelectValue placeholder="Seleccionar perfil…" />
+              <SelectValue placeholder="Seleccionar cliente…" />
             </SelectTrigger>
             <SelectContent>
-              {clientsWithProfiles.flatMap(
-                (c: {
-                  id: string;
-                  name: string;
-                  profiles?: { id: string; name: string }[];
-                }) =>
-                  (c.profiles ?? []).map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {c.name} — {p.name}
-                    </SelectItem>
-                  ))
-              )}
+              {clients.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.razonSocial}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
-        {ivaProfileId && (
+        {ivaClienteId && (
           <ArcaCard>
             <ArcaCardHead>
               <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
@@ -663,23 +639,23 @@ function AnalyticsPage() {
                   className="text-[11.5px] px-2 py-0.5 rounded-full"
                   style={{
                     background:
-                      ivaProjection.confidence === 'high'
+                      ivaProjection.confianza === 'alta'
                         ? 'var(--arca-accent-pos-bg)'
-                        : ivaProjection.confidence === 'medium'
+                        : ivaProjection.confianza === 'media'
                           ? 'var(--arca-accent-warn-bg)'
                           : 'var(--arca-surface-2)',
                     color:
-                      ivaProjection.confidence === 'high'
+                      ivaProjection.confianza === 'alta'
                         ? 'var(--arca-accent-pos-fg)'
-                        : ivaProjection.confidence === 'medium'
+                        : ivaProjection.confianza === 'media'
                           ? 'var(--arca-accent-warn-fg)'
                           : 'var(--arca-ink-3)',
                   }}
                 >
                   Confianza:{' '}
-                  {ivaProjection.confidence === 'high'
+                  {ivaProjection.confianza === 'alta'
                     ? 'Alta'
-                    : ivaProjection.confidence === 'medium'
+                    : ivaProjection.confianza === 'media'
                       ? 'Media'
                       : 'Baja'}
                 </span>
@@ -694,24 +670,23 @@ function AnalyticsPage() {
                 <div className="flex flex-col gap-4">
                   <div className="flex items-end gap-3">
                     <span className="font-display text-[32px] font-bold tracking-[-0.02em] text-[var(--arca-ink)] tabular-nums">
-                      {formatArs(ivaProjection.projectedAmount)}
+                      {formatArs(ivaProjection.montoProyectado)}
                     </span>
                     <span className="text-[13px] text-[var(--arca-ink-3)] mb-1.5">
                       estimado a pagar
                     </span>
                   </div>
-                  {ivaProjection.factors &&
-                    typeof ivaProjection.factors === 'object' &&
-                    'samplesUsed' in (ivaProjection.factors as object) && (
-                      <div className="text-[12px] text-[var(--arca-ink-3)]">
-                        Basado en{' '}
-                        {
-                          (ivaProjection.factors as { samplesUsed: number })
-                            .samplesUsed
-                        }{' '}
-                        declaraciones históricas
-                      </div>
-                    )}
+                  {ivaProjection.factores.metodo === 'promedio_historico' ? (
+                    <div className="text-[12px] text-[var(--arca-ink-3)]">
+                      Basado en {ivaProjection.factores.muestras} declaraciones
+                      históricas
+                    </div>
+                  ) : (
+                    <div className="text-[12px] text-[var(--arca-ink-3)]">
+                      {ivaProjection.factores.mensaje ??
+                        'Sin declaraciones históricas para proyectar.'}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </div>

@@ -7,24 +7,24 @@
  * `accounting-payroll-posting.ts` y los helpers de DB en `accounting-posting-db.ts`.
  *
  * Flujo: recibos confirmados del período → conceptos agregados por código SOS →
- * reglas `sourceModule='payroll'` → UN asiento `origin='auto_payroll'` cuyo
- * `sourceId` es la fila de `payroll_liquidacion_cierre`.
+ * reglas `modulo='recibo'` → UN asiento `origen_tipo='recibo'` cuyo `origen_id`
+ * es la fila de `cierre_sueldos`.
  */
 import { db } from '@/lib/db';
 import {
-  accountingLog,
-  journalEntry,
-  journalEntryLine,
-  liquidacionImportConceptoValor,
-  liquidacionImportEmpleado,
-  liquidacionImportRecibo,
-  payrollLiquidacionCierre,
+  asiento,
+  asientoLinea,
+  cierreSueldos,
+  concepto,
+  evento,
+  recibo,
+  reciboConcepto,
 } from '@/drizzle/schema';
-import { and, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
-  aggregatePayrollConcepts,
-  buildPayrollEntryLines,
-  type BuiltPayrollEntry,
+  agregarConceptosSueldos,
+  armarLineasSueldos,
+  type AsientoSueldosArmado,
 } from '@/lib/accounting-payroll-posting';
 import {
   assertPostableAccounts,
@@ -34,13 +34,10 @@ import {
   nextEntryNumber,
   resolvePeriodForDate,
 } from '@/lib/accounting-posting-db';
-import {
-  normalizarPeriodoYYYYMM,
-  variantesPeriodoParaBusqueda,
-} from '@/lib/payroll-period-rules';
+import { normalizarPeriodoYYYYMM } from '@/lib/payroll-period-rules';
 
 export interface ClosePayrollPeriodParams {
-  /** Empresa con CUIT propio (client.id) — el mismo id que usa contabilidad. */
+  /** Empresa (cliente.id) — el mismo id que usa contabilidad. */
   clientId: string;
   orgId: string;
   /** Período a cerrar, "YYYY-MM". */
@@ -70,8 +67,13 @@ export interface ClosePayrollPeriodResult {
     credit: number;
     description: string | null;
   }[];
-  mappings: BuiltPayrollEntry['mappings'];
+  mappings: AsientoSueldosArmado['mapeos'];
   dryRun: boolean;
+}
+
+/** Primer día del mes — cómo guarda el período el modelo ideal. */
+function primerDiaPeriodo(periodoNorm: string): string {
+  return `${periodoNorm}-01`;
 }
 
 /** Último día del mes del período — fecha contable del asiento de devengamiento. */
@@ -92,16 +94,18 @@ export async function closePayrollPeriod(
   const { clientId, orgId, userId } = params;
   const dryRun = params.dryRun ?? false;
   const periodoNorm = normalizarPeriodoYYYYMM(params.periodo);
+  const periodoFecha = primerDiaPeriodo(periodoNorm);
 
-  // 1. Idempotencia: un cierre vigente bloquea otro.
+  // 1. Idempotencia: un cierre vigente bloquea otro. (Lo respalda el índice
+  //    parcial uq_cierre_sueldos_vigente, por si dos requests corren a la vez.)
   const [vigente] = await db
-    .select({ id: payrollLiquidacionCierre.id })
-    .from(payrollLiquidacionCierre)
+    .select({ id: cierreSueldos.id })
+    .from(cierreSueldos)
     .where(
       and(
-        eq(payrollLiquidacionCierre.clientId, clientId),
-        eq(payrollLiquidacionCierre.periodo, periodoNorm),
-        isNull(payrollLiquidacionCierre.reopenedAt)
+        eq(cierreSueldos.clienteId, clientId),
+        eq(cierreSueldos.periodo, periodoFecha),
+        isNull(cierreSueldos.reabiertoAt)
       )
     )
     .limit(1);
@@ -110,22 +114,16 @@ export async function closePayrollPeriod(
       `La liquidación de ${periodoNorm} ya está cerrada. Reabrila para volver a generarla.`
     );
 
-  // 2. Recibos confirmados del período (los mismos que muestra la solapa Recibo).
-  const variantes = variantesPeriodoParaBusqueda(periodoNorm, params.periodo);
+  // 2. Recibos confirmados del período. `recibo.periodo` es date con el primer
+  //    día del mes, así que no hacen falta las variantes de texto del modelo viejo.
   const recibos = await db
-    .select({ id: liquidacionImportRecibo.id })
-    .from(liquidacionImportRecibo)
-    .innerJoin(
-      liquidacionImportEmpleado,
-      eq(liquidacionImportRecibo.empleadoId, liquidacionImportEmpleado.id)
-    )
+    .select({ id: recibo.id })
+    .from(recibo)
     .where(
       and(
-        eq(liquidacionImportEmpleado.clientId, clientId),
-        eq(liquidacionImportRecibo.reciboConfirmado, true),
-        variantes.length === 1
-          ? eq(liquidacionImportRecibo.periodo, variantes[0])
-          : or(...variantes.map((v) => eq(liquidacionImportRecibo.periodo, v)))
+        eq(recibo.clienteId, clientId),
+        eq(recibo.periodo, periodoFecha),
+        eq(recibo.confirmado, true)
       )
     );
 
@@ -134,31 +132,44 @@ export async function closePayrollPeriod(
       `No hay recibos confirmados para ${periodoNorm}. Confirmá los recibos antes de cerrar.`
     );
 
-  // 3. Conceptos de esos recibos, agregados por código SOS.
+  // 3. Conceptos de esos recibos, agregados por código SOS. El código sale de
+  //    `concepto.numero`; el tipo, del renglón si lo trae y si no del catálogo
+  //    (`concepto.tipo` es NOT NULL, así que el fallback por rango casi no juega).
   const valores = await db
     .select({
-      codigo: liquidacionImportConceptoValor.codigo,
-      tipoLiquidacion: liquidacionImportConceptoValor.tipoLiquidacion,
-      monto: liquidacionImportConceptoValor.monto,
+      numero: concepto.numero,
+      tipoLinea: reciboConcepto.tipo,
+      tipoCatalogo: concepto.tipo,
+      monto: reciboConcepto.monto,
     })
-    .from(liquidacionImportConceptoValor)
+    .from(reciboConcepto)
+    .innerJoin(concepto, eq(reciboConcepto.conceptoId, concepto.id))
     .where(
-      inArray(
-        liquidacionImportConceptoValor.reciboId,
-        recibos.map((r) => r.id)
+      and(
+        inArray(
+          reciboConcepto.reciboId,
+          recibos.map((r) => r.id)
+        ),
+        eq(reciboConcepto.activo, true)
       )
     );
 
-  const concepts = aggregatePayrollConcepts(valores);
+  const concepts = agregarConceptosSueldos(
+    valores.map((v) => ({
+      codigo: String(v.numero),
+      tipoLiquidacion: v.tipoLinea ?? v.tipoCatalogo,
+      monto: v.monto,
+    }))
+  );
   if (concepts.length === 0)
     throw new Error(
       `Los recibos de ${periodoNorm} no tienen conceptos con importe.`
     );
 
-  // 4. Reglas + cuenta pending_review + período contable destino.
+  // 4. Reglas + cuenta pendiente de revisión + período contable destino.
   const [prId, rules] = await Promise.all([
     loadPendingReviewAccountId(orgId),
-    loadActiveMappingRules(clientId, 'payroll'),
+    loadActiveMappingRules(clientId, 'recibo'),
   ]);
 
   const resolved = await resolvePeriodForDate(
@@ -173,27 +184,30 @@ export async function closePayrollPeriod(
       throw new Error(`No hay período contable para ${periodoNorm}.`);
     throw e;
   });
-  if (resolved.period.status === 'closed')
+  if (resolved.period.estado === 'cerrado')
     throw new Error(
       `El período contable de ${periodoNorm} está cerrado; reabrilo para contabilizar sueldos.`
     );
 
   // 5. Asiento (puro). Las cuentas de las reglas usadas deben ser imputables.
-  const built = buildPayrollEntryLines(concepts, rules, prId);
+  const built = armarLineasSueldos(concepts, rules, prId);
   const ruleAccountIds = rules
-    .filter((r) => built.usedRuleIds.includes(r.id))
-    .flatMap((r) => r.lines.map((l) => l.accountId));
+    .filter((r) => built.reglasUsadasIds.includes(r.id))
+    .flatMap((r) => r.lineas.map((l) => l.cuentaId));
   await assertPostableAccounts(clientId, orgId, ruleAccountIds);
 
-  const conceptosSinRegla = built.mappings.filter((m) => m.unmapped).length;
+  const conceptosSinRegla = built.mapeos.filter((m) => m.sinRegla).length;
   const labels = await loadAccountLabels(
     orgId,
-    built.lines.map((l) => l.accountId)
+    built.lineas.map((l) => l.cuentaId)
   );
-  const linesWithLabels = built.lines.map((l) => ({
-    ...l,
-    accountCode: labels.get(l.accountId)?.code ?? null,
-    accountName: labels.get(l.accountId)?.name ?? null,
+  const linesWithLabels = built.lineas.map((l) => ({
+    accountId: l.cuentaId,
+    accountCode: labels.get(l.cuentaId)?.code ?? null,
+    accountName: labels.get(l.cuentaId)?.name ?? null,
+    debit: l.debe,
+    credit: l.haber,
+    description: l.descripcion,
   }));
   const base: ClosePayrollPeriodResult = {
     periodo: periodoNorm,
@@ -203,83 +217,83 @@ export async function closePayrollPeriod(
     cierreId: null,
     journalEntryId: null,
     entryNumber: null,
-    pendingReview: built.usedPendingReview,
-    reason: built.reason,
+    pendingReview: built.usoPendienteRevision,
+    reason: built.motivo,
     lines: linesWithLabels,
-    mappings: built.mappings,
+    mappings: built.mapeos,
     dryRun,
   };
   if (dryRun) return base;
 
-  // 6. Persistencia atómica: cierre + asiento + líneas + log.
+  // 6. Persistencia atómica: cierre + asiento + líneas + evento.
   return await db.transaction(async (tx) => {
     const number = await nextEntryNumber(tx, clientId, resolved.fy.id);
 
     const [cierre] = await tx
-      .insert(payrollLiquidacionCierre)
+      .insert(cierreSueldos)
       .values({
-        clientId,
-        periodo: periodoNorm,
+        orgId,
+        clienteId: clientId,
+        periodo: periodoFecha,
         recibos: recibos.length,
         conceptosSinRegla,
-        closedBy: userId,
+        cerradoPor: userId,
       })
       .returning();
 
     const [je] = await tx
-      .insert(journalEntry)
+      .insert(asiento)
       .values({
-        clientId,
-        fiscalYearId: resolved.fy.id,
-        periodId: resolved.period.id,
-        number,
-        entryDate: resolved.date,
-        description: `Sueldos y jornales devengados ${periodoNorm}`,
-        origin: 'auto_payroll',
-        sourceType: 'payroll',
-        sourceId: cierre.id,
+        orgId,
+        clienteId: clientId,
+        ejercicioId: resolved.fy.id,
+        periodoId: resolved.period.id,
+        numero: number,
+        fecha: fechaAsientoPeriodo(periodoNorm),
+        descripcion: `Sueldos y jornales devengados ${periodoNorm}`,
+        origenTipo: 'recibo',
+        origenId: cierre.id,
         // Un asiento agrupa varias reglas; se guarda la primera como referencia.
-        mappingRuleId: built.usedRuleIds[0] ?? null,
-        createdBy: userId,
+        reglaId: built.reglasUsadasIds[0] ?? null,
+        fuente: 'calculo',
+        creadoPor: userId,
       })
       .returning();
 
-    await tx.insert(journalEntryLine).values(
-      built.lines.map((l, i) => ({
-        journalEntryId: je.id,
-        accountId: l.accountId,
-        clientId,
-        periodId: resolved.period.id,
-        debit: String(l.debit),
-        credit: String(l.credit),
-        description: l.description,
-        lineOrder: i,
+    await tx.insert(asientoLinea).values(
+      built.lineas.map((l, i) => ({
+        asientoId: je.id,
+        cuentaId: l.cuentaId,
+        debe: String(l.debe),
+        haber: String(l.haber),
+        descripcion: l.descripcion,
+        orden: i,
       }))
     );
 
     await tx
-      .update(payrollLiquidacionCierre)
-      .set({ journalEntryId: je.id })
-      .where(eq(payrollLiquidacionCierre.id, cierre.id));
+      .update(cierreSueldos)
+      .set({ asientoId: je.id })
+      .where(eq(cierreSueldos.id, cierre.id));
 
-    await tx.insert(accountingLog).values({
-      clientId,
-      fiscalYearId: resolved.fy.id,
-      eventType: 'journal_entry_created',
-      eventData: {
-        entryId: je.id,
-        number,
-        auto: true,
-        source: 'payroll',
-        cierreId: cierre.id,
+    await tx.insert(evento).values({
+      orgId,
+      clienteId: clientId,
+      entidad: 'cierre_sueldos',
+      entidadId: cierre.id,
+      tipo: 'alta',
+      actorTipo: 'user',
+      actorId: userId,
+      detalle: {
+        asientoId: je.id,
+        numero: number,
         periodo: periodoNorm,
         recibos: recibos.length,
-        ruleIds: built.usedRuleIds,
-        pendingReview: built.usedPendingReview,
+        reglaIds: built.reglasUsadasIds,
+        pendienteRevision: built.usoPendienteRevision,
         conceptosSinRegla,
-        reason: built.reason,
+        motivo: built.motivo,
       },
-      userId,
     });
 
     return {
@@ -304,12 +318,12 @@ export async function reopenPayrollPeriod(params: {
   const periodoNorm = normalizarPeriodoYYYYMM(params.periodo);
   const [cierre] = await db
     .select()
-    .from(payrollLiquidacionCierre)
+    .from(cierreSueldos)
     .where(
       and(
-        eq(payrollLiquidacionCierre.clientId, params.clientId),
-        eq(payrollLiquidacionCierre.periodo, periodoNorm),
-        isNull(payrollLiquidacionCierre.reopenedAt)
+        eq(cierreSueldos.clienteId, params.clientId),
+        eq(cierreSueldos.periodo, primerDiaPeriodo(periodoNorm)),
+        isNull(cierreSueldos.reabiertoAt)
       )
     )
     .limit(1);
@@ -317,23 +331,23 @@ export async function reopenPayrollPeriod(params: {
     throw new Error(`No hay una liquidación cerrada para ${periodoNorm}.`);
 
   return await db.transaction(async (tx) => {
-    if (cierre.journalEntryId) {
+    if (cierre.asientoId) {
       await tx
-        .update(journalEntry)
+        .update(asiento)
         .set({
-          isVoided: true,
-          voidedAt: new Date(),
-          voidedBy: params.userId,
-          voidReason:
+          anulado: true,
+          anuladoAt: new Date(),
+          anuladoPor: params.userId,
+          motivoAnulacion:
             params.reason ?? `Reapertura de la liquidación de ${periodoNorm}`,
         })
-        .where(eq(journalEntry.id, cierre.journalEntryId));
+        .where(eq(asiento.id, cierre.asientoId));
     }
     await tx
-      .update(payrollLiquidacionCierre)
-      .set({ reopenedAt: new Date(), reopenedBy: params.userId })
-      .where(eq(payrollLiquidacionCierre.id, cierre.id));
+      .update(cierreSueldos)
+      .set({ reabiertoAt: new Date(), reabiertoPor: params.userId })
+      .where(eq(cierreSueldos.id, cierre.id));
 
-    return { cierreId: cierre.id, voidedEntryId: cierre.journalEntryId };
+    return { cierreId: cierre.id, voidedEntryId: cierre.asientoId };
   });
 }

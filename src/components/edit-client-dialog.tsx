@@ -33,10 +33,15 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { getRepresentative, updateRepresentative } from '@/actions/client';
+import {
+  getCliente,
+  updateCliente,
+  updateClienteEstado,
+  updateCredencialPassword,
+} from '@/actions/client';
 
 const clientSchema = z.object({
-  name: z.string().min(1, 'El nombre es requerido'),
+  razonSocial: z.string().min(1, 'La razón social es requerida'),
   email: z
     .string()
     .optional()
@@ -45,18 +50,25 @@ const clientSchema = z.object({
       { message: 'Email inválido' }
     )
     .or(z.literal('')),
-  phone: z.string().optional().or(z.literal('')),
-  address: z.string().optional().or(z.literal('')),
-  image: z.string().optional(),
+  telefono: z.string().optional().or(z.literal('')),
+  domicilio: z.string().optional().or(z.literal('')),
   // Contraseña de AFIP: vacío = no se cambia.
   password: z.string().optional(),
   regimenFiscal: z.enum(['local', 'multilateral', 'sin_definir']),
+  estado: z.enum(['activo', 'pausado', 'baja']),
+  bajaMotivo: z.string().max(500).optional().or(z.literal('')),
 });
 
 type ClientFormValues = z.infer<typeof clientSchema>;
 
 interface EditRepresentativeDialogProps {
-  representativeId: string;
+  /** Cliente que se edita: razón social, contacto y régimen de IIBB. */
+  clienteId: string;
+  /**
+   * Login de AFIP cuya clave se puede actualizar desde este diálogo. Sin él,
+   * la sección de contraseña no se muestra.
+   */
+  credencialId?: string;
   children?: React.ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -90,7 +102,8 @@ function SectionCard({
 }
 
 export function EditRepresentativeDialog({
-  representativeId,
+  clienteId,
+  credencialId,
   children,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
@@ -109,45 +122,48 @@ export function EditRepresentativeDialog({
 
   const initializedRef = React.useRef<string | null>(null);
 
-  const { data: representative, isLoading: loadingRepresentative } = useQuery({
-    queryKey: ['representative', representativeId],
-    queryFn: () => getRepresentative({ data: { id: representativeId } }),
-    enabled: open && !!representativeId,
+  const { data: clienteData, isLoading: loadingRepresentative } = useQuery({
+    queryKey: ['cliente', clienteId],
+    queryFn: () => getCliente({ data: { id: clienteId } }),
+    enabled: open && !!clienteId,
   });
 
   const form = useForm<ClientFormValues>({
     resolver: zodResolver(clientSchema) as Resolver<ClientFormValues>,
     defaultValues: {
-      name: '',
+      razonSocial: '',
       email: '',
-      phone: '',
-      address: '',
-      image: '',
+      telefono: '',
+      domicilio: '',
       password: '',
       regimenFiscal: 'sin_definir',
+      estado: 'activo',
+      bajaMotivo: '',
     },
   });
 
   React.useEffect(() => {
-    if (representative && initializedRef.current !== representativeId) {
-      initializedRef.current = representativeId;
-      const regimenFiscal = representative.convenioMultilateral
-        ? 'multilateral'
-        : representative.regimenLocal
-          ? 'local'
-          : 'sin_definir';
+    if (clienteData && initializedRef.current !== clienteId) {
+      initializedRef.current = clienteId;
+      const regimenFiscal =
+        clienteData.iibbRegimen === 'convenio_multilateral'
+          ? 'multilateral'
+          : clienteData.iibbRegimen === 'local'
+            ? 'local'
+            : 'sin_definir';
       form.reset({
-        name: representative.name ?? '',
-        email: representative.email || '',
-        phone: representative.phone || '',
-        address: representative.address || '',
-        image: representative.image ?? '',
+        razonSocial: clienteData.razonSocial,
+        email: clienteData.email || '',
+        telefono: clienteData.telefono || '',
+        domicilio: clienteData.domicilio || '',
         // Nunca precargamos la contraseña actual (no exponer el secreto).
         password: '',
         regimenFiscal,
+        estado: clienteData.estado ?? 'activo',
+        bajaMotivo: clienteData.bajaMotivo ?? '',
       });
     }
-  }, [representative, representativeId, form]);
+  }, [clienteData, clienteId, form]);
 
   React.useEffect(() => {
     if (!open) {
@@ -157,17 +173,58 @@ export function EditRepresentativeDialog({
   }, [open]);
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) => updateRepresentative({ data }),
+    mutationFn: async (values: ClientFormValues) => {
+      await updateCliente({
+        data: {
+          id: clienteId,
+          razonSocial: values.razonSocial,
+          email: values.email ?? '',
+          telefono: values.telefono ?? '',
+          domicilio: values.domicilio ?? '',
+          // `condicionIva` y `notas` no se mandan a propósito: este formulario
+          // no los edita y `updateCliente` ahora sólo pisa lo que recibe.
+          iibbRegimen:
+            values.regimenFiscal === 'multilateral'
+              ? 'convenio_multilateral'
+              : values.regimenFiscal === 'local'
+                ? 'local'
+                : '',
+        },
+      });
+
+      if (credencialId && values.password) {
+        await updateCredencialPassword({
+          data: { id: credencialId, password: values.password },
+        });
+      }
+
+      // El estado va aparte: es una acción con más peso que editar un teléfono
+      // (la baja saca al cliente de la operatoria) y tiene su propia server fn.
+      const estadoCambio =
+        values.estado !== (clienteData?.estado ?? 'activo') ||
+        (values.estado === 'baja' &&
+          (values.bajaMotivo ?? '') !== (clienteData?.bajaMotivo ?? ''));
+      if (estadoCambio) {
+        await updateClienteEstado({
+          data: {
+            id: clienteId,
+            estado: values.estado,
+            bajaMotivo:
+              values.estado === 'baja'
+                ? values.bajaMotivo || undefined
+                : undefined,
+          },
+        });
+      }
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['representatives'] });
       void queryClient.invalidateQueries({
         queryKey: ['representativesWithClients'],
       });
       void queryClient.invalidateQueries({ queryKey: ['clients'] });
-      void queryClient.invalidateQueries({
-        queryKey: ['representative', representativeId],
-      });
-      toast.success('Representante actualizado exitosamente');
+      void queryClient.invalidateQueries({ queryKey: ['cliente', clienteId] });
+      toast.success('Cliente actualizado exitosamente');
       setOpen(false);
     },
     onError: (error) => {
@@ -179,13 +236,7 @@ export function EditRepresentativeDialog({
   const onSubmit = async (values: ClientFormValues) => {
     setLoading(true);
     try {
-      const { regimenFiscal, ...rest } = values;
-      await updateMutation.mutateAsync({
-        id: representativeId,
-        ...rest,
-        convenioMultilateral: regimenFiscal === 'multilateral',
-        regimenLocal: regimenFiscal === 'local',
-      });
+      await updateMutation.mutateAsync(values);
     } finally {
       setLoading(false);
     }
@@ -248,6 +299,26 @@ export function EditRepresentativeDialog({
                 >
                   <FormField
                     control={form.control}
+                    name="razonSocial"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={labelClass}>
+                          Razón social
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Razón social del cliente"
+                            className={inputClass}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name="email"
                     render={({ field }) => (
                       <FormItem>
@@ -270,7 +341,7 @@ export function EditRepresentativeDialog({
 
                   <FormField
                     control={form.control}
-                    name="phone"
+                    name="telefono"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className={labelClass}>
@@ -292,7 +363,7 @@ export function EditRepresentativeDialog({
 
                   <FormField
                     control={form.control}
-                    name="address"
+                    name="domicilio"
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className={labelClass}>
@@ -304,27 +375,6 @@ export function EditRepresentativeDialog({
                             className={inputClass}
                             {...field}
                             value={field.value ?? ''}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="image"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={labelClass}>
-                          Imagen (URL)
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type="url"
-                            placeholder="https://ejemplo.com/imagen.jpg"
-                            className={inputClass}
-                            {...field}
                           />
                         </FormControl>
                         <FormMessage />
@@ -390,80 +440,127 @@ export function EditRepresentativeDialog({
                   />
                 </SectionCard>
 
-                {/* SECTION: Representante */}
-                <SectionCard
-                  icon={
-                    <GitCompareArrows
-                      className="h-[15px] w-[15px]"
-                      style={{ color: 'var(--arca-chart-3)' }}
-                      strokeWidth={2}
-                    />
-                  }
-                  label="Representante"
-                >
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={labelClass}>Nombre</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="Nombre del representante"
-                            className={inputClass}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="password"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={labelClass}>
-                          Actualizar contraseña en AFIP
-                        </FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Input
-                              type={showPassword ? 'text' : 'password'}
-                              placeholder="Dejar en blanco para no cambiarla"
-                              autoComplete="new-password"
-                              {...field}
-                              value={field.value ?? ''}
-                              className={`${inputClass} pr-[46px]`}
-                            />
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              onClick={() => setShowPassword((s) => !s)}
-                              aria-label={
-                                showPassword
-                                  ? 'Ocultar contraseña'
-                                  : 'Mostrar contraseña'
-                              }
-                              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-[34px] h-[34px] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors duration-[120ms] cursor-pointer"
+                {/* SECTION: Credencial de AFIP */}
+                {credencialId && (
+                  <SectionCard
+                    icon={
+                      <GitCompareArrows
+                        className="h-[15px] w-[15px]"
+                        style={{ color: 'var(--arca-chart-3)' }}
+                        strokeWidth={2}
+                      />
+                    }
+                    label="Credencial de AFIP"
+                  >
+                    <FormField
+                      control={form.control}
+                      name="estado"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className={`${labelClass} mb-0.5`}>
+                            Estado del cliente
+                          </FormLabel>
+                          <FormControl>
+                            <RadioGroup
+                              value={field.value}
+                              onValueChange={field.onChange}
+                              className="grid grid-cols-3 gap-2.5"
                             >
-                              {showPassword ? (
-                                <EyeOff className="h-5 w-5" />
-                              ) : (
-                                <Eye className="h-5 w-5" />
-                              )}
-                            </button>
-                          </div>
-                        </FormControl>
-                        <p className="mt-0.5 text-[12.5px] text-[var(--arca-ink-4)]">
-                          Déjala en blanco para mantener la actual.
-                        </p>
-                        <FormMessage />
-                      </FormItem>
+                              {[
+                                { value: 'activo', label: 'Activo' },
+                                { value: 'pausado', label: 'Pausado' },
+                                { value: 'baja', label: 'Baja' },
+                              ].map(({ value, label }) => {
+                                const selected = field.value === value;
+                                return (
+                                  <label
+                                    key={value}
+                                    className={`flex items-center gap-[9px] px-3 py-3.5 rounded-[12px] text-[14px] cursor-pointer transition-all duration-[120ms] ${
+                                      selected
+                                        ? 'bg-[var(--arca-surface)] border-[1.5px] border-[var(--arca-ink)] text-[var(--arca-ink)] font-semibold'
+                                        : 'bg-[var(--arca-surface-2)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] font-medium'
+                                    }`}
+                                  >
+                                    <RadioGroupItem
+                                      value={value}
+                                      className="sr-only"
+                                    />
+                                    <span>{label}</span>
+                                  </label>
+                                );
+                              })}
+                            </RadioGroup>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {form.watch('estado') === 'baja' && (
+                      <FormField
+                        control={form.control}
+                        name="bajaMotivo"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={`${labelClass} mb-0.5`}>
+                              Motivo de la baja
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder="Dejó el estudio, cese de actividad…"
+                                {...field}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     )}
-                  />
-                </SectionCard>
+                    <FormField
+                      control={form.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className={labelClass}>
+                            Actualizar contraseña en AFIP
+                          </FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Input
+                                type={showPassword ? 'text' : 'password'}
+                                placeholder="Dejar en blanco para no cambiarla"
+                                autoComplete="new-password"
+                                {...field}
+                                value={field.value ?? ''}
+                                className={`${inputClass} pr-[46px]`}
+                              />
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                onClick={() => setShowPassword((s) => !s)}
+                                aria-label={
+                                  showPassword
+                                    ? 'Ocultar contraseña'
+                                    : 'Mostrar contraseña'
+                                }
+                                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-[34px] h-[34px] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors duration-[120ms] cursor-pointer"
+                              >
+                                {showPassword ? (
+                                  <EyeOff className="h-5 w-5" />
+                                ) : (
+                                  <Eye className="h-5 w-5" />
+                                )}
+                              </button>
+                            </div>
+                          </FormControl>
+                          <p className="mt-0.5 text-[12.5px] text-[var(--arca-ink-4)]">
+                            Déjala en blanco para mantener la actual.
+                          </p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </SectionCard>
+                )}
               </div>
 
               {/* Footer */}

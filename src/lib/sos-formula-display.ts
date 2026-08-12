@@ -1,14 +1,26 @@
 /**
- * Genera una cadena legible que describe cómo se calcula un concepto SOS,
- * derivada exclusivamente de los campos de metadata ya almacenados.
- * No requiere columna extra en la DB.
+ * Genera una cadena legible que describe cómo se calcula un concepto,
+ * derivada del `modo` del catálogo y de los flags `usa_*` ya almacenados.
  *
  * Usa abreviaturas en la fórmula; el significado filtrado está en
  * `leyendaRelacionadaFormulaSos` (solo lo que aplica a esa fórmula).
  */
 
+export type ConceptoModoCalculo =
+  | 'importe_manual'
+  | 'pct_sobre_base'
+  | 'pct_sobre_concepto'
+  | 'sueldo_basico'
+  | 'valor_hora'
+  | 'sac'
+  | 'sac_proporcional'
+  | 'dia_vacaciones'
+  | 'promedio_anual_concepto';
+
 export interface ConceptoSosMetadata {
-  baseColumna?: string | null;
+  modo?: ConceptoModoCalculo | null;
+  /** `base_calculo.codigo` cuando modo = pct_sobre_base. */
+  baseCodigo?: string | null;
   divCantidad?: number | null;
   divHsNorm?: number | null;
   tieneCantidad?: boolean | null;
@@ -19,43 +31,16 @@ export interface ConceptoSosMetadata {
   tieneImpMax?: boolean | null;
 }
 
+/** Sigla por base de cálculo (base_calculo.codigo). */
 const BASE_LABEL: Record<string, string> = {
-  sueldo: 'SL',
-  sueldoLegajo: 'SL',
-  valHora: 'VH',
-  sub1_9: 'S1-9',
-  sub1_19: 'S1-19',
-  sub1_26: 'S1-26',
-  sub1_39: 'S1-39',
-  sub1_199: 'S1-199',
-  sub411_469: 'S411-469',
-  sub1_199_plus_411_469: '(S1-199 + S411-469)',
-  sub411_414_qty: 'S411-414',
-  os_base: 'S-OS',
+  sueldo_y_adicionales: 'B-SYA',
+  remunerativo_habitual: 'B-RH',
+  total_remunerativo: 'B-REM',
+  total_no_remunerativo: 'B-NOREM',
+  bruto: 'B-BRUTO',
+  no_remunerativo_con_os: 'B-NOREM-OS',
+  base_obra_social: 'B-OS',
 };
-
-/** Mapeo baseColumna → clave de leyenda para subtotales (no el string de fórmula). */
-const SUB_BASE_LEYENDA: Record<string, string> = {
-  sub1_9: 'S1-9',
-  sub1_19: 'S1-19',
-  sub1_26: 'S1-26',
-  sub1_39: 'S1-39',
-  sub1_199: 'S1-199',
-  sub411_469: 'S411-469',
-  sub1_199_plus_411_469: 'S1-199 + S411-469',
-  os_base: 'S-OS',
-};
-
-const SUB_BASES = new Set([
-  'sub1_9',
-  'sub1_19',
-  'sub1_26',
-  'sub1_39',
-  'sub1_199',
-  'sub411_469',
-  'sub1_199_plus_411_469',
-  'os_base',
-]);
 
 /** Leyenda completa (índice por `sigla`). */
 export const LEYENDA_FORMULA_SOS: readonly { sigla: string; texto: string }[] =
@@ -71,43 +56,58 @@ export const LEYENDA_FORMULA_SOS: readonly { sigla: string; texto: string }[] =
         'Valor hora: sueldo básico ÷ horas normales mensuales (según configuración del concepto).',
     },
     {
-      sigla: 'S1-9',
-      texto: 'Subtotal acumulado de conceptos con código de fila 1 a 9.',
-    },
-    {
-      sigla: 'S1-19',
-      texto: 'Subtotal acumulado de conceptos con código de fila 1 a 19.',
-    },
-    {
-      sigla: 'S1-26',
-      texto: 'Subtotal acumulado de conceptos con código de fila 1 a 26.',
-    },
-    {
-      sigla: 'S1-39',
-      texto: 'Subtotal acumulado de conceptos con código de fila 1 a 39.',
-    },
-    {
-      sigla: 'S1-199',
+      sigla: 'B-SYA',
       texto:
-        'Total haberes: suma de conceptos remunerativos en el rango 1 a 199.',
+        'Base "Sueldo y adicionales": básico, horas normales, antigüedad y otros haberes directos. Base típica de presentismo y antigüedad (los fija cada CCT).',
     },
     {
-      sigla: 'S411-469',
-      texto: 'Total no remunerativos: suma de conceptos en el rango 411 a 469.',
-    },
-    {
-      sigla: 'S411-414',
-      texto: 'Subtotal no remunerativos: suma de conceptos en el rango 411 a 414 (base para asignación complementaria no remunerativa).',
-    },
-    {
-      sigla: 'S1-199 + S411-469',
+      sigla: 'B-RH',
       texto:
-        'Suma del total haberes (1–199) más el total no remunerativo (411–469).',
+        'Base "Remunerativo habitual": sueldo y adicionales más feriados y presentismo.',
     },
     {
-      sigla: 'S-OS',
+      sigla: 'B-REM',
       texto:
-        'Base obra social: básico de escala a jornada completa (para empleados part_time/reducida); equivale a S1-199 para jornada completa.',
+        'Base "Total remunerativo": todos los conceptos remunerativos (art. 103 LCT). Base de los aportes de ley: jubilación 11%, PAMI 3%, obra social 3%, cuota sindical.',
+    },
+    {
+      sigla: 'B-NOREM',
+      texto:
+        'Base "Total no remunerativo": sumas no remunerativas de acuerdos salariales y decretos.',
+    },
+    {
+      sigla: 'B-BRUTO',
+      texto: 'Base "Bruto": total remunerativo + total no remunerativo.',
+    },
+    {
+      sigla: 'B-NOREM-OS',
+      texto:
+        'Base "No remunerativo con aportes OS": sumas no remunerativas que tributan obra social porque el acuerdo homologado así lo dispone.',
+    },
+    {
+      sigla: 'B-OS',
+      texto:
+        'Base "Obra social": total remunerativo + no remunerativo con aportes de OS (aporte del 3% + 1,5% por adherente, Ley 23.660).',
+    },
+    {
+      sigla: 'SAC',
+      texto:
+        'Sueldo anual complementario: mejor remuneración mensual del semestre ÷ 2 (arts. 121/122 LCT).',
+    },
+    {
+      sigla: 'meses/6',
+      texto:
+        'Proporción del semestre trabajado (SAC proporcional, art. 123 LCT).',
+    },
+    {
+      sigla: 'BRUTO-ANT ÷ 25',
+      texto:
+        'Valor día de vacaciones: bruto del mes anterior dividido 25 (art. 155 LCT).',
+    },
+    {
+      sigla: 'CN ÷ 12',
+      texto:
+        'Promedio anual del concepto referenciado: su importe dividido 12.',
     },
     {
       sigla: 'pct/100',
@@ -161,7 +161,7 @@ function agregarClamp(hasMin: boolean, hasMax: boolean, orden: string[]): void {
  * `formulaLegibleSos`), sin duplicados, en orden de aparición lógico.
  */
 export function siglasUsadasFormulaSos(c: ConceptoSosMetadata): string[] {
-  const bc = c.baseColumna ?? 'importe_fijo';
+  const modo = c.modo ?? 'importe_manual';
   const hasCant = !!c.tieneCantidad;
   const hasPct = !!c.tienePct;
   const hasImp = !!c.tieneImporte;
@@ -171,50 +171,71 @@ export function siglasUsadasFormulaSos(c: ConceptoSosMetadata): string[] {
 
   const orden: string[] = [];
 
-  if (bc === 'sub411_414_qty') {
-    orden.push('S411-414');
-    if (hasPct) orden.push('pct/100');
-    return [...new Set(orden)];
+  switch (modo) {
+    case 'pct_sobre_base': {
+      orden.push(BASE_LABEL[c.baseCodigo ?? ''] ?? (c.baseCodigo ?? 'base'));
+      if (hasPct) orden.push('pct/100');
+      if (hasImp) orden.push('imp ⚠');
+      if (hasCant) orden.push('cant');
+      agregarClamp(hasMin, hasMax, orden);
+      break;
+    }
+    case 'valor_hora': {
+      orden.push('VH');
+      if (hasPct) orden.push('pct/100');
+      if (hasCant) orden.push('cant');
+      agregarClamp(hasMin, hasMax, orden);
+      break;
+    }
+    case 'sueldo_basico': {
+      orden.push('SL');
+      if (hasCant) orden.push('cant');
+      if (hasPct) orden.push('pct/100');
+      agregarClamp(hasMin, hasMax, orden);
+      break;
+    }
+    case 'sac': {
+      orden.push('SAC');
+      break;
+    }
+    case 'sac_proporcional': {
+      orden.push('SAC', 'meses/6');
+      break;
+    }
+    case 'dia_vacaciones': {
+      orden.push('BRUTO-ANT ÷ 25');
+      if (hasCant) orden.push('cant');
+      break;
+    }
+    case 'promedio_anual_concepto': {
+      orden.push('CN ÷ 12');
+      if (hasPct) orden.push('pct/100');
+      break;
+    }
+    case 'pct_sobre_concepto': {
+      orden.push('CN');
+      if (hasPct) orden.push('pct/100');
+      if (hasCant) orden.push('cant');
+      if (hasImp) orden.push('imp');
+      agregarClamp(hasMin, hasMax, orden);
+      break;
+    }
+    case 'importe_manual':
+    default: {
+      if (hasCN) {
+        orden.push('CN');
+        if (hasPct) orden.push('pct/100');
+        if (hasCant) orden.push('cant');
+        if (hasImp) orden.push('imp');
+      } else {
+        if (hasImp) orden.push('imp');
+        if (hasCant) orden.push('cant');
+        if (hasPct) orden.push('pct/100');
+      }
+      agregarClamp(hasMin, hasMax, orden);
+      break;
+    }
   }
-
-  if (SUB_BASES.has(bc)) {
-    orden.push(SUB_BASE_LEYENDA[bc] ?? BASE_LABEL[bc] ?? bc);
-    if (hasPct) orden.push('pct/100');
-    if (hasImp) orden.push('imp ⚠');
-    if (hasCant) orden.push('cant');
-    agregarClamp(hasMin, hasMax, orden);
-    return [...new Set(orden)];
-  }
-
-  if (bc === 'valHora') {
-    orden.push('VH');
-    if (hasPct) orden.push('pct/100');
-    if (hasCant) orden.push('cant');
-    agregarClamp(hasMin, hasMax, orden);
-    return [...new Set(orden)];
-  }
-
-  if (bc === 'sueldo' || bc === 'sueldoLegajo') {
-    orden.push('SL');
-    if (hasCant) orden.push('cant');
-    if (hasPct) orden.push('pct/100');
-    agregarClamp(hasMin, hasMax, orden);
-    return [...new Set(orden)];
-  }
-
-  if (hasCN) {
-    orden.push('CN');
-    if (hasPct) orden.push('pct/100');
-    if (hasCant) orden.push('cant');
-    if (hasImp) orden.push('imp');
-    agregarClamp(hasMin, hasMax, orden);
-    return [...new Set(orden)];
-  }
-
-  if (hasImp) orden.push('imp');
-  if (hasCant) orden.push('cant');
-  if (hasPct) orden.push('pct/100');
-  agregarClamp(hasMin, hasMax, orden);
 
   return [...new Set(orden)];
 }
@@ -236,7 +257,7 @@ export function leyendaRelacionadaFormulaSos(
 }
 
 export function formulaLegibleSos(c: ConceptoSosMetadata): string {
-  const bc = c.baseColumna ?? 'importe_fijo';
+  const modo = c.modo ?? 'importe_manual';
   const divC = c.divCantidad ?? 1;
   const divH = c.divHsNorm ?? 1;
   const hasCant = !!c.tieneCantidad;
@@ -255,58 +276,76 @@ export function formulaLegibleSos(c: ConceptoSosMetadata): string {
           ? ' [máx]'
           : '';
 
-  // ── Asignación complementaria no remunerativa (cant = suma 411–414) ──────
-  if (bc === 'sub411_414_qty') {
-    return `cant (auto: S411-414)${hasPct ? ' × pct/100' : ''}`;
-  }
-
-  // ── Conceptos con base de subtotal acumulado ──────────────────────────────
-  if (SUB_BASES.has(bc)) {
-    const base = BASE_LABEL[bc] ?? bc;
-    const parts: string[] = [base];
-    if (hasPct) parts.push('pct/100');
-    if (hasImp) parts.push('imp ⚠');
-    if (hasCant) parts.push('cant');
-    return parts.join(' × ') + clamp;
-  }
-
-  // ── Valor hora ────────────────────────────────────────────────────────────
-  if (bc === 'valHora') {
-    const parts: string[] = ['VH'];
-    if (hasPct) parts.push('pct/100');
-    if (hasCant) parts.push('cant');
-    return parts.join(' × ') + clamp;
-  }
-
-  // ── Sueldo del legajo (con divisores de horas y/o días) ───────────────────
-  if (bc === 'sueldo' || bc === 'sueldoLegajo') {
-    let base = 'SL';
-    if (divH > 1) base += ` / ${divH}`;
-    if (divC > 1) base += ` / ${divC}`;
-    const parts: string[] = [base];
-    if (hasCant) parts.push('cant');
-    if (hasPct) parts.push('pct/100');
-    return parts.join(' × ') + clamp;
-  }
-
-  // ── Sin base automática (importe_fijo / ref_concepto) ────────────────────
-  if (hasCN) {
-    const withCN: string[] = ['CN'];
-    if (hasPct) withCN.push('pct/100');
-    if (hasCant) withCN.push('cant');
-
-    if (hasImp) {
-      const withImp: string[] = ['imp'];
-      if (hasPct) withImp.push('pct/100');
-      if (hasCant) withImp.push('cant');
-      return `${withCN.join(' × ')}  (o  ${withImp.join(' × ')})` + clamp;
+  switch (modo) {
+    // ── % sobre una base de cálculo ─────────────────────────────────────────
+    case 'pct_sobre_base': {
+      const base = BASE_LABEL[c.baseCodigo ?? ''] ?? (c.baseCodigo ?? 'base');
+      const parts: string[] = [base];
+      if (hasPct) parts.push('pct/100');
+      if (hasImp) parts.push('imp ⚠');
+      if (hasCant) parts.push('cant');
+      return parts.join(' × ') + clamp;
     }
-    return withCN.join(' × ') + clamp;
-  }
 
-  const parts: string[] = [];
-  if (hasImp) parts.push('imp');
-  if (hasCant) parts.push('cant');
-  if (hasPct) parts.push('pct/100');
-  return parts.length > 0 ? parts.join(' × ') + clamp : '—';
+    // ── Valor hora ──────────────────────────────────────────────────────────
+    case 'valor_hora': {
+      const parts: string[] = ['VH'];
+      if (hasPct) parts.push('pct/100');
+      if (hasCant) parts.push('cant');
+      return parts.join(' × ') + clamp;
+    }
+
+    // ── Sueldo del legajo (con divisores de horas y/o días) ─────────────────
+    case 'sueldo_basico': {
+      let base = 'SL';
+      if (divH > 1) base += ` / ${divH}`;
+      if (divC > 1) base += ` / ${divC}`;
+      const parts: string[] = [base];
+      if (hasCant) parts.push('cant');
+      if (hasPct) parts.push('pct/100');
+      return parts.join(' × ') + clamp;
+    }
+
+    // ── Cálculos especiales de ley ──────────────────────────────────────────
+    case 'sac':
+      return 'SAC (mejor rem. mensual del semestre ÷ 2)';
+    case 'sac_proporcional':
+      return 'SAC × meses/6';
+    case 'dia_vacaciones':
+      return `BRUTO-ANT ÷ 25${hasCant ? ' × cant' : ''}`;
+    case 'promedio_anual_concepto':
+      return `CN ÷ 12${hasPct ? ' × pct/100' : ''}`;
+
+    // ── % sobre otra línea del recibo ───────────────────────────────────────
+    case 'pct_sobre_concepto': {
+      const parts: string[] = ['CN'];
+      if (hasPct) parts.push('pct/100');
+      if (hasCant) parts.push('cant');
+      return parts.join(' × ') + clamp;
+    }
+
+    // ── Importe manual (con o sin concepto de referencia) ───────────────────
+    case 'importe_manual':
+    default: {
+      if (hasCN) {
+        const withCN: string[] = ['CN'];
+        if (hasPct) withCN.push('pct/100');
+        if (hasCant) withCN.push('cant');
+
+        if (hasImp) {
+          const withImp: string[] = ['imp'];
+          if (hasPct) withImp.push('pct/100');
+          if (hasCant) withImp.push('cant');
+          return `${withCN.join(' × ')}  (o  ${withImp.join(' × ')})` + clamp;
+        }
+        return withCN.join(' × ') + clamp;
+      }
+
+      const parts: string[] = [];
+      if (hasImp) parts.push('imp');
+      if (hasCant) parts.push('cant');
+      if (hasPct) parts.push('pct/100');
+      return parts.length > 0 ? parts.join(' × ') + clamp : '—';
+    }
+  }
 }

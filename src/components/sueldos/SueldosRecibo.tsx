@@ -4,9 +4,23 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { FileText, ChevronRight, Pencil, Printer, Loader2, Sparkles, AlertCircle, CheckCircle2, Receipt } from 'lucide-react';
+import {
+  FileText,
+  ChevronRight,
+  Pencil,
+  Printer,
+  Loader2,
+  Sparkles,
+  AlertCircle,
+  CheckCircle2,
+  Receipt,
+  Trash2,
+} from 'lucide-react';
 import { toast } from 'sonner';
-import { getPeriodoMaxLiquidable, getPeriodoMesAnterior } from '@/lib/payroll-period-rules';
+import {
+  getPeriodoMaxLiquidable,
+  getPeriodoMesAnterior,
+} from '@/lib/payroll-period-rules';
 import {
   Select,
   SelectContent,
@@ -30,8 +44,21 @@ import {
   generarSacsMasivo,
   getLiqFinalPreview,
   generarLiqFinalMasivo,
+  deleteRecibo,
 } from '@/actions/sueldos';
-import { getClient } from '@/actions/profile';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
+import { getCliente } from '@/actions/client';
+import { dateAPeriodo } from '@/lib/periodo';
+import { tipoReciboLabel, quincenaLabel } from '@/lib/sueldos-labels';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
 import { Button } from '@/components/ui/button';
@@ -46,7 +73,6 @@ const MESES = Array.from({ length: 12 }, (_, i) => ({
 
 interface SueldosReciboProps {
   clientId: string;
-  profileId: string;
   initialEmpleadoId?: string;
   /** Período en formato YYYY-MM para pre-setear los filtros al navegar desde "Nuevo recibo" */
   initialPeriodo?: string;
@@ -74,27 +100,6 @@ interface SueldosReciboProps {
     horasTrabajadas?: number | null;
     importeMaternidadArt13?: string | null;
   }) => void;
-}
-
-function tipoReciboLabel(tipo: string | null): string {
-  if (!tipo) return 'Sueldo';
-  const byTipo: Record<string, string> = {
-    sueldo: 'Sueldo',
-    anticipo: 'Anticipo',
-    SAC: 'SAC',
-    vacaciones: 'Vacaciones',
-    despido: 'Liquidación final',
-    comisiones: 'Comisiones',
-    desempleo: 'Fondo de desempleo',
-    varios: 'Varios',
-  };
-  return byTipo[tipo] ?? tipo;
-}
-
-function quincenaLabel(q: string | null): string {
-  if (q === '1') return '1ra quincena';
-  if (q === '2') return '2da quincena';
-  return 'Mes completo';
 }
 
 function moneyFmt(v: string | number | null | undefined): string {
@@ -157,7 +162,11 @@ function dateFmt(d: Date | string | null | undefined): string {
   if (d === null || d === undefined || d === '') return '—';
   const date = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(date.getTime())) return '—';
-  return format(date, 'dd/MM/yyyy');
+  // Las columnas `date` llegan como 'YYYY-MM-DD' y `new Date()` las interpreta
+  // como UTC: formatear en local restaría un día en AR (UTC-3).
+  const dia = String(date.getUTCDate()).padStart(2, '0');
+  const mes = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${dia}/${mes}/${date.getUTCFullYear()}`;
 }
 
 function formaPagoLabel(v: string | null | undefined): string {
@@ -165,15 +174,16 @@ function formaPagoLabel(v: string | null | undefined): string {
   const s = String(v).trim().toLowerCase();
   /** Códigos SOS / import (1–4), por si el dato llega sin normalizar del servidor. */
   if (s === '1' || s === 'efectivo') return 'Efectivo';
-  if (s === '2' || s === 'acreditacion' || s === 'acreditación') {
-    return 'Acreditación';
+  if (s === '2' || s === 'deposito' || s === 'depósito') {
+    return 'Depósito en cuenta';
   }
   if (s === '3' || s === 'cheque') return 'Cheque';
   if (s === '4' || s === 'otro' || s === 'otros') return 'Otro';
   const by: Record<string, string> = {
     efectivo: 'Efectivo',
+    deposito: 'Depósito en cuenta',
+    transferencia: 'Transferencia',
     cheque: 'Cheque',
-    acreditacion: 'Acreditación',
   };
   return by[s] ?? String(v);
 }
@@ -215,8 +225,9 @@ function pickCabecera(liquidacion: Record<string, unknown>) {
     valorCabeceraLegible(liquidacion.forma_pago) ??
     null;
   const cbuVal = valorCabeceraLegible(liquidacion.cbu);
-  /** Si falta fecha de pago pero hay fecha de liquidación, mostrar esa. */
-  const fechaPagoParaMostrar = fechaPagoRaw ?? fechaLiqRaw;
+  /** Si falta fecha de pago pero hay fecha de liquidación, mostrar esa.
+   *  Las columnas `date` de Drizzle llegan como string 'YYYY-MM-DD'. */
+  const fechaPagoParaMostrar = strU(fechaPagoRaw) ?? strU(fechaLiqRaw) ?? null;
   return {
     lugarPago: lugar,
     banco: bancoVal,
@@ -249,17 +260,50 @@ function completarCabeceraConLegajo(
 
 // ─── Número a letras (pesos argentinos) ─────────────────────────────────────
 const UNIDADES = [
-  '', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
-  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete',
-  'dieciocho', 'diecinueve',
+  '',
+  'uno',
+  'dos',
+  'tres',
+  'cuatro',
+  'cinco',
+  'seis',
+  'siete',
+  'ocho',
+  'nueve',
+  'diez',
+  'once',
+  'doce',
+  'trece',
+  'catorce',
+  'quince',
+  'dieciséis',
+  'diecisiete',
+  'dieciocho',
+  'diecinueve',
 ];
 const DECENAS = [
-  '', 'diez', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'sesenta', 'setenta',
-  'ochenta', 'noventa',
+  '',
+  'diez',
+  'veinte',
+  'treinta',
+  'cuarenta',
+  'cincuenta',
+  'sesenta',
+  'setenta',
+  'ochenta',
+  'noventa',
 ];
 const CENTENAS = [
-  '', 'ciento', 'doscientos', 'trescientos', 'cuatrocientos', 'quinientos',
-  'seiscientos', 'setecientos', 'ochocientos', 'novecientos',
+  '',
+  'ciento',
+  'doscientos',
+  'trescientos',
+  'cuatrocientos',
+  'quinientos',
+  'seiscientos',
+  'setecientos',
+  'ochocientos',
+  'novecientos',
 ];
 
 function cientos(n: number): string {
@@ -289,8 +333,7 @@ function millones(n: number): string {
   if (n < 1_000_000) return miles(n);
   const m = Math.floor(n / 1_000_000);
   const resto = n % 1_000_000;
-  const parteM =
-    m === 1 ? 'un millón' : `${miles(m)} millones`;
+  const parteM = m === 1 ? 'un millón' : `${miles(m)} millones`;
   if (resto === 0) return parteM;
   return `${parteM} ${miles(resto)}`;
 }
@@ -327,7 +370,8 @@ function clasificarTipo(tipo: string | null | undefined): ConceptoTipo {
  */
 function columnaConcepto(d: {
   tipoColumna?: ConceptoTipo;
-  detalle?: { tipoLiquidacion?: string | null };
+  /** `recibo_concepto.tipo` (antes `tipoLiquidacion` en la línea del recibo). */
+  detalle?: { tipo?: string | null };
   concepto?: { tipo?: string | null } | null;
 }): ConceptoTipo {
   if (
@@ -338,7 +382,7 @@ function columnaConcepto(d: {
   ) {
     return d.tipoColumna;
   }
-  const tl = d.detalle?.tipoLiquidacion;
+  const tl = d.detalle?.tipo;
   if (
     tl === 'remunerativo' ||
     tl === 'no_remunerativo' ||
@@ -365,12 +409,19 @@ function DocCell({
       <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
-      <span className="mt-0.5 text-sm font-medium leading-tight">{value || '—'}</span>
+      <span className="mt-0.5 text-sm font-medium leading-tight">
+        {value || '—'}
+      </span>
     </div>
   );
 }
 
-export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialPeriodo, onEditRecibo }: SueldosReciboProps) {
+export function SueldosRecibo({
+  clientId,
+  initialEmpleadoId,
+  initialPeriodo,
+  onEditRecibo,
+}: SueldosReciboProps) {
   const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
   const [ano, setAno] = useState(() => {
     const p = initialPeriodo ?? getPeriodoMesAnterior();
@@ -381,9 +432,8 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
     const p = initialPeriodo ?? getPeriodoMesAnterior();
     return p.split('-')[1] ?? '';
   });
-  const mesesDisponibles = ano === maxAno
-    ? MESES.filter((m) => m.value <= maxMes)
-    : MESES;
+  const mesesDisponibles =
+    ano === maxAno ? MESES.filter((m) => m.value <= maxMes) : MESES;
   const mostrarSem2 = ano !== maxAno || maxMes >= '07';
   const [quincenaFiltro, setQuincenaFiltro] = useState('');
   const [tipoFiltro, setTipoFiltro] = useState('');
@@ -392,10 +442,34 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
   const [showImprimir, setShowImprimir] = useState(false);
   const [showSacDialog, setShowSacDialog] = useState(false);
   const [showLiqFinalDialog, setShowLiqFinalDialog] = useState(false);
+  const [reciboABorrar, setReciboABorrar] = useState<{
+    id: string;
+    empleadoNombre: string;
+    periodo: string;
+  } | null>(null);
+  const queryClient = useQueryClient();
+
+  const { mutate: borrarRecibo, isPending: borrandoRecibo } = useMutation({
+    mutationFn: (id: string) =>
+      deleteRecibo({ data: { reciboId: id, clientId } }),
+    onSuccess: () => {
+      toast.success('Recibo eliminado');
+      setReciboABorrar(null);
+      setReciboId('');
+      queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
+      queryClient.invalidateQueries({ queryKey: ['import-recibos'] });
+    },
+    onError: (e) => {
+      toast.error(
+        e instanceof Error ? e.message : 'No se pudo eliminar el recibo'
+      );
+    },
+  });
 
   // Derivar mes y semestre de periodoSeleccion
   const mes = /^\d{2}$/.test(periodoSeleccion) ? periodoSeleccion : '';
-  const semestre = periodoSeleccion === 'sem1' ? 1 : periodoSeleccion === 'sem2' ? 2 : null;
+  const semestre =
+    periodoSeleccion === 'sem1' ? 1 : periodoSeleccion === 'sem2' ? 2 : null;
 
   useEffect(() => {
     if (initialEmpleadoId) {
@@ -426,15 +500,15 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
   }, []);
 
   const { data: clientData } = useQuery({
-    queryKey: ['client', profileId],
-    queryFn: () => getClient({ data: { id: profileId } }),
-    enabled: !!profileId,
+    queryKey: ['client', clientId],
+    queryFn: () => getCliente({ data: { id: clientId } }),
+    enabled: !!clientId,
   });
 
   const { data: empleadosRaw = [] } = useQuery({
-    queryKey: ['import-empleados', clientId, profileId],
-    queryFn: () => listImportEmpleados({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['import-empleados', clientId],
+    queryFn: () => listImportEmpleados({ data: { clientId } }),
+    enabled: !!clientId,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -445,26 +519,35 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
   );
 
   const { data: recibosRaw = [], isLoading: loadingList } = useQuery({
-    queryKey: ['liquidaciones-filtros', clientId, profileId, ano, periodoSeleccion, empleadoId],
+    queryKey: [
+      'liquidaciones-filtros',
+      clientId,
+      ano,
+      periodoSeleccion,
+      empleadoId,
+    ],
     queryFn: () =>
       listLiquidacionesByFiltros({
         data: {
           clientId,
-          profileId,
           ...(periodo ? { periodo } : {}),
           ...(semestre && ano ? { ano, semestre } : {}),
           ...(empleadoId ? { importEmpleadoId: empleadoId } : {}),
         },
       }),
-    enabled: !!clientId && !!profileId && hayFiltro,
+    enabled: !!clientId && hayFiltro,
     refetchOnMount: 'always',
   });
 
   // Filtros client-side: quincena y tipo de recibo
   const recibos = useMemo(() => {
     let list = recibosRaw;
-    if (quincenaFiltro) list = list.filter((r) => r.liquidacion.quincena === quincenaFiltro);
-    if (tipoFiltro) list = list.filter((r) => (r.liquidacion.tipo ?? 'sueldo') === tipoFiltro);
+    if (quincenaFiltro)
+      list = list.filter(
+        (r) => String(r.liquidacion.quincena) === quincenaFiltro
+      );
+    if (tipoFiltro)
+      list = list.filter((r) => r.liquidacion.tipo === tipoFiltro);
     return list;
   }, [recibosRaw, quincenaFiltro, tipoFiltro]);
 
@@ -476,9 +559,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
   });
 
   const { data: employerConfig } = useQuery({
-    queryKey: ['payroll-employer-config', clientId, profileId],
-    queryFn: () => getPayrollEmployerConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['payroll-employer-config', clientId],
+    queryFn: () => getPayrollEmployerConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
   const firmaEmpleadorUrl = employerConfig?.firmaEmpleadorUrl ?? null;
 
@@ -537,7 +620,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
         <div className="grid grid-cols-5 gap-[14px] border-b border-[#ECEAE3] pb-5 mb-[26px]">
           {/* Año */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Año</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+              Año
+            </label>
             <Select
               value={ano || '__all'}
               onValueChange={(v) => {
@@ -562,7 +647,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
 
           {/* Período */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Período</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+              Período
+            </label>
             <Select
               value={periodoSeleccion || '__all'}
               onValueChange={(v) => {
@@ -593,7 +680,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
 
           {/* Quincena */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Quincena</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+              Quincena
+            </label>
             <Select
               value={quincenaFiltro || '__all'}
               onValueChange={(v) => {
@@ -614,7 +703,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
 
           {/* Tipo */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Tipo</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+              Tipo
+            </label>
             <Select
               value={tipoFiltro || '__all'}
               onValueChange={(v) => {
@@ -627,21 +718,28 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__all">Todos los tipos</SelectItem>
-                <SelectItem value="sueldo">Sueldo</SelectItem>
-                <SelectItem value="SAC">SAC</SelectItem>
+                <SelectItem value="mensual">Sueldo</SelectItem>
+                <SelectItem value="quincenal">Quincenal</SelectItem>
+                <SelectItem value="sac">SAC</SelectItem>
                 <SelectItem value="vacaciones">Vacaciones</SelectItem>
                 <SelectItem value="anticipo">Anticipo</SelectItem>
-                <SelectItem value="despido">Liquidación final</SelectItem>
+                <SelectItem value="liquidacion_final">
+                  Liquidación final
+                </SelectItem>
                 <SelectItem value="comisiones">Comisiones</SelectItem>
-                <SelectItem value="desempleo">Fondo de desempleo</SelectItem>
-                <SelectItem value="varios">Varios</SelectItem>
+                <SelectItem value="fondo_desempleo">
+                  Fondo de desempleo
+                </SelectItem>
+                <SelectItem value="otros">Varios</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           {/* Empleado */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">Empleado</label>
+            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+              Empleado
+            </label>
             <Select
               value={empleadoId || '__all'}
               onValueChange={(v) => {
@@ -668,7 +766,11 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
         </div>
 
         {/* Limpiar filtros */}
-        {(ano || periodoSeleccion || empleadoId || quincenaFiltro || tipoFiltro) && (
+        {(ano ||
+          periodoSeleccion ||
+          empleadoId ||
+          quincenaFiltro ||
+          tipoFiltro) && (
           <button
             type="button"
             onClick={resetFiltros}
@@ -692,7 +794,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
                   : `${recibos.length} recibo${recibos.length !== 1 ? 's' : ''} encontrado${recibos.length !== 1 ? 's' : ''}`}
             </span>
             {!loadingList && recibos.length > 0 && periodo && (
-              <p className="mt-0.5 text-[12.5px] text-[#9B9CA3]">Período: {periodo}</p>
+              <p className="mt-0.5 text-[12.5px] text-[#9B9CA3]">
+                Período: {periodo}
+              </p>
             )}
           </div>
 
@@ -702,7 +806,8 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
               <div
                 className="bg-[#0B1730] text-[#E7EAF2] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
                 style={{
-                  gridTemplateColumns: 'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
+                  gridTemplateColumns:
+                    'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
                   columnGap: 16,
                 }}
               >
@@ -729,15 +834,20 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
                   return (
                     <div
                       key={r.liquidacion.id}
-                      onClick={() => setReciboId(isSelected ? '' : r.liquidacion.id)}
+                      onClick={() =>
+                        setReciboId(isSelected ? '' : r.liquidacion.id)
+                      }
                       className={`cursor-pointer border-b border-[#ECEAE3] last:border-b-0 hover:bg-[#FBFAF6] transition-colors grid items-center px-5 py-[13px] ${isSelected ? 'bg-[#FBFAF6]' : ''}`}
                       style={{
-                        gridTemplateColumns: 'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
+                        gridTemplateColumns:
+                          'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
                         columnGap: 16,
                       }}
                     >
                       <div className="min-w-0">
-                        <span className={`text-[13px] text-[#12131A] whitespace-nowrap${isSelected ? ' font-semibold' : ' font-semibold'}`}>
+                        <span
+                          className={`text-[13px] text-[#12131A] whitespace-nowrap${isSelected ? ' font-semibold' : ' font-semibold'}`}
+                        >
                           {toTitleCase(r.empleado.nombre)}
                         </span>
                         {r.empleado.legajo && (
@@ -747,28 +857,49 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
                         )}
                       </div>
                       <div className="font-[family-name:var(--ff-mono)] text-[12px] text-[#9B9CA3] whitespace-nowrap">
-                        {r.liquidacion.periodo}
-                        {r.liquidacion.tipo && r.liquidacion.tipo !== 'sueldo' ? (
-                          <div className="text-[11px]">{tipoReciboLabel(r.liquidacion.tipo)}</div>
+                        {dateAPeriodo(r.liquidacion.periodo)}
+                        {r.liquidacion.tipo &&
+                        r.liquidacion.tipo !== 'mensual' ? (
+                          <div className="text-[11px]">
+                            {tipoReciboLabel(r.liquidacion.tipo)}
+                          </div>
                         ) : null}
                         {r.liquidacion.quincena ? (
-                          <div className="text-[11px]">{quincenaLabel(r.liquidacion.quincena)}</div>
+                          <div className="text-[11px]">
+                            {quincenaLabel(r.liquidacion.quincena)}
+                          </div>
                         ) : null}
                       </div>
                       <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
-                        {haberes === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(haberes)}
+                        {haberes === 0 ? (
+                          <span className="text-[#B7B8BD]">—</span>
+                        ) : (
+                          moneyFmt(haberes)
+                        )}
                       </div>
                       <div className="text-right tabular-nums text-[13px] text-[#B7B8BD] whitespace-nowrap">
                         {descuentos === 0 ? '—' : moneyFmt(descuentos)}
                       </div>
                       <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
-                        {retenciones === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(retenciones)}
+                        {retenciones === 0 ? (
+                          <span className="text-[#B7B8BD]">—</span>
+                        ) : (
+                          moneyFmt(retenciones)
+                        )}
                       </div>
                       <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
-                        {noRem === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(noRem)}
+                        {noRem === 0 ? (
+                          <span className="text-[#B7B8BD]">—</span>
+                        ) : (
+                          moneyFmt(noRem)
+                        )}
                       </div>
                       <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
-                        {neto === 0 ? <span className="text-[#B7B8BD]">—</span> : moneyFmt(neto)}
+                        {neto === 0 ? (
+                          <span className="text-[#B7B8BD]">—</span>
+                        ) : (
+                          moneyFmt(neto)
+                        )}
                       </div>
                       <div className="text-right tabular-nums text-[13px] font-bold text-[#12131A] whitespace-nowrap">
                         {moneyFmt(redondeado)}
@@ -783,25 +914,44 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
                                 reciboId: r.liquidacion.id,
                                 importEmpleadoId: r.empleado.id,
                                 empleadoNombre: r.empleado.nombre,
-                                periodo: r.liquidacion.periodo,
-                                tipoRecibo: r.liquidacion.tipo ?? 'sueldo',
-                                quincena: r.liquidacion.quincena,
-                                fechaLiquidacion: r.liquidacion.fecha ? (r.liquidacion.fecha instanceof Date ? r.liquidacion.fecha.toISOString().slice(0, 10) : String(r.liquidacion.fecha).slice(0, 10)) : null,
-                                fechaPago: r.liquidacion.fechaPago ? (r.liquidacion.fechaPago instanceof Date ? r.liquidacion.fechaPago.toISOString().slice(0, 10) : String(r.liquidacion.fechaPago).slice(0, 10)) : null,
+                                // El formulario habla 'YYYY-MM'; en BD el período es un `date`.
+                                periodo: dateAPeriodo(r.liquidacion.periodo),
+                                tipoRecibo: r.liquidacion.tipo,
+                                quincena: String(r.liquidacion.quincena),
+                                // Las columnas `date` ya llegan como string 'YYYY-MM-DD'.
+                                fechaLiquidacion:
+                                  r.liquidacion.fecha?.slice(0, 10) ?? null,
+                                fechaPago:
+                                  r.liquidacion.fechaPago?.slice(0, 10) ?? null,
                                 obraSocialId: r.liquidacion.obraSocialId,
-                                periodoCargas: r.liquidacion.periodoCargas,
-                                fechaDepositoCargas: r.liquidacion.fechaDepositoCargas ? (r.liquidacion.fechaDepositoCargas instanceof Date ? r.liquidacion.fechaDepositoCargas.toISOString().slice(0, 10) : String(r.liquidacion.fechaDepositoCargas).slice(0, 10)) : null,
-                                observacionInterna: r.liquidacion.observacionInterna,
-                                observacionRecibo: r.liquidacion.observacionRecibo,
-                                situacionRevista1Id: r.liquidacion.situacionRevista1Id,
-                                situacionRevista1DiaInicio: r.liquidacion.situacionRevista1DiaInicio,
-                                situacionRevista2Id: r.liquidacion.situacionRevista2Id,
-                                situacionRevista2DiaInicio: r.liquidacion.situacionRevista2DiaInicio,
-                                situacionRevista3Id: r.liquidacion.situacionRevista3Id,
-                                situacionRevista3DiaInicio: r.liquidacion.situacionRevista3DiaInicio,
+                                periodoCargas: r.liquidacion.periodoCargas
+                                  ? dateAPeriodo(r.liquidacion.periodoCargas)
+                                  : null,
+                                fechaDepositoCargas:
+                                  r.liquidacion.fechaDepositoCargas?.slice(
+                                    0,
+                                    10
+                                  ) ?? null,
+                                observacionInterna:
+                                  r.liquidacion.observacionInterna,
+                                observacionRecibo:
+                                  r.liquidacion.observacionRecibo,
+                                situacionRevista1Id:
+                                  r.liquidacion.situacionRevista1Id,
+                                situacionRevista1DiaInicio:
+                                  r.liquidacion.situacionRevista1DiaInicio,
+                                situacionRevista2Id:
+                                  r.liquidacion.situacionRevista2Id,
+                                situacionRevista2DiaInicio:
+                                  r.liquidacion.situacionRevista2DiaInicio,
+                                situacionRevista3Id:
+                                  r.liquidacion.situacionRevista3Id,
+                                situacionRevista3DiaInicio:
+                                  r.liquidacion.situacionRevista3DiaInicio,
                                 diasTrabajados: r.liquidacion.diasTrabajados,
                                 horasTrabajadas: r.liquidacion.horasTrabajadas,
-                                importeMaternidadArt13: r.liquidacion.importeMaternidadArt13,
+                                importeMaternidadArt13:
+                                  r.liquidacion.importeMaternidadArt13,
                               });
                             }}
                             className="rounded p-1 text-[#9B9CA3] hover:bg-[#F2F1EB] hover:text-[#3E404A] transition-colors"
@@ -810,6 +960,21 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                         )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReciboABorrar({
+                              id: r.liquidacion.id,
+                              empleadoNombre: toTitleCase(r.empleado.nombre),
+                              periodo: dateAPeriodo(r.liquidacion.periodo),
+                            });
+                          }}
+                          className="rounded p-1 text-[#9B9CA3] hover:bg-[#F2F1EB] hover:text-[#C0392B] transition-colors"
+                          title="Eliminar recibo"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
                         <ChevronRight
                           className={`h-4 w-4 text-[#9B9CA3] transition-transform ${isSelected ? 'rotate-90' : ''}`}
                         />
@@ -824,10 +989,9 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
       )}
 
       {/* ── Dialog: generar SAC masivo ───────────────────────────────────── */}
-      {showSacDialog && ano && (esMesSAC) && (
+      {showSacDialog && ano && esMesSAC && (
         <GenerarSacDialog
           clientId={clientId}
-          profileId={profileId}
           periodo={`${ano}-${mes}`}
           onClose={() => setShowSacDialog(false)}
         />
@@ -837,18 +1001,54 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
       {showLiqFinalDialog && ano && mes && (
         <GenerarLiqFinalDialog
           clientId={clientId}
-          profileId={profileId}
           periodo={`${ano}-${mes}`}
           onClose={() => setShowLiqFinalDialog(false)}
         />
       )}
+
+      {/* ── Dialog: confirmar borrado de recibo ──────────────────────────── */}
+      <AlertDialog
+        open={!!reciboABorrar}
+        onOpenChange={(open) => {
+          if (!open) setReciboABorrar(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar recibo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se va a eliminar el recibo de{' '}
+              <span className="font-semibold">
+                {reciboABorrar?.empleadoNombre}
+              </span>{' '}
+              del período{' '}
+              <span className="font-semibold">{reciboABorrar?.periodo}</span>{' '}
+              con todos sus conceptos. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={borrandoRecibo}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={borrandoRecibo}
+              onClick={(e) => {
+                e.preventDefault();
+                if (reciboABorrar) borrarRecibo(reciboABorrar.id);
+              }}
+              className="bg-[#C0392B] hover:bg-[#A93226]"
+            >
+              {borrandoRecibo ? 'Eliminando…' : 'Eliminar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ── Dialog: imprimir PDF ─────────────────────────────────────────── */}
       <ImprimirRecibosDialog
         open={showImprimir}
         onOpenChange={setShowImprimir}
         clientId={clientId}
-        profileId={profileId}
         clientData={clientData ?? null}
         firmaEmpleadorUrl={firmaEmpleadorUrl}
         empleados={empleados}
@@ -868,7 +1068,11 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
               </p>
             </div>
           ) : (
-            <ReciboDocumento detalle={detalle} clientData={clientData ?? null} firmaEmpleadorUrl={firmaEmpleadorUrl} />
+            <ReciboDocumento
+              detalle={detalle}
+              clientData={clientData ?? null}
+              firmaEmpleadorUrl={firmaEmpleadorUrl}
+            />
           )}
         </>
       )}
@@ -879,25 +1083,46 @@ export function SueldosRecibo({ clientId, profileId, initialEmpleadoId, initialP
 // ─── Diálogo: Generar SAC masivo ─────────────────────────────────────────────
 
 function moneyFmtSac(v: number): string {
-  return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2 }).format(v);
+  return new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 2,
+  }).format(v);
 }
 
 /** Días que trabajó el empleado en el semestre según su fechaIngreso.
  *  Si ingresó antes del inicio del semestre devuelve 180 (semestre completo).
  *  Si ingresó dentro del semestre devuelve los días desde el ingreso hasta el último día del semestre.
  */
-function sugerirDiasSemestre(fechaIngreso: Date | null, periodo: string): number {
-  if (!fechaIngreso) return 180;
+/** `fechaIngreso` es una columna `date`: llega como string 'YYYY-MM-DD'. */
+function sugerirDiasSemestre(
+  fechaIngresoStr: string | null,
+  periodo: string
+): number {
+  if (!fechaIngresoStr) return 180;
+  const [iy, im, id] = fechaIngresoStr.slice(0, 10).split('-').map(Number);
+  const fechaIngreso = new Date(iy!, (im ?? 1) - 1, id ?? 1);
+  if (Number.isNaN(fechaIngreso.getTime())) return 180;
   const [yearStr, monthStr] = periodo.split('-');
   const year = parseInt(yearStr!, 10);
   const month = parseInt(monthStr!, 10);
   const esPrimerSemestre = month <= 6;
-  const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1);     // 1/1 ó 1/7
-  const semEnd   = new Date(year, esPrimerSemestre ? 5 : 11, esPrimerSemestre ? 30 : 31); // 30/6 ó 31/12
+  const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1); // 1/1 ó 1/7
+  const semEnd = new Date(
+    year,
+    esPrimerSemestre ? 5 : 11,
+    esPrimerSemestre ? 30 : 31
+  ); // 30/6 ó 31/12
   if (fechaIngreso <= semStart) return 180;
-  if (fechaIngreso > semEnd)    return 0;
+  if (fechaIngreso > semEnd) return 0;
   const msPerDay = 24 * 60 * 60 * 1000;
-  return Math.min(180, Math.max(1, Math.floor((semEnd.getTime() - fechaIngreso.getTime()) / msPerDay) + 1));
+  return Math.min(
+    180,
+    Math.max(
+      1,
+      Math.floor((semEnd.getTime() - fechaIngreso.getTime()) / msPerDay) + 1
+    )
+  );
 }
 
 /** SOS 41 (semestre completo): mejor sueldo / 2. SOS 42 (proporcional): mejor sueldo / 360 × días. */
@@ -908,12 +1133,10 @@ function calcularSacBase(mejorMonto: number, dias: number): number {
 
 function GenerarSacDialog({
   clientId,
-  profileId,
   periodo,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
   onClose: () => void;
 }) {
@@ -923,8 +1146,8 @@ function GenerarSacDialog({
   const [diasMap, setDiasMap] = useState<Record<string, number>>({});
 
   const { data: preview = [], isLoading } = useQuery({
-    queryKey: ['sac-preview', clientId, profileId, periodo],
-    queryFn: () => getSacPreview({ data: { clientId, profileId, periodo } }),
+    queryKey: ['sac-preview', clientId, periodo],
+    queryFn: () => getSacPreview({ data: { clientId, periodo } }),
   });
 
   // Pre-seleccionar y auto-sugerir días al cargar
@@ -940,19 +1163,21 @@ function GenerarSacDialog({
     }
     setSelected(nextSelected);
     setDiasMap(nextDias);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
 
   const { mutate: generar, isPending } = useMutation({
     mutationFn: () => {
       const items = preview
-        .filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0)
+        .filter(
+          (p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0
+        )
         .map((p) => ({
           empleadoId: p.empleadoId,
           sacBase: calcularSacBase(p.mejorMonto, diasMap[p.empleadoId] ?? 180),
           dias: diasMap[p.empleadoId] ?? 180,
         }));
-      return generarSacsMasivo({ data: { clientId, profileId, periodo, items } });
+      return generarSacsMasivo({ data: { clientId, periodo, items } });
     },
     onSuccess: (result) => {
       toast.success(`${result.generados} recibos SAC generados correctamente.`);
@@ -966,11 +1191,19 @@ function GenerarSacDialog({
   });
 
   const pendientes = preview.filter((p) => !p.yaTieneSac && p.mejorMonto > 0);
-  const seleccionados = preview.filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0);
-  const semestre = parseInt(periodo.split('-')[1]!, 10) <= 6 ? '1er semestre' : '2do semestre';
+  const seleccionados = preview.filter(
+    (p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0
+  );
+  const semestre =
+    parseInt(periodo.split('-')[1]!, 10) <= 6 ? '1er semestre' : '2do semestre';
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-[90vw] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-[15px]">
@@ -984,7 +1217,9 @@ function GenerarSacDialog({
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : preview.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No hay empleados activos.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No hay empleados activos.
+            </p>
           ) : (
             <table className="w-full text-[13px]">
               <thead>
@@ -993,7 +1228,10 @@ function GenerarSacDialog({
                     <input
                       type="checkbox"
                       className="h-3.5 w-3.5"
-                      checked={pendientes.length > 0 && pendientes.every((p) => selected.has(p.empleadoId))}
+                      checked={
+                        pendientes.length > 0 &&
+                        pendientes.every((p) => selected.has(p.empleadoId))
+                      }
                       onChange={(e) => {
                         setSelected(
                           e.target.checked
@@ -1014,15 +1252,23 @@ function GenerarSacDialog({
               <tbody>
                 {preview.map((p) => {
                   const dias = diasMap[p.empleadoId] ?? 180;
-                  const sacMonto = p.mejorMonto > 0 ? calcularSacBase(p.mejorMonto, dias) : 0;
+                  const sacMonto =
+                    p.mejorMonto > 0 ? calcularSacBase(p.mejorMonto, dias) : 0;
                   const esProporcional = dias < 180;
                   return (
-                    <tr key={p.empleadoId} className={`border-b last:border-0 ${p.yaTieneSac ? 'opacity-50' : ''}`}>
+                    <tr
+                      key={p.empleadoId}
+                      className={`border-b last:border-0 ${p.yaTieneSac ? 'opacity-50' : ''}`}
+                    >
                       <td className="py-2 pr-2">
                         {p.yaTieneSac ? (
-                          <span title="Ya tiene SAC"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
+                          <span title="Ya tiene SAC">
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          </span>
                         ) : p.mejorMonto === 0 ? (
-                          <span title="Sin recibos de sueldo en el semestre"><AlertCircle className="h-4 w-4 text-amber-500" /></span>
+                          <span title="Sin recibos de sueldo en el semestre">
+                            <AlertCircle className="h-4 w-4 text-amber-500" />
+                          </span>
                         ) : (
                           <input
                             type="checkbox"
@@ -1039,15 +1285,28 @@ function GenerarSacDialog({
                       </td>
                       <td className="py-2 pr-3 font-medium">
                         {p.nombre}
-                        {p.yaTieneSac && <span className="ml-2 text-green-600 text-[11px]">Ya tiene SAC</span>}
+                        {p.yaTieneSac && (
+                          <span className="ml-2 text-green-600 text-[11px]">
+                            Ya tiene SAC
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 pr-3 text-center tabular-nums">
-                        {p.antiguedadAnios != null
-                          ? <span>{p.antiguedadAnios} {p.antiguedadAnios === 1 ? 'año' : 'años'}</span>
-                          : <span className="text-muted-foreground">—</span>}
+                        {p.antiguedadAnios != null ? (
+                          <span>
+                            {p.antiguedadAnios}{' '}
+                            {p.antiguedadAnios === 1 ? 'año' : 'años'}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
-                      <td className="py-2 pr-3 text-muted-foreground">{p.mejorPeriodo ?? '—'}</td>
-                      <td className="py-2 pr-3 text-right font-mono">{p.mejorMonto > 0 ? moneyFmtSac(p.mejorMonto) : '—'}</td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {p.mejorPeriodo ?? '—'}
+                      </td>
+                      <td className="py-2 pr-3 text-right font-mono">
+                        {p.mejorMonto > 0 ? moneyFmtSac(p.mejorMonto) : '—'}
+                      </td>
                       <td className="py-2 px-2 text-center">
                         {!p.yaTieneSac && p.mejorMonto > 0 ? (
                           <div className="flex flex-col items-center gap-0.5">
@@ -1057,13 +1316,21 @@ function GenerarSacDialog({
                               max={180}
                               value={dias}
                               onChange={(e) => {
-                                const v = Math.min(180, Math.max(1, parseInt(e.target.value, 10) || 1));
-                                setDiasMap((prev) => ({ ...prev, [p.empleadoId]: v }));
+                                const v = Math.min(
+                                  180,
+                                  Math.max(1, parseInt(e.target.value, 10) || 1)
+                                );
+                                setDiasMap((prev) => ({
+                                  ...prev,
+                                  [p.empleadoId]: v,
+                                }));
                               }}
                               className="w-14 text-center text-[12px] border rounded px-1 py-0.5 font-mono"
                             />
                             {esProporcional && (
-                              <span className="text-[10px] text-amber-600 font-medium">prop.</span>
+                              <span className="text-[10px] text-amber-600 font-medium">
+                                prop.
+                              </span>
                             )}
                           </div>
                         ) : (
@@ -1072,10 +1339,14 @@ function GenerarSacDialog({
                       </td>
                       <td className="py-2 text-right font-mono font-semibold">
                         {sacMonto > 0 ? (
-                          <span className={esProporcional ? 'text-amber-700' : ''}>
+                          <span
+                            className={esProporcional ? 'text-amber-700' : ''}
+                          >
                             {moneyFmtSac(sacMonto)}
                           </span>
-                        ) : '—'}
+                        ) : (
+                          '—'
+                        )}
                       </td>
                     </tr>
                   );
@@ -1087,14 +1358,20 @@ function GenerarSacDialog({
 
         {!isLoading && pendientes.length > 0 && (
           <p className="text-[12px] text-muted-foreground pt-2">
-            {seleccionados.length} de {pendientes.length} empleados seleccionados.
-            Días = 180 → SAC completo (÷2). Días &lt; 180 → SAC proporcional (÷360 × días).
-            Las retenciones se calculan al abrir y guardar cada recibo.
+            {seleccionados.length} de {pendientes.length} empleados
+            seleccionados. Días = 180 → SAC completo (÷2). Días &lt; 180 → SAC
+            proporcional (÷360 × días). Las retenciones se calculan al abrir y
+            guardar cada recibo.
           </p>
         )}
 
         <DialogFooter className="pt-3 border-t">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={isPending}
+          >
             Cancelar
           </Button>
           <Button
@@ -1103,8 +1380,13 @@ function GenerarSacDialog({
             onClick={() => generar()}
             className="gap-1.5"
           >
-            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Generar {seleccionados.length > 0 ? `${seleccionados.length} SAC` : 'SAC'}
+            {isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            Generar{' '}
+            {seleccionados.length > 0 ? `${seleccionados.length} SAC` : 'SAC'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1129,12 +1411,10 @@ function diasDesdefechaBaja(fecha: string): number {
 
 export function GenerarLiqFinalDialog({
   clientId,
-  profileId,
   periodo,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
   onClose: () => void;
 }) {
@@ -1144,8 +1424,8 @@ export function GenerarLiqFinalDialog({
   const [fechaBajaMap, setFechaBajaMap] = useState<Record<string, string>>({});
 
   const { data: preview = [], isLoading } = useQuery({
-    queryKey: ['liq-final-preview', clientId, profileId, periodo],
-    queryFn: () => getLiqFinalPreview({ data: { clientId, profileId, periodo } }),
+    queryKey: ['liq-final-preview', clientId, periodo],
+    queryFn: () => getLiqFinalPreview({ data: { clientId, periodo } }),
   });
 
   // Pre-seleccionar empleados sin liq. final y asignar fecha de baja por defecto
@@ -1153,19 +1433,22 @@ export function GenerarLiqFinalDialog({
     if (preview.length === 0) return;
     const pendientes = preview.filter((p) => !p.yaTiene);
     setSelected(new Set(pendientes.map((p) => p.empleadoId)));
-    setFechaBajaMap(Object.fromEntries(pendientes.map((p) => [p.empleadoId, defaultFecha])));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    setFechaBajaMap(
+      Object.fromEntries(pendientes.map((p) => [p.empleadoId, defaultFecha]))
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview]);
 
   const pendientes = preview.filter((p) => !p.yaTiene);
-  const seleccionados = preview.filter((p) => selected.has(p.empleadoId) && !p.yaTiene);
+  const seleccionados = preview.filter(
+    (p) => selected.has(p.empleadoId) && !p.yaTiene
+  );
 
   const { mutate: generar, isPending } = useMutation({
     mutationFn: () =>
       generarLiqFinalMasivo({
         data: {
           clientId,
-          profileId,
           periodo,
           items: seleccionados.map((p) => {
             const fecha = fechaBajaMap[p.empleadoId] ?? defaultFecha;
@@ -1178,17 +1461,29 @@ export function GenerarLiqFinalDialog({
         },
       }),
     onSuccess: (result) => {
-      toast.success(`${result.generados} recibos de Liquidación Final generados.`);
+      toast.success(
+        `${result.generados} recibos de Liquidación Final generados.`
+      );
       queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
       queryClient.invalidateQueries({ queryKey: ['import-recibos'] });
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId],
+      });
       onClose();
     },
-    onError: (err) => toast.error((err as Error).message ?? 'Error al generar las liquidaciones finales.'),
+    onError: (err) =>
+      toast.error(
+        (err as Error).message ?? 'Error al generar las liquidaciones finales.'
+      ),
   });
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-[90vw] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="text-[15px]">
@@ -1202,7 +1497,9 @@ export function GenerarLiqFinalDialog({
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : preview.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">No hay empleados activos.</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No hay empleados activos.
+            </p>
           ) : (
             <table className="w-full text-[13px]">
               <thead>
@@ -1211,7 +1508,10 @@ export function GenerarLiqFinalDialog({
                     <input
                       type="checkbox"
                       className="h-3.5 w-3.5"
-                      checked={pendientes.length > 0 && pendientes.every((p) => selected.has(p.empleadoId))}
+                      checked={
+                        pendientes.length > 0 &&
+                        pendientes.every((p) => selected.has(p.empleadoId))
+                      }
                       onChange={(e) => {
                         setSelected(
                           e.target.checked
@@ -1232,10 +1532,15 @@ export function GenerarLiqFinalDialog({
                   const fecha = fechaBajaMap[p.empleadoId] ?? defaultFecha;
                   const dias = diasDesdefechaBaja(fecha);
                   return (
-                    <tr key={p.empleadoId} className={`border-b last:border-0 ${p.yaTiene ? 'opacity-50' : ''}`}>
+                    <tr
+                      key={p.empleadoId}
+                      className={`border-b last:border-0 ${p.yaTiene ? 'opacity-50' : ''}`}
+                    >
                       <td className="py-2 pr-2">
                         {p.yaTiene ? (
-                          <span title="Ya tiene Liq. Final"><CheckCircle2 className="h-4 w-4 text-green-500" /></span>
+                          <span title="Ya tiene Liq. Final">
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          </span>
                         ) : (
                           <input
                             type="checkbox"
@@ -1252,9 +1557,15 @@ export function GenerarLiqFinalDialog({
                       </td>
                       <td className="py-2 pr-3 font-medium">
                         {p.nombre}
-                        {p.yaTiene && <span className="ml-2 text-green-600 text-[11px]">Ya tiene</span>}
+                        {p.yaTiene && (
+                          <span className="ml-2 text-green-600 text-[11px]">
+                            Ya tiene
+                          </span>
+                        )}
                       </td>
-                      <td className="py-2 pr-3 text-muted-foreground">{p.legajo || '—'}</td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {p.legajo || '—'}
+                      </td>
                       <td className="py-2 pr-3">
                         {!p.yaTiene ? (
                           <input
@@ -1262,7 +1573,10 @@ export function GenerarLiqFinalDialog({
                             value={fecha}
                             max={defaultFecha}
                             onChange={(e) =>
-                              setFechaBajaMap((prev) => ({ ...prev, [p.empleadoId]: e.target.value }))
+                              setFechaBajaMap((prev) => ({
+                                ...prev,
+                                [p.empleadoId]: e.target.value,
+                              }))
                             }
                             className="h-7 w-36 rounded border border-input bg-background px-2 text-[12px] font-mono"
                           />
@@ -1283,14 +1597,19 @@ export function GenerarLiqFinalDialog({
 
         {!isLoading && pendientes.length > 0 && (
           <p className="text-[12px] text-muted-foreground pt-2">
-            {seleccionados.length} de {pendientes.length} empleados seleccionados.
-            Los días trabajados se calculan del día de la fecha de baja.
-            Completá los importes en el simulador tras generar.
+            {seleccionados.length} de {pendientes.length} empleados
+            seleccionados. Los días trabajados se calculan del día de la fecha
+            de baja. Completá los importes en el simulador tras generar.
           </p>
         )}
 
         <DialogFooter className="pt-3 border-t">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={isPending}
+          >
             Cancelar
           </Button>
           <Button
@@ -1299,8 +1618,15 @@ export function GenerarLiqFinalDialog({
             onClick={() => generar()}
             className="gap-1.5"
           >
-            {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Receipt className="h-3.5 w-3.5" />}
-            Generar {seleccionados.length > 0 ? `${seleccionados.length} Liq. Final` : 'Liq. Final'}
+            {isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Receipt className="h-3.5 w-3.5" />
+            )}
+            Generar{' '}
+            {seleccionados.length > 0
+              ? `${seleccionados.length} Liq. Final`
+              : 'Liq. Final'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1309,10 +1635,8 @@ export function GenerarLiqFinalDialog({
 }
 
 // ─── Componente del documento recibo ────────────────────────────────────────
-type DetalleType = NonNullable<
-  Awaited<ReturnType<typeof getReciboDetalle>>
->;
-type ClientData = Awaited<ReturnType<typeof getClient>>;
+type DetalleType = NonNullable<Awaited<ReturnType<typeof getReciboDetalle>>>;
+type ClientData = Awaited<ReturnType<typeof getCliente>>;
 
 function ReciboDocumento({
   detalle,
@@ -1339,7 +1663,8 @@ function ReciboDocumento({
   const basicoLiquidacionNum = Number(liquidacion.basico ?? 0);
   const basicoDetalleNum = basicoDesdeDetalle(detalles);
   const esGerente =
-    esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
+    esCategoriaGerente(categoria?.nombre) ||
+    esCategoriaGerente(empleado.categoriaTexto);
   const mostrarBasicoEscalaGerente =
     esGerente &&
     Number.isFinite(basicoCalculadoNum) &&
@@ -1357,7 +1682,7 @@ function ReciboDocumento({
       : basicoCalculado;
 
   // Clasificar conceptos por tipo (solo los activos)
-  const conceptosActivos = detalles.filter((d) => d.detalle.activoEnRecibo);
+  const conceptosActivos = detalles.filter((d) => d.detalle.activo);
   const haberesCon = conceptosActivos.filter(
     (d) => columnaConcepto(d) === 'remunerativo'
   );
@@ -1389,12 +1714,10 @@ function ReciboDocumento({
   const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
   const totalNoRemunerativo = redondearPesos(sumaMontosDetalle(haberesSin));
   const netoRaw = redondearPesos(
-    totalHaberes +
-      totalNoRemunerativo -
-      totalDescuentos -
-      totalRetenciones
+    totalHaberes + totalNoRemunerativo - totalDescuentos - totalRetenciones
   );
-  const redondeo = netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
+  const redondeo =
+    netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
   const neto = redondeo > 0 ? Math.ceil(netoRaw) : netoRaw;
 
   const cab = completarCabeceraConLegajo(
@@ -1405,21 +1728,20 @@ function ReciboDocumento({
   return (
     <div className="w-full overflow-x-auto">
       <div className="min-w-[700px] rounded-md border border-border bg-background text-sm shadow-sm">
-
         {/* ── ENCABEZADO ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 border-b border-border">
           {/* Empresa (izquierda) */}
           <div className="flex flex-col justify-center gap-1 border-r border-border px-5 py-4">
             <span className="text-xl font-bold leading-tight">
-              {toTitleCase(clientData?.name) || '—'}
+              {toTitleCase(clientData?.razonSocial) || '—'}
             </span>
-            {clientData?.address && (
+            {clientData?.domicilio && (
               <span className="text-sm text-muted-foreground">
-                {clientData.address}
+                {clientData.domicilio}
               </span>
             )}
             <span className="text-sm font-medium text-muted-foreground">
-              CUIT: {clientData?.identityNumber ?? '—'}
+              CUIT: {clientData?.cuit ?? '—'}
             </span>
           </div>
           {/* Título + grilla pago (derecha) */}
@@ -1433,8 +1755,14 @@ function ReciboDocumento({
               </span>
             </div>
             <div className="grid grid-cols-3 divide-x divide-border">
-              <DocCell label="Período a pagar" value={liquidacion.periodo} />
-              <DocCell label="Fecha de pago" value={dateFmt(cab.fechaPagoParaMostrar)} />
+              <DocCell
+                label="Período a pagar"
+                value={dateAPeriodo(liquidacion.periodo)}
+              />
+              <DocCell
+                label="Fecha de pago"
+                value={dateFmt(cab.fechaPagoParaMostrar)}
+              />
               <DocCell label="Lugar de pago" value={cab.lugarPago ?? '—'} />
               <DocCell
                 label="Banco"
@@ -1457,7 +1785,14 @@ function ReciboDocumento({
 
         {/* ── FILA 1 EMPLEADO: Categoría | Tipo de liquidación ───────────── */}
         <div className="grid grid-cols-2 divide-x divide-border border-b border-border">
-          <DocCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
+          <DocCell
+            label="Categoría"
+            value={
+              empleado.categoriaTexto
+                ? toTitleCase(empleado.categoriaTexto)
+                : (categoria?.nombre ?? '—')
+            }
+          />
           <DocCell
             label="Tipo de liquidación"
             value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}
@@ -1466,12 +1801,7 @@ function ReciboDocumento({
 
         {/* ── FILA 2 EMPLEADO: Legajo | Apellido y Nombre | Ingreso | CUIL | Básico */}
         <div className="grid grid-cols-[100px_1fr_120px_160px_140px] divide-x divide-border border-b border-border">
-          <DocCell
-            label="Legajo"
-            value={legajoParaMostrar(
-              empleado.legajo ?? detalle.importLegajo ?? null
-            )}
-          />
+          <DocCell label="Legajo" value={legajoParaMostrar(empleado.legajo)} />
           <DocCell
             label="Apellido y Nombres"
             value={toTitleCase(empleado.nombre)}
@@ -1481,7 +1811,10 @@ function ReciboDocumento({
             value={dateFmt(empleado.fechaAlta)}
           />
           <DocCell label="CUIL" value={empleado.cuil} />
-          <DocCell label="Sueldo básico" value={`$${moneyFmt(basicoMostrado)}`} />
+          <DocCell
+            label="Sueldo básico"
+            value={`$${moneyFmt(basicoMostrado)}`}
+          />
         </div>
 
         {/* ── FILA 3 EMPLEADO: Convenio | Modalidad | Obra Social ─────────── */}
@@ -1498,14 +1831,16 @@ function ReciboDocumento({
           />
           <DocCell
             label="Modalidad"
-            value={empleado.tipoJornada === 'full_time' ? 'Tiempo completo' : 'Tiempo parcial'}
+            value={
+              empleado.tipoJornada === 'full_time'
+                ? 'Tiempo completo'
+                : 'Tiempo parcial'
+            }
           />
           <DocCell
             label="Obra social"
             value={
-              obraSocial
-                ? `${obraSocial.codigo} ${obraSocial.nombre}`
-                : '—'
+              obraSocial ? `${obraSocial.codigo} ${obraSocial.nombre}` : '—'
             }
           />
         </div>
@@ -1542,45 +1877,58 @@ function ReciboDocumento({
                 </td>
               </tr>
             ) : (
-              filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
-                <tr key={det.id} className="hover:bg-muted/20">
-                  <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
-                    {det.codigo}
-                  </td>
-                  <td className="px-2 py-1">
-                    {(det.memo && !det.memo.startsWith('source=') && !det.memo.includes('calc_error='))
-                      ? det.memo
-                      : (concepto?.nombre ??
+              filas.map(
+                ({
+                  detalle: det,
+                  concepto,
+                  conceptoAfip,
+                  conceptoSos,
+                  col,
+                }) => (
+                  <tr key={det.id} className="hover:bg-muted/20">
+                    <td className="px-2 py-1 font-mono text-xs text-muted-foreground">
+                      {det.codigo}
+                    </td>
+                    <td className="px-2 py-1">
+                      {det.memo &&
+                      !det.memo.startsWith('source=') &&
+                      !det.memo.includes('calc_error=')
+                        ? det.memo
+                        : (concepto?.nombre ??
                           conceptoAfip?.descripcion ??
                           conceptoSos?.nombre ??
                           det.codigo)}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
-                    {det.cantidad ? moneyFmt(det.cantidad) : '—'}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
-                    {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'hab' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'desc' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'ret' ? moneyFmt(det.monto) : ''}
-                  </td>
-                  <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
-                    {col === 'noRem' ? moneyFmt(det.monto) : ''}
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                      {det.cantidad ? moneyFmt(det.cantidad) : '—'}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                      {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'hab' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'desc' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'ret' ? moneyFmt(det.monto) : ''}
+                    </td>
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                      {col === 'noRem' ? moneyFmt(det.monto) : ''}
+                    </td>
+                  </tr>
+                )
+              )
             )}
           </tbody>
           {/* ── Fila de totales ─────────────────────────────────────────── */}
           <tfoot>
             <tr className="border-t-2 border-border bg-muted/30 font-semibold">
-              <td colSpan={4} className="px-2 py-2 uppercase tracking-wide text-xs">
+              <td
+                colSpan={4}
+                className="px-2 py-2 uppercase tracking-wide text-xs"
+              >
                 Totales
               </td>
               <td className="border-l border-border px-2 py-2 text-right tabular-nums">
@@ -1599,19 +1947,26 @@ function ReciboDocumento({
             {redondeo > 0 && (
               <>
                 <tr className="border-t border-border text-xs text-muted-foreground">
-                  <td colSpan={7} className="px-2 py-1.5 text-right">Neto sin redondeo</td>
+                  <td colSpan={7} className="px-2 py-1.5 text-right">
+                    Neto sin redondeo
+                  </td>
                   <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
                     {moneyFmt(netoRaw)}
                   </td>
                 </tr>
                 <tr className="border-t border-border text-xs italic text-muted-foreground">
-                  <td colSpan={7} className="px-2 py-1.5 text-right">Redondeo</td>
+                  <td colSpan={7} className="px-2 py-1.5 text-right">
+                    Redondeo
+                  </td>
                   <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
                     +{moneyFmt(redondeo)}
                   </td>
                 </tr>
                 <tr className="border-t-2 border-border bg-muted/30 text-sm font-bold">
-                  <td colSpan={7} className="px-2 py-2 text-right uppercase tracking-wide text-xs">
+                  <td
+                    colSpan={7}
+                    className="px-2 py-2 text-right uppercase tracking-wide text-xs"
+                  >
                     Total neto
                   </td>
                   <td className="border-l border-border px-2 py-2 text-right tabular-nums">

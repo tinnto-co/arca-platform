@@ -1,6 +1,6 @@
 /**
  * Cron del módulo de Balances: contabiliza periódicamente las facturas pendientes
- * (sin asiento). Sigue el patrón de `payroll-cron.ts`. (UST4)
+ * (sin asiento). (UST4)
  *
  * Configurable por entorno:
  * - ACCOUNTING_BATCH_INTERVAL_MS: intervalo entre corridas (default 1 hora).

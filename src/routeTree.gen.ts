@@ -34,13 +34,17 @@ import { Route as AuthedAnalyticsIndexRouteImport } from './routes/_authed/analy
 import { Route as AuthedAlertsIndexRouteImport } from './routes/_authed/alerts/index'
 import { Route as AuthedAdminIndexRouteImport } from './routes/_authed/admin/index'
 import { Route as AuthedAccountingIndexRouteImport } from './routes/_authed/accounting/index'
+import { Route as ApiDocumentsDocumentIdRouteImport } from './routes/api/documents/$documentId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiAfipDiscoverProfilesRouteImport } from './routes/api/afip/discover-profiles'
 import { Route as AuthedProductsIdRouteImport } from './routes/_authed/products/$id'
 import { Route as AuthedChatIdRouteImport } from './routes/_authed/chat/$id'
+import { Route as ClientPortalVencimientosIndexRouteImport } from './routes/_client/portal/vencimientos/index'
 import { Route as ClientPortalSolicitudesIndexRouteImport } from './routes/_client/portal/solicitudes/index'
+import { Route as ClientPortalNotificacionesIndexRouteImport } from './routes/_client/portal/notificaciones/index'
+import { Route as ClientPortalDeudasIndexRouteImport } from './routes/_client/portal/deudas/index'
 import { Route as AuthedSueldosProfileIdIndexRouteImport } from './routes/_authed/sueldos/$profileId/index'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
-import { Route as AuthedClientsClientIdProfileIdIndexRouteImport } from './routes/_authed/clients/$clientId/$profileId/index'
 
 const NoOrganizationRoute = NoOrganizationRouteImport.update({
   id: '/no-organization',
@@ -166,9 +170,19 @@ const AuthedAccountingIndexRoute = AuthedAccountingIndexRouteImport.update({
   path: '/accounting/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const ApiDocumentsDocumentIdRoute = ApiDocumentsDocumentIdRouteImport.update({
+  id: '/api/documents/$documentId',
+  path: '/api/documents/$documentId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAfipDiscoverProfilesRoute = ApiAfipDiscoverProfilesRouteImport.update({
+  id: '/api/afip/discover-profiles',
+  path: '/api/afip/discover-profiles',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthedProductsIdRoute = AuthedProductsIdRouteImport.update({
@@ -181,12 +195,29 @@ const AuthedChatIdRoute = AuthedChatIdRouteImport.update({
   path: '/chat/$id',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
+const ClientPortalVencimientosIndexRoute =
+  ClientPortalVencimientosIndexRouteImport.update({
+    id: '/portal/vencimientos/',
+    path: '/portal/vencimientos/',
+    getParentRoute: () => ClientRouteRoute,
+  } as any)
 const ClientPortalSolicitudesIndexRoute =
   ClientPortalSolicitudesIndexRouteImport.update({
     id: '/portal/solicitudes/',
     path: '/portal/solicitudes/',
     getParentRoute: () => ClientRouteRoute,
   } as any)
+const ClientPortalNotificacionesIndexRoute =
+  ClientPortalNotificacionesIndexRouteImport.update({
+    id: '/portal/notificaciones/',
+    path: '/portal/notificaciones/',
+    getParentRoute: () => ClientRouteRoute,
+  } as any)
+const ClientPortalDeudasIndexRoute = ClientPortalDeudasIndexRouteImport.update({
+  id: '/portal/deudas/',
+  path: '/portal/deudas/',
+  getParentRoute: () => ClientRouteRoute,
+} as any)
 const AuthedSueldosProfileIdIndexRoute =
   AuthedSueldosProfileIdIndexRouteImport.update({
     id: '/sueldos/$profileId/',
@@ -199,12 +230,6 @@ const AuthedClientsClientIdIndexRoute =
     path: '/clients/$clientId/',
     getParentRoute: () => AuthedRouteRoute,
   } as any)
-const AuthedClientsClientIdProfileIdIndexRoute =
-  AuthedClientsClientIdProfileIdIndexRouteImport.update({
-    id: '/clients/$clientId/$profileId/',
-    path: '/clients/$clientId/$profileId/',
-    getParentRoute: () => AuthedRouteRoute,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AuthedIndexRoute
@@ -215,7 +240,9 @@ export interface FileRoutesByFullPath {
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
+  '/api/afip/discover-profiles': typeof ApiAfipDiscoverProfilesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/documents/$documentId': typeof ApiDocumentsDocumentIdRoute
   '/accounting/': typeof AuthedAccountingIndexRoute
   '/admin/': typeof AuthedAdminIndexRoute
   '/alerts/': typeof AuthedAlertsIndexRoute
@@ -235,8 +262,10 @@ export interface FileRoutesByFullPath {
   '/portal/': typeof ClientPortalIndexRoute
   '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
+  '/portal/deudas/': typeof ClientPortalDeudasIndexRoute
+  '/portal/notificaciones/': typeof ClientPortalNotificacionesIndexRoute
   '/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
-  '/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
+  '/portal/vencimientos/': typeof ClientPortalVencimientosIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof AuthedIndexRoute
@@ -247,7 +276,9 @@ export interface FileRoutesByTo {
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/chat/$id': typeof AuthedChatIdRoute
   '/products/$id': typeof AuthedProductsIdRoute
+  '/api/afip/discover-profiles': typeof ApiAfipDiscoverProfilesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/documents/$documentId': typeof ApiDocumentsDocumentIdRoute
   '/accounting': typeof AuthedAccountingIndexRoute
   '/admin': typeof AuthedAdminIndexRoute
   '/alerts': typeof AuthedAlertsIndexRoute
@@ -267,8 +298,10 @@ export interface FileRoutesByTo {
   '/portal': typeof ClientPortalIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
   '/sueldos/$profileId': typeof AuthedSueldosProfileIdIndexRoute
+  '/portal/deudas': typeof ClientPortalDeudasIndexRoute
+  '/portal/notificaciones': typeof ClientPortalNotificacionesIndexRoute
   '/portal/solicitudes': typeof ClientPortalSolicitudesIndexRoute
-  '/clients/$clientId/$profileId': typeof AuthedClientsClientIdProfileIdIndexRoute
+  '/portal/vencimientos': typeof ClientPortalVencimientosIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -282,7 +315,9 @@ export interface FileRoutesById {
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/chat/$id': typeof AuthedChatIdRoute
   '/_authed/products/$id': typeof AuthedProductsIdRoute
+  '/api/afip/discover-profiles': typeof ApiAfipDiscoverProfilesRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/documents/$documentId': typeof ApiDocumentsDocumentIdRoute
   '/_authed/accounting/': typeof AuthedAccountingIndexRoute
   '/_authed/admin/': typeof AuthedAdminIndexRoute
   '/_authed/alerts/': typeof AuthedAlertsIndexRoute
@@ -302,8 +337,10 @@ export interface FileRoutesById {
   '/_client/portal/': typeof ClientPortalIndexRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
   '/_authed/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
+  '/_client/portal/deudas/': typeof ClientPortalDeudasIndexRoute
+  '/_client/portal/notificaciones/': typeof ClientPortalNotificacionesIndexRoute
   '/_client/portal/solicitudes/': typeof ClientPortalSolicitudesIndexRoute
-  '/_authed/clients/$clientId/$profileId/': typeof AuthedClientsClientIdProfileIdIndexRoute
+  '/_client/portal/vencimientos/': typeof ClientPortalVencimientosIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -316,7 +353,9 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/chat/$id'
     | '/products/$id'
+    | '/api/afip/discover-profiles'
     | '/api/auth/$'
+    | '/api/documents/$documentId'
     | '/accounting/'
     | '/admin/'
     | '/alerts/'
@@ -336,8 +375,10 @@ export interface FileRouteTypes {
     | '/portal/'
     | '/clients/$clientId/'
     | '/sueldos/$profileId/'
+    | '/portal/deudas/'
+    | '/portal/notificaciones/'
     | '/portal/solicitudes/'
-    | '/clients/$clientId/$profileId/'
+    | '/portal/vencimientos/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -348,7 +389,9 @@ export interface FileRouteTypes {
     | '/invite/$invitationId'
     | '/chat/$id'
     | '/products/$id'
+    | '/api/afip/discover-profiles'
     | '/api/auth/$'
+    | '/api/documents/$documentId'
     | '/accounting'
     | '/admin'
     | '/alerts'
@@ -368,8 +411,10 @@ export interface FileRouteTypes {
     | '/portal'
     | '/clients/$clientId'
     | '/sueldos/$profileId'
+    | '/portal/deudas'
+    | '/portal/notificaciones'
     | '/portal/solicitudes'
-    | '/clients/$clientId/$profileId'
+    | '/portal/vencimientos'
   id:
     | '__root__'
     | '/_authed'
@@ -382,7 +427,9 @@ export interface FileRouteTypes {
     | '/_authed/'
     | '/_authed/chat/$id'
     | '/_authed/products/$id'
+    | '/api/afip/discover-profiles'
     | '/api/auth/$'
+    | '/api/documents/$documentId'
     | '/_authed/accounting/'
     | '/_authed/admin/'
     | '/_authed/alerts/'
@@ -402,8 +449,10 @@ export interface FileRouteTypes {
     | '/_client/portal/'
     | '/_authed/clients/$clientId/'
     | '/_authed/sueldos/$profileId/'
+    | '/_client/portal/deudas/'
+    | '/_client/portal/notificaciones/'
     | '/_client/portal/solicitudes/'
-    | '/_authed/clients/$clientId/$profileId/'
+    | '/_client/portal/vencimientos/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -414,7 +463,9 @@ export interface RootRouteChildren {
   ApiAgentRoute: typeof ApiAgentRoute
   ApiCopilotkitRoute: typeof ApiCopilotkitRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
+  ApiAfipDiscoverProfilesRoute: typeof ApiAfipDiscoverProfilesRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiDocumentsDocumentIdRoute: typeof ApiDocumentsDocumentIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -594,11 +645,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAccountingIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/api/documents/$documentId': {
+      id: '/api/documents/$documentId'
+      path: '/api/documents/$documentId'
+      fullPath: '/api/documents/$documentId'
+      preLoaderRoute: typeof ApiDocumentsDocumentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/afip/discover-profiles': {
+      id: '/api/afip/discover-profiles'
+      path: '/api/afip/discover-profiles'
+      fullPath: '/api/afip/discover-profiles'
+      preLoaderRoute: typeof ApiAfipDiscoverProfilesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authed/products/$id': {
@@ -615,11 +680,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedChatIdRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_client/portal/vencimientos/': {
+      id: '/_client/portal/vencimientos/'
+      path: '/portal/vencimientos'
+      fullPath: '/portal/vencimientos/'
+      preLoaderRoute: typeof ClientPortalVencimientosIndexRouteImport
+      parentRoute: typeof ClientRouteRoute
+    }
     '/_client/portal/solicitudes/': {
       id: '/_client/portal/solicitudes/'
       path: '/portal/solicitudes'
       fullPath: '/portal/solicitudes/'
       preLoaderRoute: typeof ClientPortalSolicitudesIndexRouteImport
+      parentRoute: typeof ClientRouteRoute
+    }
+    '/_client/portal/notificaciones/': {
+      id: '/_client/portal/notificaciones/'
+      path: '/portal/notificaciones'
+      fullPath: '/portal/notificaciones/'
+      preLoaderRoute: typeof ClientPortalNotificacionesIndexRouteImport
+      parentRoute: typeof ClientRouteRoute
+    }
+    '/_client/portal/deudas/': {
+      id: '/_client/portal/deudas/'
+      path: '/portal/deudas'
+      fullPath: '/portal/deudas/'
+      preLoaderRoute: typeof ClientPortalDeudasIndexRouteImport
       parentRoute: typeof ClientRouteRoute
     }
     '/_authed/sueldos/$profileId/': {
@@ -634,13 +720,6 @@ declare module '@tanstack/react-router' {
       path: '/clients/$clientId'
       fullPath: '/clients/$clientId/'
       preLoaderRoute: typeof AuthedClientsClientIdIndexRouteImport
-      parentRoute: typeof AuthedRouteRoute
-    }
-    '/_authed/clients/$clientId/$profileId/': {
-      id: '/_authed/clients/$clientId/$profileId/'
-      path: '/clients/$clientId/$profileId'
-      fullPath: '/clients/$clientId/$profileId/'
-      preLoaderRoute: typeof AuthedClientsClientIdProfileIdIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
   }
@@ -668,7 +747,6 @@ interface AuthedRouteRouteChildren {
   AuthedVencimientosIndexRoute: typeof AuthedVencimientosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
   AuthedSueldosProfileIdIndexRoute: typeof AuthedSueldosProfileIdIndexRoute
-  AuthedClientsClientIdProfileIdIndexRoute: typeof AuthedClientsClientIdProfileIdIndexRoute
 }
 
 const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
@@ -693,8 +771,6 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedVencimientosIndexRoute: AuthedVencimientosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
   AuthedSueldosProfileIdIndexRoute: AuthedSueldosProfileIdIndexRoute,
-  AuthedClientsClientIdProfileIdIndexRoute:
-    AuthedClientsClientIdProfileIdIndexRoute,
 }
 
 const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(
@@ -703,12 +779,18 @@ const AuthedRouteRouteWithChildren = AuthedRouteRoute._addFileChildren(
 
 interface ClientRouteRouteChildren {
   ClientPortalIndexRoute: typeof ClientPortalIndexRoute
+  ClientPortalDeudasIndexRoute: typeof ClientPortalDeudasIndexRoute
+  ClientPortalNotificacionesIndexRoute: typeof ClientPortalNotificacionesIndexRoute
   ClientPortalSolicitudesIndexRoute: typeof ClientPortalSolicitudesIndexRoute
+  ClientPortalVencimientosIndexRoute: typeof ClientPortalVencimientosIndexRoute
 }
 
 const ClientRouteRouteChildren: ClientRouteRouteChildren = {
   ClientPortalIndexRoute: ClientPortalIndexRoute,
+  ClientPortalDeudasIndexRoute: ClientPortalDeudasIndexRoute,
+  ClientPortalNotificacionesIndexRoute: ClientPortalNotificacionesIndexRoute,
   ClientPortalSolicitudesIndexRoute: ClientPortalSolicitudesIndexRoute,
+  ClientPortalVencimientosIndexRoute: ClientPortalVencimientosIndexRoute,
 }
 
 const ClientRouteRouteWithChildren = ClientRouteRoute._addFileChildren(
@@ -723,7 +805,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAgentRoute: ApiAgentRoute,
   ApiCopilotkitRoute: ApiCopilotkitRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
+  ApiAfipDiscoverProfilesRoute: ApiAfipDiscoverProfilesRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiDocumentsDocumentIdRoute: ApiDocumentsDocumentIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

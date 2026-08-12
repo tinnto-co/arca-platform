@@ -10,23 +10,17 @@ declare module 'xlsx' {
     book_append_sheet: (wb: WorkBook, ws: WorkSheet, name: string) => void;
     sheet_to_json: <T = unknown>(
       sheet: WorkSheet,
-      opts?: {
-        header?: 1;
-        raw?: boolean;
-        defval?: unknown;
-        blankrows?: boolean;
-      }
+      opts?: { header?: 1; raw?: boolean; defval?: unknown; blankrows?: boolean }
     ) => T[];
   };
-  export function readFile(path: string): WorkBook;
   export function read(
     data: unknown,
     opts?: {
-      type?: 'buffer' | 'array' | 'binary' | 'base64' | 'string' | 'file';
-      /** Devuelve las celdas de fecha como Date en lugar del serial de Excel. */
+      type?: 'array' | 'base64' | 'binary' | 'buffer' | 'file' | 'string';
       cellDates?: boolean;
       raw?: boolean;
     }
   ): WorkBook;
+  export function readFile(path: string): WorkBook;
   export function writeFile(wb: WorkBook, filename: string): void;
 }

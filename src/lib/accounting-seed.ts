@@ -1,12 +1,12 @@
 /**
- * Siembra el plan de cuentas base (`scope='base'`) en una organización.
+ * Siembra el plan de cuentas base (`alcance='base'`) en una organización.
  * Idempotente: solo inserta las cuentas base que falten (por código).
  *
  * El plan base se referencia, no se clona: las empresas lo usan vía
- * `account` (scope='base') + `accountOverride`. Por eso vive a nivel `organization`.
+ * `cuenta` (alcance='base') + `cliente_cuenta`. Por eso vive a nivel de la org.
  */
 import { db } from '@/lib/db';
-import { account } from '@/drizzle/schema';
+import { cuenta } from '@/drizzle/schema';
 import { and, eq } from 'drizzle-orm';
 import {
   BASE_CHART,
@@ -15,6 +15,7 @@ import {
 } from '@/lib/accounting-base-chart';
 import { defaultInflationNature } from '@/lib/accounting-inflation';
 import { defaultCashFlowActivity } from '@/lib/accounting-cashflow';
+import { CASH_FLOW_ACTIVITY_TO_DB } from '@/lib/accounting-labels';
 
 export interface SeedResult {
   inserted: number;
@@ -23,9 +24,16 @@ export interface SeedResult {
   backfilled: number;
 }
 
+/** El módulo puro habla operating/investing/financing; el enum, castellano. */
+const flujoDb = (
+  activity: ReturnType<typeof defaultCashFlowActivity>
+): 'operativa' | 'inversion' | 'financiacion' | null =>
+  activity ? CASH_FLOW_ACTIVITY_TO_DB[activity] : null;
+
 /**
  * Completa los atributos de ajuste por inflación en cuentas que se sembraron
- * antes de que existieran (`inflation_nature`, `inflation_target_id`).
+ * antes de que existieran (`naturaleza_inflacion`, `cuenta_ajuste_id`,
+ * `flujo_efectivo`).
  *
  * Sin esto, los planes ya sembrados quedan sin clasificar y el ajuste cae en el
  * default por rubro — que para el Capital social es incorrecto: su reexpresión
@@ -37,51 +45,52 @@ export interface SeedResult {
 async function backfillInflationAttributes(orgId: string): Promise<number> {
   const rows = await db
     .select({
-      id: account.id,
-      code: account.code,
-      accountGroup: account.accountGroup,
-      inflationNature: account.inflationNature,
-      inflationTargetId: account.inflationTargetId,
-      cashFlowActivity: account.cashFlowActivity,
+      id: cuenta.id,
+      codigo: cuenta.codigo,
+      rubro: cuenta.rubro,
+      naturalezaInflacion: cuenta.naturalezaInflacion,
+      cuentaAjusteId: cuenta.cuentaAjusteId,
+      flujoEfectivo: cuenta.flujoEfectivo,
     })
-    .from(account)
-    .where(eq(account.organizationId, orgId));
+    .from(cuenta)
+    .where(eq(cuenta.orgId, orgId));
 
-  const byCode = new Map(rows.map((r) => [r.code, r]));
+  const byCode = new Map(rows.map((r) => [r.codigo, r]));
   const baseByCode = new Map(BASE_CHART.map((a) => [a.code, a]));
   let touched = 0;
 
   for (const row of rows) {
-    const seed = baseByCode.get(row.code);
+    const seed = baseByCode.get(row.codigo);
     const patch: {
-      inflationNature?: string;
-      inflationTargetId?: string | null;
-      cashFlowActivity?: string | null;
+      naturalezaInflacion?: string;
+      cuentaAjusteId?: string | null;
+      flujoEfectivo?: string | null;
     } = {};
 
-    if (!row.inflationNature) {
+    if (!row.naturalezaInflacion) {
       // Cuenta del plan base → lo que declara el seed; cuenta propia de una
       // empresa → el default de su rubro.
-      patch.inflationNature =
-        seed?.inflationNature ?? defaultInflationNature(row.accountGroup);
+      patch.naturalezaInflacion =
+        seed?.inflationNature ?? defaultInflationNature(row.rubro);
     }
-    if (!row.cashFlowActivity) {
+    if (!row.flujoEfectivo) {
       const activity =
         seed !== undefined
           ? (seed.cashFlowActivity ?? null)
-          : defaultCashFlowActivity(row.accountGroup);
-      if (activity) patch.cashFlowActivity = activity;
+          : defaultCashFlowActivity(row.rubro);
+      const db_ = flujoDb(activity);
+      if (db_) patch.flujoEfectivo = db_;
     }
-    if (!row.inflationTargetId && seed?.inflationTargetCode) {
+    if (!row.cuentaAjusteId && seed?.inflationTargetCode) {
       const target = byCode.get(seed.inflationTargetCode);
-      if (target) patch.inflationTargetId = target.id;
+      if (target) patch.cuentaAjusteId = target.id;
     }
 
     if (Object.keys(patch).length === 0) continue;
     await db
-      .update(account)
+      .update(cuenta)
       .set(patch as never)
-      .where(eq(account.id, row.id));
+      .where(eq(cuenta.id, row.id));
     touched++;
   }
   return touched;
@@ -98,11 +107,13 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
 
   // Cuentas base ya existentes en esta organización.
   const existing = await db
-    .select({ id: account.id, code: account.code })
-    .from(account)
-    .where(and(eq(account.organizationId, orgId), eq(account.scope, 'base')));
+    .select({ id: cuenta.id, codigo: cuenta.codigo })
+    .from(cuenta)
+    .where(and(eq(cuenta.orgId, orgId), eq(cuenta.alcance, 'base')));
 
-  const codeToId = new Map<string, string>(existing.map((a) => [a.code, a.id]));
+  const codeToId = new Map<string, string>(
+    existing.map((a) => [a.codigo, a.id])
+  );
   const existingCodes = new Set(codeToId.keys());
 
   const toInsert = BASE_CHART.filter((a) => !existingCodes.has(a.code));
@@ -114,42 +125,42 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
     };
   }
 
-  // 1ra pasada: insertar sin parentId (los códigos vienen ordenados padre→hijo,
-  // pero resolvemos parentId después para no depender del orden de retorno).
+  // 1ra pasada: insertar sin padreId (los códigos vienen ordenados padre→hijo,
+  // pero resolvemos el padre después para no depender del orden de retorno).
   const inserted = await db
-    .insert(account)
+    .insert(cuenta)
     .values(
       toInsert.map((a) => ({
-        scope: 'base' as const,
-        organizationId: orgId,
-        clientId: null,
-        code: a.code,
-        name: a.name,
-        description: null,
-        type: a.type,
-        parentId: null,
-        accountGroup: (a.accountGroup ?? null) as never,
-        expectedBalance: (a.expectedBalance ?? null) as never,
-        expenseFunction: (a.expenseFunction ?? null) as never,
-        inflationNature: (a.inflationNature ?? null) as never,
-        cashFlowActivity: (a.cashFlowActivity ?? null) as never,
-        inflationTargetId: null,
-        isSystemAccount: a.isSystemAccount ?? false,
-        isActive: a.isActive ?? true,
+        orgId,
+        alcance: 'base' as const,
+        clienteId: null,
+        codigo: a.code,
+        nombre: a.name,
+        descripcion: null,
+        tipo: a.type,
+        padreId: null,
+        rubro: (a.accountGroup ?? null) as never,
+        saldoEsperado: (a.expectedBalance ?? null) as never,
+        funcionGasto: (a.expenseFunction ?? null) as never,
+        naturalezaInflacion: (a.inflationNature ?? null) as never,
+        flujoEfectivo: flujoDb(a.cashFlowActivity ?? null) as never,
+        cuentaAjusteId: null,
+        esCuentaSistema: a.isSystemAccount ?? false,
+        activa: a.isActive ?? true,
       }))
     )
-    .returning({ id: account.id, code: account.code });
+    .returning({ id: cuenta.id, codigo: cuenta.codigo });
 
-  for (const row of inserted) codeToId.set(row.code, row.id);
+  for (const row of inserted) codeToId.set(row.codigo, row.id);
 
-  // 2da pasada: setear parentId resolviendo por código.
+  // 2da pasada: setear padreId resolviendo por código.
   for (const a of toInsert) {
     const parentCode = parentCodeOf(a.code);
     if (!parentCode) continue;
-    const parentId = codeToId.get(parentCode);
+    const padreId = codeToId.get(parentCode);
     const selfId = codeToId.get(a.code);
-    if (!parentId || !selfId) continue;
-    await db.update(account).set({ parentId }).where(eq(account.id, selfId));
+    if (!padreId || !selfId) continue;
+    await db.update(cuenta).set({ padreId }).where(eq(cuenta.id, selfId));
   }
 
   // 3ra pasada: destino del ajuste por inflación (Capital social → Ajuste de
@@ -160,9 +171,9 @@ export async function seedBaseChartForOrg(orgId: string): Promise<SeedResult> {
     const targetId = codeToId.get(a.inflationTargetCode);
     if (!selfId || !targetId) continue;
     await db
-      .update(account)
-      .set({ inflationTargetId: targetId })
-      .where(eq(account.id, selfId));
+      .update(cuenta)
+      .set({ cuentaAjusteId: targetId })
+      .where(eq(cuenta.id, selfId));
   }
 
   return {

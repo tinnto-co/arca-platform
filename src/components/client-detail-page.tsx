@@ -17,7 +17,6 @@ import {
   Download,
   X,
   Search,
-  BookOpen,
   ClipboardList,
   Plus,
   Paperclip,
@@ -35,24 +34,16 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
-  getRepresentative,
-  getRepresentativeClients,
-  getRepresentativeDebts,
-  getRepresentativeDueDates,
-  getRepresentativeIvaCredit,
+  getCredenciales,
+  getCredencialClientes,
+  getCredencialDeudas,
+  getCredencialVencimientos,
+  getClienteIvaCredit,
   getLastJobByType,
   getRunningJobByType,
-  getBalanceConfig,
-  upsertBalanceConfig,
 } from '@/actions/client';
 import {
   Select,
@@ -69,20 +60,20 @@ import {
   type InvoicesTableRef,
 } from '@/components/invoices-table';
 import {
-  getInvoices,
-  getClientMultilateralSummary,
-  getClientMultilateralInvoices,
-} from '@/actions/invoice';
+  getComprobantes,
+  getClienteMultilateralResumen,
+  getClienteMultilateralComprobantes,
+} from '@/actions/comprobante';
 import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
-import { scrapSingleJob, updateDebtStatus } from '@/actions/client';
+import { scrapSingleJob, updateDeudaEstado } from '@/actions/client';
 import {
-  listClientRequests,
-  createClientRequest,
-  updateClientRequestStatus,
-  getRequestDocument,
+  listSolicitudes,
+  createSolicitud,
+  updateSolicitudEstado,
+  getDocumentoSolicitud,
   listPortalUsers,
   createPortalUser,
   updatePortalUserPermissions,
@@ -99,6 +90,7 @@ import {
   Play,
   Activity,
   UserCheck,
+  Building2,
   UserPlus,
   Trash2,
   KeyRound,
@@ -119,6 +111,7 @@ import {
   MONTH_NAMES,
   MONTH_NAMES_SHORT,
   type RenderIvaResumeRef,
+  type ClientIvaCreditData,
 } from './render-iva-resume';
 import {
   Popover,
@@ -138,7 +131,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { INVOICE_TYPES } from '@/lib/invoicesTypes';
+import { periodoLegible } from '@/lib/periodo';
+import { CONDICION_IVA_LABELS } from '@/lib/cliente-labels';
 import { ChartContainer, type ChartConfig } from '@/components/ui/chart';
 import {
   BarChart,
@@ -150,9 +144,11 @@ import {
   Tooltip,
 } from 'recharts';
 import { userQuery } from '@/lib/user-query';
-import { ProvinceSourceCell } from '@/components/convenio-multilateral-tab';
+import { ProvinceSourceCell } from '@/components/province-source-cell';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { PerfilesTab } from '@/components/perfiles-tab';
+import { FiscalDataCard } from '@/components/fiscal-data-card';
 import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
@@ -164,16 +160,6 @@ interface RepresentativeDetailPageProps {
   /** Cambia la empresa seleccionada (actualiza el search param `empresa`). */
   onClientChange: (empresaId: string) => void;
 }
-
-const INVOICE_TYPE_MAP = new Map(
-  INVOICE_TYPES.map((t) => [t.clave, t.valor] as const)
-);
-
-const getInvoiceTypeLabel = (code: string | number | null | undefined) => {
-  if (code === null || code === undefined || code === '') return '—';
-  const normalized = String(code);
-  return INVOICE_TYPE_MAP.get(normalized) ?? normalized;
-};
 
 /** Fecha y hora para el texto "Ult. actualización" en pestañas de scrape (Deudas, Vencimientos, etc.). */
 const formatLastUpdateAt = (iso: string | Date) =>
@@ -275,32 +261,54 @@ function getResumenPeriodMMYYYY(from: Date | undefined): string | null {
 /** Mínimo de caracteres del nombre del perfil para considerarlo un match (evita "S", "A", etc.). */
 const MIN_PROFILE_NAME_LENGTH = 3;
 
+/** Comprobante tal como lo devuelve `getComprobantes`. */
+type ComprobanteRow = Awaited<
+  ReturnType<typeof getComprobantes>
+>['comprobantes'][number];
+
+/** Notificación de AFIP tal como la devuelve `getNotifications`. */
+type NotificacionRow = Awaited<
+  ReturnType<typeof getNotifications>
+>['notifications'][number];
+
+/** Fila del resumen por provincia (Convenio Multilateral). */
+type MultilateralResumenRow = Awaited<
+  ReturnType<typeof getClienteMultilateralResumen>
+>[number];
+
+/** Solicitud al cliente tal como la devuelve el server fn. */
+type SolicitudRow = Awaited<ReturnType<typeof listSolicitudes>>[number];
+type SolicitudEstado = SolicitudRow['estado'];
+type SolicitudTipo = SolicitudRow['tipo'];
+
 /**
  * Elige el id del perfil que mejor coincide con el nombre del cliente (case-insensitive, por contiene).
  * Ej: cliente "Smart Solutions SRL" → perfil "Smart Solutions" (el nombre del perfil está contenido en el del cliente).
  */
 function findBestMatchingProfileId(
   clientName: string | undefined,
-  profiles: { id: string; name?: string }[]
+  profiles: { id: string; razonSocial?: string | null }[]
 ): string | undefined {
   if (!profiles.length) return undefined;
   const normalizedClient = (clientName ?? '').trim().toLowerCase();
   if (normalizedClient.length < 2) return profiles[0].id;
 
   const withName = profiles.filter(
-    (p) => (p.name ?? '').trim().length >= MIN_PROFILE_NAME_LENGTH
+    (p) => (p.razonSocial ?? '').trim().length >= MIN_PROFILE_NAME_LENGTH
   );
   if (withName.length === 0) return profiles[0].id;
 
   const containedInClient = withName
     .filter((p) =>
-      normalizedClient.includes((p.name ?? '').trim().toLowerCase())
+      normalizedClient.includes((p.razonSocial ?? '').trim().toLowerCase())
     )
-    .sort((a, b) => (b.name ?? '').length - (a.name ?? '').length);
+    .sort(
+      (a, b) => (b.razonSocial ?? '').length - (a.razonSocial ?? '').length
+    );
   if (containedInClient.length > 0) return containedInClient[0].id;
 
   const clientInProfile = withName.find((p) =>
-    (p.name ?? '').trim().toLowerCase().includes(normalizedClient)
+    (p.razonSocial ?? '').trim().toLowerCase().includes(normalizedClient)
   );
   if (clientInProfile) return clientInProfile.id;
 
@@ -315,7 +323,6 @@ export function RepresentativeDetailPage({
   onClientChange,
 }: RepresentativeDetailPageProps) {
   const navigate = useNavigate();
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] =
     useState(false);
   const now = new Date();
@@ -323,13 +330,8 @@ export function RepresentativeDetailPage({
     now.getFullYear(),
     now.getMonth()
   );
-  const [resumenNotifSelected, setResumenNotifSelected] = useState<{
-    id: string;
-    message: string;
-    profileName: string | null | undefined;
-    publicationDate: Date | string | null;
-    expirationDate: Date | string | null;
-  } | null>(null);
+  const [resumenNotifSelected, setResumenNotifSelected] =
+    useState<NotificacionRow | null>(null);
   const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>(
     initialMultilateralRange.from.toISOString().slice(0, 10)
   );
@@ -373,8 +375,8 @@ export function RepresentativeDetailPage({
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>('');
   const [debtPage, setDebtPage] = useState(1);
   const [debtSortKey, setDebtSortKey] = useState<
-    'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'
-  >('detectedAt');
+    'impuesto' | 'concepto' | 'periodo' | 'venceAt' | 'detectadaAt'
+  >('detectadaAt');
   const [debtSortDir, setDebtSortDir] = useState<'asc' | 'desc'>('desc');
   const [dueDatePage, setDueDatePage] = useState(1);
 
@@ -435,9 +437,9 @@ export function RepresentativeDetailPage({
   const updateDebtStatusMutation = useMutation({
     mutationFn: (vars: {
       id: string;
-      status: 'open' | 'in_plan' | 'paid' | 'disputed';
-      isIntimated: boolean;
-    }) => updateDebtStatus({ data: vars }),
+      estado: 'abierta' | 'pagada' | 'plan_pago' | 'prescripta';
+      intimada: boolean;
+    }) => updateDeudaEstado({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['representativeDebts', representativeId],
@@ -449,46 +451,24 @@ export function RepresentativeDetailPage({
     },
   });
 
-  // Balance config state
-  const [balanceMonth, setBalanceMonth] = useState<string>('12');
-  const [balanceDay, setBalanceDay] = useState<string>('31');
-  const [balancePresentationDays, setBalancePresentationDays] =
-    useState<string>('');
-  const [balanceAlertDays, setBalanceAlertDays] =
-    useState<string>('60,30,15,7');
-
   // Solicitudes state
-  const [solicitudesStatusFilter, setSolicitudesStatusFilter] =
-    useState<string>('');
+  const [solicitudesStatusFilter, setSolicitudesStatusFilter] = useState<
+    SolicitudEstado | ''
+  >('');
   const [newRequestDialogOpen, setNewRequestDialogOpen] = useState(false);
   const [newRequestTitle, setNewRequestTitle] = useState('');
   const [newRequestDescription, setNewRequestDescription] = useState('');
-  const [newRequestType, setNewRequestType] = useState('general');
+  const [newRequestType, setNewRequestType] =
+    useState<SolicitudTipo>('documentacion');
   const [newRequestDueAt, setNewRequestDueAt] = useState('');
 
-  interface RequestRow {
-    id: string;
-    organizationId: string;
-    representativeId: string;
-    profileId: string | null;
-    requestedByUserId: string | null;
-    title: string;
-    description: string | null;
-    type: string;
-    status: string;
-    dueAt: Date | null;
-    completedAt: Date | null;
-    metadata?: { documentId?: string; documentName?: string } | null;
-    createdAt: Date;
-  }
-
+  // No existe un getter de una sola credencial: se trae la lista de la org y se
+  // filtra por id.
   const { data: client, isLoading: loadingClient } = useQuery({
     queryKey: ['representative', representativeId],
     queryFn: async () => {
-      const result = await getRepresentative({
-        data: { id: representativeId },
-      });
-      return result;
+      const credenciales = await getCredenciales();
+      return credenciales.find((c) => c.id === representativeId) ?? null;
     },
   });
 
@@ -501,13 +481,16 @@ export function RepresentativeDetailPage({
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['representativeClients', representativeId],
-    queryFn: () => getRepresentativeClients({ data: { representativeId } }),
+    queryFn: () =>
+      getCredencialClientes({ data: { credencialId: representativeId } }),
   });
 
   /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
   const defaultIvaProfileId = useMemo(() => {
     if (!client || profiles.length === 0) return undefined;
-    return findBestMatchingProfileId(client.name, profiles) ?? profiles[0].id;
+    return (
+      findBestMatchingProfileId(client.nombre ?? '', profiles) ?? profiles[0].id
+    );
   }, [client, profiles]);
 
   /**
@@ -534,8 +517,9 @@ export function RepresentativeDetailPage({
   const effectiveResumenProfileId = selectedClientId;
   const selectedResumenProfile = selectedProfile;
 
+  // Las solicitudes cuelgan del cliente (empresa), no del login de AFIP.
   const {
-    data: clientRequestsData = [] as RequestRow[],
+    data: clientRequestsData = [] as SolicitudRow[],
     refetch: refetchRequests,
   } = useQuery({
     queryKey: [
@@ -545,25 +529,24 @@ export function RepresentativeDetailPage({
       selectedClientId,
     ],
     queryFn: () =>
-      listClientRequests({
+      listSolicitudes({
         data: {
-          clientId: representativeId,
-          status: solicitudesStatusFilter || undefined,
-          profileId: selectedClientId || undefined,
+          clienteId: selectedClientId!,
+          estado: solicitudesStatusFilter || undefined,
         },
       }),
-    enabled: !!representativeId,
+    enabled: !!selectedClientId,
   });
 
   const createRequestMutation = useMutation({
     mutationFn: () =>
-      createClientRequest({
+      createSolicitud({
         data: {
-          clientId: representativeId,
-          title: newRequestTitle,
-          description: newRequestDescription || undefined,
-          type: newRequestType,
-          dueAt: newRequestDueAt || undefined,
+          clienteId: selectedClientId!,
+          titulo: newRequestTitle,
+          descripcion: newRequestDescription || undefined,
+          tipo: newRequestType,
+          venceAt: newRequestDueAt || undefined,
         },
       }),
     onSuccess: () => {
@@ -571,7 +554,7 @@ export function RepresentativeDetailPage({
       setNewRequestDialogOpen(false);
       setNewRequestTitle('');
       setNewRequestDescription('');
-      setNewRequestType('general');
+      setNewRequestType('documentacion');
       setNewRequestDueAt('');
       toast.success('Solicitud creada');
     },
@@ -579,52 +562,13 @@ export function RepresentativeDetailPage({
   });
 
   const updateRequestStatusMutation = useMutation({
-    mutationFn: (vars: { requestId: string; status: string }) =>
-      updateClientRequestStatus({ data: vars }),
+    mutationFn: (vars: { solicitudId: string; estado: SolicitudEstado }) =>
+      updateSolicitudEstado({ data: vars }),
     onSuccess: () => {
       refetchRequests();
       toast.success('Estado actualizado');
     },
     onError: () => toast.error('Error al actualizar estado'),
-  });
-
-  const { data: balanceConfig } = useQuery({
-    queryKey: ['balanceConfig', representativeId],
-    queryFn: () => getBalanceConfig({ data: { representativeId } }),
-    enabled: !!representativeId,
-  });
-
-  // Sync form state when config loads
-  useEffect(() => {
-    if (balanceConfig) {
-      setBalanceMonth(String(balanceConfig.fiscalYearEndMonth));
-      setBalanceDay(String(balanceConfig.fiscalYearEndDay));
-      setBalancePresentationDays(
-        balanceConfig.presentationDueDays != null
-          ? String(balanceConfig.presentationDueDays)
-          : ''
-      );
-      const days = balanceConfig.alertDaysBefore;
-      setBalanceAlertDays(Array.isArray(days) ? days.join(',') : '60,30,15,7');
-    }
-  }, [balanceConfig]);
-
-  const upsertBalanceConfigMutation = useMutation({
-    mutationFn: (vars: {
-      fiscalYearEndMonth: number;
-      fiscalYearEndDay: number;
-      presentationDueDays: number | null;
-      alertDaysBefore: number[];
-    }) => upsertBalanceConfig({ data: { representativeId, ...vars } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['balanceConfig', representativeId],
-      });
-      toast.success('Configuración guardada');
-    },
-    onError: () => {
-      toast.error('Error al guardar la configuración');
-    },
   });
 
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
@@ -669,6 +613,10 @@ export function RepresentativeDetailPage({
   );
 
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
+  /** Mismo período, en el formato "YYYY-MM-DD" que espera `getClienteIvaCredit`. */
+  const periodoResumenISO = `${ivaResumenDateRange.from.getFullYear()}-${String(
+    ivaResumenDateRange.from.getMonth() + 1
+  ).padStart(2, '0')}-01`;
 
   const {
     data: clientIva,
@@ -682,11 +630,10 @@ export function RepresentativeDetailPage({
       periodoFiscalResumen,
     ],
     queryFn: () =>
-      getRepresentativeIvaCredit({
+      getClienteIvaCredit({
         data: {
-          representativeId,
-          clientId: effectiveIvaProfileId ?? undefined,
-          periodoFiscalResumen: periodoFiscalResumen ?? undefined,
+          clienteId: effectiveIvaProfileId!,
+          periodoResumen: periodoResumenISO,
         },
       }),
     enabled: !!effectiveIvaProfileId,
@@ -694,6 +641,41 @@ export function RepresentativeDetailPage({
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
+
+  /**
+   * `getClienteIvaCredit` devuelve la fila cruda de `iva_declaracion`;
+   * `RenderIvaResume` espera el view model `ClientIvaCreditData` (nombres del
+   * F2051). El mapeo es el mismo que hace `CopilotIvaResume`.
+   */
+  const clientIvaResume: ClientIvaCreditData | undefined = useMemo(() => {
+    if (!clientIva) return undefined;
+    const d = clientIva.data;
+    return {
+      cuit: clientIva.cuit,
+      data: d
+        ? {
+            // `periodo` es un date 'YYYY-MM-DD'; la vista habla "MM/YYYY".
+            periodoFiscal: `${d.periodo.slice(5, 7)}/${d.periodo.slice(0, 4)}`,
+            fechaPresentacion: d.presentadaAt ?? undefined,
+            debitoFiscal: d.debitoFiscal,
+            creditoFiscal: d.creditoFiscal,
+            saldoMesPasado: d.saldoMesAnterior,
+            saldoArcaMes: d.saldoAfipMes,
+            saldoTecnicoFavorContribuyente: d.saldoTecnicoFavor,
+            saldoTecnicoFavorContribuyentePosicionMensual:
+              d.saldoTecnicoFavorMensual,
+            saldoLibreDisponibilidadPeriodoAnteriorNeto:
+              d.saldoLibreDisponibilidadAnteriorNeto,
+            totalRetencionesPercepcionesPeriodo:
+              d.retencionesPercepcionesPeriodo,
+            saldoLibreDisponibilidadFavorContribuyentePeriodo:
+              d.saldoLibreDisponibilidadFavor,
+            ok: true,
+          }
+        : null,
+      message: clientIva.message,
+    };
+  }, [clientIva]);
 
   /** IVA para el cuadro del Resumen: usa el perfil seleccionado en "Perfiles Asociados". */
   const { data: resumenClientIva, isLoading: loadingResumenClientIva } =
@@ -705,11 +687,10 @@ export function RepresentativeDetailPage({
         periodoFiscalResumen,
       ],
       queryFn: () =>
-        getRepresentativeIvaCredit({
+        getClienteIvaCredit({
           data: {
-            representativeId,
-            clientId: effectiveResumenProfileId ?? undefined,
-            periodoFiscalResumen: periodoFiscalResumen ?? undefined,
+            clienteId: effectiveResumenProfileId!,
+            periodoResumen: periodoResumenISO,
           },
         }),
       enabled: !!effectiveResumenProfileId,
@@ -742,17 +723,28 @@ export function RepresentativeDetailPage({
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
     queryKey: ['representativeDebts', representativeId, selectedClientId],
-    queryFn: () =>
-      getRepresentativeDebts({
-        data: { representativeId, clientId: selectedClientId || undefined },
-      }),
+    // `getCredencialDeudas` devuelve `{ deuda, clienteRazonSocial }` y no filtra
+    // por cliente: se aplana y se filtra acá (mismo criterio que deudas-tab).
+    queryFn: async () => {
+      const rows = await getCredencialDeudas({
+        data: { credencialId: representativeId },
+      });
+      return rows
+        .filter(
+          (row) => !selectedClientId || row.deuda.clienteId === selectedClientId
+        )
+        .map((row) => row.deuda);
+    },
   });
 
   const { data: dueDates = [], isLoading: loadingDueDates } = useQuery({
     queryKey: ['representativeDueDates', representativeId, selectedClientId],
     queryFn: () =>
-      getRepresentativeDueDates({
-        data: { representativeId, clientId: selectedClientId || undefined },
+      getCredencialVencimientos({
+        data: {
+          credencialId: representativeId,
+          clienteId: selectedClientId || undefined,
+        },
       }),
   });
 
@@ -760,7 +752,9 @@ export function RepresentativeDetailPage({
   const { data: lastComprobantesJobIncremental } = useQuery({
     queryKey: ['lastComprobantesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'comprobantes' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -768,7 +762,7 @@ export function RepresentativeDetailPage({
     queryKey: ['lastComprobantesFullJob', representativeId],
     queryFn: () =>
       getLastJobByType({
-        data: { representativeId, jobType: 'comprobantes_full' },
+        data: { credencialId: representativeId, jobType: 'comprobantes_full' },
       }),
     enabled: !!representativeId,
   });
@@ -785,7 +779,9 @@ export function RepresentativeDetailPage({
   const { data: lastIvaJob } = useQuery({
     queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'iva' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'iva' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -793,7 +789,7 @@ export function RepresentativeDetailPage({
     queryKey: ['lastNotificacionesJob', representativeId],
     queryFn: () =>
       getLastJobByType({
-        data: { representativeId, jobType: 'notificaciones' },
+        data: { credencialId: representativeId, jobType: 'notificaciones' },
       }),
     enabled: !!representativeId,
   });
@@ -801,7 +797,9 @@ export function RepresentativeDetailPage({
   const { data: lastDeudaJob } = useQuery({
     queryKey: ['lastDeudaJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'deuda' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'deuda' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -816,9 +814,9 @@ export function RepresentativeDetailPage({
       queryFn: () =>
         getNotifications({
           data: {
-            representativeFilter: representativeId,
-            clientId: selectedClientId || undefined,
-            opened: false,
+            credencialFilter: representativeId,
+            clienteId: selectedClientId || undefined,
+            leida: false,
             limit: 50,
             page: 1,
           },
@@ -829,7 +827,9 @@ export function RepresentativeDetailPage({
   const { data: lastVencimientosJob } = useQuery({
     queryKey: ['lastVencimientosJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'vencimientos' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'vencimientos' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -838,7 +838,7 @@ export function RepresentativeDetailPage({
     queryKey: ['runningComprobantesJob', representativeId],
     queryFn: () =>
       getRunningJobByType({
-        data: { representativeId, jobType: 'comprobantes' },
+        data: { credencialId: representativeId, jobType: 'comprobantes' },
       }),
     enabled: !!representativeId,
     // Refrescar cada 5s para reflejar cambios de estado
@@ -847,15 +847,16 @@ export function RepresentativeDetailPage({
 
   // Get all invoices for the client to calculate totals
   const { data: allInvoicesData } = useQuery({
-    queryKey: ['clientAllInvoices', representativeId],
+    queryKey: ['clientAllInvoices', representativeId, selectedClientId],
     queryFn: () =>
-      getInvoices({
+      getComprobantes({
         data: {
           page: 1,
           limit: 10000, // Get all invoices
-          clientFilter: representativeId,
+          clienteId: selectedClientId,
         },
       }),
+    enabled: !!selectedClientId,
   });
 
   const {
@@ -870,15 +871,14 @@ export function RepresentativeDetailPage({
       multilateralDateTo,
     ],
     queryFn: () =>
-      getClientMultilateralSummary({
+      getClienteMultilateralResumen({
         data: {
-          clientId: representativeId,
-          profileId: effectiveMultilateralProfileId ?? undefined,
+          clienteId: effectiveMultilateralProfileId!,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!representativeId,
+    enabled: !!effectiveMultilateralProfileId,
   });
 
   const multilateralPrevDateFrom = multilateralPrevPeriod
@@ -897,28 +897,20 @@ export function RepresentativeDetailPage({
       multilateralPrevDateTo,
     ],
     queryFn: () =>
-      getClientMultilateralSummary({
+      getClienteMultilateralResumen({
         data: {
-          clientId: representativeId,
-          profileId: effectiveMultilateralProfileId ?? undefined,
+          clienteId: effectiveMultilateralProfileId!,
           dateFrom: multilateralPrevDateFrom,
           dateTo: multilateralPrevDateTo,
         },
       }),
     enabled:
-      !!representativeId &&
+      !!effectiveMultilateralProfileId &&
       !!multilateralPrevDateFrom &&
       !!multilateralPrevDateTo,
   });
 
-  interface MultilateralAgg {
-    provinces: number;
-    invoices: number;
-    totalIVA: number;
-    totalBase: number;
-  }
-
-  const aggregateMultilateral = (rows: any[]): MultilateralAgg => {
+  const aggregateMultilateral = (rows: MultilateralResumenRow[]) => {
     if (!rows?.length) {
       return { provinces: 0, invoices: 0, totalIVA: 0, totalBase: 0 };
     }
@@ -927,19 +919,19 @@ export function RepresentativeDetailPage({
     let totalIVA = 0;
     let totalBase = 0;
     for (const row of rows) {
-      invoices += Number(row.invoiceCount ?? 0);
-      totalIVA += Number(row.totalIVA ?? 0);
-      totalBase += Number(row.totalTaxed ?? 0);
+      invoices += Number(row.cantidad ?? 0);
+      totalIVA += Number(row.totalIva ?? 0);
+      totalBase += Number(row.totalBase ?? 0);
     }
     return { provinces, invoices, totalIVA, totalBase };
   };
 
   const multilateralAggCurrent = useMemo(
-    () => aggregateMultilateral(multilateralSummary as any[]),
+    () => aggregateMultilateral(multilateralSummary),
     [multilateralSummary]
   );
   const multilateralAggPrev = useMemo(
-    () => aggregateMultilateral(multilateralSummaryPrev as any[]),
+    () => aggregateMultilateral(multilateralSummaryPrev),
     [multilateralSummaryPrev]
   );
 
@@ -994,19 +986,19 @@ export function RepresentativeDetailPage({
   const sortedMultilateralSummary = useMemo(() => {
     if (!multilateralSortKey) return multilateralSummary;
     const copy = [...multilateralSummary];
-    copy.sort((a: any, b: any) => {
+    copy.sort((a, b) => {
       const dir = multilateralSortDir === 'asc' ? 1 : -1;
       let av = 0;
       let bv = 0;
       if (multilateralSortKey === 'count') {
-        av = Number(a.invoiceCount ?? 0);
-        bv = Number(b.invoiceCount ?? 0);
+        av = Number(a.cantidad ?? 0);
+        bv = Number(b.cantidad ?? 0);
       } else if (multilateralSortKey === 'iva') {
-        av = Number(a.totalIVA ?? 0);
-        bv = Number(b.totalIVA ?? 0);
+        av = Number(a.totalIva ?? 0);
+        bv = Number(b.totalIva ?? 0);
       } else if (multilateralSortKey === 'base') {
-        av = Number(a.totalTaxed ?? 0);
-        bv = Number(b.totalTaxed ?? 0);
+        av = Number(a.totalBase ?? 0);
+        bv = Number(b.totalBase ?? 0);
       }
       if (av === bv) return 0;
       return av > bv ? dir : -dir;
@@ -1047,16 +1039,15 @@ export function RepresentativeDetailPage({
       selectedMultilateralProvince,
     ],
     queryFn: () =>
-      getClientMultilateralInvoices({
+      getClienteMultilateralComprobantes({
         data: {
-          clientId: representativeId,
-          profileId: effectiveMultilateralProfileId ?? undefined,
-          receiptProvince: selectedMultilateralProvince,
+          clienteId: effectiveMultilateralProfileId!,
+          provincia: selectedMultilateralProvince,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!representativeId && multilateralDetailOpen,
+    enabled: !!effectiveMultilateralProfileId && multilateralDetailOpen,
   });
 
   const multilateralDetailTotals = useMemo(() => {
@@ -1064,22 +1055,15 @@ export function RepresentativeDetailPage({
       return { base: 0, iva: 0, total: 0 };
     }
     return multilateralDetailInvoices.reduce(
-      (acc: { base: number; iva: number; total: number }, inv: any) => {
-        acc.base += Number(inv.baseImponible ?? inv.amountTaxed ?? 0);
-        acc.iva += Number(inv.totalIVA ?? 0);
-        acc.total += Number(inv.amount ?? 0);
+      (acc: { base: number; iva: number; total: number }, inv) => {
+        acc.base += Number(inv.baseImponible ?? inv.netoGravado ?? 0);
+        acc.iva += Number(inv.ivaTotal ?? 0);
+        acc.total += Number(inv.total ?? 0);
         return acc;
       },
       { base: 0, iva: 0, total: 0 }
     );
   }, [multilateralDetailInvoices]);
-
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    toast.success('Copiado al portapapeles');
-    setTimeout(() => setCopiedField(null), 2000);
-  };
 
   // Calculate debt statistics
   const debtStats = useMemo(() => {
@@ -1087,38 +1071,42 @@ export function RepresentativeDetailPage({
     today.setHours(0, 0, 0, 0);
 
     const totalBalance = debts.reduce(
-      (sum, debt) => sum + Number(debt.balance || 0),
+      (sum, debt) => sum + Number(debt.saldo || 0),
       0
     );
     const totalCompensatoryInterest = debts.reduce(
-      (sum, debt) => sum + Number(debt.compensatoryInterest || 0),
+      (sum, debt) => sum + Number(debt.interesResarcitorio || 0),
       0
     );
     const totalPunitiveInterest = debts.reduce(
-      (sum, debt) => sum + Number(debt.punitiveInterest || 0),
+      (sum, debt) => sum + Number(debt.interesPunitorio || 0),
       0
     );
     const totalDebt =
       totalBalance + totalCompensatoryInterest + totalPunitiveInterest;
 
+    // `venceAt` es nullable en el modelo nuevo: sin fecha no se puede saber si
+    // está vencida, así que queda fuera de ambos grupos.
     const overdueDebts = debts.filter((debt) => {
-      const dueDate = new Date(debt.dueDate);
+      if (!debt.venceAt) return false;
+      const dueDate = new Date(debt.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate < today;
     });
 
     const upcomingDebts = debts.filter((debt) => {
-      const dueDate = new Date(debt.dueDate);
+      if (!debt.venceAt) return false;
+      const dueDate = new Date(debt.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today;
     });
 
     const totalOverdueBalance = overdueDebts.reduce(
-      (sum, debt) => sum + Number(debt.balance || 0),
+      (sum, debt) => sum + Number(debt.saldo || 0),
       0
     );
     const totalUpcomingBalance = upcomingDebts.reduce(
-      (sum, debt) => sum + Number(debt.balance || 0),
+      (sum, debt) => sum + Number(debt.saldo || 0),
       0
     );
 
@@ -1138,10 +1126,10 @@ export function RepresentativeDetailPage({
   // Opciones únicas para filtros de deudas (impuesto, concepto)
   const debtFilterOptions = useMemo(() => {
     const impuestos = Array.from(
-      new Set(debts.map((d) => (d.tax ?? '').trim()).filter(Boolean))
+      new Set(debts.map((d) => (d.impuesto ?? '').trim()).filter(Boolean))
     ).sort();
     const conceptos = Array.from(
-      new Set(debts.map((d) => (d.concept ?? '').trim()).filter(Boolean))
+      new Set(debts.map((d) => (d.concepto ?? '').trim()).filter(Boolean))
     ).sort();
     return { impuestos, conceptos };
   }, [debts]);
@@ -1149,11 +1137,14 @@ export function RepresentativeDetailPage({
   // Deudas filtradas por impuesto y concepto
   const filteredDebts = useMemo(() => {
     return debts.filter((debt) => {
-      if (debtFilterImpuesto && (debt.tax ?? '').trim() !== debtFilterImpuesto)
+      if (
+        debtFilterImpuesto &&
+        (debt.impuesto ?? '').trim() !== debtFilterImpuesto
+      )
         return false;
       if (
         debtFilterConcepto &&
-        (debt.concept ?? '').trim() !== debtFilterConcepto
+        (debt.concepto ?? '').trim() !== debtFilterConcepto
       )
         return false;
       return true;
@@ -1163,7 +1154,7 @@ export function RepresentativeDetailPage({
   const sortedDebts = useMemo(() => {
     const sorted = [...filteredDebts].sort((a, b) => {
       let cmp = 0;
-      if (debtSortKey === 'dueDate' || debtSortKey === 'detectedAt') {
+      if (debtSortKey === 'venceAt' || debtSortKey === 'detectadaAt') {
         cmp =
           new Date(a[debtSortKey] ?? 0).getTime() -
           new Date(b[debtSortKey] ?? 0).getTime();
@@ -1217,31 +1208,20 @@ export function RepresentativeDetailPage({
     return new Date(y, m - 1, d);
   };
 
-  /** Coincide tipo de factura con el filtro (código exacto o etiqueta "...(código)" al final). */
-  const matchInvoiceType = (
-    invType: string | null | undefined,
-    typeFilter: string
-  ): boolean => {
+  /** `comprobante.tipo` es numérico; el filtro llega como string desde el select. */
+  const matchInvoiceType = (invTipo: number, typeFilter: string): boolean => {
     if (!typeFilter || typeFilter === 'all') return true;
-    const t = (invType ?? '').trim();
-    if (t === typeFilter) return true;
-    if (/^\d+$/.test(typeFilter) && new RegExp(`\\(${typeFilter}\\)$`).test(t))
-      return true;
-    return false;
+    return String(invTipo) === typeFilter.trim();
   };
 
   /** True si la factura pasa los filtros de perfil, tipo y dirección (para totales Ventas/Compras). */
-  const invoicePassesFacturasFilters = (inv: any): boolean => {
-    if (selectedClientId) {
-      if ((inv.profileId ?? inv.profile) !== selectedClientId) return false;
-    }
+  const invoicePassesFacturasFilters = (inv: ComprobanteRow): boolean => {
+    if (selectedClientId && inv.clienteId !== selectedClientId) return false;
     if (facturasTypeFilter && facturasTypeFilter !== 'all') {
-      if (!matchInvoiceType(inv.type, facturasTypeFilter)) return false;
+      if (!matchInvoiceType(inv.tipo, facturasTypeFilter)) return false;
     }
     if (facturasDirectionFilter && facturasDirectionFilter !== 'all') {
-      const dir = (inv.direction ?? '').trim();
-      if (dir.toLowerCase() !== facturasDirectionFilter.toLowerCase())
-        return false;
+      if (inv.direccion !== facturasDirectionFilter) return false;
     }
     return true;
   };
@@ -1286,7 +1266,7 @@ export function RepresentativeDetailPage({
     if (
       !facturasBounds.dateFrom ||
       !facturasBounds.dateTo ||
-      !allInvoicesData?.invoices
+      !allInvoicesData?.comprobantes
     ) {
       if (facturasPeriodType !== 'none')
         return { totalSales: 0, totalPurchases: 0 };
@@ -1297,18 +1277,18 @@ export function RepresentativeDetailPage({
     to.setHours(23, 59, 59, 999);
     let totalSales = 0;
     let totalPurchases = 0;
-    allInvoicesData.invoices.forEach((inv: any) => {
+    allInvoicesData.comprobantes.forEach((inv) => {
       if (!invoicePassesFacturasFilters(inv)) return;
-      const invDate = new Date(inv.emitionDate);
+      const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       if (invDate < from || invDate > to) return;
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') {
-        const rate = parseFloat(inv.currencyRate || '1');
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD') {
+        const rate = parseFloat(inv.cotizacion || '1');
         amount = amount * rate;
       }
-      const direction = inv.direction?.toLowerCase();
-      if (direction === 'outbound') totalSales += amount;
-      else if (direction === 'inbound') totalPurchases += amount;
+      const direction = inv.direccion;
+      if (direction === 'emitido') totalSales += amount;
+      else if (direction === 'recibido') totalPurchases += amount;
     });
     return { totalSales, totalPurchases };
   }, [
@@ -1322,7 +1302,7 @@ export function RepresentativeDetailPage({
 
   /** Totales del período anterior (mes anterior o año anterior) para la variación %. */
   const invoiceStatsPrevious = useMemo(() => {
-    if (!allInvoicesData?.invoices?.length) return null;
+    if (!allInvoicesData?.comprobantes?.length) return null;
     if (facturasPeriodType === 'month') {
       const prevMonth = facturasMonth === 0 ? 11 : facturasMonth - 1;
       const prevYear = facturasMonth === 0 ? facturasYear - 1 : facturasYear;
@@ -1334,16 +1314,16 @@ export function RepresentativeDetailPage({
       toDate.setHours(23, 59, 59, 999);
       let totalSales = 0;
       let totalPurchases = 0;
-      allInvoicesData.invoices.forEach((inv: any) => {
+      allInvoicesData.comprobantes.forEach((inv) => {
         if (!invoicePassesFacturasFilters(inv)) return;
-        const invDate = new Date(inv.emitionDate);
+        const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (invDate < fromDate || invDate > toDate) return;
-        let amount = parseFloat(inv.amount || '0');
-        if (inv.currency?.toUpperCase() === 'USD')
-          amount *= parseFloat(inv.currencyRate || '1');
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') totalSales += amount;
-        else if (dir === 'inbound') totalPurchases += amount;
+        let amount = parseFloat(inv.total || '0');
+        if (inv.moneda?.toUpperCase() === 'USD')
+          amount *= parseFloat(inv.cotizacion || '1');
+        const dir = inv.direccion;
+        if (dir === 'emitido') totalSales += amount;
+        else if (dir === 'recibido') totalPurchases += amount;
       });
       return { totalSales, totalPurchases };
     }
@@ -1357,16 +1337,16 @@ export function RepresentativeDetailPage({
       toDate.setHours(23, 59, 59, 999);
       let totalSales = 0;
       let totalPurchases = 0;
-      allInvoicesData.invoices.forEach((inv: any) => {
+      allInvoicesData.comprobantes.forEach((inv) => {
         if (!invoicePassesFacturasFilters(inv)) return;
-        const invDate = new Date(inv.emitionDate);
+        const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (invDate < fromDate || invDate > toDate) return;
-        let amount = parseFloat(inv.amount || '0');
-        if (inv.currency?.toUpperCase() === 'USD')
-          amount *= parseFloat(inv.currencyRate || '1');
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') totalSales += amount;
-        else if (dir === 'inbound') totalPurchases += amount;
+        let amount = parseFloat(inv.total || '0');
+        if (inv.moneda?.toUpperCase() === 'USD')
+          amount *= parseFloat(inv.cotizacion || '1');
+        const dir = inv.direccion;
+        if (dir === 'emitido') totalSales += amount;
+        else if (dir === 'recibido') totalPurchases += amount;
       });
       return { totalSales, totalPurchases };
     }
@@ -1413,15 +1393,15 @@ export function RepresentativeDetailPage({
     ventas: number;
     compras: number;
   }[] => {
-    const invoices = allInvoicesData?.invoices;
+    const invoices = allInvoicesData?.comprobantes;
     if (!invoices?.length) return [];
-    const filtered = invoices.filter((inv: any) =>
+    const filtered = invoices.filter((inv) =>
       invoicePassesFacturasFilters(inv)
     );
-    const getAmount = (inv: any): number => {
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') {
-        const rate = parseFloat(inv.currencyRate || '1');
+    const getAmount = (inv: ComprobanteRow): number => {
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD') {
+        const rate = parseFloat(inv.cotizacion || '1');
         amount = amount * rate;
       }
       return amount;
@@ -1431,14 +1411,14 @@ export function RepresentativeDetailPage({
     if (facturasPeriodType === 'year') {
       const byMonth: Record<number, { ventas: number; compras: number }> = {};
       for (let i = 0; i < 12; i++) byMonth[i] = { ventas: 0, compras: 0 };
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (d.getFullYear() !== facturasYear) return;
         const m = d.getMonth();
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') byMonth[m].ventas += amount;
-        else if (dir === 'inbound') byMonth[m].compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') byMonth[m].ventas += amount;
+        else if (dir === 'recibido') byMonth[m].compras += amount;
       });
       return Array.from({ length: 12 }, (_, i) => ({
         period: MONTH_NAMES_SHORT[i],
@@ -1451,14 +1431,14 @@ export function RepresentativeDetailPage({
     if (facturasPeriodType === 'month') {
       let ventas = 0;
       let compras = 0;
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (d.getFullYear() !== facturasYear || d.getMonth() !== facturasMonth)
           return;
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') ventas += amount;
-        else if (dir === 'inbound') compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') ventas += amount;
+        else if (dir === 'recibido') compras += amount;
       });
       const periodLabel = `${MONTH_NAMES[facturasMonth]} ${facturasYear}`;
       return [{ period: periodLabel, ventas, compras }];
@@ -1488,14 +1468,14 @@ export function RepresentativeDetailPage({
         d.setMonth(d.getMonth() + 1);
         t = d.getTime();
       }
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonthKey[key]) return;
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') byMonthKey[key].ventas += amount;
-        else if (dir === 'inbound') byMonthKey[key].compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') byMonthKey[key].ventas += amount;
+        else if (dir === 'recibido') byMonthKey[key].compras += amount;
       });
       return Object.entries(byMonthKey)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -1515,14 +1495,14 @@ export function RepresentativeDetailPage({
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         byMonthKey[key] = { ventas: 0, compras: 0 };
       }
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonthKey[key]) return;
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') byMonthKey[key].ventas += amount;
-        else if (dir === 'inbound') byMonthKey[key].compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') byMonthKey[key].ventas += amount;
+        else if (dir === 'recibido') byMonthKey[key].compras += amount;
       });
       return Object.entries(byMonthKey)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -1551,7 +1531,7 @@ export function RepresentativeDetailPage({
     ventas: number;
     compras: number;
   }[] => {
-    const invoices = allInvoicesData?.invoices;
+    const invoices = allInvoicesData?.comprobantes;
     if (!invoices?.length) return [];
     // Build the 12 month buckets: from (currentYear, currentMonth - 11) to (currentYear, currentMonth)
     const currentYear = now.getFullYear();
@@ -1571,23 +1551,23 @@ export function RepresentativeDetailPage({
       }
       buckets.push({ year: y, month: m, ventas: 0, compras: 0 });
     }
-    invoices.forEach((inv: any) => {
+    invoices.forEach((inv) => {
       if (
         effectiveResumenProfileId &&
-        inv.profileId !== effectiveResumenProfileId
+        inv.clienteId !== effectiveResumenProfileId
       )
         return;
-      const d = new Date(inv.emitionDate);
+      const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       const bucket = buckets.find(
         (b) => b.year === d.getFullYear() && b.month === d.getMonth()
       );
       if (!bucket) return;
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD')
-        amount *= parseFloat(inv.currencyRate || '1');
-      const dir = inv.direction?.toLowerCase();
-      if (dir === 'outbound') bucket.ventas += amount;
-      else if (dir === 'inbound') bucket.compras += amount;
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD')
+        amount *= parseFloat(inv.cotizacion || '1');
+      const dir = inv.direccion;
+      if (dir === 'emitido') bucket.ventas += amount;
+      else if (dir === 'recibido') bucket.compras += amount;
     });
     return buckets.map((b) => ({
       period: MONTH_NAMES_SHORT[b.month],
@@ -1598,7 +1578,7 @@ export function RepresentativeDetailPage({
 
   /** Totales del mes actual para el Resumen. */
   const resumenCurrentMonthStats = useMemo(() => {
-    const invoices = allInvoicesData?.invoices;
+    const invoices = allInvoicesData?.comprobantes;
     if (!invoices?.length) return { totalSales: 0, totalPurchases: 0 };
     const now = new Date();
     const { from, to } = getMonthBounds(now.getFullYear(), now.getMonth());
@@ -1618,20 +1598,20 @@ export function RepresentativeDetailPage({
     );
     let totalSales = 0;
     let totalPurchases = 0;
-    invoices.forEach((inv: any) => {
+    invoices.forEach((inv) => {
       if (
         effectiveResumenProfileId &&
-        inv.profileId !== effectiveResumenProfileId
+        inv.clienteId !== effectiveResumenProfileId
       )
         return;
-      const invDate = new Date(inv.emitionDate);
+      const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       if (invDate < fromDate || invDate > toDate) return;
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD')
-        amount *= parseFloat(inv.currencyRate || '1');
-      const dir = inv.direction?.toLowerCase();
-      if (dir === 'outbound') totalSales += amount;
-      else if (dir === 'inbound') totalPurchases += amount;
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD')
+        amount *= parseFloat(inv.cotizacion || '1');
+      const dir = inv.direccion;
+      if (dir === 'emitido') totalSales += amount;
+      else if (dir === 'recibido') totalPurchases += amount;
     });
     return { totalSales, totalPurchases };
   }, [allInvoicesData, effectiveResumenProfileId]);
@@ -1648,37 +1628,37 @@ export function RepresentativeDetailPage({
     next30Days.setDate(today.getDate() + 30);
 
     const futureDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today;
     });
 
     const overdueDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate < today;
     });
 
     const next7DaysDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today && dueDate <= next7Days;
     });
 
     const next15DaysDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today && dueDate <= next15Days;
     });
 
     const next30DaysDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today && dueDate <= next30Days;
     });
 
     const sortedFuture = [...futureDueDates].sort(
-      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      (a, b) => new Date(a.venceAt).getTime() - new Date(b.venceAt).getTime()
     );
     const nextDueDate = sortedFuture.length > 0 ? sortedFuture[0] : null;
 
@@ -1710,7 +1690,8 @@ export function RepresentativeDetailPage({
   }
 
   // Compute avatar initials from selected profile or representative name
-  const headerDisplayName = selectedProfile?.name ?? client.name ?? '?';
+  const headerDisplayName =
+    selectedProfile?.razonSocial ?? client.nombre ?? '?';
   const clientInitials = headerDisplayName
     .split(/[\s\-]+/)
     .filter(Boolean)
@@ -1739,10 +1720,10 @@ export function RepresentativeDetailPage({
             modulo: 'cliente-detalle',
             tabActiva: activeTab,
             id: client.id,
-            name: client.name,
+            name: client.nombre,
             cuit: client.cuit,
-            fiscalCondition: client.fiscalCondition,
-            status: client.status,
+            fiscalCondition: selectedProfile?.condicionIva ?? null,
+            status: client.estado,
           }}
         />
       )}
@@ -1782,57 +1763,65 @@ export function RepresentativeDetailPage({
                         className="group h-auto w-fit max-w-full gap-2 border-0 bg-transparent p-0 shadow-none rounded-md hover:opacity-70 focus-visible:ring-0 transition-opacity [&>svg]:!size-[18px] [&>svg]:!opacity-40 [&>svg]:text-[var(--arca-ink-3)] group-hover:[&>svg]:!opacity-70"
                       >
                         <span className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                          {toTitleCase(selectedProfile?.name ?? client.name)}
+                          {toTitleCase(
+                            selectedProfile?.razonSocial ?? client.nombre
+                          )}
                         </span>
                       </SelectTrigger>
                       <SelectContent>
                         {profiles.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {toTitleCase(p.name) || p.identityNumber || p.id}
+                            {toTitleCase(p.razonSocial) || p.cuit || p.id}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
                     <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                      {toTitleCase(selectedProfile?.name ?? client.name)}
+                      {toTitleCase(
+                        selectedProfile?.razonSocial ?? client.nombre
+                      )}
                     </h1>
                   )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
-                  {selectedProfile?.identityNumber && (
+                  {selectedProfile?.cuit && (
                     <span className="font-mono">
-                      CUIT {selectedProfile.identityNumber}
+                      CUIT {selectedProfile.cuit}
                     </span>
                   )}
                   <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
                   <span className="truncate max-w-[220px]">
-                    Representante: {toTitleCase(client.name)}
+                    Representante: {toTitleCase(client.nombre)}
                   </span>
-                  {client.fiscalCondition && (
-                    <>
-                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>{client.fiscalCondition}</span>
-                    </>
-                  )}
-                  {client.regimenLocal && (
-                    <>
-                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>{client.regimenLocal}</span>
-                    </>
-                  )}
-                  {client.registeredAt && (
+                  {selectedProfile?.condicionIva && (
                     <>
                       <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
                       <span>
-                        Alta{' '}
-                        {new Date(client.registeredAt).toLocaleDateString(
-                          'es-AR',
-                          { day: 'numeric', month: 'short', year: 'numeric' }
-                        )}
+                        {CONDICION_IVA_LABELS[selectedProfile.condicionIva] ??
+                          selectedProfile.condicionIva}
                       </span>
                     </>
                   )}
+                  {selectedProfile?.iibbRegimen && (
+                    <>
+                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                      <span>
+                        {selectedProfile.iibbRegimen === 'convenio_multilateral'
+                          ? 'Convenio multilateral'
+                          : 'Régimen local'}
+                      </span>
+                    </>
+                  )}
+                  <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                  <span>
+                    Alta{' '}
+                    {new Date(client.createdAt).toLocaleDateString('es-AR', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </span>
                 </div>
               </div>
               {/* Actions */}
@@ -1856,7 +1845,7 @@ export function RepresentativeDetailPage({
                       for (const jobType of jobTypes) {
                         try {
                           await scrapSingleJob({
-                            data: { representativeId, jobType },
+                            data: { credencialId: representativeId, jobType },
                           });
                         } catch {
                           failed++;
@@ -1967,6 +1956,10 @@ export function RepresentativeDetailPage({
                 <UserCheck className="h-[14px] w-[14px]" />
                 Portal
               </TabsTrigger>
+              <TabsTrigger value="perfiles" className={tabTriggerCls()}>
+                <Building2 className="h-[14px] w-[14px]" />
+                Perfiles
+              </TabsTrigger>
             </TabsList>
           </div>
         </div>
@@ -2020,7 +2013,7 @@ export function RepresentativeDetailPage({
                     <span className="flex-1 font-display font-semibold text-[14px] leading-none tracking-tight tabular-nums text-right text-[var(--arca-ink)]">
                       {dueDateStats.nextDueDate
                         ? new Date(
-                            dueDateStats.nextDueDate.dueDate
+                            dueDateStats.nextDueDate.venceAt
                           ).toLocaleDateString('es-AR', {
                             day: 'numeric',
                             month: 'short',
@@ -2168,16 +2161,14 @@ export function RepresentativeDetailPage({
                       <span
                         className={cn(
                           'flex-1 font-display font-semibold text-[15px] leading-none tracking-tight tabular-nums text-right',
-                          Number(
-                            resumenClientIva.data
-                              .saldoTecnicoFavorContribuyente ?? 0
-                          ) > 0
+                          Number(resumenClientIva.data.saldoTecnicoFavor ?? 0) >
+                            0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
                         )}
                       >
                         {formatIvaCurrency(
-                          resumenClientIva.data.saldoTecnicoFavorContribuyente
+                          resumenClientIva.data.saldoTecnicoFavor
                         )}
                       </span>
                     </div>
@@ -2191,16 +2182,14 @@ export function RepresentativeDetailPage({
                           'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
                           Number(
                             resumenClientIva.data
-                              .saldoLibreDisponibilidadFavorContribuyentePeriodo ??
-                              0
+                              .saldoLibreDisponibilidadFavor ?? 0
                           ) > 0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
                         )}
                       >
                         {formatIvaCurrency(
-                          resumenClientIva.data
-                            .saldoLibreDisponibilidadFavorContribuyentePeriodo
+                          resumenClientIva.data.saldoLibreDisponibilidadFavor
                         )}
                       </span>
                     </div>
@@ -2351,18 +2340,18 @@ export function RepresentativeDetailPage({
                             className="flex-1 min-w-0 text-left"
                             onClick={() => setResumenNotifSelected(notif)}
                           >
-                            {notif.profileName && (
+                            {notif.clienteRazonSocial && (
                               <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
-                                {notif.profileName}
+                                {notif.clienteRazonSocial}
                               </div>
                             )}
                             <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">
-                              {notif.message}
+                              {notif.mensaje}
                             </p>
                             <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
-                              {notif.publicationDate
+                              {notif.publicadaAt
                                 ? format(
-                                    new Date(notif.publicationDate),
+                                    new Date(notif.publicadaAt),
                                     'dd/MM/yyyy',
                                     { locale: es }
                                   )
@@ -2385,127 +2374,18 @@ export function RepresentativeDetailPage({
               </div>
             </div>
 
-            {/* Row 3: Cierre de ejercicio */}
-            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-                  Cierre de ejercicio
-                </span>
+            {/*
+              La configuración de cierre de ejercicio se eliminó: la tabla
+              `representative_balance_config` no existe en el modelo nuevo.
+            */}
+
+            {/* Datos fiscales para el módulo de Balances (norma RT 54/RT 6,
+                actividad e inscripción). Por empresa seleccionada. */}
+            {selectedClientId && (
+              <div className="max-w-[560px]">
+                <FiscalDataCard clientId={selectedClientId} />
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-[14px]">
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Mes de cierre
-                  </label>
-                  <Select value={balanceMonth} onValueChange={setBalanceMonth}>
-                    <SelectTrigger size="sm" className="w-full text-[12.5px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        'Enero',
-                        'Febrero',
-                        'Marzo',
-                        'Abril',
-                        'Mayo',
-                        'Junio',
-                        'Julio',
-                        'Agosto',
-                        'Septiembre',
-                        'Octubre',
-                        'Noviembre',
-                        'Diciembre',
-                      ].map((m, i) => (
-                        <SelectItem key={i + 1} value={String(i + 1)}>
-                          {m}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Día de cierre
-                  </label>
-                  <Select value={balanceDay} onValueChange={setBalanceDay}>
-                    <SelectTrigger size="sm" className="w-full text-[12.5px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                        <SelectItem key={d} value={String(d)}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Días para presentación
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="Opcional"
-                    value={balancePresentationDays}
-                    onChange={(e) => setBalancePresentationDays(e.target.value)}
-                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
-                  />
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Alertas (días antes)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="60,30,15,7"
-                    value={balanceAlertDays}
-                    onChange={(e) => setBalanceAlertDays(e.target.value)}
-                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  disabled={upsertBalanceConfigMutation.isPending}
-                  onClick={() => {
-                    const month = parseInt(balanceMonth, 10);
-                    const day = parseInt(balanceDay, 10);
-                    const presentationDays = balancePresentationDays
-                      ? parseInt(balancePresentationDays, 10)
-                      : null;
-                    const alertDays = balanceAlertDays
-                      .split(',')
-                      .map((s) => parseInt(s.trim(), 10))
-                      .filter((n) => !isNaN(n) && n > 0);
-                    if (isNaN(month) || isNaN(day)) {
-                      toast.error('Mes y día son obligatorios');
-                      return;
-                    }
-                    upsertBalanceConfigMutation.mutate({
-                      fiscalYearEndMonth: month,
-                      fiscalYearEndDay: day,
-                      presentationDueDays: presentationDays,
-                      alertDaysBefore:
-                        alertDays.length > 0 ? alertDays : [60, 30, 15, 7],
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--arca-r-md)] text-[12px] font-semibold bg-[var(--arca-ink)] text-[#F7F6F2] hover:bg-[var(--arca-ink)]/90 transition-colors disabled:opacity-50"
-                >
-                  {upsertBalanceConfigMutation.isPending
-                    ? 'Guardando...'
-                    : 'Guardar'}
-                </button>
-                {balanceConfig && (
-                  <span className="text-[11px] text-[var(--arca-ink-4)]">
-                    Cierre: {balanceConfig.fiscalYearEndDay}/
-                    {balanceConfig.fiscalYearEndMonth}
-                  </span>
-                )}
-              </div>
-            </div>
+            )}
           </TabsContent>
 
           {/* Dialog: detalle de notificación no leída (Resumen) */}
@@ -2519,33 +2399,33 @@ export function RepresentativeDetailPage({
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2 text-base">
                   <Bell className="h-4 w-4 shrink-0" />
-                  {resumenNotifSelected?.profileName
-                    ? `Notificación — ${resumenNotifSelected.profileName}`
+                  {resumenNotifSelected?.clienteRazonSocial
+                    ? `Notificación — ${resumenNotifSelected.clienteRazonSocial}`
                     : 'Notificación'}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 text-sm">
                 {/* Fechas */}
                 <div className="flex gap-6 text-xs text-muted-foreground">
-                  {resumenNotifSelected?.publicationDate && (
+                  {resumenNotifSelected?.publicadaAt && (
                     <span>
                       <span className="font-medium text-foreground">
                         Publicación:{' '}
                       </span>
                       {format(
-                        new Date(resumenNotifSelected.publicationDate),
+                        new Date(resumenNotifSelected.publicadaAt),
                         'dd/MM/yyyy',
                         { locale: es }
                       )}
                     </span>
                   )}
-                  {resumenNotifSelected?.expirationDate && (
+                  {resumenNotifSelected?.venceAt && (
                     <span>
                       <span className="font-medium text-foreground">
                         Vencimiento:{' '}
                       </span>
                       {format(
-                        new Date(resumenNotifSelected.expirationDate),
+                        new Date(resumenNotifSelected.venceAt),
                         'dd/MM/yyyy',
                         { locale: es }
                       )}
@@ -2554,7 +2434,7 @@ export function RepresentativeDetailPage({
                 </div>
                 {/* Mensaje completo */}
                 <p className="leading-relaxed whitespace-pre-wrap">
-                  {resumenNotifSelected?.message}
+                  {resumenNotifSelected?.mensaje}
                 </p>
                 {/* Acciones */}
                 <div className="flex justify-between items-center pt-2 border-t">
@@ -2684,7 +2564,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('deudas');
                     try {
                       await scrapSingleJob({
-                        data: { representativeId, jobType: 'deuda' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'deuda',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -2828,11 +2711,11 @@ export function RepresentativeDetailPage({
                     <thead>
                       <tr className="bg-[var(--arca-surface-2)]">
                         {[
-                          { label: 'Impuesto', key: 'tax' as const },
-                          { label: 'Concepto', key: 'concept' as const },
-                          { label: 'Período', key: 'period' as const },
-                          { label: 'Vencimiento', key: 'dueDate' as const },
-                          { label: 'Actualiz.', key: 'detectedAt' as const },
+                          { label: 'Impuesto', key: 'impuesto' as const },
+                          { label: 'Concepto', key: 'concepto' as const },
+                          { label: 'Período', key: 'periodo' as const },
+                          { label: 'Vencimiento', key: 'venceAt' as const },
+                          { label: 'Actualiz.', key: 'detectadaAt' as const },
                         ].map(({ label, key }) => (
                           <th
                             key={key}
@@ -2845,7 +2728,7 @@ export function RepresentativeDetailPage({
                               } else {
                                 setDebtSortKey(key);
                                 setDebtSortDir(
-                                  key === 'detectedAt' ? 'desc' : 'asc'
+                                  key === 'detectadaAt' ? 'desc' : 'asc'
                                 );
                               }
                               setDebtPage(1);
@@ -2879,25 +2762,23 @@ export function RepresentativeDetailPage({
                     </thead>
                     <tbody>
                       {pagedDebts.map((debt, i) => {
-                        const balance = Number(debt.balance || 0);
-                        const intC = Number(debt.compensatoryInterest || 0);
-                        const intP = Number(debt.punitiveInterest || 0);
+                        const balance = Number(debt.saldo || 0);
+                        const intC = Number(debt.interesResarcitorio || 0);
+                        const intP = Number(debt.interesPunitorio || 0);
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
-                        const due = new Date(debt.dueDate);
-                        due.setHours(0, 0, 0, 0);
-                        const debtStatus = (debt.status ?? 'open') as
-                          | 'open'
-                          | 'in_plan'
-                          | 'paid'
-                          | 'disputed';
-                        const isIntimated = debt.isIntimated ?? false;
-                        const isOverdue = due < today && balance > 0;
-                        // Row background: red=open+overdue, orange=intimated, green=paid, gray=in_plan, default=disputed
+                        const due = debt.venceAt
+                          ? new Date(debt.venceAt)
+                          : null;
+                        due?.setHours(0, 0, 0, 0);
+                        const debtStatus = debt.estado;
+                        const isIntimated = debt.intimada ?? false;
+                        const isOverdue = !!due && due < today && balance > 0;
+                        // Row background: red=abierta+vencida, orange=intimada, green=pagada, gray=plan_pago, default=prescripta
                         const rowBg =
-                          debtStatus === 'paid'
+                          debtStatus === 'pagada'
                             ? 'rgba(34,197,94,0.06)'
-                            : debtStatus === 'in_plan'
+                            : debtStatus === 'plan_pago'
                               ? 'rgba(148,163,184,0.10)'
                               : isIntimated
                                 ? 'rgba(249,115,22,0.08)'
@@ -2920,31 +2801,33 @@ export function RepresentativeDetailPage({
                           >
                             <td
                               className="px-[14px] py-[10px] text-[var(--arca-ink)] font-medium"
-                              title={debt.tax || '-'}
+                              title={debt.impuesto || '-'}
                             >
                               <span className="block max-w-[150px] truncate">
-                                {debt.tax || '-'}
+                                {debt.impuesto || '-'}
                               </span>
                             </td>
                             <td
                               className="px-[14px] py-[10px] text-[var(--arca-ink-2)]"
-                              title={debt.concept || '-'}
+                              title={debt.concepto || '-'}
                             >
                               <span className="block max-w-[170px] truncate">
-                                {debt.concept || '-'}
+                                {debt.concepto || '-'}
                               </span>
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
-                              {debt.period || '-'}
+                              {periodoLegible(debt.periodo)}
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
-                              {new Date(debt.dueDate).toLocaleDateString(
-                                'es-AR'
-                              )}
+                              {debt.venceAt
+                                ? new Date(debt.venceAt).toLocaleDateString(
+                                    'es-AR'
+                                  )
+                                : '-'}
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[10.5px] text-[var(--arca-ink-4)]">
-                              {debt.detectedAt
-                                ? new Date(debt.detectedAt).toLocaleDateString(
+                              {debt.detectadaAt
+                                ? new Date(debt.detectadaAt).toLocaleDateString(
                                     'es-AR',
                                     {
                                       day: '2-digit',
@@ -2978,17 +2861,17 @@ export function RepresentativeDetailPage({
                               {fmtD(intP)}
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap">
-                              {debtStatus === 'paid' ? (
+                              {debtStatus === 'pagada' ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">
                                   Pagada
                                 </span>
-                              ) : debtStatus === 'in_plan' ? (
+                              ) : debtStatus === 'plan_pago' ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(148,163,184,0.25)] text-[var(--arca-ink-3)]">
                                   En plan
                                 </span>
-                              ) : debtStatus === 'disputed' ? (
+                              ) : debtStatus === 'prescripta' ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(139,92,246,0.15)] text-[rgba(139,92,246,0.9)]">
-                                  Disputada
+                                  Prescripta
                                 </span>
                               ) : isOverdue ? (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">
@@ -3007,12 +2890,12 @@ export function RepresentativeDetailPage({
                                   onValueChange={(v) => {
                                     updateDebtStatusMutation.mutate({
                                       id: debt.id,
-                                      status: v as
-                                        | 'open'
-                                        | 'in_plan'
-                                        | 'paid'
-                                        | 'disputed',
-                                      isIntimated,
+                                      estado: v as
+                                        | 'abierta'
+                                        | 'pagada'
+                                        | 'plan_pago'
+                                        | 'prescripta',
+                                      intimada: isIntimated,
                                     });
                                   }}
                                 >
@@ -3023,15 +2906,17 @@ export function RepresentativeDetailPage({
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="open">
+                                    <SelectItem value="abierta">
                                       Abierta
                                     </SelectItem>
-                                    <SelectItem value="in_plan">
+                                    <SelectItem value="plan_pago">
                                       En plan
                                     </SelectItem>
-                                    <SelectItem value="paid">Pagada</SelectItem>
-                                    <SelectItem value="disputed">
-                                      Disputada
+                                    <SelectItem value="pagada">
+                                      Pagada
+                                    </SelectItem>
+                                    <SelectItem value="prescripta">
+                                      Prescripta
                                     </SelectItem>
                                   </SelectContent>
                                 </Select>
@@ -3039,8 +2924,8 @@ export function RepresentativeDetailPage({
                                   onClick={() =>
                                     updateDebtStatusMutation.mutate({
                                       id: debt.id,
-                                      status: debtStatus,
-                                      isIntimated: !isIntimated,
+                                      estado: debtStatus,
+                                      intimada: !isIntimated,
                                     })
                                   }
                                   className={cn(
@@ -3201,7 +3086,7 @@ export function RepresentativeDetailPage({
                     <CardContent>
                       <div className="text-lg font-bold">
                         {new Date(
-                          dueDateStats.nextDueDate.dueDate
+                          dueDateStats.nextDueDate.venceAt
                         ).toLocaleDateString('es-AR', {
                           day: 'numeric',
                           month: 'short',
@@ -3209,7 +3094,7 @@ export function RepresentativeDetailPage({
                         })}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {dueDateStats.nextDueDate.tax || 'Sin impuesto'}
+                        {dueDateStats.nextDueDate.impuesto || 'Sin impuesto'}
                       </p>
                     </CardContent>
                   </Card>
@@ -3269,7 +3154,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('vencimientos');
                     try {
                       await scrapSingleJob({
-                        data: { representativeId, jobType: 'vencimientos' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'vencimientos',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -3353,41 +3241,41 @@ export function RepresentativeDetailPage({
                             <TableRow key={dueDate.id}>
                               <TableCell
                                 className="font-medium truncate"
-                                title={dueDate.tax || '-'}
+                                title={dueDate.impuesto || '-'}
                               >
-                                {dueDate.tax || '-'}
+                                {dueDate.impuesto || '-'}
                               </TableCell>
                               <TableCell
                                 className="truncate"
-                                title={dueDate.concept || '-'}
+                                title={dueDate.concepto || '-'}
                               >
-                                {dueDate.concept || '-'}
+                                {dueDate.concepto || '-'}
                               </TableCell>
                               <TableCell
                                 className="truncate"
-                                title={dueDate.subConcept || '-'}
+                                title={dueDate.subConcepto || '-'}
                               >
-                                {dueDate.subConcept || '-'}
+                                {dueDate.subConcepto || '-'}
                               </TableCell>
                               <TableCell
                                 className="truncate"
-                                title={dueDate.period || '-'}
+                                title={periodoLegible(dueDate.periodo)}
                               >
-                                {dueDate.period || '-'}
+                                {periodoLegible(dueDate.periodo)}
                               </TableCell>
                               <TableCell className="whitespace-nowrap text-center">
-                                {dueDate.quotaNumber || '-'}
+                                {dueDate.cuota || '-'}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
-                                {new Date(dueDate.dueDate).toLocaleDateString(
+                                {new Date(dueDate.venceAt).toLocaleDateString(
                                   'es-AR'
                                 )}
                               </TableCell>
                               <TableCell
                                 className="truncate"
-                                title={dueDate.detail || '-'}
+                                title={dueDate.detalle || '-'}
                               >
-                                {dueDate.detail || '-'}
+                                {dueDate.detalle || '-'}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -3535,7 +3423,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('notificaciones');
                     try {
                       await scrapSingleJob({
-                        data: { representativeId, jobType: 'notificaciones' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'notificaciones',
+                        },
                       });
                       await queryClient.invalidateQueries({
                         queryKey: [
@@ -3593,7 +3484,7 @@ export function RepresentativeDetailPage({
                 setScrapingSection("facturas");
                 try {
                   await scrapSingleJob({
-                    data: { representativeId, jobType: "comprobantes" },
+                    data: { credencialId: representativeId, jobType: "comprobantes" },
                   });
                   await Promise.all([
                     queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", representativeId] }),
@@ -3657,7 +3548,10 @@ export function RepresentativeDetailPage({
                     setScrapingSection('facturas');
                     try {
                       await scrapSingleJob({
-                        data: { representativeId, jobType: 'comprobantes' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'comprobantes',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -3885,8 +3779,8 @@ export function RepresentativeDetailPage({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="Outbound">Emitida</SelectItem>
-                    <SelectItem value="Inbound">Recibida</SelectItem>
+                    <SelectItem value="emitido">Emitida</SelectItem>
+                    <SelectItem value="recibido">Recibida</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -4647,12 +4541,15 @@ export function RepresentativeDetailPage({
                                 try {
                                   await scrapSingleJob({
                                     data: {
-                                      representativeId,
+                                      credencialId: representativeId,
                                       jobType: 'comprobantes',
                                     },
                                   });
                                   await scrapSingleJob({
-                                    data: { representativeId, jobType: 'iva' },
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
                                   });
                                   await Promise.all([
                                     queryClient.invalidateQueries({
@@ -4724,7 +4621,10 @@ export function RepresentativeDetailPage({
                                 setScrapingSection('iva');
                                 try {
                                   await scrapSingleJob({
-                                    data: { representativeId, jobType: 'iva' },
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
                                   });
                                   await Promise.all([
                                     queryClient.invalidateQueries({
@@ -4862,8 +4762,8 @@ export function RepresentativeDetailPage({
                 <RenderIvaResume
                   ref={ivaResumeRef}
                   representativeId={representativeId}
-                  clientName={client?.name}
-                  clientIva={clientIva ?? undefined}
+                  clientName={client?.nombre}
+                  clientIva={clientIvaResume}
                   selectedProfileId={effectiveIvaProfileId ?? undefined}
                   dateRange={ivaResumenDateRange}
                   clientIvaLoading={loadingClientIva}
@@ -4883,7 +4783,9 @@ export function RepresentativeDetailPage({
                   <Select
                     value={solicitudesStatusFilter || 'all'}
                     onValueChange={(v) =>
-                      setSolicitudesStatusFilter(v === 'all' ? '' : v)
+                      setSolicitudesStatusFilter(
+                        v === 'all' ? '' : (v as SolicitudEstado)
+                      )
                     }
                   >
                     <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
@@ -4894,9 +4796,9 @@ export function RepresentativeDetailPage({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="open">Abierta</SelectItem>
-                      <SelectItem value="completed">Completada</SelectItem>
-                      <SelectItem value="cancelled">Cancelada</SelectItem>
+                      <SelectItem value="abierta">Abierta</SelectItem>
+                      <SelectItem value="completada">Completada</SelectItem>
+                      <SelectItem value="cancelada">Cancelada</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -4951,159 +4853,164 @@ export function RepresentativeDetailPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {clientRequestsData.map((req: RequestRow, i: number) => {
-                        const statusColors: Record<
-                          string,
-                          { bg: string; color: string; label: string }
-                        > = {
-                          open: {
-                            bg: 'var(--arca-accent-warn-bg)',
-                            color: 'var(--arca-accent-warn)',
-                            label: 'Abierta',
-                          },
-                          completed: {
-                            bg: 'var(--arca-accent-pos-bg)',
-                            color: 'var(--arca-accent-pos)',
-                            label: 'Completada',
-                          },
-                          cancelled: {
-                            bg: 'var(--arca-surface-2)',
-                            color: 'var(--arca-ink-3)',
-                            label: 'Cancelada',
-                          },
-                        };
-                        const sc =
-                          statusColors[req.status] ?? statusColors.open;
-                        return (
-                          <tr
-                            key={req.id}
-                            className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
-                          >
-                            <td className="px-[14px] py-[10px]">
-                              <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
-                                {req.title}
-                                {req.metadata?.documentId && (
-                                  <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                      {clientRequestsData.map(
+                        (req: SolicitudRow, i: number) => {
+                          const statusColors: Record<
+                            SolicitudEstado,
+                            { bg: string; color: string; label: string }
+                          > = {
+                            abierta: {
+                              bg: 'var(--arca-accent-warn-bg)',
+                              color: 'var(--arca-accent-warn)',
+                              label: 'Abierta',
+                            },
+                            completada: {
+                              bg: 'var(--arca-accent-pos-bg)',
+                              color: 'var(--arca-accent-pos)',
+                              label: 'Completada',
+                            },
+                            cancelada: {
+                              bg: 'var(--arca-surface-2)',
+                              color: 'var(--arca-ink-3)',
+                              label: 'Cancelada',
+                            },
+                          };
+                          const sc =
+                            statusColors[req.estado] ?? statusColors.abierta;
+                          return (
+                            <tr
+                              key={req.id}
+                              className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
+                            >
+                              <td className="px-[14px] py-[10px]">
+                                <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
+                                  {req.titulo}
+                                  {req.detalle?.documentoId && (
+                                    <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                                  )}
+                                </p>
+                                {req.descripcion && (
+                                  <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
+                                    {req.descripcion}
+                                  </p>
                                 )}
-                              </p>
-                              {req.description && (
-                                <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
-                                  {req.description}
-                                </p>
-                              )}
-                              {req.metadata?.documentName && (
-                                <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
-                                  {req.metadata?.documentName}
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
-                              {req.type}
-                            </td>
-                            <td className="px-[14px] py-[10px]">
-                              <span
-                                className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                                style={{ background: sc.bg, color: sc.color }}
-                              >
-                                {sc.label}
-                              </span>
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
-                              {req.dueAt
-                                ? new Date(
-                                    req.dueAt as unknown as string
-                                  ).toLocaleDateString('es-AR')
-                                : '—'}
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
-                              {new Date(
-                                req.createdAt as unknown as string
-                              ).toLocaleDateString('es-AR')}
-                            </td>
-                            <td className="px-[14px] py-[10px]">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {/* Document download if metadata has documentId */}
-                                {req.metadata?.documentId && (
-                                  <>
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          const doc = await getRequestDocument({
-                                            data: { requestId: req.id },
-                                          });
-                                          if (!doc?.url) {
+                                {req.detalle?.documentoNombre && (
+                                  <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
+                                    {req.detalle.documentoNombre}
+                                  </p>
+                                )}
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
+                                {req.tipo}
+                              </td>
+                              <td className="px-[14px] py-[10px]">
+                                <span
+                                  className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                  style={{ background: sc.bg, color: sc.color }}
+                                >
+                                  {sc.label}
+                                </span>
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                                {req.venceAt
+                                  ? new Date(req.venceAt).toLocaleDateString(
+                                      'es-AR'
+                                    )
+                                  : '—'}
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                                {new Date(req.createdAt).toLocaleDateString(
+                                  'es-AR'
+                                )}
+                              </td>
+                              <td className="px-[14px] py-[10px]">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {/* Descarga del documento si el detalle lo trae */}
+                                  {req.detalle?.documentoId && (
+                                    <>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const doc =
+                                              await getDocumentoSolicitud({
+                                                data: { solicitudId: req.id },
+                                              });
+                                            if (!doc?.url) {
+                                              toast.error(
+                                                'Documento no encontrado'
+                                              );
+                                              return;
+                                            }
+                                            const a =
+                                              document.createElement('a');
+                                            a.href = `${doc.url}?download=1`;
+                                            a.download =
+                                              doc.nombre ?? 'documento';
+                                            a.click();
+                                          } catch {
                                             toast.error(
-                                              'Documento no encontrado'
+                                              'Error al descargar el documento'
                                             );
-                                            return;
                                           }
-                                          const a = document.createElement('a');
-                                          a.href = doc.url;
-                                          a.download = doc.name ?? 'documento';
-                                          a.click();
-                                        } catch {
-                                          toast.error(
-                                            'Error al descargar el documento'
-                                          );
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
+                                      >
+                                        <FileDown className="h-3 w-3" />
+                                        Doc
+                                      </button>
+                                      <span className="text-[var(--arca-border-strong)]">
+                                        ·
+                                      </span>
+                                    </>
+                                  )}
+                                  {req.estado === 'abierta' && (
+                                    <>
+                                      <button
+                                        onClick={() =>
+                                          updateRequestStatusMutation.mutate({
+                                            solicitudId: req.id,
+                                            estado: 'completada',
+                                          })
                                         }
-                                      }}
-                                      className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
-                                    >
-                                      <FileDown className="h-3 w-3" />
-                                      Doc
-                                    </button>
-                                    <span className="text-[var(--arca-border-strong)]">
-                                      ·
-                                    </span>
-                                  </>
-                                )}
-                                {req.status === 'open' && (
-                                  <>
+                                        className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                      >
+                                        Completar
+                                      </button>
+                                      <span className="text-[var(--arca-border-strong)]">
+                                        ·
+                                      </span>
+                                      <button
+                                        onClick={() =>
+                                          updateRequestStatusMutation.mutate({
+                                            solicitudId: req.id,
+                                            estado: 'cancelada',
+                                          })
+                                        }
+                                        className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </>
+                                  )}
+                                  {req.estado !== 'abierta' && (
                                     <button
                                       onClick={() =>
                                         updateRequestStatusMutation.mutate({
-                                          requestId: req.id,
-                                          status: 'completed',
+                                          solicitudId: req.id,
+                                          estado: 'abierta',
                                         })
                                       }
-                                      className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                      className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
                                     >
-                                      Completar
+                                      Reabrir
                                     </button>
-                                    <span className="text-[var(--arca-border-strong)]">
-                                      ·
-                                    </span>
-                                    <button
-                                      onClick={() =>
-                                        updateRequestStatusMutation.mutate({
-                                          requestId: req.id,
-                                          status: 'cancelled',
-                                        })
-                                      }
-                                      className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
-                                    >
-                                      Cancelar
-                                    </button>
-                                  </>
-                                )}
-                                {req.status !== 'open' && (
-                                  <button
-                                    onClick={() =>
-                                      updateRequestStatusMutation.mutate({
-                                        requestId: req.id,
-                                        status: 'open',
-                                      })
-                                    }
-                                    className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
-                                  >
-                                    Reabrir
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                      )}
                     </tbody>
                   </table>
                 )}
@@ -5148,17 +5055,20 @@ export function RepresentativeDetailPage({
                     </label>
                     <Select
                       value={newRequestType}
-                      onValueChange={setNewRequestType}
+                      onValueChange={(v) =>
+                        setNewRequestType(v as SolicitudTipo)
+                      }
                     >
                       <SelectTrigger className="mt-1 h-9 text-sm">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="general">General</SelectItem>
-                        <SelectItem value="document">Documento</SelectItem>
-                        <SelectItem value="information">Información</SelectItem>
-                        <SelectItem value="signature">Firma</SelectItem>
-                        <SelectItem value="payment">Pago</SelectItem>
+                        <SelectItem value="documentacion">
+                          Documentación
+                        </SelectItem>
+                        <SelectItem value="informacion">Información</SelectItem>
+                        <SelectItem value="pago">Pago</SelectItem>
+                        <SelectItem value="otra">Otra</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -5207,17 +5117,34 @@ export function RepresentativeDetailPage({
 
           {/* Portal Tab */}
           <TabsContent value="portal" className="mt-4">
-            <PortalAccessTab representativeId={representativeId} />
+            {/* El acceso al portal se otorga por empresa (cliente), no por login. */}
+            {selectedClientId ? (
+              <PortalAccessTab clienteId={selectedClientId} />
+            ) : (
+              <div className="flex h-24 items-center justify-center text-sm text-[var(--arca-ink-3)]">
+                Seleccioná una empresa para gestionar el acceso al portal.
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Perfiles Tab */}
+          <TabsContent value="perfiles" className="mt-4">
+            <PerfilesTab representativeId={representativeId} />
           </TabsContent>
         </div>
         {/* end content area */}
       </Tabs>
 
-      <EditRepresentativeDialog
-        representativeId={representativeId}
-        open={editRepresentativeDialogOpen}
-        onOpenChange={setEditRepresentativeDialogOpen}
-      />
+      {/* El diálogo edita la empresa (cliente) y, opcionalmente, la clave del
+          login de AFIP: sin empresa seleccionada no hay nada que editar. */}
+      {selectedClientId && (
+        <EditRepresentativeDialog
+          clienteId={selectedClientId}
+          credencialId={representativeId}
+          open={editRepresentativeDialogOpen}
+          onOpenChange={setEditRepresentativeDialogOpen}
+        />
+      )}
 
       {/* Modal de detalle de facturas por provincia (Convenio Multilateral) */}
       <Dialog
@@ -5310,13 +5237,7 @@ export function RepresentativeDetailPage({
                           Pto. venta
                         </TableHead>
                         <TableHead className="text-right whitespace-nowrap">
-                          Nro. desde
-                        </TableHead>
-                        <TableHead className="text-right whitespace-nowrap">
-                          Nro. hasta
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap min-w-[180px]">
-                          Emisor
+                          Número
                         </TableHead>
                         <TableHead className="whitespace-nowrap min-w-[180px]">
                           Destinatario
@@ -5339,61 +5260,55 @@ export function RepresentativeDetailPage({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {multilateralDetailInvoices.map((inv: any) => (
+                      {multilateralDetailInvoices.map((inv) => (
                         <TableRow
                           key={inv.id}
                           className="hover:bg-muted/50 transition-colors"
                         >
                           <TableCell className="text-[11px]">
-                            {inv.emitionDate
-                              ? new Date(inv.emitionDate).toLocaleDateString(
-                                  'es-AR',
-                                  {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                  }
-                                )
+                            {inv.fechaEmision
+                              ? parseLocalDateOnly(
+                                  inv.fechaEmision.slice(0, 10)
+                                ).toLocaleDateString('es-AR', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })
                               : '—'}
                           </TableCell>
                           <TableCell className="text-[11px]">
-                            {getInvoiceTypeLabel(inv.type)}
+                            {inv.tipoDescripcion || inv.tipo}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {inv.salePoint || '—'}
+                            {inv.puntoVenta || '—'}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {inv.numberFrom || '—'}
-                          </TableCell>
-                          <TableCell className="text-right text-[11px]">
-                            {inv.numberTo || '—'}
+                            {inv.numero || '—'}
                           </TableCell>
                           <TableCell className="max-w-[220px]">
-                            <div className="truncate" title={inv.emitterName}>
-                              {inv.emitterName || '—'}
-                            </div>
-                          </TableCell>
-                          <TableCell className="max-w-[220px]">
-                            <div className="truncate" title={inv.recipientName}>
-                              {inv.recipientName || '—'}
+                            <div
+                              className="truncate"
+                              title={inv.contraparteNombre ?? undefined}
+                            >
+                              {inv.contraparteNombre || '—'}
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <ProvinceSourceCell inv={inv} />
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {inv.currency || 'ARS'}
+                            {inv.moneda || 'ARS'}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
                             {formatIvaCurrency(
-                              inv.baseImponible ?? inv.amountTaxed
+                              inv.baseImponible ?? inv.netoGravado
                             )}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {formatIvaCurrency(inv.totalIVA)}
+                            {formatIvaCurrency(inv.ivaTotal)}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {formatIvaCurrency(inv.amount)}
+                            {formatIvaCurrency(inv.total)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -5402,23 +5317,24 @@ export function RepresentativeDetailPage({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2">
-                  {multilateralDetailInvoices.map((inv: any) => (
+                  {multilateralDetailInvoices.map((inv) => (
                     <div
                       key={inv.id}
                       className="rounded-md border p-3 space-y-2"
                     >
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-medium">{inv.type || '—'}</span>
+                        <span className="font-medium">
+                          {inv.tipoDescripcion || inv.tipo}
+                        </span>
                         <span className="text-muted-foreground">
-                          {inv.emitionDate
-                            ? new Date(inv.emitionDate).toLocaleDateString(
-                                'es-AR',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                }
-                              )
+                          {inv.fechaEmision
+                            ? parseLocalDateOnly(
+                                inv.fechaEmision.slice(0, 10)
+                              ).toLocaleDateString('es-AR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                              })
                             : '—'}
                         </span>
                       </div>
@@ -5427,29 +5343,18 @@ export function RepresentativeDetailPage({
                           Pto. venta
                         </span>
                         <span className="text-right">
-                          {inv.salePoint || '—'}
+                          {inv.puntoVenta || '—'}
                         </span>
-                        <span className="text-muted-foreground">
-                          Nro. desde/hasta
-                        </span>
-                        <span className="text-right">
-                          {inv.numberFrom || '—'} / {inv.numberTo || '—'}
-                        </span>
-                        <span className="text-muted-foreground">Emisor</span>
-                        <span
-                          className="text-right truncate"
-                          title={inv.emitterName}
-                        >
-                          {inv.emitterName || '—'}
-                        </span>
+                        <span className="text-muted-foreground">Número</span>
+                        <span className="text-right">{inv.numero || '—'}</span>
                         <span className="text-muted-foreground">
                           Destinatario
                         </span>
                         <span
                           className="text-right truncate"
-                          title={inv.recipientName}
+                          title={inv.contraparteNombre ?? undefined}
                         >
-                          {inv.recipientName || '—'}
+                          {inv.contraparteNombre || '—'}
                         </span>
                         <span className="text-muted-foreground">
                           Fuente provincia
@@ -5457,25 +5362,25 @@ export function RepresentativeDetailPage({
                         <ProvinceSourceCell inv={inv} />
                         <span className="text-muted-foreground">Moneda</span>
                         <span className="text-right">
-                          {inv.currency || 'ARS'}
+                          {inv.moneda || 'ARS'}
                         </span>
                         <span className="text-muted-foreground">
                           Base imponible
                         </span>
                         <span className="text-right">
                           {formatIvaCurrency(
-                            inv.baseImponible ?? inv.amountTaxed
+                            inv.baseImponible ?? inv.netoGravado
                           )}
                         </span>
                         <span className="text-muted-foreground">Total IVA</span>
                         <span className="text-right">
-                          {formatIvaCurrency(inv.totalIVA)}
+                          {formatIvaCurrency(inv.ivaTotal)}
                         </span>
                         <span className="text-muted-foreground font-medium">
                           Total
                         </span>
                         <span className="text-right font-medium">
-                          {formatIvaCurrency(inv.amount)}
+                          {formatIvaCurrency(inv.total)}
                         </span>
                       </div>
                     </div>
@@ -5492,32 +5397,22 @@ export function RepresentativeDetailPage({
 
 // ── Portal Access Tab ────────────────────────────────────────────────────────
 
-interface PortalUser {
-  accessId: string;
-  userId: string;
-  name: string | null;
-  email: string | null;
-  canViewDebts: boolean;
-  canViewIva: boolean;
-  canViewPayroll: boolean;
-  canUploadDocuments: boolean;
-  canChatAi: boolean;
-  createdAt: Date;
-}
+/** Usuario del portal tal como lo devuelve `listPortalUsers`. */
+type PortalUser = Awaited<ReturnType<typeof listPortalUsers>>[number];
 
 type PermissionKey =
-  | 'canViewDebts'
-  | 'canViewIva'
-  | 'canViewPayroll'
-  | 'canUploadDocuments'
-  | 'canChatAi';
+  | 'puedeVerDeudas'
+  | 'puedeVerIva'
+  | 'puedeVerSueldos'
+  | 'puedeSubirDocumentos'
+  | 'puedeChatearIa';
 
 const PERMISSION_LABELS: Record<PermissionKey, string> = {
-  canViewDebts: 'Deudas',
-  canViewIva: 'IVA',
-  canViewPayroll: 'Sueldos',
-  canUploadDocuments: 'Documentos',
-  canChatAi: 'Chat IA',
+  puedeVerDeudas: 'Deudas',
+  puedeVerIva: 'IVA',
+  puedeVerSueldos: 'Sueldos',
+  puedeSubirDocumentos: 'Documentos',
+  puedeChatearIa: 'Chat IA',
 };
 
 function PermissionBadge({
@@ -5535,7 +5430,7 @@ function PermissionBadge({
   );
 }
 
-function PortalAccessTab({ representativeId }: { representativeId: string }) {
+function PortalAccessTab({ clienteId }: { clienteId: string }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<PortalUser | null>(null);
@@ -5547,20 +5442,20 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
     name: '',
     email: '',
     password: '',
-    canViewDebts: true,
-    canViewIva: true,
-    canViewPayroll: false,
-    canUploadDocuments: true,
-    canChatAi: true,
+    puedeVerDeudas: true,
+    puedeVerIva: true,
+    puedeVerSueldos: false,
+    puedeSubirDocumentos: true,
+    puedeChatearIa: true,
   });
 
   // Edit form state (permissions only)
   const [editPerms, setEditPerms] = useState<Record<PermissionKey, boolean>>({
-    canViewDebts: true,
-    canViewIva: true,
-    canViewPayroll: false,
-    canUploadDocuments: true,
-    canChatAi: true,
+    puedeVerDeudas: true,
+    puedeVerIva: true,
+    puedeVerSueldos: false,
+    puedeSubirDocumentos: true,
+    puedeChatearIa: true,
   });
 
   // Reset password state
@@ -5568,8 +5463,8 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
   const [showNewPassword, setShowNewPassword] = useState(false);
 
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ['portalUsers', representativeId],
-    queryFn: () => listPortalUsers({ data: { representativeId } }),
+    queryKey: ['portalUsers', clienteId],
+    queryFn: () => listPortalUsers({ data: { clienteId } }),
   });
 
   const createMutation = useMutation({
@@ -5577,7 +5472,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       createPortalUser({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['portalUsers', representativeId],
+        queryKey: ['portalUsers', clienteId],
       });
       toast.success('Usuario creado');
       setCreateOpen(false);
@@ -5585,11 +5480,11 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
         name: '',
         email: '',
         password: '',
-        canViewDebts: true,
-        canViewIva: true,
-        canViewPayroll: false,
-        canUploadDocuments: true,
-        canChatAi: true,
+        puedeVerDeudas: true,
+        puedeVerIva: true,
+        puedeVerSueldos: false,
+        puedeSubirDocumentos: true,
+        puedeChatearIa: true,
       });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -5601,7 +5496,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
     ) => updatePortalUserPermissions({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['portalUsers', representativeId],
+        queryKey: ['portalUsers', clienteId],
       });
       toast.success('Permisos actualizados');
       setEditTarget(null);
@@ -5624,7 +5519,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       revokePortalAccess({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['portalUsers', representativeId],
+        queryKey: ['portalUsers', clienteId],
       });
       toast.success('Acceso revocado');
       setRevokeTarget(null);
@@ -5634,11 +5529,11 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
 
   function openEdit(u: PortalUser) {
     setEditPerms({
-      canViewDebts: u.canViewDebts,
-      canViewIva: u.canViewIva,
-      canViewPayroll: u.canViewPayroll,
-      canUploadDocuments: u.canUploadDocuments,
-      canChatAi: u.canChatAi,
+      puedeVerDeudas: u.puedeVerDeudas,
+      puedeVerIva: u.puedeVerIva,
+      puedeVerSueldos: u.puedeVerSueldos,
+      puedeSubirDocumentos: u.puedeSubirDocumentos,
+      puedeChatearIa: u.puedeChatearIa,
     });
     setNewPassword('');
     setEditTarget(u);
@@ -5693,7 +5588,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(users as PortalUser[]).map((u) => (
+              {users.map((u) => (
                 <TableRow
                   key={u.accessId}
                   className="hover:bg-[var(--arca-surface-2)]/50"
@@ -5851,16 +5746,16 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               }
               onClick={() =>
                 createMutation.mutate({
-                  representativeId,
+                  clienteId,
                   name: createForm.name,
                   email: createForm.email,
                   password: createForm.password,
-                  permissions: {
-                    canViewDebts: createForm.canViewDebts,
-                    canViewIva: createForm.canViewIva,
-                    canViewPayroll: createForm.canViewPayroll,
-                    canUploadDocuments: createForm.canUploadDocuments,
-                    canChatAi: createForm.canChatAi,
+                  permisos: {
+                    puedeVerDeudas: createForm.puedeVerDeudas,
+                    puedeVerIva: createForm.puedeVerIva,
+                    puedeVerSueldos: createForm.puedeVerSueldos,
+                    puedeSubirDocumentos: createForm.puedeSubirDocumentos,
+                    puedeChatearIa: createForm.puedeChatearIa,
                   },
                 })
               }
@@ -5978,7 +5873,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
                 editTarget &&
                 editMutation.mutate({
                   accessId: editTarget.accessId,
-                  permissions: editPerms,
+                  permisos: editPerms,
                 })
               }
             >

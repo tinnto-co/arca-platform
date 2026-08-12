@@ -34,7 +34,12 @@ const BALANCE: FyAccountBalance[] = [
   ),
   cta('2.1.01.001', 'Proveedores', 'deudas_comerciales', -1_500_000),
   cta('3.1.001', 'Capital social', 'capital', -10_000_000),
-  cta('3.5.001', 'Resultados no asignados', 'resultados_no_asignados', -1_000_000),
+  cta(
+    '3.5.001',
+    'Resultados no asignados',
+    'resultados_no_asignados',
+    -1_000_000
+  ),
   // Resultados del ejercicio: ganancia de 2.000.000.
   cta('4.1.001', 'Ventas', 'ventas', -9_000_000),
   cta('5.1.001', 'Costo de mercaderías vendidas', 'costo_ventas', 5_000_000),
@@ -140,10 +145,7 @@ describe('arrastre de saldos al ejercicio siguiente', () => {
   });
 
   it('no arrastra cuentas en cero', () => {
-    const conCero = [
-      ...BALANCE,
-      cta('1.1.01.001', 'Caja', 'caja_bancos', 0),
-    ];
+    const conCero = [...BALANCE, cta('1.1.01.001', 'Caja', 'caja_bancos', 0)];
     const { apertura: ap } = buildClosingEntries(conCero, RESULTADO);
     expect(ap.lines.some((l) => l.accountId === '1.1.01.001')).toBe(false);
   });
