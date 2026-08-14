@@ -99,6 +99,25 @@ apuntando a la base equivocada (ver Paso 1).
 5. Contabilidad → que abra la solapa (plan de cuentas con 91+ cuentas).
 6. Jobs → el log tiene que mostrar los de `escalas` y `tope_imponible`.
 
+> **Resultado del 14/08 (entorno `contable.staging.tinnto.ai`)** — 5 de 5:
+> login OK (`estudioblakg@gmail.com`, 11:21:43) · 140 clientes · **PDF de una
+> notificación renderizado inline desde R2** (el punto más frágil: las cuatro
+> `R2_*` no existían en la config vieja) · recibo de E-presis de mayo presente ·
+> Plan de cuentas con las 6 raíces `alcance base` y las 91 imputables colgando.
+> Cero jobs fallidos.
+>
+> Detalle que confundió durante la prueba: `contable.tinnto.ai` (producción,
+> modelo viejo, 98 clientes en la tabla `client`) y `contable.staging.tinnto.ai`
+> (modelo ideal, 140 en `cliente`) son entornos distintos. El conteo de clientes
+> es la forma más rápida de saber en cuál estás parado.
+>
+> **Arquitectura del deploy, cambiada**: la app de este entorno dejó de ser un
+> recurso de Git con build pack Dockerfile y pasó a ser un recurso de tipo
+> **Docker Image** (`ghcr.io/tinnto-co/arca-platform:staging`), porque el
+> servidor no puede compilar. En Coolify "Docker Image" no es un build pack: es
+> un tipo de recurso y se elige al crearlo, no se puede cambiar después. El ciclo
+> ahora es: push a `staging` → GitHub Actions publica la imagen → *Deploy* a mano.
+
 ## Paso 5 — Scrapper
 
 En el servicio del scrapper productivo:
