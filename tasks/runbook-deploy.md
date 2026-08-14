@@ -62,6 +62,21 @@ congelada); la ventana de corte real es el swap del contenedor.
 > `bun install` necesite hay que agregarla ahí a mano, y se verifica en local
 > con `docker build --target install .` antes de pushear.
 
+> **El segundo intento (14/08 10:49) también falló**, ya con `bun install` en
+> verde: el log se corta mudo en medio de `vite build` y Coolify reporta exit
+> 255. Sin mensaje de error porque al proceso lo mataron, no falló. Medido en
+> local: el build pide **5,1 GB de RSS pico** (`/usr/bin/time -l bun run build`),
+> más de lo que el servidor tiene libre. Postgres sobrevivió — 9 días de uptime
+> sin reinicio — porque el OOM killer eligió al más gordo.
+>
+> Esto ya estaba resuelto para v2 (commit `f0eaf2a`, *"buildear la imagen en CI,
+> no en el servidor"*): el workflow `build-image-v2.yml` compila en un runner de
+> GitHub de 16 GB y publica en GHCR, y Coolify sólo hace `pull`. Lo que faltaba
+> era el equivalente para esta rama → `build-image-staging.yml`.
+>
+> **El flujo de deploy cambia**: el push ya no deploya solo. Push a `staging` →
+> GitHub Actions publica la imagen → apretar *Deploy* en Coolify. Igual que v2.
+
 ## Paso 3 — Mirar el arranque
 
 En los logs del contenedor nuevo tienen que aparecer:
