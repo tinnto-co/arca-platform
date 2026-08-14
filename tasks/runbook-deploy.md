@@ -49,6 +49,19 @@ Esto dispara el build en Coolify con el código nuevo y las envs nuevas.
 Mientras buildea, el contenedor viejo sigue sirviendo (lecturas contra la base
 congelada); la ventana de corte real es el swap del contenedor.
 
+> **El primer intento (14/08 10:31) falló acá** con
+> `could not find patch file patches/eventsource@3.0.7.patch`. El `package.json`
+> declara `patchedDependencies` desde el commit `70ceb45`, pero el `Dockerfile`
+> copiaba a la etapa `install` sólo `package.json` y `bun.lock` — sin el
+> directorio `patches/`, `bun install --frozen-lockfile` aborta. Arreglado
+> agregando `COPY patches ./patches`. Un deploy fallido no rompe nada: Coolify
+> descarta la imagen nueva y el contenedor viejo sigue sirviendo.
+>
+> Moraleja para cualquier cambio de dependencias: el `Dockerfile` copia a la
+> etapa `install` una lista **explícita** de archivos. Cualquier cosa nueva que
+> `bun install` necesite hay que agregarla ahí a mano, y se verifica en local
+> con `docker build --target install .` antes de pushear.
+
 ## Paso 3 — Mirar el arranque
 
 En los logs del contenedor nuevo tienen que aparecer:

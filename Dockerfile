@@ -6,6 +6,8 @@ WORKDIR /usr/src/app
 # install dependencies
 FROM base AS install
 COPY package.json bun.lock ./
+# package.json declara patchedDependencies: sin los .patch, bun install aborta.
+COPY patches ./patches
 RUN bun install --frozen-lockfile
 
 # build stage
