@@ -134,6 +134,36 @@ Rama: la que tenga el job de `tope_imponible` (hoy `v2` de arca-scrapper; si
 el deploy trackea `staging` de ese repo, mergear primero — mismo criterio que
 acá).
 
+> **Lo que costó sangre el 14/08, para no repetirlo:**
+>
+> 1. **Dos pares de scrapper contra el mismo Redis.** `V2: Arca Scrapper` y su
+>    worker seguían encendidos aunque las plataformas de v2 estaban apagadas.
+>    Comparten instancia **y** índice (`/0`) con el par nuevo, así que el worker
+>    de v2 levantaba los jobs de `contable`. Se apagaron los de v2 y se puso
+>    `QUEUE_NAME=production-queue` explícito en la API nueva — sin eso encola en
+>    el default `arca-scrapper-jobs` del código y el worker nunca lo ve.
+>    Para tener los dos entornos vivos: distinto `QUEUE_NAME` o distinto índice
+>    de Redis. **Nunca un Redis por entorno: hay uno solo.**
+>
+> 2. **Un job en `pending` bloquea toda la organización.** `src/actions/job.tsx`
+>    tira "Ya hay un batch en ejecución" si existe cualquier job `pending` o
+>    `running` del org. Había dos huérfanos — uno del 10/08 migrado por el ETL en
+>    ese estado — que hacían fallar todo disparo. No hay UI para cancelarlos: se
+>    marcan `failed` por base.
+>
+> 3. **`job_log` tiene las columnas en inglés** (`level`, `message`, `context`),
+>    a diferencia del resto del modelo. Consultarla con nombres en español falla,
+>    y si el error queda tapado por un `catch` parece que no hay logs.
+>
+> 4. **Pendiente al cierre del día**: el scrapeo falla con
+>    `Timed out after waiting 90000ms` en el login de AFIP
+>    (`src/scraping/auth/afip-login.ts:22`). Sospecha principal: `PROXY_URL`
+>    apunta a `gate.decodo.com` (genérico) mientras `src/scripts/test-proxy.ts`
+>    usa `ar.decodo.com` (salida en Argentina). AFIP degrada el acceso desde IPs
+>    de afuera. Se aísla corriendo `bun src/scripts/test-proxy.ts` en la terminal
+>    del worker. **No es un problema de la migración**: la cadena app → API →
+>    cola → worker → `contable` quedó verificada de punta a punta.
+
 ## Paso 6 — Prender el cron (el punto de no retorno)
 
 Con el smoke del Paso 4 OK y el scrapper arriba:
