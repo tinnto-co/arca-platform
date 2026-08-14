@@ -51,6 +51,16 @@ insert into comprobante_tipo (codigo, descripcion, letra, clase, es_nc, discrimi
   (52,  'Nota de Débito M',                   'M', 'nota_debito',  false, true),
   (53,  'Nota de Crédito M',                  'M', 'nota_credito', true,  true),
   (54,  'Recibo M',                           'M', 'recibo',       false, true),
+  -- Liquidaciones y cuentas de venta. Aparecen en el libro de COMPRAS (agro,
+  -- consignaciones). Faltaban: un ZIP de recibidos con un código 63 abortaba la
+  -- importación entera del perfil y dejaba las compras en cero — con la posición
+  -- de IVA en pantalla mal por un orden de magnitud (14/08, Termomecanica Valtri).
+  -- `clase` no participa de ningún cálculo (sólo lo hacen es_nc y discrimina_iva),
+  -- así que van como 'factura', que es como se comportan a efectos del IVA.
+  (60,  'Cuenta de Venta y Líquido producto A', 'A', 'factura',    false, true),
+  (61,  'Cuenta de Venta y Líquido producto B', 'B', 'factura',    false, false),
+  (63,  'Liquidación A',                      'A', 'factura',      false, true),
+  (64,  'Liquidación B',                      'B', 'factura',      false, false),
   (81,  'Tique Factura A',                    'A', 'tique',        false, true),
   (82,  'Tique Factura B',                    'B', 'tique',        false, false),
   (83,  'Tique',                              null, 'tique',       false, false),
