@@ -1019,6 +1019,20 @@ export const scrapSingleJob = createServerFn({
         'notificaciones',
         'vencimientos',
       ]),
+      /**
+       * Rango explícito para rehacer un período pasado (backfill), en
+       * `YYYY-MM-DD`. Sin esto el scrapper ancla el "desde" al último
+       * comprobante del cliente, así que un período que quedó incompleto no se
+       * vuelve a pedir nunca. Sólo lo usan los jobs de comprobantes.
+       */
+      desde: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      hasta: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
     })
   )
   .handler(async (ctx) => {
@@ -1026,23 +1040,28 @@ export const scrapSingleJob = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const { credencialId, jobType } = ctx.data;
+    const { credencialId, jobType, desde, hasta } = ctx.data;
     await assertCredencialDeOrg(credencialId, orgId);
+
+    const rango = desde && hasta ? { dateFrom: desde, dateTo: hasta } : null;
 
     // Si ya hay un job pending/running para esta credencial+tipo (p. ej.
     // otro cliente que comparte login), reusarlo en vez de encolar un
     // scrape duplicado: cada job scrapea todas las relaciones del login.
-    const [existing] = await db
-      .select({ id: job.id })
-      .from(job)
-      .where(
-        and(
-          eq(job.credencialId, credencialId),
-          eq(job.type, jobType),
-          inArray(job.status, ['pending', 'running'])
-        )
-      )
-      .limit(1);
+    // Un backfill NO se puede reusar: el job en curso trae otro rango.
+    const [existing] = rango
+      ? [undefined]
+      : await db
+          .select({ id: job.id })
+          .from(job)
+          .where(
+            and(
+              eq(job.credencialId, credencialId),
+              eq(job.type, jobType),
+              inArray(job.status, ['pending', 'running'])
+            )
+          )
+          .limit(1);
 
     try {
       let jobId: string;
@@ -1051,7 +1070,7 @@ export const scrapSingleJob = createServerFn({
       } else {
         const created = await scrapperPost<{ id: string }>(
           `${JOBS_API_URL}/api/jobs`,
-          { type: jobType, credencialId }
+          { type: jobType, credencialId, ...(rango ? { params: rango } : {}) }
         );
         jobId = created.id;
       }

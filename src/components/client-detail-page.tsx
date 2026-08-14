@@ -171,6 +171,16 @@ const formatLastUpdateAt = (iso: string | Date) =>
     minute: '2-digit',
   });
 
+/**
+ * `YYYY-MM-DD` en horario local. No sirve `toISOString()`: convierte a UTC y en
+ * Argentina (UTC-3) devuelve el día anterior, así que el 1 de julio se pediría
+ * como 30 de junio.
+ */
+const aFechaLocal = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+
 const facturasChartConfig = {
   ventas: { label: 'Ventas', color: '#1E3460' },
   compras: { label: 'Compras', color: '#7AA2C8' },
@@ -4664,6 +4674,84 @@ export function RepresentativeDetailPage({
                                 <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
                                   Más rápido. Usá esta opción si las facturas ya
                                   están al día.
+                                </div>
+                              </div>
+                            </button>
+                          </DialogClose>
+                          <DialogClose asChild>
+                            <button
+                              className="w-full flex items-start gap-3 rounded-[var(--arca-r-md,10px)] px-3 py-3 text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] border border-transparent hover:border-[var(--arca-border)] cursor-pointer group"
+                              onClick={async () => {
+                                setScrapingSection('iva');
+                                try {
+                                  const { from, to } = getMonthBounds(
+                                    ivaSelectedYear,
+                                    ivaSelectedMonth
+                                  );
+                                  await scrapSingleJob({
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'comprobantes',
+                                      desde: aFechaLocal(from),
+                                      hasta: aFechaLocal(to),
+                                    },
+                                  });
+                                  await scrapSingleJob({
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
+                                  });
+                                  await Promise.all([
+                                    queryClient.invalidateQueries({
+                                      queryKey: ['clientIva', representativeId],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'clientAllInvoices',
+                                        representativeId,
+                                      ],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: ['invoices'],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'lastIvaJob',
+                                        representativeId,
+                                      ],
+                                    }),
+                                  ]);
+                                  toast.success(
+                                    `${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear} rehecho desde AFIP`
+                                  );
+                                } catch (err) {
+                                  toast.error(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Error al rehacer el período'
+                                  );
+                                  queryClient.invalidateQueries({
+                                    queryKey: ['lastIvaJob', representativeId],
+                                  });
+                                } finally {
+                                  setScrapingSection(null);
+                                }
+                              }}
+                            >
+                              <div className="shrink-0 mt-0.5 w-8 h-8 rounded-[var(--arca-r-sm,6px)] bg-[var(--arca-surface-2)] flex items-center justify-center text-[var(--arca-ink-3)] group-hover:text-[var(--arca-ink)]">
+                                <CalendarIcon className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">
+                                  Rehacer {MONTH_NAMES[ivaSelectedMonth]}{' '}
+                                  {ivaSelectedYear}
+                                </div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
+                                  Vuelve a pedirle a AFIP el mes completo. Usala
+                                  si el período quedó incompleto: el scrapeo
+                                  normal sólo trae lo posterior a la última
+                                  factura cargada.
                                 </div>
                               </div>
                             </button>
