@@ -1,8 +1,8 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { representative, invoice, debt, dueDate, notification, alert, job } from '@/drizzle/schema';
-import { eq, and, gte, lte, sql, inArray, isNull, desc } from 'drizzle-orm';
+import { representative, invoice, debt, dueDate, notification, alert, job, studioTask } from '@/drizzle/schema';
+import { eq, and, gte, lte, sql, inArray, isNull, desc, ne, isNotNull } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -763,6 +763,54 @@ export const getCredentialAlerts = createServerFn({ method: 'GET' }).handler(
     });
   }
 );
+
+// ── getHomeKpis ──────────────────────────────────────────────────────────────
+
+export const getHomeKpis = createServerFn({ method: 'GET' }).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(today);
+  endOfWeek.setDate(today.getDate() + 7);
+  endOfWeek.setHours(23, 59, 59, 999);
+
+  const [pendientes, vencidas, semana] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(studioTask)
+      .where(and(eq(studioTask.organizationId, orgId), eq(studioTask.estado, 'pendiente'))),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(studioTask)
+      .where(
+        and(
+          eq(studioTask.organizationId, orgId),
+          isNotNull(studioTask.fechaVencimiento),
+          lte(studioTask.fechaVencimiento, today),
+          ne(studioTask.estado, 'verificada')
+        )
+      ),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(studioTask)
+      .where(
+        and(
+          eq(studioTask.organizationId, orgId),
+          isNotNull(studioTask.fechaVencimiento),
+          gte(studioTask.fechaVencimiento, today),
+          lte(studioTask.fechaVencimiento, endOfWeek),
+          ne(studioTask.estado, 'verificada')
+        )
+      ),
+  ]);
+
+  return {
+    pendientes: Number(pendientes[0]?.count ?? 0),
+    vencidas: Number(vencidas[0]?.count ?? 0),
+    semana: Number(semana[0]?.count ?? 0),
+  };
+});
 
 // ── getScheduleStatus ────────────────────────────────────────────────────────
 
