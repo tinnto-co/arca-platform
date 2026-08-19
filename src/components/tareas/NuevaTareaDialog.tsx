@@ -33,7 +33,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { createTarea, listOrgMembers } from '@/actions/tareas';
+import type { listColumnas } from '@/actions/tareas';
 import { TIPO_LABELS } from './utils';
+
+type Columna = Awaited<ReturnType<typeof listColumnas>>[number];
 
 const now = new Date();
 const ANOS = Array.from({ length: 6 }, (_, i) => String(now.getFullYear() - i));
@@ -50,6 +53,7 @@ const formSchema = z.object({
   periodoAno: z.string().optional(),
   periodoMes: z.string().optional(),
   fechaVencimiento: z.string().optional(),
+  columnaId: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -57,9 +61,10 @@ type FormValues = z.infer<typeof formSchema>;
 interface NuevaTareaDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  columnas?: Columna[];
 }
 
-export function NuevaTareaDialog({ open, onOpenChange }: NuevaTareaDialogProps) {
+export function NuevaTareaDialog({ open, onOpenChange, columnas = [] }: NuevaTareaDialogProps) {
   const queryClient = useQueryClient();
 
   const { data: members = [] } = useQuery({
@@ -78,6 +83,7 @@ export function NuevaTareaDialog({ open, onOpenChange }: NuevaTareaDialogProps) 
       periodoAno: '',
       periodoMes: '',
       fechaVencimiento: '',
+      columnaId: '',
     },
   });
 
@@ -95,6 +101,7 @@ export function NuevaTareaDialog({ open, onOpenChange }: NuevaTareaDialogProps) 
           asignadoAUserId: values.asignadoAUserId || null,
           periodoMes,
           fechaVencimiento: values.fechaVencimiento || null,
+          columnaId: values.columnaId || null,
         },
       });
     },
@@ -155,6 +162,36 @@ export function NuevaTareaDialog({ open, onOpenChange }: NuevaTareaDialogProps) 
                 </FormItem>
               )}
             />
+
+            {columnas.length > 0 && (
+              <FormField
+                control={form.control}
+                name="columnaId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      Columna <span className="text-muted-foreground font-normal">(opcional)</span>
+                    </FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin columna" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="">Sin columna</SelectItem>
+                        {columnas.map((col) => (
+                          <SelectItem key={col.id} value={col.id}>
+                            {col.nombre}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             {/* Período: año + mes */}
             <div>

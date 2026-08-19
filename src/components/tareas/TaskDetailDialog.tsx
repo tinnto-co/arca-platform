@@ -25,12 +25,13 @@ import {
 } from '@/components/ui/select';
 import {
   listTareaComments,
+  listColumnas,
   toggleTareaCliente,
-  updateEstadoTarea,
+  moverTarea,
   addTareaComment,
   deleteTarea,
 } from '@/actions/tareas';
-import { TIPO_LABELS, ESTADO_LABELS, ESTADO_COLORS, TIPO_COLORS } from './utils';
+import { TIPO_LABELS, TIPO_COLORS } from './utils';
 import type { TareaConDetalle } from './utils';
 
 interface TaskDetailDialogProps {
@@ -46,7 +47,7 @@ function fmtDate(d: Date | string | null | undefined) {
 
 function fmtDateTime(d: Date | string | null | undefined) {
   if (!d) return '—';
-  return format(new Date(d), "d/MM/yyyy HH:mm", { locale: es });
+  return format(new Date(d), 'd/MM/yyyy HH:mm', { locale: es });
 }
 
 export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialogProps) {
@@ -59,23 +60,27 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
     enabled: open,
   });
 
+  const { data: columnas = [] } = useQuery({
+    queryKey: ['tareas-columnas'],
+    queryFn: () => listColumnas(),
+    enabled: open,
+  });
+
   const toggleMutation = useMutation({
     mutationFn: (vars: { taskClientId: string; completado: boolean }) =>
       toggleTareaCliente({ data: vars }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tareas'] });
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tareas'] }),
     onError: () => toast.error('Error al actualizar'),
   });
 
-  const estadoMutation = useMutation({
-    mutationFn: (estado: 'pendiente' | 'presentada' | 'verificada') =>
-      updateEstadoTarea({ data: { id: tarea.id, estado } }),
+  const colMutation = useMutation({
+    mutationFn: (columnaId: string | null) =>
+      moverTarea({ data: { id: tarea.id, columnaId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tareas'] });
-      toast.success('Estado actualizado');
+      toast.success('Columna actualizada');
     },
-    onError: () => toast.error('Error al actualizar estado'),
+    onError: () => toast.error('Error al cambiar columna'),
   });
 
   const commentMutation = useMutation({
@@ -101,6 +106,8 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
 
   const completados = tarea.clientes.filter((c) => c.completado).length;
   const total = tarea.clientes.length;
+
+  const columnaActual = columnas.find((c) => c.id === tarea.columnaId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -138,23 +145,25 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
             {/* Metadata */}
             <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
               <div>
-                <span className="text-muted-foreground">Estado</span>
+                <span className="text-muted-foreground">Columna</span>
                 <div className="mt-1">
                   <Select
-                    value={tarea.estado}
-                    onValueChange={(v) =>
-                      estadoMutation.mutate(v as 'pendiente' | 'presentada' | 'verificada')
-                    }
+                    value={tarea.columnaId ?? '__none__'}
+                    onValueChange={(v) => colMutation.mutate(v === '__none__' ? null : v)}
+                    disabled={colMutation.isPending}
                   >
                     <SelectTrigger className="h-7 w-auto gap-1 text-xs border-0 p-0 shadow-none focus:ring-0">
-                      <span className={`font-medium ${ESTADO_COLORS[tarea.estado] ?? ''}`}>
-                        {ESTADO_LABELS[tarea.estado] ?? tarea.estado}
+                      <span className="font-medium">
+                        {columnaActual?.nombre ?? 'Sin columna'}
                       </span>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="pendiente">Pendiente</SelectItem>
-                      <SelectItem value="presentada">Presentada</SelectItem>
-                      <SelectItem value="verificada">Verificada</SelectItem>
+                      <SelectItem value="__none__">Sin columna</SelectItem>
+                      {columnas.map((col) => (
+                        <SelectItem key={col.id} value={col.id}>
+                          {col.nombre}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -171,12 +180,6 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
                 <span className="text-muted-foreground">Vencimiento</span>
                 <p className="mt-1 font-medium">{fmtDate(tarea.fechaVencimiento)}</p>
               </div>
-              {tarea.estadoChangedAt && (
-                <div className="col-span-2">
-                  <span className="text-muted-foreground">Último cambio de estado</span>
-                  <p className="mt-1 font-medium">{fmtDateTime(tarea.estadoChangedAt)}</p>
-                </div>
-              )}
             </div>
 
             {tarea.descripcion && (

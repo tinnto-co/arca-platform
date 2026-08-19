@@ -2593,6 +2593,7 @@ export const studioTask = pgTable("studio_task", {
   descripcion: text("descripcion"),
   tipo: text("tipo").notNull().default("otro"),
   estado: text("estado").notNull().default("pendiente"),
+  columnaId: uuid("columna_id"),
   asignadoAUserId: text("asignado_a_user_id").references(() => user.id, {
     onDelete: "set null",
   }),
@@ -2636,6 +2637,22 @@ export const studioTaskClient = pgTable(
     index("idx_studio_task_client_task").on(table.taskId),
     unique("uq_studio_task_client").on(table.taskId, table.representativeId),
   ]
+);
+
+/**
+ * Columnas personalizadas del kanban de tareas.
+ * Cada organización define y ordena sus propias columnas.
+ */
+export const studioTaskColumn = pgTable(
+  "studio_task_column",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: text("organization_id").notNull(),
+    nombre: text("nombre").notNull(),
+    orden: integer("orden").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("idx_studio_task_column_org").on(table.organizationId)]
 );
 
 /**

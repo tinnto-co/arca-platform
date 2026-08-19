@@ -1,11 +1,12 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { and, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lte } from 'drizzle-orm';
 import {
   studioTask,
   studioTaskClient,
   studioTaskComment,
+  studioTaskColumn,
   cliente,
   vencimiento,
 } from '@/drizzle/schema';
@@ -67,6 +68,7 @@ export const listTareas = createServerFn({ method: 'GET' })
         descripcion: studioTask.descripcion,
         tipo: studioTask.tipo,
         estado: studioTask.estado,
+        columnaId: studioTask.columnaId,
         asignadoAUserId: studioTask.asignadoAUserId,
         asignadoNombre: user.name,
         periodoMes: studioTask.periodoMes,
@@ -190,6 +192,7 @@ export const createTarea = createServerFn({ method: 'POST' })
       asignadoAUserId: z.string().optional().nullable(),
       periodoMes: z.string().optional().nullable(),
       fechaVencimiento: z.string().optional().nullable(),
+      columnaId: z.string().uuid().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -205,6 +208,7 @@ export const createTarea = createServerFn({ method: 'POST' })
         descripcion: ctx.data.descripcion?.trim() || null,
         tipo: ctx.data.tipo,
         estado: 'pendiente',
+        columnaId: ctx.data.columnaId || null,
         asignadoAUserId: ctx.data.asignadoAUserId || null,
         periodoMes: ctx.data.periodoMes || null,
         fechaVencimiento: ctx.data.fechaVencimiento
@@ -337,32 +341,6 @@ export const toggleTareaCliente = createServerFn({ method: 'POST' })
       })
       .where(eq(studioTaskClient.id, ctx.data.taskClientId));
 
-    // Si se marcó como completado, verificar si todas las empresas están completas
-    if (ctx.data.completado && task.estado === 'pendiente') {
-      const pendientes = await db
-        .select({ id: studioTaskClient.id })
-        .from(studioTaskClient)
-        .where(
-          and(
-            eq(studioTaskClient.taskId, tc.taskId),
-            eq(studioTaskClient.completado, false)
-          )
-        )
-        .limit(1);
-
-      if (pendientes.length === 0) {
-        await db
-          .update(studioTask)
-          .set({
-            estado: 'presentada',
-            estadoChangedAt: new Date(),
-            estadoChangedByUserId: userId,
-            updatedAt: new Date(),
-          })
-          .where(eq(studioTask.id, tc.taskId));
-      }
-    }
-
     return { ok: true };
   });
 
@@ -397,6 +375,109 @@ export const addTareaComment = createServerFn({ method: 'POST' })
       .returning();
 
     return comment;
+  });
+
+// ─── Columnas del kanban ──────────────────────────────────────────────────────
+
+export const listColumnas = createServerFn({ method: 'GET' }).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+  return db
+    .select()
+    .from(studioTaskColumn)
+    .where(eq(studioTaskColumn.organizationId, orgId))
+    .orderBy(studioTaskColumn.orden, studioTaskColumn.createdAt);
+});
+
+export const createColumna = createServerFn({ method: 'POST' })
+  .validator(z.object({ nombre: z.string().min(1) }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const [last] = await db
+      .select({ orden: studioTaskColumn.orden })
+      .from(studioTaskColumn)
+      .where(eq(studioTaskColumn.organizationId, orgId))
+      .orderBy(desc(studioTaskColumn.orden))
+      .limit(1);
+
+    const nextOrden = last ? last.orden + 1 : 0;
+
+    const [col] = await db
+      .insert(studioTaskColumn)
+      .values({ organizationId: orgId, nombre: ctx.data.nombre.trim(), orden: nextOrden })
+      .returning();
+    return col;
+  });
+
+export const updateColumna = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid(), nombre: z.string().min(1) }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    await db
+      .update(studioTaskColumn)
+      .set({ nombre: ctx.data.nombre.trim() })
+      .where(and(eq(studioTaskColumn.id, ctx.data.id), eq(studioTaskColumn.organizationId, orgId)));
+
+    return { ok: true };
+  });
+
+export const deleteColumna = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    // Desasignar tareas de esta columna
+    await db
+      .update(studioTask)
+      .set({ columnaId: null })
+      .where(and(eq(studioTask.columnaId, ctx.data.id), eq(studioTask.organizationId, orgId)));
+
+    await db
+      .delete(studioTaskColumn)
+      .where(and(eq(studioTaskColumn.id, ctx.data.id), eq(studioTaskColumn.organizationId, orgId)));
+
+    return { ok: true };
+  });
+
+export const reorderColumnas = createServerFn({ method: 'POST' })
+  .validator(z.object({ ids: z.array(z.string().uuid()) }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    await Promise.all(
+      ctx.data.ids.map((id, orden) =>
+        db
+          .update(studioTaskColumn)
+          .set({ orden })
+          .where(and(eq(studioTaskColumn.id, id), eq(studioTaskColumn.organizationId, orgId)))
+      )
+    );
+
+    return { ok: true };
+  });
+
+export const moverTarea = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid(), columnaId: z.string().uuid().nullable() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    await db
+      .update(studioTask)
+      .set({ columnaId: ctx.data.columnaId, updatedAt: new Date() })
+      .where(and(eq(studioTask.id, ctx.data.id), eq(studioTask.organizationId, orgId)));
+
+    return { ok: true };
   });
 
 // ─── Auto-generación desde vencimientos ──────────────────────────────────────

@@ -52,16 +52,10 @@ function RouteComponent() {
   const isChatDetail = pathname.startsWith('/chat/');
   const isChatRoute = isChatDetail || pathname === '/chat';
 
-  const { data: orgModules = [], isLoading: isModulesLoading } = useQuery({
+  const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
   });
-
-  // Wait for the org-modules query before deciding whether to mount <CopilotKit>.
-  // Otherwise aiAgentEnabled flips false→true mid-render which unmounts/remounts
-  // the entire CopilotKit tree and triggers internal "subscribe on null" race
-  // conditions inside the library (see useCopilotChatInternal).
-  if (isModulesLoading) return null;
 
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
