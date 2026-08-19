@@ -75,7 +75,7 @@ export function VencimientosSemanales() {
         </div>
       ) : (
         <div className="space-y-4">
-          {grouped.map(([_key, dayItems]) => {
+          {grouped.map(([key, dayItems]) => {
             const date = new Date(new Date(dayItems[0]!.venceAt).toDateString());
             const hoy = isToday(date);
             return (
