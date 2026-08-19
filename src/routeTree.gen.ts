@@ -19,6 +19,7 @@ import { Route as ApiCopilotkitRouteImport } from './routes/api/copilotkit'
 import { Route as ApiAgentRouteImport } from './routes/api/agent'
 import { Route as ClientPortalIndexRouteImport } from './routes/_client/portal/index'
 import { Route as AuthedVencimientosIndexRouteImport } from './routes/_authed/vencimientos/index'
+import { Route as AuthedTareasIndexRouteImport } from './routes/_authed/tareas/index'
 import { Route as AuthedSueldosIndexRouteImport } from './routes/_authed/sueldos/index'
 import { Route as AuthedScan_pdfIndexRouteImport } from './routes/_authed/scan_pdf/index'
 import { Route as AuthedProductsIndexRouteImport } from './routes/_authed/products/index'
@@ -92,6 +93,11 @@ const ClientPortalIndexRoute = ClientPortalIndexRouteImport.update({
 const AuthedVencimientosIndexRoute = AuthedVencimientosIndexRouteImport.update({
   id: '/vencimientos/',
   path: '/vencimientos/',
+  getParentRoute: () => AuthedRouteRoute,
+} as any)
+const AuthedTareasIndexRoute = AuthedTareasIndexRouteImport.update({
+  id: '/tareas/',
+  path: '/tareas/',
   getParentRoute: () => AuthedRouteRoute,
 } as any)
 const AuthedSueldosIndexRoute = AuthedSueldosIndexRouteImport.update({
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/products/': typeof AuthedProductsIndexRoute
   '/scan_pdf/': typeof AuthedScan_pdfIndexRoute
   '/sueldos/': typeof AuthedSueldosIndexRoute
+  '/tareas/': typeof AuthedTareasIndexRoute
   '/vencimientos/': typeof AuthedVencimientosIndexRoute
   '/portal/': typeof ClientPortalIndexRoute
   '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
@@ -294,6 +301,7 @@ export interface FileRoutesByTo {
   '/products': typeof AuthedProductsIndexRoute
   '/scan_pdf': typeof AuthedScan_pdfIndexRoute
   '/sueldos': typeof AuthedSueldosIndexRoute
+  '/tareas': typeof AuthedTareasIndexRoute
   '/vencimientos': typeof AuthedVencimientosIndexRoute
   '/portal': typeof ClientPortalIndexRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
@@ -333,6 +341,7 @@ export interface FileRoutesById {
   '/_authed/products/': typeof AuthedProductsIndexRoute
   '/_authed/scan_pdf/': typeof AuthedScan_pdfIndexRoute
   '/_authed/sueldos/': typeof AuthedSueldosIndexRoute
+  '/_authed/tareas/': typeof AuthedTareasIndexRoute
   '/_authed/vencimientos/': typeof AuthedVencimientosIndexRoute
   '/_client/portal/': typeof ClientPortalIndexRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
@@ -371,6 +380,7 @@ export interface FileRouteTypes {
     | '/products/'
     | '/scan_pdf/'
     | '/sueldos/'
+    | '/tareas/'
     | '/vencimientos/'
     | '/portal/'
     | '/clients/$clientId/'
@@ -407,6 +417,7 @@ export interface FileRouteTypes {
     | '/products'
     | '/scan_pdf'
     | '/sueldos'
+    | '/tareas'
     | '/vencimientos'
     | '/portal'
     | '/clients/$clientId'
@@ -445,6 +456,7 @@ export interface FileRouteTypes {
     | '/_authed/products/'
     | '/_authed/scan_pdf/'
     | '/_authed/sueldos/'
+    | '/_authed/tareas/'
     | '/_authed/vencimientos/'
     | '/_client/portal/'
     | '/_authed/clients/$clientId/'
@@ -538,6 +550,13 @@ declare module '@tanstack/react-router' {
       path: '/vencimientos'
       fullPath: '/vencimientos/'
       preLoaderRoute: typeof AuthedVencimientosIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
+    '/_authed/tareas/': {
+      id: '/_authed/tareas/'
+      path: '/tareas'
+      fullPath: '/tareas/'
+      preLoaderRoute: typeof AuthedTareasIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
     '/_authed/sueldos/': {
@@ -744,6 +763,7 @@ interface AuthedRouteRouteChildren {
   AuthedProductsIndexRoute: typeof AuthedProductsIndexRoute
   AuthedScan_pdfIndexRoute: typeof AuthedScan_pdfIndexRoute
   AuthedSueldosIndexRoute: typeof AuthedSueldosIndexRoute
+  AuthedTareasIndexRoute: typeof AuthedTareasIndexRoute
   AuthedVencimientosIndexRoute: typeof AuthedVencimientosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
   AuthedSueldosProfileIdIndexRoute: typeof AuthedSueldosProfileIdIndexRoute
@@ -768,6 +788,7 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedProductsIndexRoute: AuthedProductsIndexRoute,
   AuthedScan_pdfIndexRoute: AuthedScan_pdfIndexRoute,
   AuthedSueldosIndexRoute: AuthedSueldosIndexRoute,
+  AuthedTareasIndexRoute: AuthedTareasIndexRoute,
   AuthedVencimientosIndexRoute: AuthedVencimientosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
   AuthedSueldosProfileIdIndexRoute: AuthedSueldosProfileIdIndexRoute,
