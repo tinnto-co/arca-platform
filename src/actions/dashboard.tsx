@@ -1,7 +1,7 @@
 import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
-import { representative, invoice, debt, dueDate, notification, alert, job, studioTask } from '@/drizzle/schema';
+import { representative, invoice, debt, dueDate, notification, alert, job, studioTask, cliente, vencimiento } from '@/drizzle/schema';
 import { eq, and, gte, lte, sql, inArray, isNull, desc, ne, isNotNull } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
@@ -256,43 +256,36 @@ export const getUpcomingDueDates = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-
-    if (userRepresentativeIds.length === 0) return [];
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const futureDate = new Date(today);
     futureDate.setDate(today.getDate() + ctx.data.days);
-    futureDate.setHours(23, 59, 59, 999);
 
-    const dueDates = await db
+    const todayStr = today.toISOString().split('T')[0]!;
+    const futureStr = futureDate.toISOString().split('T')[0]!;
+
+    const rows = await db
       .select({
-        id: dueDate.id,
-        tax: dueDate.tax,
-        concept: dueDate.concept,
-        dueDate: dueDate.dueDate,
-        clientId: dueDate.representativeId,
-        clientName: representative.name,
+        id: vencimiento.id,
+        impuesto: vencimiento.impuesto,
+        concepto: vencimiento.concepto,
+        venceAt: vencimiento.venceAt,
+        clienteId: vencimiento.clienteId,
+        clienteNombre: cliente.razonSocial,
       })
-      .from(dueDate)
-      .leftJoin(representative, eq(dueDate.representativeId, representative.id))
+      .from(vencimiento)
+      .leftJoin(cliente, eq(vencimiento.clienteId, cliente.id))
       .where(
         and(
-          inArray(dueDate.representativeId, userRepresentativeIds),
-          gte(dueDate.dueDate, today),
-          lte(dueDate.dueDate, futureDate)
+          eq(vencimiento.orgId, orgId),
+          gte(vencimiento.venceAt, todayStr),
+          lte(vencimiento.venceAt, futureStr)
         )
       )
-      .orderBy(dueDate.dueDate)
+      .orderBy(vencimiento.venceAt)
       .limit(ctx.data.limit);
 
-    return dueDates;
+    return rows;
   });
 
 // ── getOverdueDebts ────────────────────────────────────────────────────────

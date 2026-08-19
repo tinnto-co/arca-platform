@@ -41,7 +41,7 @@ export function VencimientosSemanales() {
   const grouped: [string, DueItem[]][] = [];
   const seen = new Map<string, DueItem[]>();
   for (const v of items) {
-    const key = new Date(v.dueDate).toDateString();
+    const key = new Date(v.venceAt).toDateString();
     if (!seen.has(key)) {
       seen.set(key, []);
       grouped.push([key, seen.get(key)!]);
@@ -97,17 +97,17 @@ export function VencimientosSemanales() {
                       <span
                         className={cn(
                           'inline-flex items-center rounded-[4px] px-1.5 py-0.5 text-[10px] font-medium shrink-0',
-                          getTaxColor(v.tax)
+                          getTaxColor(v.impuesto)
                         )}
                       >
-                        {v.tax}
+                        {v.impuesto}
                       </span>
                       <span className="text-[13px] text-[var(--arca-ink)] flex-1 truncate">
-                        {v.clientName ?? '—'}
+                        {v.clienteNombre ?? '—'}
                       </span>
-                      {v.concept && (
+                      {v.concepto && (
                         <span className="text-[11px] text-[var(--arca-ink-3)] truncate max-w-[140px] hidden sm:block">
-                          {v.concept}
+                          {v.concepto}
                         </span>
                       )}
                     </div>

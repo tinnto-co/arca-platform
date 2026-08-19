@@ -1,5 +1,6 @@
 import {
   boolean,
+  date,
   index,
   jsonb,
   numeric,
@@ -2559,6 +2560,27 @@ export const inflationAdjustmentLine = pgTable(
 // Studio Tasks — Módulo de Tareas (kanban interno del estudio)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── BD_IDEAL — tablas necesarias para el módulo de Tareas ───────────────────
+
+/** Empresa/cliente del estudio (BD_IDEAL). */
+export const cliente = pgTable("cliente", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: text("org_id").notNull(),
+  razonSocial: text("razon_social").notNull(),
+});
+
+/** Vencimientos impositivos scrapeados de AFIP (BD_IDEAL). */
+export const vencimiento = pgTable("vencimiento", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orgId: text("org_id").notNull(),
+  clienteId: uuid("cliente_id"),
+  impuesto: text("impuesto").notNull(),
+  concepto: text("concepto").notNull(),
+  venceAt: date("vence_at").notNull(),
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Tareas internas del estudio. Pueden ser manuales o auto-generadas desde vencimientos.
  * Estados: pendiente → presentada → verificada
@@ -2602,7 +2624,7 @@ export const studioTaskClient = pgTable(
       .references(() => studioTask.id, { onDelete: "cascade" }),
     representativeId: uuid("representative_id")
       .notNull()
-      .references(() => representative.id, { onDelete: "cascade" }),
+      .references(() => cliente.id, { onDelete: "cascade" }),
     completado: boolean("completado").notNull().default(false),
     completadoAt: timestamp("completado_at"),
     completadoByUserId: text("completado_by_user_id").references(
