@@ -2554,3 +2554,79 @@ export const inflationAdjustmentLine = pgTable(
     ),
   ],
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Studio Tasks — Módulo de Tareas (kanban interno del estudio)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Tareas internas del estudio. Pueden ser manuales o auto-generadas desde vencimientos.
+ * Estados: pendiente → presentada → verificada
+ * Tipos: iva | iibb | ddjj | sueldos | convenios | otro
+ */
+export const studioTask = pgTable("studio_task", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: text("organization_id").notNull(),
+  titulo: text("titulo").notNull(),
+  descripcion: text("descripcion"),
+  tipo: text("tipo").notNull().default("otro"),
+  estado: text("estado").notNull().default("pendiente"),
+  asignadoAUserId: text("asignado_a_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  periodoMes: text("periodo_mes"),
+  fechaVencimiento: timestamp("fecha_vencimiento"),
+  esAutoGenerada: boolean("es_auto_generada").notNull().default(false),
+  estadoChangedAt: timestamp("estado_changed_at"),
+  estadoChangedByUserId: text("estado_changed_by_user_id").references(
+    () => user.id,
+    { onDelete: "set null" }
+  ),
+  createdByUserId: text("created_by_user_id").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+/**
+ * Empresas (representatives) asociadas a una tarea.
+ * Permite marcar empresa por empresa dentro de una misma tarea.
+ */
+export const studioTaskClient = pgTable(
+  "studio_task_client",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => studioTask.id, { onDelete: "cascade" }),
+    representativeId: uuid("representative_id")
+      .notNull()
+      .references(() => representative.id, { onDelete: "cascade" }),
+    completado: boolean("completado").notNull().default(false),
+    completadoAt: timestamp("completado_at"),
+    completadoByUserId: text("completado_by_user_id").references(
+      () => user.id,
+      { onDelete: "set null" }
+    ),
+  },
+  (table) => [
+    index("idx_studio_task_client_task").on(table.taskId),
+    unique("uq_studio_task_client").on(table.taskId, table.representativeId),
+  ]
+);
+
+/**
+ * Comentarios en tareas del estudio.
+ */
+export const studioTaskComment = pgTable("studio_task_comment", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  taskId: uuid("task_id")
+    .notNull()
+    .references(() => studioTask.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => user.id, { onDelete: "cascade" }),
+  contenido: text("contenido").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
