@@ -19,13 +19,13 @@ const sql = postgres(process.env.DATABASE_URL!, { prepare: false });
 // seg = seguro colectivo (Decreto 1567/74)
 // mipyme = certificado MiPyME vigente
 // ord = orden predeterminado CLN
-const empleadorData: Array<{
+const empleadorData: {
   cuit: string;
   te: string | null;
   seg: boolean;
   mipyme: boolean;
   ord: string | null;
-}> = [
+}[] = [
   { cuit: "30707920056", te: "3181", seg: true,  mipyme: false, ord: "C" }, // Admip SRL
   { cuit: "30719153255", te: "3181", seg: false, mipyme: false, ord: "C" }, // Artzeinu x2 S.A.
   { cuit: "30718726340", te: "3184", seg: false, mipyme: false, ord: "C" }, // Avz S.R.L.

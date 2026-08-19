@@ -1142,7 +1142,7 @@ async function anexoIWorkbookBuffer(
       const r = ws.addRow(['']);
       mergeRange(r.number, 8, NC);
       const cell = r.getCell(8);
-      cell.value = line as string;
+      cell.value = line;
       cell.alignment = { horizontal: 'center' };
       cell.font = { size: 9 };
     }
@@ -1877,7 +1877,7 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
         .filter(Boolean)
         .join(' '),
     ].filter(Boolean)) {
-      banner(l as string, { size: 9 });
+      banner(l, { size: 9 });
     }
   }
 

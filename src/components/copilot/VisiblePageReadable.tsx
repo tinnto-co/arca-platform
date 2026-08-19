@@ -26,7 +26,7 @@ export function VisiblePageReadable() {
     if (typeof document === 'undefined') return;
 
     const getNode = () =>
-      (document.querySelector('[data-arca-content]') as HTMLElement | null) ??
+      (document.querySelector('[data-arca-content]')) ??
       document.body;
 
     const read = () => {

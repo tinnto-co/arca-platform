@@ -129,8 +129,8 @@ async function main() {
 
   // Extraer CUIT de empresa del título (primera fila del archivo)
   const titleText = rows[0]?.[0] ?? '';
-  const cuitMatch = titleText.match(/CUIT\s+([\d-]+)/i);
-  const empresaCuit = cuitMatch ? normalizeCuit(cuitMatch[1]!) : null;
+  const cuitMatch = /CUIT\s+([\d-]+)/i.exec(titleText);
+  const empresaCuit = cuitMatch ? normalizeCuit(cuitMatch[1]) : null;
 
   console.log(`\nArchivo: ${xlsPath}`);
   console.log(`Empresa CUIT: ${empresaCuit ?? '(no detectado)'}`);
@@ -159,7 +159,7 @@ async function main() {
     process.exit(1);
   }
 
-  const theClient = clientRows[0]!;
+  const theClient = clientRows[0];
   console.log(`Cliente DB: ${theClient.name} (${theClient.id})`);
   console.log();
 
@@ -208,7 +208,7 @@ async function main() {
       continue;
     }
 
-    const emp = empRows[0]!;
+    const emp = empRows[0];
     console.log(`   -> DB: ${emp.nombre} (${emp.id.slice(0, 8)}...)`);
 
     // Buscar recibo del período (acepta "2026-05" y "2026-5")
@@ -230,7 +230,7 @@ async function main() {
         let reciboId: string;
 
         if (reciboRows.length > 0) {
-          reciboId = reciboRows[0]!.id;
+          reciboId = reciboRows[0].id;
           await tx
             .update(liquidacionImportRecibo)
             .set({ haberes: haberesStr, noRemunerativo: noRemStr, descuentos: descStr, retenciones: retStr, neto: netoStr, reciboConfirmado: true, updatedAt: new Date() })
@@ -262,7 +262,7 @@ async function main() {
       console.log(`   OK ${nConceptos} conceptos cargados`);
     } else {
       const reciboStatus = reciboRows.length > 0
-        ? `recibo existente (${reciboRows[0]!.id.slice(0, 8)}...)`
+        ? `recibo existente (${reciboRows[0].id.slice(0, 8)}...)`
         : 'recibo NUEVO a crear';
       console.log(`   [dry] ${reciboStatus} -- ${nConceptos} conceptos a insertar`);
     }

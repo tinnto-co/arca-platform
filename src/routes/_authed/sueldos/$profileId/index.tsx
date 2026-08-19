@@ -188,7 +188,7 @@ function RouteComponent() {
                 <span>
                   CUIT{' '}
                   <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[#6E7079] tabular-nums">
-                    {selectedOption.label.match(/\((\d+)\)/)?.[1] ?? ''}
+                    {(/\((\d+)\)/.exec(selectedOption.label))?.[1] ?? ''}
                   </span>
                 </span>
                 <span>·</span>

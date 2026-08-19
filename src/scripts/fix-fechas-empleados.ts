@@ -23,7 +23,7 @@ function normDigits(v: unknown): string {
 function parseTextDate(v: unknown): Date | null {
   if (v == null || v === '') return null;
   const s = String(v).trim();
-  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
   if (!m) return null;
   const d = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])));
   return Number.isNaN(d.getTime()) ? null : d;
@@ -46,7 +46,7 @@ async function main() {
 
     for (const file of fs.readdirSync(subDir)) {
       if (!/\.(xls|xlsx)$/i.test(file)) continue;
-      const m = file.match(/\d{2}-\d{8}-\d/);
+      const m = /\d{2}-\d{8}-\d/.exec(file);
       if (!m) continue;
       const cuit = normDigits(m[0]);
 
@@ -56,7 +56,7 @@ async function main() {
       const wb = XLSX.readFile(path.join(subDir, file), { raw: true });
       const rows = (XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], {
         header: 1, defval: null, raw: true,
-      }) as unknown[][]).slice(2);
+      })).slice(2);
 
       // Load existing employees for this profile
       const empleados = await client`

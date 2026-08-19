@@ -149,7 +149,7 @@ function PortalDashboard() {
           ) : (
             <ul className="divide-y divide-[var(--arca-border)]">
               {nextDueDates.map((d) => {
-                const date = new Date(d.dueDate as unknown as string);
+                const date = new Date(d.dueDate);
                 const overdue = isPast(date);
                 return (
                   <li key={d.id} className="py-2.5 flex items-center gap-3">

@@ -42,7 +42,7 @@ const rows = await sql.unsafe(`
 
 // ─── Clasificación ──────────────────────────────────────────────────────────
 
-type Row = {
+interface Row {
   id: string;
   name: string | null;
   cuit: string;
@@ -52,7 +52,7 @@ type Row = {
   outbound_con_provincia: string;
   provincias_distintas: string;
   provincias: string[] | null;
-};
+}
 
 type Regimen = 'MULTILATERAL' | 'LOCAL' | 'SIN DATOS';
 

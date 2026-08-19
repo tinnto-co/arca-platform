@@ -307,7 +307,7 @@ function buildTopeUrls(year: number, month: number): string[] {
   const mesTypo = MESES_TYPOS[mesNormal] ?? null;
   const slug = `${year}-aportes-y-contribuciones-base-imponible-maxima-y-minima`;
   const candidates: string[] = [];
-  for (const mes of [mesNormal, mesTypo].filter(Boolean) as string[]) {
+  for (const mes of [mesNormal, mesTypo].filter(Boolean)) {
     candidates.push(`${IGNACIOONLINE_BASE}/${mes}-${slug}-actualizacion/`);
     candidates.push(`${IGNACIOONLINE_BASE}/${mes}-${slug}/`);
   }

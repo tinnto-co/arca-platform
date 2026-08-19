@@ -206,7 +206,7 @@ export const listOrgModules = createServerFn({
   const rows = await db
     .select()
     .from(organizationModule)
-    .where(eq(organizationModule.organizationId, orgId as string));
+    .where(eq(organizationModule.organizationId, orgId));
 
   return MODULES.map((m) => ({
     module: m,

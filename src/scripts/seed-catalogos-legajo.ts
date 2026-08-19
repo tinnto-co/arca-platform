@@ -34,7 +34,7 @@ async function main() {
     const safeStmt = stmt.replace(/;$/, ' ON CONFLICT DO NOTHING;');
     await client.unsafe(safeStmt);
     // Extraer nombre de tabla para log
-    const match = stmt.match(/INSERT INTO "([^"]+)"/);
+    const match = /INSERT INTO "([^"]+)"/.exec(stmt);
     if (match) console.log(`  ✓ ${match[1]}`);
   }
 

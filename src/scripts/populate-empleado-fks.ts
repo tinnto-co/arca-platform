@@ -51,7 +51,7 @@ function byNombreMap(rows: { id: string; nombre: string }[]): Map<string, string
  *  "01 - 1995/03-..."    → "01"
  */
 function extractLeadingCode(nombre: string): string | null {
-  const m = nombre.match(/^(\d+)/);
+  const m = /^(\d+)/.exec(nombre);
   return m ? m[1] : null;
 }
 
@@ -102,11 +102,11 @@ async function run(label: string, url: string) {
   );
 
   // ── Leer textos desde Excel (provincia, nacionalidad, situacion, condicion, actividad, siniestrado, zona, modalidad) ──
-  type ExcelData = {
+  interface ExcelData {
     modalidadDesc: string; situacionDesc: string; zonaDesc: string;
     condicionDesc: string; actividadDesc: string; siniestradoDesc: string;
     provinciaDesc: string; nacionalidadDesc: string;
-  };
+  }
   const excelByEmpId = new Map<string, ExcelData>();
 
   // Para cruzar empId necesitamos cargar empleados primero (ver abajo),
@@ -118,7 +118,7 @@ async function run(label: string, url: string) {
     const subDir = path.join(BASE_DIR, entry.name);
     for (const file of fs.readdirSync(subDir)) {
       if (!/\.(xls|xlsx)$/i.test(file)) continue;
-      const m = file.match(/\d{2}-\d{8}-\d/);
+      const m = /\d{2}-\d{8}-\d/.exec(file);
       if (!m) continue;
       const cuit = normDigits(m[0]);
       const profileId = profileByCuit.get(cuit);
@@ -127,7 +127,7 @@ async function run(label: string, url: string) {
       const wb = XLSX.readFile(path.join(subDir, file), { raw: true });
       const rows = (XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {
         header: 1, defval: null, raw: true,
-      }) as unknown[][]).slice(2);
+      })).slice(2);
 
       for (const row of rows) {
         const cuil = normDigits(String(row[2] ?? ''));
@@ -147,7 +147,7 @@ async function run(label: string, url: string) {
   }
 
   // ── Empleados ─────────────────────────────────────────────────────────────
-  type EmpRow = {
+  interface EmpRow {
     id: string; cuil: string; profile_id: string;
     codigo_situacion: string | null; codigo_condicion: string | null;
     codigo_actividad: string | null; codigo_modalidad_contratacion: string | null;
@@ -156,7 +156,7 @@ async function run(label: string, url: string) {
     actividad_id: string | null; modalidad_contratacion_id: string | null;
     siniestrado_id: string | null; zona_id: string | null;
     provincia_id: string | null; nacionalidad_id: string | null;
-  };
+  }
 
   const empleados = await c`
     SELECT id, cuil, profile_id,

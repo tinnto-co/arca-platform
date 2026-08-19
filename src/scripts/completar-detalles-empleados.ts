@@ -171,9 +171,9 @@ function readEmpresaExcel(carpeta: string): Map<string, ExcelRow> {
   for (const file of files) {
     const wb = XLSX.read(readFileSync(join(dir, file)));
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as unknown[][];
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
     for (let i = 2; i < data.length; i++) {
-      const parsed = parseRow(data[i] as unknown[]);
+      const parsed = parseRow(data[i]);
       if (parsed) result.set(parsed.cuil, parsed);
     }
   }
@@ -238,7 +238,7 @@ const empresas = [
 
 console.log("Cargando catálogos...");
 
-type CatalogEntry = { id: string; codigo: string; nombre: string };
+interface CatalogEntry { id: string; codigo: string; nombre: string }
 
 async function loadCatalog(table: typeof payrollModalidadContratacion): Promise<CatalogEntry[]> {
   // @ts-expect-error generic drizzle call
@@ -398,125 +398,125 @@ for (const empresa of empresas) {
 
     // ── Datos personales ──
     if (db_emp.sexo == null && xls.sexo) {
-      patch.sexo = xls.sexo; stats["sexo"]++;
+      patch.sexo = xls.sexo; stats.sexo++;
     }
     if (db_emp.fechaNacimiento == null && xls.fechaNacimiento) {
-      patch.fechaNacimiento = xls.fechaNacimiento; stats["fechaNacimiento"]++;
+      patch.fechaNacimiento = xls.fechaNacimiento; stats.fechaNacimiento++;
     }
     if (db_emp.domicilio == null && xls.domicilio) {
-      patch.domicilio = xls.domicilio; stats["domicilio"]++;
+      patch.domicilio = xls.domicilio; stats.domicilio++;
     }
     if (db_emp.localidad == null && xls.localidad) {
-      patch.localidad = xls.localidad; stats["localidad"]++;
+      patch.localidad = xls.localidad; stats.localidad++;
     }
     if (db_emp.codigoPostal == null && xls.codigoPostal) {
-      patch.codigoPostal = xls.codigoPostal; stats["codigoPostal"]++;
+      patch.codigoPostal = xls.codigoPostal; stats.codigoPostal++;
     }
     // conyuge: 0 es valor válido, solo parchear si es null
     if (db_emp.conyuge == null) {
-      patch.conyuge = xls.conyuge; stats["conyuge"]++;
+      patch.conyuge = xls.conyuge; stats.conyuge++;
     }
     if (db_emp.hijos == null && xls.hijos != null) {
-      patch.hijos = xls.hijos; stats["hijos"]++;
+      patch.hijos = xls.hijos; stats.hijos++;
     }
     if (db_emp.adherentes == null && xls.adherentes != null) {
-      patch.adherentes = xls.adherentes; stats["adherentes"]++;
+      patch.adherentes = xls.adherentes; stats.adherentes++;
     }
 
     // ── Provincia ──
     if (db_emp.provincia == null && xls.provincia) {
-      patch.provincia = xls.provincia; stats["provincia"]++;
+      patch.provincia = xls.provincia; stats.provincia++;
     }
     if (db_emp.provinciaId == null && xls.provincia) {
       const id = provinciaByNombre.get(normalizeText(xls.provincia));
-      if (id) { patch.provinciaId = id; stats["provinciaId"]++; }
+      if (id) { patch.provinciaId = id; stats.provinciaId++; }
       else sinMatchProvincia.add(xls.provincia);
     }
 
     // ── Nacionalidad ──
     if (db_emp.nacionalidad == null && xls.nacionalidad) {
-      patch.nacionalidad = xls.nacionalidad; stats["nacionalidad"]++;
+      patch.nacionalidad = xls.nacionalidad; stats.nacionalidad++;
     }
     if (db_emp.nacionalidadId == null && xls.nacionalidad) {
       const id = nacionalidadByNombre.get(normalizeText(xls.nacionalidad));
-      if (id) { patch.nacionalidadId = id; stats["nacionalidadId"]++; }
+      if (id) { patch.nacionalidadId = id; stats.nacionalidadId++; }
       else sinMatchNacionalidad.add(xls.nacionalidad);
     }
 
     // ── Laborales ──
     if (db_emp.categoria == null && xls.categoria && xls.categoria !== "Sin Categoria") {
-      patch.categoria = xls.categoria; stats["categoria"]++;
+      patch.categoria = xls.categoria; stats.categoria++;
     }
     if (db_emp.tarea == null && xls.tarea) {
-      patch.tarea = xls.tarea; stats["tarea"]++;
+      patch.tarea = xls.tarea; stats.tarea++;
     }
     if (db_emp.horasMensualesNormales == null && xls.horasMensuales != null && xls.horasMensuales > 0) {
-      patch.horasMensualesNormales = xls.horasMensuales; stats["horasMensualesNormales"]++;
+      patch.horasMensualesNormales = xls.horasMensuales; stats.horasMensualesNormales++;
     }
     if (db_emp.valorHora == null && xls.valorHora && xls.valorHora !== "0") {
-      patch.valorHora = xls.valorHora; stats["valorHora"]++;
+      patch.valorHora = xls.valorHora; stats.valorHora++;
     }
     if (db_emp.valorSueldo == null && xls.valorSueldo && xls.valorSueldo !== "0") {
-      patch.valorSueldo = xls.valorSueldo; stats["valorSueldo"]++;
+      patch.valorSueldo = xls.valorSueldo; stats.valorSueldo++;
     }
 
     // ── Modalidad de contratación ──
     if (db_emp.codigoModalidadContratacion == null && xls.codModalidad) {
-      patch.codigoModalidadContratacion = xls.codModalidad; stats["codigoModalidadContratacion"]++;
+      patch.codigoModalidadContratacion = xls.codModalidad; stats.codigoModalidadContratacion++;
     }
     if (db_emp.modalidadContratacionId == null && xls.codModalidad) {
       const id = findByCode(modalidadByCode, xls.codModalidad);
-      if (id) { patch.modalidadContratacionId = id; stats["modalidadContratacionId"]++; }
+      if (id) { patch.modalidadContratacionId = id; stats.modalidadContratacionId++; }
       else sinMatchModalidad.add(`cod=${xls.codModalidad} nombre="${xls.modalidadNombre}"`);
     }
 
     // ── Situación ──
     if (db_emp.codigoSituacion == null && xls.codSituacion) {
-      patch.codigoSituacion = xls.codSituacion; stats["codigoSituacion"]++;
+      patch.codigoSituacion = xls.codSituacion; stats.codigoSituacion++;
     }
     if (db_emp.situacionId == null && xls.situacionNombre) {
       const id = situacionByNombre.get(normalizeText(xls.situacionNombre));
-      if (id) { patch.situacionId = id; stats["situacionId"]++; }
+      if (id) { patch.situacionId = id; stats.situacionId++; }
       else sinMatchSituacion.add(xls.situacionNombre);
     }
 
     // ── Zona ──
     if (db_emp.codigoZona == null && xls.codZona) {
-      patch.codigoZona = xls.codZona; stats["codigoZona"]++;
+      patch.codigoZona = xls.codZona; stats.codigoZona++;
     }
     if (db_emp.zonaId == null && xls.codZona) {
       const id = findByCode(zonaByCode, xls.codZona);
-      if (id) { patch.zonaId = id; stats["zonaId"]++; }
+      if (id) { patch.zonaId = id; stats.zonaId++; }
       else sinMatchZona.add(`cod=${xls.codZona} nombre="${xls.zonaNombre}"`);
     }
 
     // ── Condición ──
     if (db_emp.codigoCondicion == null && xls.codCondicion) {
-      patch.codigoCondicion = xls.codCondicion; stats["codigoCondicion"]++;
+      patch.codigoCondicion = xls.codCondicion; stats.codigoCondicion++;
     }
     if (db_emp.condicionId == null && xls.condicionNombre) {
       const id = condicionByNombre.get(normalizeText(xls.condicionNombre));
-      if (id) { patch.condicionId = id; stats["condicionId"]++; }
+      if (id) { patch.condicionId = id; stats.condicionId++; }
       else sinMatchCondicion.add(xls.condicionNombre);
     }
 
     // ── Actividad ──
     if (db_emp.codigoActividad == null && xls.codActividad) {
-      patch.codigoActividad = xls.codActividad; stats["codigoActividad"]++;
+      patch.codigoActividad = xls.codActividad; stats.codigoActividad++;
     }
     if (db_emp.actividadId == null && xls.codActividad) {
       const id = findByCode(actividadByCode, xls.codActividad);
-      if (id) { patch.actividadId = id; stats["actividadId"]++; }
+      if (id) { patch.actividadId = id; stats.actividadId++; }
       else sinMatchActividad.add(`cod=${xls.codActividad} nombre="${xls.actividadNombre}"`);
     }
 
     // ── Siniestrado ──
     if (db_emp.codigoSiniestrado == null && xls.codSiniestrado) {
-      patch.codigoSiniestrado = xls.codSiniestrado; stats["codigoSiniestrado"]++;
+      patch.codigoSiniestrado = xls.codSiniestrado; stats.codigoSiniestrado++;
     }
     if (db_emp.siniestradoId == null && xls.siniestradoNombre) {
       const id = siniestradoByNombre.get(normalizeText(xls.siniestradoNombre));
-      if (id) { patch.siniestradoId = id; stats["siniestradoId"]++; }
+      if (id) { patch.siniestradoId = id; stats.siniestradoId++; }
       else sinMatchSiniestrado.add(xls.siniestradoNombre);
     }
 
@@ -524,13 +524,13 @@ for (const empresa of empresas) {
     if (db_emp.obraSocialId == null && xls.codObraSocial && xls.codObraSocial !== "0") {
       const id = obraSocialByCodigo.get(xls.codObraSocial)
         ?? obraSocialByCodigo.get(String(parseInt(xls.codObraSocial, 10)));
-      if (id) { patch.obraSocialId = id; stats["obraSocialId"]++; }
+      if (id) { patch.obraSocialId = id; stats.obraSocialId++; }
       else sinMatchObraSocial.add(`cod=${xls.codObraSocial} nombre="${xls.obraSocialNombre}"`);
     }
 
     // ── Observaciones ──
     if (db_emp.observaciones == null && xls.observaciones) {
-      patch.observaciones = xls.observaciones; stats["observaciones"]++;
+      patch.observaciones = xls.observaciones; stats.observaciones++;
     }
 
     if (Object.keys(patch).length > 0) {

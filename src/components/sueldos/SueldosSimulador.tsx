@@ -129,6 +129,7 @@ interface FlowHeader {
   diasTrabajados?: number | null;
   horasTrabajadas?: number | null;
   importeMaternidadArt13?: string | null;
+  fechaBaja?: string | null;
 }
 
 interface SueldosSimuladorProps {
@@ -517,6 +518,7 @@ export function SueldosSimulador({
           diasTrabajados: flowHeader.diasTrabajados,
           horasTrabajadas: flowHeader.horasTrabajadas,
           importeMaternidadArt13: flowHeader.importeMaternidadArt13,
+          fechaBaja: flowHeader.fechaBaja,
         },
       });
     },
@@ -669,6 +671,7 @@ export function SueldosSimulador({
       diasTrabajados?: number | null;
       horasTrabajadas?: number | null;
       importeMaternidadArt13?: string | null;
+      fechaBaja?: string | null;
     }) => {
       setFlowHeader({
         importEmpleadoId: payload.importEmpleadoId,
@@ -700,6 +703,7 @@ export function SueldosSimulador({
         diasTrabajados: payload.diasTrabajados,
         horasTrabajadas: payload.horasTrabajadas,
         importeMaternidadArt13: payload.importeMaternidadArt13,
+        fechaBaja: payload.fechaBaja,
       });
       queryClient.invalidateQueries({
         queryKey: [
@@ -765,6 +769,7 @@ export function SueldosSimulador({
       horasTrabajadas: flowHeader.horasTrabajadas != null
         ? String(flowHeader.horasTrabajadas) : '',
       importeMaternidadArt13: flowHeader.importeMaternidadArt13 ?? '',
+      fechaBaja: flowHeader.fechaBaja ?? '',
     });
     setFlowHeader(null);
   }, [flowHeader]);
@@ -888,7 +893,7 @@ export function SueldosSimulador({
                 {sinEscalaParaPeriodo ? (
                   <>
                     Sin escala cargada para{' '}
-                    <span className="font-semibold">{flowHeader!.periodo}</span>.{' '}
+                    <span className="font-semibold">{flowHeader.periodo}</span>.{' '}
                     Usando la más reciente
                     {fallbackPeriodoLabel && <> ({fallbackPeriodoLabel})</>}
                     :{' '}
@@ -903,7 +908,7 @@ export function SueldosSimulador({
                 ) : (
                   <>
                     Escala vigente para período{' '}
-                    <span className="font-semibold">{flowHeader!.periodo}</span>
+                    <span className="font-semibold">{flowHeader.periodo}</span>
                     {periodoEscalaLabel && (
                       <> (<span className="font-semibold">{periodoEscalaLabel}</span>)</>
                     )}
@@ -981,7 +986,7 @@ export function SueldosSimulador({
                   {sinEscalaParaPeriodo ? (
                     <>
                       Sin escala cargada para{' '}
-                      <span className="font-semibold">{flowHeader!.periodo}</span>.{' '}
+                      <span className="font-semibold">{flowHeader.periodo}</span>.{' '}
                       Usando la más reciente
                       {fallbackPeriodoLabel && (
                         <> ({fallbackPeriodoLabel})</>
@@ -1001,7 +1006,7 @@ export function SueldosSimulador({
                   ) : (
                     <>
                       Escala vigente para período{' '}
-                      <span className="font-semibold">{flowHeader!.periodo}</span>
+                      <span className="font-semibold">{flowHeader.periodo}</span>
                       {periodoEscalaLabel && (
                         <>
                           {' '}

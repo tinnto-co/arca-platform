@@ -13,9 +13,9 @@ for (const filePath of files) {
   const buf = readFileSync(filePath);
   const wb = XLSX.read(buf);
   const ws = wb.Sheets[wb.SheetNames[0]];
-  const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as unknown[][];
+  const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
   for (let i = 0; i < Math.min(5, data.length); i++) {
-    if ((data[i] as unknown[]).length > 0) {
+    if ((data[i]).length > 0) {
       console.log(`  Row ${i}:`, JSON.stringify(data[i]));
     }
   }

@@ -455,9 +455,7 @@ async function initializeServer() {
   // Start background crons (guarded: a cron failure must never break the server).
   try {
     const { startAccountingInvoiceCron } =
-      (await import('./src/lib/accounting-cron')) as {
-        startAccountingInvoiceCron: () => void;
-      };
+      (await import('./src/lib/accounting-cron'));
     startAccountingInvoiceCron();
   } catch (error) {
     log.warning(`Accounting batch cron not started: ${String(error)}`);

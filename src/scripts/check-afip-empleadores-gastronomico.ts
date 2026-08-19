@@ -19,7 +19,7 @@ const rows = await sql`
 `;
 
 console.log('\n=== CON CCT 389/04 en AFIP (coinciden) ===');
-const coinciden = rows.filter(r => r.afip_cct && r.afip_cct.replace(/^0/, '') === '389/04');
+const coinciden = rows.filter(r => r.afip_cct?.replace(/^0/, '') === '389/04');
 for (const r of coinciden) console.log(`  ✓ ${r.name} | CUIT: ${r.identity_number} | AFIP: ${r.afip_cct} - ${r.afip_actividad}`);
 
 console.log('\n=== CON OTRO CCT en AFIP (mal asignadas en nuestro sistema) ===');

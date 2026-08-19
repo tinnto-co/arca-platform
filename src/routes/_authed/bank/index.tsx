@@ -381,7 +381,7 @@ function BankPage() {
     mutationFn: () =>
       autoMatchTransactions({ data: { bankAccountId: accountId } }),
     onSuccess: (result) => {
-      const r = result as { matched: number };
+      const r = result;
       void queryClient.invalidateQueries({
         queryKey: ['bankTransactions', accountId],
       });

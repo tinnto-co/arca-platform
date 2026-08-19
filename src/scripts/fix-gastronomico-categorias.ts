@@ -38,7 +38,7 @@ function puestoToCodigo(puesto: string): string {
 
 /** Extrae el número de categoría del código actual: "CAT4_1EST_D" → 4 */
 function getCatNum(codigo: string): number | null {
-  const m = codigo.match(/^CAT(\d+)_/);
+  const m = /^CAT(\d+)_/.exec(codigo);
   return m ? parseInt(m[1]) : null;
 }
 
@@ -49,7 +49,7 @@ function getCatNum(codigo: string): number | null {
 function getCodigoBase(codigo: string): string {
   // Si ya tiene el formato nuevo (sin puesto), lo devuelve tal cual
   // Formato: CAT{N}_{M}EST o CAT{N}_{M}EST_{Letra}
-  const m = codigo.match(/^(CAT\d+_\d+EST(?:_[A-D])?)(?:_.*)?$/);
+  const m = /^(CAT\d+_\d+EST(?:_[A-D])?)(?:_.*)?$/.exec(codigo);
   return m ? m[1] : codigo;
 }
 

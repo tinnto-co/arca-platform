@@ -310,7 +310,7 @@ export function CopilotActions() {
       return (
         <ScrapeConfirmation
           clientId={clientId}
-          jobType={jobType as ScrapeJobType}
+          jobType={jobType}
           respond={respond}
         />
       );

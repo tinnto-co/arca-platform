@@ -58,7 +58,7 @@ console.log("✓ Tipos de empresa seeded (8 opciones)");
 // Datos de SOS Contador "Datos del Empleador" para cada empresa.
 // te = código SOS de tipo empresa | s = seguro colectivo | o = orden CLN
 
-const empleadorData: Array<{ cuit: string; te?: string; s: number; o?: string }> = [
+const empleadorData: { cuit: string; te?: string; s: number; o?: string }[] = [
   { cuit: "30707920056", te: "3181", s: 1, o: "C" },
   { cuit: "30719153255", te: "3181", s: 0, o: "C" },
   { cuit: "30718726340", te: "3184", s: 0, o: "C" },

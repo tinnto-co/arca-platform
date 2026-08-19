@@ -220,7 +220,7 @@ function IssueRow({
 
 // ─── Dialog overrides LSD ────────────────────────────────────────────────────
 
-type OverrideRow = {
+interface OverrideRow {
   reciboId: string;
   empleadoNombre: string;
   rem4y8Override: string | null;
@@ -230,7 +230,7 @@ type OverrideRow = {
   contribucionAdicionalOS: string | null;
   importeADetraerLey27430: string | null;
   importeMaternidadArt13: string | null;
-};
+}
 
 function LsdOverridesDialog({
   clientId,
@@ -275,7 +275,7 @@ function LsdOverridesDialog({
       queryClient.invalidateQueries({ queryKey: ['lsd-validacion'] });
       onClose();
     },
-    onError: (err) => toast.error(`Error: ${(err as Error).message}`),
+    onError: (err) => toast.error(`Error: ${(err).message}`),
   });
 
   return (
@@ -518,7 +518,7 @@ function GenerarPresentacionDialog({
       onClose();
     },
     onError: (err) => {
-      toast.error(`Error al generar LSD: ${(err as Error).message}`);
+      toast.error(`Error al generar LSD: ${(err).message}`);
     },
   });
 
@@ -529,7 +529,7 @@ function GenerarPresentacionDialog({
       toast.success(`Conceptos LSD descargados — ${result.conceptos} conceptos`);
     },
     onError: (err) => {
-      toast.error(`Error al generar conceptos: ${(err as Error).message}`);
+      toast.error(`Error al generar conceptos: ${(err).message}`);
     },
   });
 
@@ -560,7 +560,7 @@ function GenerarPresentacionDialog({
                 style={{ background: 'var(--arca-surface)', border: '1px solid var(--arca-border)' }}
               >
                 <AlertCircle className="h-4 w-4 mt-0.5 text-red-500 shrink-0" />
-                <p className="text-[var(--arca-ink-2)]">{(error as Error).message}</p>
+                <p className="text-[var(--arca-ink-2)]">{(error).message}</p>
               </div>
             )}
 

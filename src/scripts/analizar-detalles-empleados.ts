@@ -74,8 +74,8 @@ function readExcel(carpeta: string) {
   const result = new Map<string, ReturnType<typeof parseRow>>();
   for (const file of files) {
     const wb = XLSX.read(readFileSync(join(dir, file)));
-    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) as unknown[][];
-    for (let i = 2; i < data.length; i++) { const p = parseRow(data[i] as unknown[]); if (p) result.set(p.cuil, p); }
+    const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+    for (let i = 2; i < data.length; i++) { const p = parseRow(data[i]); if (p) result.set(p.cuil, p); }
   }
   return result;
 }
@@ -144,7 +144,7 @@ for (const [carpeta, cuit] of Object.entries(cuitMap)) {
     mark(dbEmp.codigoPostal, xls.codigoPostal, "codigoPostal");
     mark(dbEmp.provincia, xls.provincia, "provincia");
     mark(dbEmp.nacionalidad, xls.nacionalidad, "nacionalidad");
-    if (dbEmp.conyuge === null && xls.conyuge !== null) { faltan.push("conyuge"); camposEmpresa.add("conyuge"); faltantesPorCampo["conyuge"] = (faltantesPorCampo["conyuge"] ?? 0) + 1; }
+    if (dbEmp.conyuge === null && xls.conyuge !== null) { faltan.push("conyuge"); camposEmpresa.add("conyuge"); faltantesPorCampo.conyuge = (faltantesPorCampo.conyuge ?? 0) + 1; }
     mark(dbEmp.hijos, xls.hijos, "hijos");
     mark(dbEmp.adherentes, xls.adherentes, "adherentes");
     mark(dbEmp.codigoModalidadContratacion, xls.codModalidad, "codigoModalidadContratacion");

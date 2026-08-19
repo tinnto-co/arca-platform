@@ -30,24 +30,24 @@ export const listAlerts = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
 
     const conditions: ReturnType<typeof eq>[] = [
-      eq(alertTable.organizationId, orgId) as any,
+      eq(alertTable.organizationId, orgId),
     ];
 
     if (ctx.data.status) {
-      conditions.push(eq(alertTable.status, ctx.data.status) as any);
+      conditions.push(eq(alertTable.status, ctx.data.status));
     }
     if (ctx.data.severity) {
-      conditions.push(eq(alertTable.severity, ctx.data.severity) as any);
+      conditions.push(eq(alertTable.severity, ctx.data.severity));
     }
     if (ctx.data.type) {
-      conditions.push(eq(alertTable.type, ctx.data.type) as any);
+      conditions.push(eq(alertTable.type, ctx.data.type));
     }
     if (ctx.data.representativeId) {
-      conditions.push(eq(alertTable.representativeId, ctx.data.representativeId) as any);
+      conditions.push(eq(alertTable.representativeId, ctx.data.representativeId));
     }
     if (ctx.data.errorCategory) {
       conditions.push(
-        sql`${alertTable.metadata}->>'errorCategory' = ${ctx.data.errorCategory}` as any
+        sql`${alertTable.metadata}->>'errorCategory' = ${ctx.data.errorCategory}`
       );
     }
 

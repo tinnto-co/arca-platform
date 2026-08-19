@@ -30,7 +30,7 @@ const db = drizzle(client);
 
 const SOURCE_URL = 'https://estudiovilaplana.com.ar/sueldos-gastronomicos/';
 
-type EscalaRef = { codigo: string; basico: number; noRemunerativo: number };
+interface EscalaRef { codigo: string; basico: number; noRemunerativo: number }
 
 // ── Abril 2026 ─────────────────────────────────────────────────────────────────
 const ABRIL_2026: EscalaRef[] = [
@@ -164,12 +164,12 @@ const JUNIO_2026: EscalaRef[] = [
   { codigo: 'CAT7_5EST_Jefe_de_brigada',          basico: 1_970_475, noRemunerativo:  73_500 },
 ];
 
-type Periodo = {
+interface Periodo {
   label: string;
   desde: Date;
   hasta: Date | null;
   escalas: EscalaRef[];
-};
+}
 
 const PERIODOS: Periodo[] = [
   { label: 'Abril 2026',  desde: new Date('2026-04-01'), hasta: new Date('2026-04-30'), escalas: ABRIL_2026 },

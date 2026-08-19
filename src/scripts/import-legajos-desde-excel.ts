@@ -92,13 +92,13 @@ function toNumericOrNull(v: unknown): string | null {
  * Returns { filePath, cuit } pairs where cuit is the 11-digit string
  * extracted from the filename (e.g. "30-70792005-6_legajos.xls" → "30707920056").
  */
-function findLegajoFiles(dir: string): Array<{ filePath: string; cuit: string }> {
+function findLegajoFiles(dir: string): { filePath: string; cuit: string }[] {
   if (!fs.existsSync(dir)) {
     console.error(`Base directory not found: ${dir}`);
     return [];
   }
 
-  const result: Array<{ filePath: string; cuit: string }> = [];
+  const result: { filePath: string; cuit: string }[] = [];
 
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -109,7 +109,7 @@ function findLegajoFiles(dir: string): Array<{ filePath: string; cuit: string }>
       if (!/\.(xls|xlsx)$/i.test(file.name)) continue;
 
       // Extract CUIT from filename: strip dashes then take first 11-digit sequence
-      const cuitMatch = file.name.match(/\d{2}-\d{8}-\d|\d{11}/);
+      const cuitMatch = /\d{2}-\d{8}-\d|\d{11}/.exec(file.name);
       if (!cuitMatch) continue;
       const cuit = normDigits(cuitMatch[0]);
       if (cuit.length !== 11) continue;
@@ -171,7 +171,7 @@ function parseDataRows(sheet: XLSX.WorkSheet): unknown[][] {
   });
 
   // Skip row 0 (title) and row 1 (header); return rows from index 2 onwards
-  return (data as unknown[][]).slice(2);
+  return (data).slice(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -294,7 +294,7 @@ async function main() {
     let companyUpdated = 0;
 
     for (const row of rows) {
-      const r = row as unknown[];
+      const r = row;
 
       // Extract CUIL (col 2)
       const cuilRaw = r[2];

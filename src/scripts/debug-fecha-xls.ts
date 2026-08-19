@@ -21,7 +21,7 @@ for (const entry of entries) {
     const path = join(dir, file);
     const wb = XLSX.read(readFileSync(path), { type: "buffer", cellDates: false });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null }) as unknown[][];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -38,7 +38,7 @@ for (const entry of entries) {
       // Leer también con cellDates: true para ver la fecha interpretada por xlsx
       const wb2 = XLSX.read(readFileSync(path), { type: "buffer", cellDates: true });
       const sheet2 = wb2.Sheets[wb2.SheetNames[0]];
-      const rows2 = XLSX.utils.sheet_to_json<unknown[]>(sheet2, { header: 1, defval: null }) as unknown[][];
+      const rows2 = XLSX.utils.sheet_to_json<unknown[]>(sheet2, { header: 1, defval: null });
       const row2 = rows2[i];
       console.log(`  row[14] con cellDates:true: ${JSON.stringify(row2?.[14])}  tipo: ${typeof row2?.[14]}`);
 

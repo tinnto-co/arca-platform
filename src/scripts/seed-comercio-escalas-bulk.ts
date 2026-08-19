@@ -17,7 +17,7 @@ import { payrollConvenio, payrollConvenioCategoria, payrollEscala } from '@/driz
 
 const SOURCE_URL = 'https://estudiovilaplana.com.ar/escala-salarial-empleados-comercio/';
 
-type EscalaRef = { codigo: string; nombre: string; basico: number; noRemunerativo?: number };
+interface EscalaRef { codigo: string; nombre: string; basico: number; noRemunerativo?: number }
 
 // ── Datos ─────────────────────────────────────────────────────────────────────
 
@@ -120,13 +120,13 @@ const JUNIO_2026: EscalaRef[] = [
 // Julio en adelante: mismos básicos que Junio, sin NR
 const JULIO_2026 = JUNIO_2026;
 
-type Periodo = {
+interface Periodo {
   label: string;
   desde: Date;
   hasta: Date | null;
   escalas: EscalaRef[];
   noRemunerativo: number;
-};
+}
 
 const PERIODOS: Periodo[] = [
   { label: 'Marzo 2026 (resumen)', desde: new Date('2026-03-01'), hasta: new Date('2026-03-31'), escalas: MARZO_2026, noRemunerativo: 100_000 },

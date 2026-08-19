@@ -109,7 +109,7 @@ function moneyFmt(v: string | number | null | undefined): string {
 
 /** Suma montos de líneas de detalle (mismo criterio que la grilla del recibo). */
 function sumaMontosDetalle(
-  rows: Array<{ detalle: { monto: string | null | undefined } }>
+  rows: { detalle: { monto: string | null | undefined } }[]
 ): number {
   return rows.reduce((acc, r) => {
     const n = Number(r.detalle.monto ?? 0);
@@ -127,11 +127,11 @@ function esCategoriaGerente(v: string | null | undefined): boolean {
 }
 
 function basicoDesdeDetalle(
-  rows: Array<{
+  rows: {
     detalle: { codigo: string; monto: string | null };
     concepto?: { numeroSos?: number | null; nombre?: string | null } | null;
     conceptoSos?: { codigo?: string | null; nombre?: string | null } | null;
-  }>
+  }[]
 ): number {
   for (const r of rows) {
     const numSos = r.concepto?.numeroSos ?? null;
@@ -889,8 +889,8 @@ function moneyFmtSac(v: number): string {
 function sugerirDiasSemestre(fechaIngreso: Date | null, periodo: string): number {
   if (!fechaIngreso) return 180;
   const [yearStr, monthStr] = periodo.split('-');
-  const year = parseInt(yearStr!, 10);
-  const month = parseInt(monthStr!, 10);
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
   const esPrimerSemestre = month <= 6;
   const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1);     // 1/1 ó 1/7
   const semEnd   = new Date(year, esPrimerSemestre ? 5 : 11, esPrimerSemestre ? 30 : 31); // 30/6 ó 31/12
@@ -961,13 +961,13 @@ function GenerarSacDialog({
       onClose();
     },
     onError: (err) => {
-      toast.error((err as Error).message ?? 'Error al generar los SAC.');
+      toast.error((err).message ?? 'Error al generar los SAC.');
     },
   });
 
   const pendientes = preview.filter((p) => !p.yaTieneSac && p.mejorMonto > 0);
   const seleccionados = preview.filter((p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0);
-  const semestre = parseInt(periodo.split('-')[1]!, 10) <= 6 ? '1er semestre' : '2do semestre';
+  const semestre = parseInt(periodo.split('-')[1], 10) <= 6 ? '1er semestre' : '2do semestre';
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -1117,7 +1117,7 @@ function GenerarSacDialog({
 /** Último día del mes de un período YYYY-MM. */
 function lastDayOfPeriodo(periodo: string): string {
   const [y, m] = periodo.split('-');
-  const d = new Date(parseInt(y!), parseInt(m!), 0).getDate();
+  const d = new Date(parseInt(y), parseInt(m), 0).getDate();
   return `${y}-${m}-${String(d).padStart(2, '0')}`;
 }
 
@@ -1184,7 +1184,7 @@ export function GenerarLiqFinalDialog({
       queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId, profileId] });
       onClose();
     },
-    onError: (err) => toast.error((err as Error).message ?? 'Error al generar las liquidaciones finales.'),
+    onError: (err) => toast.error((err).message ?? 'Error al generar las liquidaciones finales.'),
   });
 
   return (
@@ -1398,7 +1398,7 @@ function ReciboDocumento({
   const neto = redondeo > 0 ? Math.ceil(netoRaw) : netoRaw;
 
   const cab = completarCabeceraConLegajo(
-    pickCabecera(liquidacion as unknown as Record<string, unknown>),
+    pickCabecera(liquidacion),
     empleado
   );
 

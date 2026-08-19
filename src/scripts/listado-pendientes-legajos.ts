@@ -37,7 +37,7 @@ async function main() {
 
     for (const file of fs.readdirSync(subDir)) {
       if (!/\.(xls|xlsx)$/i.test(file)) continue;
-      const m = file.match(/\d{2}-\d{8}-\d/);
+      const m = /\d{2}-\d{8}-\d/.exec(file);
       if (!m) continue;
       const cuit = normDigits(m[0]);
 
@@ -52,7 +52,7 @@ async function main() {
       const wb = XLSX.readFile(path.join(subDir, file), { raw: true });
       const rows = (XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[wb.SheetNames[0]], {
         header: 1, defval: null, raw: true,
-      }) as unknown[][]).slice(2);
+      })).slice(2);
 
       for (const row of rows) {
         const cuil = normDigits(String(row[2] ?? ''));

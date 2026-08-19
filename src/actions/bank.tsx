@@ -196,16 +196,16 @@ export const listBankTransactions = createServerFn({ method: 'GET' })
     await ensureBankAccountBelongsToOrg(ctx.data.bankAccountId, orgId);
 
     const conditions: ReturnType<typeof eq>[] = [
-      eq(bankTransaction.bankAccountId, ctx.data.bankAccountId) as any,
+      eq(bankTransaction.bankAccountId, ctx.data.bankAccountId),
     ];
     if (ctx.data.from) {
       conditions.push(
-        gte(bankTransaction.transactionDate, new Date(ctx.data.from)) as any
+        gte(bankTransaction.transactionDate, new Date(ctx.data.from))
       );
     }
     if (ctx.data.to) {
       conditions.push(
-        lte(bankTransaction.transactionDate, new Date(ctx.data.to)) as any
+        lte(bankTransaction.transactionDate, new Date(ctx.data.to))
       );
     }
 

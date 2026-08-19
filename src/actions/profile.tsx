@@ -49,7 +49,7 @@ export const getClient = createServerFn({
         .where(eq(representative.id, clientData.representativeId))
         .limit(1);
 
-      if (!representativeData || representativeData.organizationId !== orgId) {
+      if (representativeData?.organizationId !== orgId) {
         throw new Error('No autorizado');
       }
     }

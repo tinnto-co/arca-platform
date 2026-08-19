@@ -52,7 +52,7 @@ console.log("✓ Columnas FK de defaults agregadas a client");
 
 // 3a. payroll_situacion — mapeado por codigo AFIP
 // SOS IDs extraídos de cbsituacion + código AFIP LSD correspondiente
-const situacionMap: Array<{ sosId: string; codigoAfip: string }> = [
+const situacionMap: { sosId: string; codigoAfip: string }[] = [
   { sosId: "1070",  codigoAfip: "01" }, // Activo
   { sosId: "10205", codigoAfip: "01" }, // Activo - LSD (sin remuneración) → mismo bucket
   { sosId: "1069",  codigoAfip: "02" }, // Baja por fallecimiento
@@ -93,7 +93,7 @@ for (const { sosId, codigoAfip } of situacionMap) {
 console.log("✓ payroll_situacion mapeado");
 
 // 3b. payroll_condicion — mapeado por codigo AFIP
-const condicionMap: Array<{ sosId: string; codigoAfip: string }> = [
+const condicionMap: { sosId: string; codigoAfip: string }[] = [
   { sosId: "3171",  codigoAfip: "00" }, // SERVICIOS COMUNES Mayor de 18 años
   { sosId: "3172",  codigoAfip: "01" }, // Jubilado
   { sosId: "3173",  codigoAfip: "02" }, // Menor
@@ -120,7 +120,7 @@ for (const { sosId, codigoAfip } of condicionMap) {
 console.log("✓ payroll_condicion mapeado");
 
 // 3c. payroll_siniestrado — mapeado por codigo AFIP
-const siniestradoMap: Array<{ sosId: string; codigoAfip: string }> = [
+const siniestradoMap: { sosId: string; codigoAfip: string }[] = [
   { sosId: "1092",  codigoAfip: "00" }, // No Incapacitado
   { sosId: "1093",  codigoAfip: "01" }, // Incapacidad Laboral Temporaria (ILT)
   { sosId: "1094",  codigoAfip: "02" }, // Incapacidad Laboral Permanente Parcial Definitiva (ILPPD)
@@ -148,7 +148,7 @@ console.log("✓ payroll_siniestrado mapeado");
 
 // 3d. payroll_actividad — mapear por código AFIP extraído del texto SOS
 // El texto SOS comienza con el código de 3 dígitos: "049 Actividades no clasificadas"
-const actividadSosOpts: Array<{ sosId: string; text: string }> = [
+const actividadSosOpts: { sosId: string; text: string }[] = [
   {"sosId":"1180","text":"000 Zona de Desastre. Decreto 1386/01"},
   {"sosId":"1181","text":"001 Producción Primaria"},
   {"sosId":"1182","text":"002 Producción de bienes sin comercializ"},
@@ -263,7 +263,7 @@ console.log("✓ payroll_actividad mapeado");
 
 // 3e. payroll_modalidad_contratacion — mapear por texto (ILIKE)
 // SOS tiene 160 opciones vs nuestras 78; priorizamos las que coinciden por texto
-const contratacionSosOpts: Array<{ sosId: string; text: string }> = [
+const contratacionSosOpts: { sosId: string; text: string }[] = [
   {"sosId":"1128","text":"A Tiempo completo determinado (contrato a plazo fijo)"},
   {"sosId":"1114","text":"A Tiempo completo indeterminado/Trabajo permanente"},
   {"sosId":"1127","text":"A tiempo parcial determinado (contrato a plazo fijo)"},
@@ -332,7 +332,7 @@ console.log(`✓ payroll_modalidad_contratacion: ${contratMapped} mapeados`);
 // SOS tiene 362 opciones históricas (un ID por periodo). Mapeamos la más reciente de cada zona.
 // Formato SOS: "01 - 1995/03-1995/08 - Capital Federal (0 %)"
 // Extraemos el código "01" y usamos el ID más alto (más reciente) para cada zona.
-const zonaSosOpts: Array<{ sosId: string; text: string }> = [
+const zonaSosOpts: { sosId: string; text: string }[] = [
   // Los más recientes por zona (IDs más altos = más nuevos en SOS)
   {"sosId":"2065","text":"01 - Capital Federal"},
   {"sosId":"2066","text":"02 - Buenos Aires"},
@@ -363,7 +363,7 @@ const zonaSosOpts: Array<{ sosId: string; text: string }> = [
 // Para zona, SOS tiene múltiples IDs históricos por el mismo código.
 // Usamos el primer SOS ID de cada zona (el que vimos en el scraping: "1703" para "01").
 // Actualizar mapeando por el código de 2 dígitos al inicio del texto.
-const zonaSosFromScraping: Array<{ sosId: string; codigoZona: string }> = [
+const zonaSosFromScraping: { sosId: string; codigoZona: string }[] = [
   { sosId: "1703", codigoZona: "01" }, // Capital Federal (el más usado, visto en scraping)
 ];
 
@@ -379,7 +379,7 @@ console.log("✓ payroll_zona mapeado (zona 01 - Capital Federal)");
 // 3g. obra_social — mapear por código RNOS (el texto del cbobrasocial ES el código RNOS)
 // cbobrasocial.value = SOS internal ID; cbobrasocial.text = RNOS code (ej "126205")
 // Usamos los datos del scraping de employers para construir el mapa RNOS → SOS ID
-const obraSocialMap: Array<{ sosId: string; rnos: string }> = [
+const obraSocialMap: { sosId: string; rnos: string }[] = [
   { sosId: "3236", rnos: "000000" }, // Administración Recursos para Salud
   { sosId: "3051", rnos: "400800" }, // OSECAC (Ejecutivos y Personal de Comercio)
   { sosId: "2971", rnos: "126205" }, // Obra Social de Empleados de Comercio
@@ -403,11 +403,11 @@ console.log("✓ obra_social mapeado");
 // Datos de SOS: cuit → {situacionSosId, condicionSosId, actividadSosId, contratacionSosId,
 //                        siniestradoSosId, zonaSosId, obraSocialSosId}
 
-const empleadorDefaults: Array<{
+const empleadorDefaults: {
   cuit: string;
   sit: string; cond: string; act: string; cont: string;
   sin: string; zona: string; os: string | null;
-}> = [
+}[] = [
   { cuit:"30707920056", sit:"1070",cond:"3171",act:"1220",cont:"1114",sin:"1092",zona:"1703",os:"3051"  },
   { cuit:"30719153255", sit:"1070",cond:"3171",act:"1220",cont:"1114",sin:"1092",zona:"1703",os:"2971"  },
   { cuit:"30718726340", sit:"1070",cond:"3171",act:"1220",cont:"1114",sin:"1092",zona:"1703",os:null   },

@@ -254,7 +254,7 @@ function PortalSolicitudes() {
                         <span className="text-[11px] text-[var(--arca-ink-4)]">
                           Vence:{' '}
                           {format(
-                            new Date(req.dueAt as unknown as string),
+                            new Date(req.dueAt),
                             'dd/MM/yyyy',
                             { locale: es }
                           )}
@@ -264,7 +264,7 @@ function PortalSolicitudes() {
                         <span className="text-[11px] text-[var(--arca-accent-pos)]">
                           Completada el{' '}
                           {format(
-                            new Date(req.completedAt as unknown as string),
+                            new Date(req.completedAt),
                             'dd/MM/yyyy',
                             { locale: es }
                           )}

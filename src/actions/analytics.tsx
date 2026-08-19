@@ -43,7 +43,7 @@ export const generateIvaProjection = createServerFn({ method: 'POST' })
       .from(client)
       .innerJoin(representative, eq(client.representativeId, representative.id))
       .where(
-        and(eq(client.id, ctx.data.profileId), eq(representative.organizationId, orgId as string))
+        and(eq(client.id, ctx.data.profileId), eq(representative.organizationId, orgId))
       )
       .limit(1)
       .then((r) => r[0]);
@@ -178,7 +178,7 @@ export const getRatios = createServerFn({ method: 'GET' })
       .select({ id: representative.id, name: representative.name })
       .from(representative)
       .where(
-        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId as string))
+        and(eq(representative.id, ctx.data.clientId), eq(representative.organizationId, orgId))
       )
       .limit(1)
       .then((r) => r[0]);
@@ -316,7 +316,7 @@ export const getClientsAtRisk = createServerFn({ method: 'GET' })
       .where(
         and(
           eq(clientRiskSnapshot.period, period),
-          eq(representative.organizationId, orgId as string),
+          eq(representative.organizationId, orgId),
           inArray(clientRiskSnapshot.riskLevel, targetLevels)
         )
       )
@@ -340,7 +340,7 @@ export const getExecutiveSummary = createServerFn({
   const orgRepresentatives = await db
     .select({ id: representative.id })
     .from(representative)
-    .where(eq(representative.organizationId, orgId as string));
+    .where(eq(representative.organizationId, orgId));
 
   const clientIds = orgRepresentatives.map((c) => c.id);
   const totalClients = clientIds.length;
@@ -388,7 +388,7 @@ export const getExecutiveSummary = createServerFn({
       .innerJoin(representative, eq(client.representativeId, representative.id))
       .where(
         and(
-          eq(representative.organizationId, orgId as string),
+          eq(representative.organizationId, orgId),
           eq(client.managedByStudy, true),
           isNull(client.disabledAt)
         )
@@ -440,7 +440,7 @@ export const getExecutiveSummary = createServerFn({
       .where(
         and(
           eq(clientRiskSnapshot.period, currentPeriod),
-          eq(representative.organizationId, orgId as string),
+          eq(representative.organizationId, orgId),
           inArray(clientRiskSnapshot.riskLevel, ['high', 'critical'])
         )
       )

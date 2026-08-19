@@ -510,7 +510,7 @@ export const uploadDocumentForRequest = createServerFn({ method: 'POST' })
           documentMimeType: data.mimeType,
           uploadedAt: new Date().toISOString(),
           uploadedByUserId: userId,
-        } as any,
+        },
       })
       .where(eq(representativeRequest.id, data.requestId));
 
@@ -576,7 +576,7 @@ export const updateClientRequestStatus = createServerFn({ method: 'POST' })
       .from(representativeRequest)
       .where(eq(representativeRequest.id, data.requestId))
       .limit(1);
-    if (!existing || existing.organizationId !== orgId) {
+    if (existing?.organizationId !== orgId) {
       throw new Error('Solicitud no encontrada');
     }
 

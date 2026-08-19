@@ -114,7 +114,7 @@ function readLegajosDir(): ExcelRecord[] {
       const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
         header: 1,
         defval: null,
-      }) as unknown[][];
+      });
 
       // Detectar fila de encabezado (primera que tenga "CUIL" o similar)
       let dataStart = 1;
@@ -128,7 +128,7 @@ function readLegajosDir(): ExcelRecord[] {
 
       for (let i = dataStart; i < rows.length; i++) {
         const row = rows[i];
-        if (!row || !row[0] || !row[2]) continue;
+        if (!row?.[0] || !row[2]) continue;
         const cuil = normalizeCuil(row[2]);
         if (cuil.length !== 11) continue;
 
@@ -177,14 +177,14 @@ async function main() {
   console.log(`  ${empleados.length} empleados en BD\n`);
 
   // 3. Comparar y acumular updates
-  type Update = {
+  interface Update {
     id: string;
     cuil: string;
     nombre: string;
     empresa: string;
     dbFecha: string | null;
     xlsFecha: string | null;
-  };
+  }
 
   const toUpdate: Update[] = [];
   const sinFechaExcel: string[] = [];
@@ -214,7 +214,7 @@ async function main() {
     }
 
     toUpdate.push({
-      id: emp.id as unknown as string,
+      id: emp.id,
       cuil,
       nombre: emp.nombre ?? "",
       empresa: entry.empresa,

@@ -101,8 +101,8 @@ export function calcularDiasSemestre(fechaIngreso: string | null, periodo: strin
   const ingreso = new Date(fechaIngreso + 'T00:00:00');
   if (isNaN(ingreso.getTime())) return 180;
   const [yearStr, monthStr] = periodo.split('-');
-  const year = parseInt(yearStr!, 10);
-  const month = parseInt(monthStr!, 10);
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
   const esPrimerSemestre = month <= 6;
   const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1);            // 1/1 ó 1/7
   const semEnd   = new Date(year, esPrimerSemestre ? 5 : 11, esPrimerSemestre ? 30 : 31); // 30/6 ó 31/12

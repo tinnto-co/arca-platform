@@ -35,7 +35,7 @@ async function main() {
 
   for (const row of rows) {
     // Extraer código AFIP del inicio del nombre (4-6 dígitos seguidos de espacio o guion)
-    const match = row.nombre.match(/^(\d{4,6})\s*[-\s]/);
+    const match = /^(\d{4,6})\s*[-\s]/.exec(row.nombre);
     if (!match) {
       console.warn(`  ⚠ Sin código AFIP en nombre (id=${row.id}): "${row.nombre.slice(0, 60)}"`);
       skippedNoMatch++;

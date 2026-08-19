@@ -31,7 +31,7 @@ const FUENTE = 'ANSES - Resolución mensual SIPA (via ignacioonline.com.ar / sia
  * Para agregar meses futuros, añadir una entrada al array con el valor
  * publicado por ANSES en la resolución correspondiente.
  */
-const TOPES_2026: Array<{ periodo: string; tope: number }> = [
+const TOPES_2026: { periodo: string; tope: number }[] = [
   { periodo: '2026-01', tope: 3823373 }, // Res. ANSES 381/2025 (BO 24-12-2025)
   { periodo: '2026-02', tope: 3932339 }, // Res. ANSES — BO 06-02-2026
   { periodo: '2026-03', tope: 4045590 }, // Res. ANSES — BO mar-2026

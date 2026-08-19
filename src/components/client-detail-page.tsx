@@ -5011,13 +5011,13 @@ export function RepresentativeDetailPage({
                             <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
                               {req.dueAt
                                 ? new Date(
-                                    req.dueAt as unknown as string
+                                    req.dueAt
                                   ).toLocaleDateString('es-AR')
                                 : '—'}
                             </td>
                             <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
                               {new Date(
-                                req.createdAt as unknown as string
+                                req.createdAt
                               ).toLocaleDateString('es-AR')}
                             </td>
                             <td className="px-[14px] py-[10px]">

@@ -479,12 +479,12 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
     if (failedRows.length === 0) return { ...emptySummary, totalJobs };
 
     // Agrupar por categoría normalizada.
-    type GroupAcc = {
+    interface GroupAcc {
       classification: ErrorClassification;
       count: number;
       reasons: Map<string, number>;
       reps: Map<string, { name: string | null; count: number }>;
-    };
+    }
     const groupsByCategory = new Map<ErrorCategory, GroupAcc>();
     for (const row of failedRows) {
       const classification = classifyStoredFailedReason(row.failedReason);

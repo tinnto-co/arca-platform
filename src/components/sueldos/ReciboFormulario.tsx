@@ -106,6 +106,7 @@ const formSchema = z.object({
     (v) => !v || (Number(v) >= 0 && !isNaN(Number(v))),
     { message: 'El importe no puede ser negativo' }
   ),
+  fechaBaja: z.string().optional(),
 });
 
 export type ReciboFormValues = z.infer<typeof formSchema>;
@@ -142,6 +143,7 @@ export interface ReciboFormularioSuccess {
   diasTrabajados: number | null;
   horasTrabajadas: number | null;
   importeMaternidadArt13: string | null;
+  fechaBaja: string | null;
 }
 
 interface ReciboFormularioProps {
@@ -216,11 +218,13 @@ export function ReciboFormulario({
       diasTrabajados: '30',
       horasTrabajadas: '',
       importeMaternidadArt13: '',
+      fechaBaja: '',
       ...initialValues,
     },
   });
 
   const empleadoId = form.watch('importEmpleadoId');
+  const tipoRecibo = form.watch('tipoRecibo');
   const empleadoSel = useMemo(
     () => empleados.find((e) => e.empleado.id === empleadoId),
     [empleados, empleadoId]
@@ -229,7 +233,7 @@ export function ReciboFormulario({
   const antiguedadAnios = useMemo(() => {
     const fechaAlta = empleadoSel?.empleado.fechaAlta;
     if (!fechaAlta) return null;
-    return differenceInYears(now, new Date(fechaAlta as unknown as string));
+    return differenceInYears(now, new Date(fechaAlta));
   }, [empleadoSel]);
 
   // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
@@ -271,10 +275,10 @@ export function ReciboFormulario({
       tipoRecibo: values.tipoRecibo,
       antiguedadAnios,
       fechaAlta: emp?.empleado.fechaAlta
-        ? (typeof emp.empleado.fechaAlta === 'string' ? emp.empleado.fechaAlta : (emp.empleado.fechaAlta as Date).toISOString()).slice(0, 10)
+        ? (typeof emp.empleado.fechaAlta === 'string' ? emp.empleado.fechaAlta : (emp.empleado.fechaAlta).toISOString()).slice(0, 10)
         : null,
       fechaIngreso: emp?.empleado.fechaIngreso
-        ? (typeof emp.empleado.fechaIngreso === 'string' ? emp.empleado.fechaIngreso : (emp.empleado.fechaIngreso as Date).toISOString()).slice(0, 10)
+        ? (typeof emp.empleado.fechaIngreso === 'string' ? emp.empleado.fechaIngreso : (emp.empleado.fechaIngreso).toISOString()).slice(0, 10)
         : null,
       quincena: values.quincena,
       fechaLiquidacion: values.fechaLiquidacion,
@@ -300,13 +304,14 @@ export function ReciboFormulario({
       diasTrabajados: values.diasTrabajados ? parseInt(values.diasTrabajados, 10) : null,
       horasTrabajadas: values.horasTrabajadas ? parseInt(values.horasTrabajadas, 10) : null,
       importeMaternidadArt13: values.importeMaternidadArt13?.trim() || null,
+      fechaBaja: values.fechaBaja?.trim() || null,
     });
   };
 
   const goNext = async () => {
     const fields = step === 1 ? STEP1_FIELDS : STEP2_FIELDS;
     const valid = await form.trigger(
-      fields as unknown as (keyof ReciboFormValues)[]
+      fields
     );
     if (valid) setStep((s) => s + 1);
   };
@@ -650,7 +655,7 @@ export function ReciboFormulario({
                                 {n > 1 && <FormLabel className="text-muted-foreground">Situación {n} (opcional)</FormLabel>}
                                 <Select
                                   onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
-                                  value={(field.value as string) || (n > 1 ? '__none__' : '')}
+                                  value={(field.value!) || (n > 1 ? '__none__' : '')}
                                 >
                                   <FormControl>
                                     <SelectTrigger>
@@ -697,6 +702,21 @@ export function ReciboFormulario({
                     })}
                   </div>
                 </div>
+                {tipoRecibo === 'despido' && (
+                  <FormField
+                    control={form.control}
+                    name="fechaBaja"
+                    render={({ field }) => (
+                      <FormItem className="sm:col-span-1">
+                        <FormLabel>Fecha de baja</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
                 <div className="grid gap-4 sm:grid-cols-3">
                   <FormField
                     control={form.control}

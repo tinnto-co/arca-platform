@@ -534,7 +534,7 @@ function InfoCell({
 }) {
   const base = last ? S.cellLast : S.cell;
   return (
-    <View style={style ? { ...base, ...(style as object) } : base}>
+    <View style={style ? { ...base, ...(style) } : base}>
       <Text style={S.cellLabel}>{label.toUpperCase()}</Text>
       <Text style={S.cellValue}>{value || '—'}</Text>
     </View>
@@ -950,7 +950,7 @@ export async function generarYDescargar({
   mes,
   onProgress,
 }: {
-  recibosAgrupados: Array<{ empleadoNombre: string; recibos: ReciboDetallePdf[] }>;
+  recibosAgrupados: { empleadoNombre: string; recibos: ReciboDetallePdf[] }[];
   clientData: ClientDataPdf | null;
   firmaEmpleadorUrl: string | null;
   ano: string;
@@ -964,7 +964,7 @@ export async function generarYDescargar({
   const periodoLabel = mes ? `${ano}_${mes}` : ano;
 
   if (recibosAgrupados.length === 1) {
-    const { empleadoNombre, recibos } = recibosAgrupados[0]!;
+    const { empleadoNombre, recibos } = recibosAgrupados[0];
     onProgress?.(0, 1);
     const blob = await generarPdfBlobEmpleado(recibos, clientData, firmaEmpleadorUrl);
     onProgress?.(1, 1);
@@ -978,7 +978,7 @@ export async function generarYDescargar({
   const total = recibosAgrupados.length;
 
   for (let i = 0; i < recibosAgrupados.length; i++) {
-    const { empleadoNombre, recibos } = recibosAgrupados[i]!;
+    const { empleadoNombre, recibos } = recibosAgrupados[i];
     onProgress?.(i, total);
     const blob = await generarPdfBlobEmpleado(recibos, clientData, firmaEmpleadorUrl);
     zip.file(`${sanitizeFilename(empleadoNombre)}.pdf`, blob);

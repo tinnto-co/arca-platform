@@ -140,7 +140,7 @@ export function CopilotBottomPanel() {
       }
       const sb = document.querySelector(
         '[data-sidebar="sidebar"]'
-      ) as HTMLElement | null;
+      );
       if (!sb) {
         setSidebarOffset(0);
         return;
@@ -152,7 +152,7 @@ export function CopilotBottomPanel() {
     update();
     const sb = document.querySelector(
       '[data-sidebar="sidebar"]'
-    ) as HTMLElement | null;
+    );
     const ro = new ResizeObserver(update);
     if (sb) ro.observe(sb);
     window.addEventListener('resize', update);

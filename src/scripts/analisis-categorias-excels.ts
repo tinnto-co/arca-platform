@@ -63,8 +63,8 @@ async function main() {
     const ws = wb.Sheets[wb.SheetNames[0]];
     const rows = parseSosLegajosRows(ws);
     for (const row of rows) {
-      const cuil = normalizeCuilValue(row['cuil']);
-      const cat = String(row['categoria'] ?? '').trim();
+      const cuil = normalizeCuilValue(row.cuil);
+      const cat = String(row.categoria ?? '').trim();
       if (cuil && cat) cuilToExcelCat.set(cuil, cat);
     }
   }

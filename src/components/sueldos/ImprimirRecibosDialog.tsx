@@ -44,13 +44,13 @@ interface ImprimirRecibosDialogProps {
   profileId: string;
   clientData: ClientDataPdf | null;
   firmaEmpleadorUrl: string | null;
-  empleados: Array<{
+  empleados: {
     empleado: {
       id: string;
       nombre: string;
       legajo: string | null;
     };
-  }>;
+  }[];
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ export function ImprimirRecibosDialog({
       const { generarYDescargar } = await import('./recibo-pdf');
 
       await generarYDescargar({
-        recibosAgrupados: agrupados as Array<{ empleadoNombre: string; recibos: ReciboDetallePdf[] }>,
+        recibosAgrupados: agrupados as { empleadoNombre: string; recibos: ReciboDetallePdf[] }[],
         clientData,
         firmaEmpleadorUrl,
         ano,

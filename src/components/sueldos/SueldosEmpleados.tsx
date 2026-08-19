@@ -84,7 +84,7 @@ function formatDate(d: Date | string | null | undefined): string {
   if (d == null) return '—';
   try {
     // Siempre leer la parte UTC para evitar el desfase de timezone (UTC-3 → día anterior)
-    const iso = typeof d === 'string' ? d : (d as Date).toISOString();
+    const iso = typeof d === 'string' ? d : (d).toISOString();
     const [y, m, day] = iso.slice(0, 10).split('-');
     return `${day}/${m}/${y}`;
   } catch {
@@ -306,16 +306,16 @@ function EmpleadoDetalleDialog({
     setCuil(emp.cuil ?? '');
     setFechaAlta(
       emp.fechaAlta
-        ? (typeof emp.fechaAlta === 'string' ? emp.fechaAlta : (emp.fechaAlta as Date).toISOString()).slice(0, 10)
+        ? (typeof emp.fechaAlta === 'string' ? emp.fechaAlta : (emp.fechaAlta).toISOString()).slice(0, 10)
         : ''
     );
     setFechaIngreso(
       emp.fechaIngreso
-        ? (typeof emp.fechaIngreso === 'string' ? emp.fechaIngreso : (emp.fechaIngreso as Date).toISOString()).slice(0, 10)
+        ? (typeof emp.fechaIngreso === 'string' ? emp.fechaIngreso : (emp.fechaIngreso).toISOString()).slice(0, 10)
         : ''
     );
     setActivo(emp.activo ?? true);
-    setTipoJornada((emp.tipoJornada as 'full_time' | 'part_time' | 'reducida') ?? 'full_time');
+    setTipoJornada((emp.tipoJornada!) ?? 'full_time');
     setConvenioId(emp.convenioId ?? '');
     setCategoriaId(emp.categoriaId ?? '');
     setCategoria(emp.categoria ?? '');

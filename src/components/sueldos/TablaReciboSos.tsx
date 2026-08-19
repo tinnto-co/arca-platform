@@ -244,9 +244,9 @@ function applySubtotalCascade(
         // 'os_norem_base': usa sub411_469_os (no-rem con concepto 411 siempre al 100%).
         const subBase =
           bc === 'os_base'
-            ? (subTotals['sub1_99_os'] ?? 0)
+            ? (subTotals.sub1_99_os ?? 0)
             : bc === 'os_norem_base'
-              ? (subTotals['sub411_469_os'] ?? 0)
+              ? (subTotals.sub411_469_os ?? 0)
               : bc === 'basico_div25'
                 ? (osBase > 0 ? osBase : sueldoBase) / 25
                 : bc === 'mejor_div25'
@@ -256,9 +256,9 @@ function applySubtotalCascade(
                     : bc === 'concepto_401_div12'
                       ? (conceptMontos['401'] ?? 0) / 12
                     : bc === 'sub1_199_plus_411_469'
-                      ? (subTotals['sub1_199'] ?? 0) + (subTotals['sub411_469'] ?? 0)
+                      ? (subTotals.sub1_199 ?? 0) + (subTotals.sub411_469 ?? 0)
                       : bc === 'sub1_199' && n >= 200 && n <= 299
-                        ? (subTotals['sub1_99'] ?? 0) - ((subTotals['sub1_199'] ?? 0) - (subTotals['sub1_99'] ?? 0))
+                        ? (subTotals.sub1_99 ?? 0) - ((subTotals.sub1_199 ?? 0) - (subTotals.sub1_99 ?? 0))
                         : (subTotals[bc] ?? 0);
 
         // Si el concepto tiene campo importe propio (tieneImporte/tieneImpConceptoNro) y el
@@ -334,7 +334,7 @@ function applySubtotalCascade(
     } else if (bc === 'sub411_414_qty') {
       // La cantidad se auto-rellena con la suma de conceptos 411–414.
       // El resultado es: cantidad × (pct / 100).
-      const sub = subTotals['sub411_414'] ?? 0;
+      const sub = subTotals.sub411_414 ?? 0;
       const hasPct = (row.porcentaje ?? '').trim() !== '';
       if (hasPct && sub > 0) {
         const pct = parseDecimalSos(row.porcentaje) ?? 0;
@@ -367,15 +367,15 @@ function applySubtotalCascade(
     if (n === 1 || n === 2) sueldoBase = effectiveMonto;
 
     if (n >= 1 && n <= 199) {
-      subTotals['sub1_199'] += effectiveMonto;
-      if (n <= 99) subTotals['sub1_99'] += effectiveMonto;
-      if (n <= 9) subTotals['sub1_9'] += effectiveMonto;
-      if (n <= 19) subTotals['sub1_19'] += effectiveMonto;
-      if (n <= 26) subTotals['sub1_26'] += effectiveMonto;
-      if (n <= 39) subTotals['sub1_39'] += effectiveMonto;
+      subTotals.sub1_199 += effectiveMonto;
+      if (n <= 99) subTotals.sub1_99 += effectiveMonto;
+      if (n <= 9) subTotals.sub1_9 += effectiveMonto;
+      if (n <= 19) subTotals.sub1_19 += effectiveMonto;
+      if (n <= 26) subTotals.sub1_26 += effectiveMonto;
+      if (n <= 39) subTotals.sub1_39 += effectiveMonto;
     } else if (n >= 411 && n <= 469) {
-      subTotals['sub411_469'] += effectiveMonto;
-      if (n <= 414) subTotals['sub411_414'] += effectiveMonto;
+      subTotals.sub411_469 += effectiveMonto;
+      if (n <= 414) subTotals.sub411_414 += effectiveMonto;
     }
 
     // Acumulación de subtotales OS paralelos.
@@ -404,11 +404,11 @@ function applySubtotalCascade(
           if (osPct2 > 0) osContrib = Math.round(osSubVal * (osPct2 / 100) * osCant2 * 100) / 100;
         }
       }
-      subTotals['sub1_99_os'] += osContrib;
-      if (n <= 9)  subTotals['sub1_9_os']  += osContrib;
-      if (n <= 19) subTotals['sub1_19_os'] += osContrib;
-      if (n <= 26) subTotals['sub1_26_os'] += osContrib;
-      if (n <= 39) subTotals['sub1_39_os'] += osContrib;
+      subTotals.sub1_99_os += osContrib;
+      if (n <= 9)  subTotals.sub1_9_os  += osContrib;
+      if (n <= 19) subTotals.sub1_19_os += osContrib;
+      if (n <= 26) subTotals.sub1_26_os += osContrib;
+      if (n <= 39) subTotals.sub1_39_os += osContrib;
     } else if (n >= 411 && n <= 469) {
       let noremsOsContrib = effectiveMonto;
       if (n === 411) {
@@ -418,7 +418,7 @@ function applySubtotalCascade(
           ? Math.round((effectiveMonto / (pct411 / 100)) * 100) / 100
           : effectiveMonto;
       }
-      subTotals['sub411_469_os'] += noremsOsContrib;
+      subTotals.sub411_469_os += noremsOsContrib;
     }
   }
 
@@ -1336,7 +1336,7 @@ export function TablaReciboSos({
       const seccion = getSeccionSos(num);
       if (!seccion) continue;
       if (!groups[seccion]) groups[seccion] = [];
-      groups[seccion]!.push(c);
+      groups[seccion].push(c);
     }
     return groups;
   }, [conceptosVisibles]);

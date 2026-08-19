@@ -84,7 +84,7 @@ interface SueldosDashboardProps {
   profileId: string;
 }
 
-type LiquidacionMasivaResultItem = {
+interface LiquidacionMasivaResultItem {
   empleadoId: string;
   empleadoNombre: string;
   legajo: string;
@@ -92,7 +92,7 @@ type LiquidacionMasivaResultItem = {
   skipped?: boolean;
   errorCode?: LiquidacionMasivaErrorCode;
   error?: string;
-};
+}
 
 export function SueldosDashboard({
   clientId,

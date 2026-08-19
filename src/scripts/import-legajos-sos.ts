@@ -85,7 +85,7 @@ function normalizeCuit(raw: string): string {
 
 /** Extrae el número SOS al inicio del nombre de un catálogo: "8 - A Tiempo..." → "8" */
 function extractLeadingCode(nombre: string): string | null {
-  const m = nombre.match(/^(\d+)\s*-/);
+  const m = /^(\d+)\s*-/.exec(nombre);
   return m ? m[1] : null;
 }
 
@@ -270,10 +270,10 @@ function readEmpresaExcel(carpeta: string): Map<string, ExcelRow> {
     const buf = readFileSync(join(dir, file));
     const wb = XLSX.read(buf, { cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
-    const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as unknown[][];
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
     // Skip row 0 (title) and row 1 (headers), data starts at row 2
     for (let i = 2; i < data.length; i++) {
-      const row = data[i] as unknown[];
+      const row = data[i];
       if (!row || row.length < 3) continue;
       const parsed = parseRow(row);
       if (!parsed) continue;

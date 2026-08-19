@@ -397,11 +397,11 @@ export function RepresentativesTable() {
         onRowClick={(row) =>
           navigate({
             to: '/clients/$clientId',
-            params: { clientId: (row as ClientRow).representativeId },
-            search: { empresa: (row as ClientRow).id },
+            params: { clientId: (row).representativeId },
+            search: { empresa: (row).id },
           })
         }
-        onSelectionChange={(rows) => setSelectedClients(rows as ClientRow[])}
+        onSelectionChange={(rows) => setSelectedClients(rows)}
         toolbar={
           selectedClients.length > 0 ? (
             <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>

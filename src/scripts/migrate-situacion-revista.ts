@@ -31,7 +31,7 @@ async function main() {
 
   for (const stmt of newColumns) {
     await sql.unsafe(stmt);
-    const colName = stmt.match(/ADD COLUMN IF NOT EXISTS (\w+)/)?.[1];
+    const colName = (/ADD COLUMN IF NOT EXISTS (\w+)/.exec(stmt))?.[1];
     console.log(`  ✓ Columna agregada: ${colName}`);
   }
 

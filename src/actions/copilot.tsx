@@ -223,7 +223,7 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
           )
         );
 
-      const ivaCalc = calcularIvaDesdeFacturas(invoices as InvoiceIvaRow[]);
+      const ivaCalc = calcularIvaDesdeFacturas(invoices);
       const debitoFiscalCalculado = ivaCalc.debitoFiscal;
       const creditoFiscalCalculado = ivaCalc.creditoFiscalCompras;
       const {

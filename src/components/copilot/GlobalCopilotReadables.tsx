@@ -37,7 +37,7 @@ export function GlobalCopilotReadables() {
     staleTime: 60_000,
   });
 
-  const clientesGlobal = ((allClients as ClientRow[] | undefined) ?? [])
+  const clientesGlobal = ((allClients) ?? [])
     .slice(0, 100)
     .map((c) => ({
       clientId: c.id,

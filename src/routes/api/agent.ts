@@ -584,7 +584,7 @@ HERRAMIENTAS DISPONIBLES
                     `SELECT periodo_fiscal FROM iva_scrape WHERE client_id = '${foundClient.id}' ORDER BY TO_DATE(periodo_fiscal, 'MM/YYYY') DESC LIMIT 1`
                   ));
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                  const arr = Array.from(rows) as Record<string, unknown>[];
+                  const arr = Array.from(rows);
                   if (arr.length === 0) return { error: `No hay datos de IVA disponibles para ${foundClient.name}.` };
                   ivaScrapeperiod = arr[0].periodo_fiscal as string; // eslint-disable-line @typescript-eslint/no-unsafe-assignment
                   invoicePeriod = nextMonthStr(ivaScrapeperiod);
@@ -620,7 +620,7 @@ HERRAMIENTAS DISPONIBLES
                   ));
 
                 // 4. Calcular débito/crédito fiscal usando lógica compartida con el módulo de clientes
-                const ivaCalc = calcularIvaDesdeFacturas(invoices as InvoiceIvaRow[]);
+                const ivaCalc = calcularIvaDesdeFacturas(invoices);
                 const debitoFiscalCalculado = ivaCalc.debitoFiscal;
                 const creditoFiscalCalculado = ivaCalc.creditoFiscalCompras;
                 const { netoA21, netoA105, totalAmountB21: totalB21, totalAmountB105: totalB105, totalAmountB27: totalB27,
@@ -709,7 +709,7 @@ HERRAMIENTAS DISPONIBLES
                     JOIN client c ON c.id = i.client_id
                     WHERE r.organization_id = '${orgId}' ${clientFilter} ${periodoFilter}
                     GROUP BY c.id, c.name ORDER BY ventas_ars DESC
-                  `))) as Record<string, unknown>[];
+                  `)));
                   if (rows.length === 0) return { mensaje: 'No hay facturas para el criterio indicado.' };
                   const tabla = formatAsMarkdownTable(['empresa', 'ventas_ars', 'compras_ars'], rows);
                   return { tabla, totalEmpresas: rows.length };
@@ -741,7 +741,7 @@ HERRAMIENTAS DISPONIBLES
                     FROM liquidacion_import_empleado e
                     WHERE e.client_id = '${matches[0].id}'
                     ORDER BY e.activo DESC, e.nombre ASC
-                  `))) as Record<string, unknown>[];
+                  `)));
                   if (rows.length === 0) return { mensaje: `${matches[0].name} no tiene empleados registrados.` };
                   const tabla = formatAsMarkdownTable(['legajo', 'nombre', 'cuit', 'activo'], rows);
                   return { empresa: matches[0].name, tabla, total: rows.length };
@@ -784,7 +784,7 @@ HERRAMIENTAS DISPONIBLES
                       AND r.periodo = '${periodoRecibo}'
                       AND r.recibo_confirmado = true
                       AND r.tipo = 'sueldo'
-                  `))) as Record<string, unknown>[];
+                  `)));
                   const row = rows[0];
                   if (!row || row.cantidad_recibos === 0)
                     return { mensaje: `No hay recibos confirmados para ${matches[0].name} en ${periodo}.` };

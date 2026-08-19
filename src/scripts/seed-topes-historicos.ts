@@ -36,7 +36,7 @@ async function fetchPageText(url: string): Promise<string> {
   const html = await res.text();
 
   // Intentar extraer JSON embebido (páginas Next.js / React SSR guardan datos en __NEXT_DATA__)
-  const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  const nextDataMatch = /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i.exec(html);
   if (nextDataMatch?.[1]) {
     return nextDataMatch[1].slice(0, 80_000);
   }

@@ -23,6 +23,7 @@ import {
   BookOpen,
   Globe,
   Percent,
+  ClipboardList,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -330,6 +331,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavItem to="/iibb" icon={Globe} label="IIBB" />
           <NavItem to="/iva" icon={Percent} label="IVA" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
+          <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
           {isEnabled('banco') && (
             <NavItem to="/bank" icon={Landmark} label="Banco" />
           )}
