@@ -6,8 +6,8 @@ import {
   studioTask,
   studioTaskClient,
   studioTaskComment,
-  representative,
-  dueDate,
+  cliente,
+  vencimiento,
 } from '@/drizzle/schema';
 import { user, member } from '@/drizzle/auth';
 import { getSessionWithOrg, getMemberRole, assertCanWrite } from './helpers';
@@ -51,7 +51,7 @@ export const listTareas = createServerFn({ method: 'GET' })
       const taskIdsWithRep = await db
         .select({ taskId: studioTaskClient.taskId })
         .from(studioTaskClient)
-        .where(eq(studioTaskClient.representativeId, ctx.data.representativeId));
+        .where(eq(studioTaskClient.representativeId, ctx.data.representativeId!));
       const ids = taskIdsWithRep.map((r) => r.taskId);
       if (ids.length === 0) return [];
       conditions.push(inArray(studioTask.id, ids));
@@ -93,13 +93,13 @@ export const listTareas = createServerFn({ method: 'GET' })
           taskId: studioTaskClient.taskId,
           id: studioTaskClient.id,
           representativeId: studioTaskClient.representativeId,
-          representativeNombre: representative.name,
+          representativeNombre: cliente.razonSocial,
           completado: studioTaskClient.completado,
           completadoAt: studioTaskClient.completadoAt,
           completadoByUserId: studioTaskClient.completadoByUserId,
         })
         .from(studioTaskClient)
-        .leftJoin(representative, eq(studioTaskClient.representativeId, representative.id))
+        .leftJoin(cliente, eq(studioTaskClient.representativeId, cliente.id))
         .where(inArray(studioTaskClient.taskId, taskIds)),
       db
         .select({ taskId: studioTaskComment.taskId, count: studioTaskComment.id })
@@ -169,14 +169,14 @@ export const listOrgMembers = createServerFn({ method: 'GET' }).handler(async ()
     .orderBy(user.name);
 });
 
-/** Devuelve los representantes (empresas) de la org para el filtro por cliente. */
+/** Devuelve los clientes (empresas) de la org para el filtro. */
 export const listOrgRepresentatives = createServerFn({ method: 'GET' }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
   return db
-    .select({ id: representative.id, name: representative.name })
-    .from(representative)
-    .where(eq(representative.organizationId, orgId))
-    .orderBy(representative.name);
+    .select({ id: cliente.id, name: cliente.razonSocial })
+    .from(cliente)
+    .where(eq(cliente.orgId, orgId))
+    .orderBy(cliente.razonSocial);
 });
 
 // ─── Creación ─────────────────────────────────────────────────────────────────
@@ -438,9 +438,9 @@ export const autoGenerarTareas = createServerFn({ method: 'POST' })
 
     // Traer todos los vencimientos del período para esta org
     const orgReps = await db
-      .select({ id: representative.id, name: representative.name })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
+      .select({ id: cliente.id, name: cliente.razonSocial })
+      .from(cliente)
+      .where(eq(cliente.orgId, orgId));
 
     if (orgReps.length === 0) return { creadas: 0, omitidas: 0 };
 
@@ -449,18 +449,18 @@ export const autoGenerarTareas = createServerFn({ method: 'POST' })
 
     const vencimientos = await db
       .select({
-        id: dueDate.id,
-        tax: dueDate.tax,
-        concept: dueDate.concept,
-        dueDate: dueDate.dueDate,
-        representativeId: dueDate.representativeId,
+        id: vencimiento.id,
+        tax: vencimiento.impuesto,
+        concept: vencimiento.concepto,
+        dueDate: vencimiento.venceAt,
+        representativeId: vencimiento.clienteId,
       })
-      .from(dueDate)
+      .from(vencimiento)
       .where(
         and(
-          inArray(dueDate.representativeId, repIds),
-          gte(dueDate.dueDate, from),
-          lte(dueDate.dueDate, to)
+          inArray(vencimiento.clienteId, repIds),
+          gte(vencimiento.venceAt, from.toISOString().split('T')[0]),
+          lte(vencimiento.venceAt, to.toISOString().split('T')[0])
         )
       );
 

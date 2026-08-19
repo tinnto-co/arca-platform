@@ -2551,3 +2551,64 @@ export const baseCalculoConcepto = pgTable("base_calculo_concepto", {
 	primaryKey({ columns: [table.baseCalculoId, table.conceptoId], name: "base_calculo_concepto_pkey"}),
 ]);
 
+// ─── Módulo de Tareas ─────────────────────────────────────────────────────────
+// Tablas nuevas pendientes de migración. Crear localmente con db:push.
+
+export const studioTask = pgTable("studio_task", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	organizationId: text("organization_id").notNull(),
+	titulo: text().notNull(),
+	descripcion: text(),
+	tipo: text().default('otro').notNull(),
+	estado: text().default('pendiente').notNull(),
+	asignadoAUserId: text("asignado_a_user_id"),
+	periodoMes: text("periodo_mes"),
+	fechaVencimiento: timestamp("fecha_vencimiento"),
+	esAutoGenerada: boolean("es_auto_generada").default(false).notNull(),
+	estadoChangedAt: timestamp("estado_changed_at"),
+	estadoChangedByUserId: text("estado_changed_by_user_id"),
+	createdByUserId: text("created_by_user_id"),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+	updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+		columns: [table.organizationId],
+		foreignColumns: [organization.id],
+		name: "studio_task_organization_id_fkey",
+	}).onDelete("cascade"),
+]);
+
+export const studioTaskClient = pgTable("studio_task_client", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	taskId: uuid("task_id").notNull(),
+	representativeId: uuid("representative_id").notNull(),
+	completado: boolean().default(false).notNull(),
+	completadoAt: timestamp("completado_at"),
+	completadoByUserId: text("completado_by_user_id"),
+}, (table) => [
+	foreignKey({
+		columns: [table.taskId],
+		foreignColumns: [studioTask.id],
+		name: "studio_task_client_task_id_fkey",
+	}).onDelete("cascade"),
+	foreignKey({
+		columns: [table.representativeId],
+		foreignColumns: [cliente.id],
+		name: "studio_task_client_cliente_id_fkey",
+	}).onDelete("cascade"),
+]);
+
+export const studioTaskComment = pgTable("studio_task_comment", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	taskId: uuid("task_id").notNull(),
+	userId: text("user_id").notNull(),
+	contenido: text().notNull(),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+		columns: [table.taskId],
+		foreignColumns: [studioTask.id],
+		name: "studio_task_comment_task_id_fkey",
+	}).onDelete("cascade"),
+]);
+
