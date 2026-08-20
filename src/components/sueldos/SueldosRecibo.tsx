@@ -62,6 +62,7 @@ import { tipoReciboLabel, quincenaLabel } from '@/lib/sueldos-labels';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ImprimirRecibosDialog } from '@/components/sueldos/ImprimirRecibosDialog';
 
 const now = new Date();
@@ -446,14 +447,24 @@ export function SueldosRecibo({
     id: string;
     empleadoNombre: string;
     periodo: string;
+    tipo: string;
   } | null>(null);
+  /** Sólo se ofrece en liquidaciones finales; ver el diálogo de borrado. */
+  const [revertirBaja, setRevertirBaja] = useState(true);
   const queryClient = useQueryClient();
 
   const { mutate: borrarRecibo, isPending: borrandoRecibo } = useMutation({
-    mutationFn: (id: string) =>
-      deleteRecibo({ data: { reciboId: id, clientId } }),
-    onSuccess: () => {
-      toast.success('Recibo eliminado');
+    mutationFn: (v: { id: string; revertirBaja: boolean }) =>
+      deleteRecibo({
+        data: { reciboId: v.id, clientId, revertirBaja: v.revertirBaja },
+      }),
+    onSuccess: (res) => {
+      toast.success(
+        res?.bajaRevertida
+          ? 'Recibo eliminado y empleado reincorporado'
+          : 'Recibo eliminado'
+      );
+      queryClient.invalidateQueries({ queryKey: ['empleados'] });
       setReciboABorrar(null);
       setReciboId('');
       queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
@@ -968,7 +979,9 @@ export function SueldosRecibo({
                               id: r.liquidacion.id,
                               empleadoNombre: toTitleCase(r.empleado.nombre),
                               periodo: dateAPeriodo(r.liquidacion.periodo),
+                              tipo: r.liquidacion.tipo ?? 'mensual',
                             });
+                            setRevertirBaja(true);
                           }}
                           className="rounded p-1 text-[#9B9CA3] hover:bg-[#F2F1EB] hover:text-[#C0392B] transition-colors"
                           title="Eliminar recibo"
@@ -1026,6 +1039,28 @@ export function SueldosRecibo({
               con todos sus conceptos. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {reciboABorrar?.tipo === 'liquidacion_final' && (
+            // La liquidación final dio de baja al empleado. Si sólo se borra el
+            // recibo, queda dado de baja sin respaldo y nadie se entera.
+            <label className="flex items-start gap-2.5 rounded-[var(--arca-r-md,10px)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2.5 cursor-pointer">
+              <Checkbox
+                checked={revertirBaja}
+                onCheckedChange={(v) => setRevertirBaja(v === true)}
+                className="mt-0.5"
+              />
+              <span className="text-[12.5px] leading-snug text-[var(--arca-ink-2)]">
+                Reincorporar a{' '}
+                <span className="font-medium">
+                  {reciboABorrar.empleadoNombre}
+                </span>{' '}
+                y borrar su fecha de baja.
+                <span className="block text-[var(--arca-ink-4)]">
+                  Si lo dejás sin tildar, el empleado queda dado de baja sin
+                  liquidación que lo respalde.
+                </span>
+              </span>
+            </label>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={borrandoRecibo}>
               Cancelar
@@ -1034,7 +1069,13 @@ export function SueldosRecibo({
               disabled={borrandoRecibo}
               onClick={(e) => {
                 e.preventDefault();
-                if (reciboABorrar) borrarRecibo(reciboABorrar.id);
+                if (reciboABorrar)
+                  borrarRecibo({
+                    id: reciboABorrar.id,
+                    revertirBaja:
+                      reciboABorrar.tipo === 'liquidacion_final' &&
+                      revertirBaja,
+                  });
               }}
               className="bg-[#C0392B] hover:bg-[#A93226]"
             >

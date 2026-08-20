@@ -56,6 +56,8 @@ export interface EmpleadoPeriodoCardProps {
   onQuincenaChange: (q: Quincena) => void;
   convenioNombre: string | null;
   categoriaNombre: string | null;
+  fechaBaja: string;
+  onFechaBajaChange: (v: string) => void;
 }
 
 export function EmpleadoPeriodoCard({
@@ -72,6 +74,8 @@ export function EmpleadoPeriodoCard({
   onQuincenaChange,
   convenioNombre,
   categoriaNombre,
+  fechaBaja,
+  onFechaBajaChange,
 }: EmpleadoPeriodoCardProps) {
   const [query, setQuery] = useState('');
   const [listOpen, setListOpen] = useState(false);
@@ -370,6 +374,17 @@ export function EmpleadoPeriodoCard({
               <Calendar className="h-3.5 w-3.5 text-[var(--arca-ink-4)] flex-none" />
             </div>
           </div>
+          {tipo === 'liquidacion_final' && (
+            <div>
+              {microLabel('Fecha de baja del empleado')}
+              <input
+                type="date"
+                value={fechaBaja}
+                onChange={(e) => onFechaBajaChange(e.target.value)}
+                className="h-[34px] w-full px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-700)]"
+              />
+            </div>
+          )}
         </div>
       </div>
     </div>

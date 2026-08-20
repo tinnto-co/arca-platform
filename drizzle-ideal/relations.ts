@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { cliente, agentConversation, organization, user, clienteCredencial, credencialAfip, plantillaInformeAuditor, ajusteInflacion, ejercicio, asiento, ajusteInflacionLinea, cuenta, bienDeUso, cierreSueldos, cuentaBancaria, periodoContable, agentRun, recibo, empleado, obraSocial, situacionRevista, session, deuda, proyeccionImpuesto, convenioCategoria, escalaSalarial, vencimiento, actividad, condicionTrabajador, convenio, localidad, modalidadContratacion, nacionalidad, provincia, siniestrado, zona, ivaDeclaracion, notificacion, documento, accesoUsuarioCliente, agentMessage, anexoCmv, asientoLinea, reglaMapeo, alerta, job, account, agentAction, clienteCct, baseCalculo, clienteConcepto, conceptoAfip, concepto, cct, cctFuente, comprobante, contraparte, comprobanteTipo, comprobanteAlicuota, clienteEeccConfig, firmante, clienteCuenta, conciliacionComprobante, movimientoBancario, clienteEmpleadorConfig, liquidacionIibb, organizationModule, lsdPresentacion, member, reglaMapeoLinea, riesgoSnapshot, reciboConcepto, solicitud, notificacionAdjunto, jobLog, eecc, convenioFuente, invitation, evento, baseCalculoConcepto } from "./schema";
+import { cliente, agentConversation, organization, user, clienteCredencial, credencialAfip, plantillaInformeAuditor, ajusteInflacion, ejercicio, asiento, ajusteInflacionLinea, cuenta, bienDeUso, cierreSueldos, cuentaBancaria, periodoContable, agentRun, recibo, empleado, obraSocial, situacionRevista, session, deuda, proyeccionImpuesto, convenioCategoria, escalaSalarial, vencimiento, actividad, condicionTrabajador, convenio, localidad, modalidadContratacion, nacionalidad, provincia, siniestrado, zona, ivaDeclaracion, notificacion, documento, accesoUsuarioCliente, agentMessage, anexoCmv, asientoLinea, reglaMapeo, alerta, job, account, agentAction, clienteCct, baseCalculo, clienteConcepto, conceptoAfip, concepto, cct, cctFuente, comprobante, contraparte, comprobanteTipo, comprobanteAlicuota, clienteEeccConfig, firmante, clienteCuenta, conciliacionComprobante, movimientoBancario, clienteEmpleadorConfig, liquidacionIibb, organizationModule, lsdPresentacion, member, reglaMapeoLinea, riesgoSnapshot, reciboConcepto, solicitud, notificacionAdjunto, jobLog, studioTask, studioTaskComment, eecc, convenioFuente, invitation, studioTaskColumn, studioTaskClient, evento, baseCalculoConcepto } from "./schema";
 
 export const agentConversationRelations = relations(agentConversation, ({one, many}) => ({
 	cliente: one(cliente, {
@@ -59,6 +59,7 @@ export const clienteRelations = relations(cliente, ({one, many}) => ({
 	cuentas: many(cuenta),
 	ejercicios: many(ejercicio),
 	eeccs: many(eecc),
+	studioTaskClients: many(studioTaskClient),
 	eventos: many(evento),
 	jobs: many(job),
 }));
@@ -98,6 +99,8 @@ export const organizationRelations = relations(organization, ({many}) => ({
 	eeccs: many(eecc),
 	firmantes: many(firmante),
 	invitations: many(invitation),
+	studioTaskColumns: many(studioTaskColumn),
+	studioTasks: many(studioTask),
 	eventos: many(evento),
 	jobs: many(job),
 }));
@@ -141,6 +144,7 @@ export const userRelations = relations(user, ({many}) => ({
 	conciliacionComprobantes: many(conciliacionComprobante),
 	members: many(member),
 	solicituds: many(solicitud),
+	studioTaskComments: many(studioTaskComment),
 	ejercicios_cerradoPor: many(ejercicio, {
 		relationName: "ejercicio_cerradoPor_user_id"
 	}),
@@ -154,6 +158,16 @@ export const userRelations = relations(user, ({many}) => ({
 		relationName: "eecc_pdfGeneradoPor_user_id"
 	}),
 	invitations: many(invitation),
+	studioTasks_asignadoAUserId: many(studioTask, {
+		relationName: "studioTask_asignadoAUserId_user_id"
+	}),
+	studioTasks_estadoChangedByUserId: many(studioTask, {
+		relationName: "studioTask_estadoChangedByUserId_user_id"
+	}),
+	studioTasks_createdByUserId: many(studioTask, {
+		relationName: "studioTask_createdByUserId_user_id"
+	}),
+	studioTaskClients: many(studioTaskClient),
 }));
 
 export const clienteCredencialRelations = relations(clienteCredencial, ({one}) => ({
@@ -1151,6 +1165,45 @@ export const jobLogRelations = relations(jobLog, ({one}) => ({
 	}),
 }));
 
+export const studioTaskCommentRelations = relations(studioTaskComment, ({one}) => ({
+	studioTask: one(studioTask, {
+		fields: [studioTaskComment.taskId],
+		references: [studioTask.id]
+	}),
+	user: one(user, {
+		fields: [studioTaskComment.userId],
+		references: [user.id]
+	}),
+}));
+
+export const studioTaskRelations = relations(studioTask, ({one, many}) => ({
+	studioTaskComments: many(studioTaskComment),
+	organization: one(organization, {
+		fields: [studioTask.organizationId],
+		references: [organization.id]
+	}),
+	studioTaskColumn: one(studioTaskColumn, {
+		fields: [studioTask.columnaId],
+		references: [studioTaskColumn.id]
+	}),
+	user_asignadoAUserId: one(user, {
+		fields: [studioTask.asignadoAUserId],
+		references: [user.id],
+		relationName: "studioTask_asignadoAUserId_user_id"
+	}),
+	user_estadoChangedByUserId: one(user, {
+		fields: [studioTask.estadoChangedByUserId],
+		references: [user.id],
+		relationName: "studioTask_estadoChangedByUserId_user_id"
+	}),
+	user_createdByUserId: one(user, {
+		fields: [studioTask.createdByUserId],
+		references: [user.id],
+		relationName: "studioTask_createdByUserId_user_id"
+	}),
+	studioTaskClients: many(studioTaskClient),
+}));
+
 export const eeccRelations = relations(eecc, ({one}) => ({
 	user_aprobadoPor: one(user, {
 		fields: [eecc.aprobadoPor],
@@ -1191,6 +1244,29 @@ export const invitationRelations = relations(invitation, ({one}) => ({
 	organization: one(organization, {
 		fields: [invitation.organizationId],
 		references: [organization.id]
+	}),
+}));
+
+export const studioTaskColumnRelations = relations(studioTaskColumn, ({one, many}) => ({
+	organization: one(organization, {
+		fields: [studioTaskColumn.organizationId],
+		references: [organization.id]
+	}),
+	studioTasks: many(studioTask),
+}));
+
+export const studioTaskClientRelations = relations(studioTaskClient, ({one}) => ({
+	studioTask: one(studioTask, {
+		fields: [studioTaskClient.taskId],
+		references: [studioTask.id]
+	}),
+	cliente: one(cliente, {
+		fields: [studioTaskClient.representativeId],
+		references: [cliente.id]
+	}),
+	user: one(user, {
+		fields: [studioTaskClient.completadoByUserId],
+		references: [user.id]
 	}),
 }));
 

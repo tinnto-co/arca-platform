@@ -2375,6 +2375,29 @@ export const cuenta = pgTable("cuenta", {
 	check("cuenta_alcance_coherente", sql`((alcance = 'base'::cuenta_alcance) AND (cliente_id IS NULL)) OR ((alcance = 'propia'::cuenta_alcance) AND (cliente_id IS NOT NULL))`),
 ]);
 
+export const studioTaskComment = pgTable("studio_task_comment", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	taskId: uuid("task_id").notNull(),
+	userId: text("user_id").notNull(),
+	contenido: text().notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("ix_studio_task_comment_task").using("btree", table.taskId.asc().nullsLast().op("timestamp_ops"), table.createdAt.asc().nullsLast().op("timestamp_ops")),
+	foreignKey({
+			columns: [table.taskId],
+			foreignColumns: [studioTask.id],
+			name: "studio_task_comment_task_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.userId],
+			foreignColumns: [user.id],
+			name: "studio_task_comment_user_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
+   FROM studio_task t
+  WHERE ((t.id = studio_task_comment.task_id) AND (t.organization_id = current_setting('app.org_id'::text, true)))))` }),
+]);
+
 export const ejercicio = pgTable("ejercicio", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	orgId: text("org_id").notNull(),
@@ -2584,6 +2607,101 @@ export const movimientoBancario = pgTable("movimiento_bancario", {
   WHERE ((p.id = movimiento_bancario.cuenta_bancaria_id) AND (p.org_id = current_setting('app.org_id'::text, true)))))`  }),
 	check("movimiento_bancario_ai_coherente", sql`(fuente = 'ai'::dato_fuente) = (ai_run_id IS NOT NULL)`),
 	check("movimiento_bancario_importe_positivo", sql`importe > (0)::numeric`),
+]);
+
+export const studioTaskColumn = pgTable("studio_task_column", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	organizationId: text("organization_id").notNull(),
+	nombre: text().notNull(),
+	orden: integer().default(0).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_studio_task_column_org").using("btree", table.organizationId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.organizationId],
+			foreignColumns: [organization.id],
+			name: "studio_task_column_organization_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(organization_id = current_setting('app.org_id'::text, true))` }),
+]);
+
+export const studioTask = pgTable("studio_task", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	organizationId: text("organization_id").notNull(),
+	titulo: text().notNull(),
+	descripcion: text(),
+	tipo: text().default('otro').notNull(),
+	estado: text().default('pendiente').notNull(),
+	columnaId: uuid("columna_id"),
+	asignadoAUserId: text("asignado_a_user_id"),
+	periodoMes: text("periodo_mes"),
+	fechaVencimiento: timestamp("fecha_vencimiento", { mode: 'string' }),
+	esAutoGenerada: boolean("es_auto_generada").default(false).notNull(),
+	estadoChangedAt: timestamp("estado_changed_at", { mode: 'string' }),
+	estadoChangedByUserId: text("estado_changed_by_user_id"),
+	createdByUserId: text("created_by_user_id"),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow().notNull(),
+}, (table) => [
+	index("ix_studio_task_estado").using("btree", table.organizationId.asc().nullsLast().op("text_ops"), table.estado.asc().nullsLast().op("text_ops")),
+	index("ix_studio_task_org").using("btree", table.organizationId.asc().nullsLast().op("text_ops")),
+	index("ix_studio_task_vencimiento").using("btree", table.fechaVencimiento.asc().nullsLast().op("timestamp_ops")),
+	foreignKey({
+			columns: [table.organizationId],
+			foreignColumns: [organization.id],
+			name: "studio_task_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.columnaId],
+			foreignColumns: [studioTaskColumn.id],
+			name: "studio_task_columna_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.asignadoAUserId],
+			foreignColumns: [user.id],
+			name: "studio_task_asignado_a_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.estadoChangedByUserId],
+			foreignColumns: [user.id],
+			name: "studio_task_estado_changed_by_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.createdByUserId],
+			foreignColumns: [user.id],
+			name: "studio_task_created_by_user_id_fkey"
+		}).onDelete("set null"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(organization_id = current_setting('app.org_id'::text, true))` }),
+]);
+
+export const studioTaskClient = pgTable("studio_task_client", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	taskId: uuid("task_id").notNull(),
+	representativeId: uuid("representative_id").notNull(),
+	completado: boolean().default(false).notNull(),
+	completadoAt: timestamp("completado_at", { mode: 'string' }),
+	completadoByUserId: text("completado_by_user_id"),
+}, (table) => [
+	index("ix_studio_task_client_cliente").using("btree", table.representativeId.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("uq_studio_task_client").using("btree", table.taskId.asc().nullsLast().op("uuid_ops"), table.representativeId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.taskId],
+			foreignColumns: [studioTask.id],
+			name: "studio_task_client_task_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.representativeId],
+			foreignColumns: [cliente.id],
+			name: "studio_task_client_representative_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.completadoByUserId],
+			foreignColumns: [user.id],
+			name: "studio_task_client_completado_by_user_id_fkey"
+		}).onDelete("set null"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
+   FROM studio_task t
+  WHERE ((t.id = studio_task_client.task_id) AND (t.organization_id = current_setting('app.org_id'::text, true)))))` }),
 ]);
 
 export const evento = pgTable("evento", {

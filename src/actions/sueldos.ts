@@ -2656,6 +2656,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
       diasTrabajados: z.number().int().min(0).max(31).optional().nullable(),
       horasTrabajadas: z.number().int().min(0).optional().nullable(),
       importeMaternidadArt13: z.string().optional().nullable(),
+      fechaBaja: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -2827,6 +2828,21 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
 
       return rid;
     });
+
+    // Si es liquidacion_final y se ingresó fecha de baja, sincronizar el empleado
+    if (ctx.data.tipoRecibo === 'liquidacion_final' && ctx.data.fechaBaja) {
+      const [empActual] = await db
+        .select({ fechaBaja: empleado.fechaBaja })
+        .from(empleado)
+        .where(eq(empleado.id, ctx.data.importEmpleadoId))
+        .limit(1);
+      if (empActual && !empActual.fechaBaja) {
+        await db
+          .update(empleado)
+          .set({ fechaBaja: ctx.data.fechaBaja.slice(0, 10), activo: false })
+          .where(eq(empleado.id, ctx.data.importEmpleadoId));
+      }
+    }
 
     return { reciboId, periodo: ctx.data.periodo };
   });
@@ -4535,7 +4551,17 @@ export const confirmarReciboLiquidacion = createServerFn({ method: 'POST' })
  */
 export const deleteRecibo = createServerFn({ method: 'POST' })
   .validator(
-    z.object({ reciboId: z.string().uuid(), clientId: z.string().uuid() })
+    z.object({
+      reciboId: z.string().uuid(),
+      clientId: z.string().uuid(),
+      /**
+       * Sólo aplica a recibos de liquidación final. Borrar la liquidación no
+       * deshacía la baja del empleado: quedaba dado de baja sin ningún
+       * documento que lo respaldara, y nadie se enteraba hasta notar que
+       * faltaba en la nómina.
+       */
+      revertirBaja: z.boolean().optional(),
+    })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
@@ -4543,7 +4569,12 @@ export const deleteRecibo = createServerFn({ method: 'POST' })
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
     const [row] = await db
-      .select({ id: recibo.id, fuente: recibo.fuente })
+      .select({
+        id: recibo.id,
+        fuente: recibo.fuente,
+        tipo: recibo.tipo,
+        empleadoId: recibo.empleadoId,
+      })
       .from(recibo)
       .innerJoin(empleado, eq(recibo.empleadoId, empleado.id))
       .innerJoin(cliente, eq(empleado.clienteId, cliente.id))
@@ -4555,8 +4586,22 @@ export const deleteRecibo = createServerFn({ method: 'POST' })
     if (row.fuente !== 'calculo') {
       throw new Error('Solo se pueden eliminar recibos generados por la app');
     }
-    await db.delete(recibo).where(eq(recibo.id, ctx.data.reciboId));
-    return { ok: true };
+
+    const revierte =
+      ctx.data.revertirBaja === true && row.tipo === 'liquidacion_final';
+
+    // Las dos cosas van juntas: si falla el reingreso, el recibo no se borra.
+    await db.transaction(async (tx) => {
+      await tx.delete(recibo).where(eq(recibo.id, ctx.data.reciboId));
+      if (revierte && row.empleadoId) {
+        await tx
+          .update(empleado)
+          .set({ activo: true, fechaBaja: null, updatedAt: new Date() })
+          .where(eq(empleado.id, row.empleadoId));
+      }
+    });
+
+    return { ok: true, bajaRevertida: revierte };
   });
 
 /** Configuración del empleador para el recibo (firma digital, redondeo). */
@@ -6667,4 +6712,136 @@ export const generarLiqFinalMasivo = createServerFn({ method: 'POST' })
     });
 
     return { generados: itemsACrear.length };
+  });
+
+/* ─── Listado de empresas para la portada de Sueldos ───────────────────────── */
+
+/**
+ * Resumen por empresa para la tabla de la portada.
+ *
+ * Devuelve TODAS las empresas de la organización, no sólo las que liquidan: la
+ * tabla es también el lugar donde se habilita el módulo para una empresa nueva,
+ * así que hay que poder ver las que están apagadas.
+ *
+ * `empleados` cuenta sólo los activos — un legajo dado de baja no dice nada del
+ * volumen de trabajo del mes. `ultimoPeriodo` es la señal operativa más útil:
+ * muestra de un vistazo quién quedó atrasado.
+ */
+export const listEmpresasSueldos = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+
+    const empleadosPorCliente = db
+      .select({
+        clienteId: empleado.clienteId,
+        activos: sql<number>`count(*)::int`.as('activos'),
+      })
+      .from(empleado)
+      .where(and(eq(empleado.orgId, orgId), isNull(empleado.fechaBaja)))
+      .groupBy(empleado.clienteId)
+      .as('emp');
+
+    const ultimoRecibo = db
+      .select({
+        clienteId: recibo.clienteId,
+        ultimo: sql<string>`max(${recibo.periodo})`.as('ultimo'),
+      })
+      .from(recibo)
+      .where(eq(recibo.orgId, orgId))
+      .groupBy(recibo.clienteId)
+      .as('rec');
+
+    const rows = await db
+      .select({
+        id: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        estado: cliente.estado,
+        liquidaSueldos: clienteEmpleadorConfig.liquidaSueldos,
+        empleados: empleadosPorCliente.activos,
+        convenio: clienteCct.cctCodigo,
+        ultimoPeriodo: ultimoRecibo.ultimo,
+      })
+      .from(cliente)
+      .leftJoin(
+        clienteEmpleadorConfig,
+        eq(clienteEmpleadorConfig.clienteId, cliente.id)
+      )
+      .leftJoin(
+        empleadosPorCliente,
+        eq(empleadosPorCliente.clienteId, cliente.id)
+      )
+      .leftJoin(ultimoRecibo, eq(ultimoRecibo.clienteId, cliente.id))
+      .leftJoin(clienteCct, eq(clienteCct.clienteId, cliente.id))
+      .where(eq(cliente.orgId, orgId))
+      .orderBy(asc(cliente.razonSocial));
+
+    return rows.map((r) => ({
+      id: r.id,
+      razonSocial: r.razonSocial,
+      cuit: r.cuit,
+      estado: r.estado,
+      liquidaSueldos: r.liquidaSueldos ?? false,
+      empleados: Number(r.empleados ?? 0),
+      convenio: r.convenio ?? null,
+      // `periodo` es una columna date: Drizzle la devuelve como string, no como
+      // Date. Se manda tal cual y la UI la formatea.
+      ultimoPeriodo: r.ultimoPeriodo
+        ? String(r.ultimoPeriodo).slice(0, 7)
+        : null,
+    }));
+  }
+);
+
+/** Renombra una empresa desde la tabla, sin abrir la ficha. */
+export const updateRazonSocial = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      razonSocial: z.string().trim().min(1, 'El nombre no puede estar vacío'),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    await db
+      .update(cliente)
+      .set({ razonSocial: ctx.data.razonSocial, updatedAt: new Date() })
+      .where(eq(cliente.id, ctx.data.clientId));
+
+    return { ok: true };
+  });
+
+/**
+ * Prende o apaga el módulo de sueldos para una empresa.
+ *
+ * Upsert: una empresa que nunca liquidó no tiene fila en
+ * `cliente_empleador_config`, así que la primera vez hay que crearla.
+ */
+export const toggleLiquidaSueldos = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ clientId: z.string().uuid(), liquidaSueldos: z.boolean() })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    await db
+      .insert(clienteEmpleadorConfig)
+      .values({
+        clienteId: ctx.data.clientId,
+        liquidaSueldos: ctx.data.liquidaSueldos,
+      })
+      .onConflictDoUpdate({
+        target: clienteEmpleadorConfig.clienteId,
+        set: {
+          liquidaSueldos: ctx.data.liquidaSueldos,
+          updatedAt: new Date(),
+        },
+      });
+
+    return { ok: true };
   });

@@ -420,7 +420,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <NavItem to="/iibb" icon={Globe} label="IIBB" />
           <NavItem to="/iva" icon={Percent} label="IVA" />
           <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
-          <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
+          {/* Oculto hasta que el módulo esté terminado. `isEnabled` devuelve
+              false si no hay fila en `organization_module`, así que se prende
+              insertando una — sin tocar código ni redeployar. */}
+          {isEnabled('tareas') && (
+            <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
+          )}
           {isEnabled('banco') && (
             <NavItem to="/bank" icon={Landmark} label="Banco" />
           )}

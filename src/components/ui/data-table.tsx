@@ -377,7 +377,9 @@ function FilterSelect({
       value={value === '' ? 'all' : value}
       onValueChange={(v) => onChange(v === 'all' ? '' : v)}
     >
-      <SelectTrigger size="sm" className="text-[12.5px]">
+      {/* w-auto: SelectTrigger trae `w-full` y en la fila del toolbar se
+          estiraba, empujando el filtro debajo del buscador. */}
+      <SelectTrigger size="sm" className="text-[12.5px] w-auto min-w-[130px]">
         <SelectValue placeholder={label} />
       </SelectTrigger>
       <SelectContent>
