@@ -2,19 +2,19 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
+  ArrowLeft,
   LayoutDashboard,
   Users,
   Building2,
   Calculator,
   Sliders,
   FileText,
-  UserCircle,
   PenLine,
   Upload,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Button } from '@/components/ui/button';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
 import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
@@ -26,6 +26,7 @@ import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
 import { getClientesForSueldos } from '@/actions/client';
+import { EmpresasSueldosTable } from '@/components/sueldos/EmpresasSueldosTable';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { cn } from '@/lib/utils';
@@ -72,7 +73,9 @@ const tabTriggerCls = () =>
 function RouteComponent() {
   const [selectedOptionId, setSelectedOptionId] = useState<string>('');
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [editReciboData, setEditReciboData] = useState<EditReciboData | undefined>(undefined);
+  const [editReciboData, setEditReciboData] = useState<
+    EditReciboData | undefined
+  >(undefined);
   const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
   const [vistaNuevoRecibo, setVistaNuevoRecibo] = useLocalStorageState<
     'nueva' | 'clasica'
@@ -94,11 +97,6 @@ function RouteComponent() {
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
   const clientId = selectedOption?.id ?? '';
-
-  const clientOptions = clients.map((c) => ({
-    value: c.id,
-    label: c.label,
-  }));
 
   const setTab = (next: string) => {
     if (next !== 'simulador') setEditReciboData(undefined);
@@ -126,57 +124,42 @@ function RouteComponent() {
             }}
           />
         )}
+        {/* El selector de empresa se fue: la portada es la tabla. Adentro de una
+            empresa el encabezado muestra cuál es y ofrece la vuelta al listado
+            — patrón maestro-detalle, en vez de un combo que no dice dónde estás. */}
         <PageHeader
-          title="Liquidación de sueldos"
-          subtitle="Gestión de convenios, empleados, conceptos y liquidaciones"
+          title={
+            selectedOption ? selectedOption.name : 'Liquidación de sueldos'
+          }
+          subtitle={
+            selectedOption
+              ? 'Convenios, empleados, conceptos y liquidaciones'
+              : 'Elegí una empresa para gestionar sus sueldos'
+          }
           actions={
-            <SearchableSelect
-              options={clientOptions}
-              value={selectedOptionId}
-              onValueChange={(val) => {
-                setSelectedOptionId(val);
-                setActiveTab('dashboard');
-                setEditReciboData(undefined);
-                setReciboFiltroEmpleadoId('');
-              }}
-              placeholder="Seleccioná una empresa"
-              searchPlaceholder="Buscar empresa..."
-              emptyMessage="Sin empresas con sueldos habilitados"
-              width={320}
-            />
+            selectedOption ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => {
+                  setSelectedOptionId('');
+                  setActiveTab('dashboard');
+                  setEditReciboData(undefined);
+                  setReciboFiltroEmpleadoId('');
+                }}
+              >
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Todas las empresas
+              </Button>
+            ) : undefined
           }
         />
       </div>
 
       {!clientId ? (
-        <div className="px-4 md:px-[3rem] pt-6">
-          <div
-            className="flex flex-col items-center justify-center py-16 text-center rounded-[var(--arca-r-lg)]"
-            style={{
-              background: 'var(--arca-surface)',
-              border: '1px solid var(--arca-border)',
-            }}
-          >
-            <div
-              className="w-14 h-14 rounded-[12px] flex items-center justify-center mb-4"
-              style={{
-                background: 'var(--arca-surface-2)',
-                border: '1px solid var(--arca-border)',
-              }}
-            >
-              <UserCircle
-                className="h-7 w-7 text-[var(--arca-ink-3)]"
-                strokeWidth={1.5}
-              />
-            </div>
-            <h2 className="font-display text-[17px] font-semibold text-[var(--arca-ink)] mb-1.5">
-              Seleccioná una empresa
-            </h2>
-            <p className="text-[13px] text-[var(--arca-ink-3)] max-w-md leading-relaxed">
-              Elegí una empresa en el selector superior para gestionar convenios,
-              empleados, conceptos y liquidaciones de sueldos.
-            </p>
-          </div>
+        <div className="px-4 md:px-[3rem] pt-6 pb-8">
+          <EmpresasSueldosTable onSelect={(id) => setSelectedOptionId(id)} />
         </div>
       ) : (
         <Tabs

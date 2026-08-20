@@ -28,3 +28,6 @@ backups/
 Actualizaciones/
 docs/
 Documentacion Tecnica/
+
+# Respaldos del .env (contienen credenciales de producción)
+.env.bak-*
