@@ -514,6 +514,21 @@ export function ReciboFormulario({
                       </FormItem>
                     )}
                   />
+                  {tipoRecibo === 'liquidacion_final' && (
+                    <FormField
+                      control={form.control}
+                      name="fechaBaja"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fecha de baja del empleado</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
               </section>
             )}
@@ -698,21 +713,6 @@ export function ReciboFormulario({
                     })}
                   </div>
                 </div>
-                {tipoRecibo === 'liquidacion_final' && (
-                  <FormField
-                    control={form.control}
-                    name="fechaBaja"
-                    render={({ field }) => (
-                      <FormItem className="max-w-xs">
-                        <FormLabel>Fecha de baja del empleado</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
                 <div className="grid gap-4 sm:grid-cols-3">
                   <FormField
                     control={form.control}

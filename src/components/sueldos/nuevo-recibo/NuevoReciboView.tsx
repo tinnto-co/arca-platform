@@ -97,6 +97,7 @@ export function NuevoReciboView({
   const [revistaAbierta, setRevistaAbierta] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [copiarUltimo, setCopiarUltimo] = useState(false);
+  const [fechaBaja, setFechaBaja] = useState('');
   const [edits, setEdits] = useState<EditsMap>({});
   const [activeCodigos, setActiveCodigos] = useState<Set<string>>(new Set());
   const [emitido, setEmitido] = useState<{ reciboId: string } | null>(null);
@@ -382,6 +383,7 @@ export function NuevoReciboView({
       diasTrabajados: dias !== '' ? parseInt(dias, 10) : null,
       horasTrabajadas: horas !== '' ? Math.round(Number(horas)) || 0 : null,
       importeMaternidadArt13: null,
+      fechaBaja: fechaBaja.trim() || null,
     };
   }, [
     emp,
@@ -403,6 +405,7 @@ export function NuevoReciboView({
     obsRecibo,
     dias,
     horas,
+    fechaBaja,
   ]);
 
   const payloadRef = useRef(guardarPayload);
@@ -720,6 +723,8 @@ export function NuevoReciboView({
           }
           convenioNombre={convenioNombre}
           categoriaNombre={basicoData?.categoriaNombre ?? null}
+          fechaBaja={fechaBaja}
+          onFechaBajaChange={(v) => { setFechaBaja(v); programarGuardado(); }}
         />
 
         <RevistaNovedadesCard
