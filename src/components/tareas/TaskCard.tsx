@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale';
 import { MessageSquare, User, Calendar, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { TaskDetailDialog } from './TaskDetailDialog';
-import { TIPO_LABELS, TIPO_COLORS, ESTADO_COLORS } from './utils';
+import { TIPO_LABELS, TIPO_COLORS } from './utils';
 import type { TareaConDetalle } from './utils';
 import { cn } from '@/lib/utils';
 
@@ -24,10 +24,8 @@ export function TaskCard({ tarea }: TaskCardProps) {
 
   const vencimiento = tarea.fechaVencimiento ? new Date(tarea.fechaVencimiento) : null;
   const hoy = new Date();
-  const estaVencido = vencimiento && vencimiento < hoy && tarea.estado !== 'verificada';
-  const venceHoy =
-    vencimiento?.toDateString() === hoy.toDateString() &&
-    tarea.estado !== 'verificada';
+  const estaVencido = vencimiento && vencimiento < hoy;
+  const venceHoy = vencimiento?.toDateString() === hoy.toDateString();
 
   return (
     <>
