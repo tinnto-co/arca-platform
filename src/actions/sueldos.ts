@@ -74,6 +74,28 @@ type Empleado = typeof empleado.$inferSelect;
  * login de AFIP y `profileId` la empresa. Ahora la empresa es `cliente` y es la
  * única unidad, así que `clientId` y `profileId` son el mismo id.
  */
+/**
+ * Sólo valida pertenencia a la organización, sin exigir que la empresa liquide
+ * sueldos. Para las operaciones que HABILITAN el módulo: pedir
+ * `liquidaSueldos = true` ahí sería circular — para prender el interruptor
+ * habría que tenerlo prendido.
+ */
+async function ensureClientInOrg(
+  clienteId: string,
+  orgId: string
+): Promise<void> {
+  const [c] = await db
+    .select({ id: cliente.id })
+    .from(cliente)
+    .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
+    .limit(1);
+  if (!c) throw new Error('Cliente no encontrado o no autorizado');
+}
+
+/**
+ * Pertenencia + módulo habilitado. Es el guard por defecto del módulo: nadie
+ * debería tocar empleados ni recibos de una empresa que no liquida acá.
+ */
 async function ensureClientBelongsToOrg(
   clienteId: string,
   orgId: string
@@ -6804,7 +6826,7 @@ export const updateRazonSocial = createServerFn({ method: 'POST' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientInOrg(ctx.data.clientId, orgId);
 
     await db
       .update(cliente)
@@ -6827,7 +6849,7 @@ export const toggleLiquidaSueldos = createServerFn({ method: 'POST' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    await ensureClientInOrg(ctx.data.clientId, orgId);
 
     await db
       .insert(clienteEmpleadorConfig)
