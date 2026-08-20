@@ -2656,6 +2656,7 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
       diasTrabajados: z.number().int().min(0).max(31).optional().nullable(),
       horasTrabajadas: z.number().int().min(0).optional().nullable(),
       importeMaternidadArt13: z.string().optional().nullable(),
+      fechaBaja: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -2827,6 +2828,21 @@ export const guardarReciboDesdeTabla = createServerFn({ method: 'POST' })
 
       return rid;
     });
+
+    // Si es liquidacion_final y se ingresó fecha de baja, sincronizar el empleado
+    if (ctx.data.tipoRecibo === 'liquidacion_final' && ctx.data.fechaBaja) {
+      const [empActual] = await db
+        .select({ fechaBaja: empleado.fechaBaja })
+        .from(empleado)
+        .where(eq(empleado.id, ctx.data.importEmpleadoId))
+        .limit(1);
+      if (empActual && !empActual.fechaBaja) {
+        await db
+          .update(empleado)
+          .set({ fechaBaja: ctx.data.fechaBaja.slice(0, 10), activo: false })
+          .where(eq(empleado.id, ctx.data.importEmpleadoId));
+      }
+    }
 
     return { reciboId, periodo: ctx.data.periodo };
   });

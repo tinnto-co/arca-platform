@@ -109,6 +109,7 @@ const formSchema = z.object({
     (v) => !v || (Number(v) >= 0 && !isNaN(Number(v))),
     { message: 'El importe no puede ser negativo' }
   ),
+  fechaBaja: z.string().optional(),
 });
 
 export type ReciboFormValues = z.infer<typeof formSchema>;
@@ -144,6 +145,7 @@ export interface ReciboFormularioSuccess {
   diasTrabajados: number | null;
   horasTrabajadas: number | null;
   importeMaternidadArt13: string | null;
+  fechaBaja: string | null;
 }
 
 interface ReciboFormularioProps {
@@ -216,6 +218,7 @@ export function ReciboFormulario({
       diasTrabajados: '30',
       horasTrabajadas: '',
       importeMaternidadArt13: '',
+      fechaBaja: '',
       ...initialValues,
     },
   });
@@ -228,6 +231,7 @@ export function ReciboFormulario({
 
   const ano = form.watch('ano');
   const mes = form.watch('mes');
+  const tipoRecibo = form.watch('tipoRecibo');
 
   const antiguedadAnios = useMemo(() => {
     const fechaAlta = empleadoSel?.empleado.fechaAlta;
@@ -300,6 +304,7 @@ export function ReciboFormulario({
       diasTrabajados: values.diasTrabajados ? parseInt(values.diasTrabajados, 10) : null,
       horasTrabajadas: values.horasTrabajadas ? parseInt(values.horasTrabajadas, 10) : null,
       importeMaternidadArt13: values.importeMaternidadArt13?.trim() || null,
+      fechaBaja: values.fechaBaja?.trim() || null,
     });
   };
 
@@ -693,6 +698,21 @@ export function ReciboFormulario({
                     })}
                   </div>
                 </div>
+                {tipoRecibo === 'liquidacion_final' && (
+                  <FormField
+                    control={form.control}
+                    name="fechaBaja"
+                    render={({ field }) => (
+                      <FormItem className="max-w-xs">
+                        <FormLabel>Fecha de baja del empleado</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
                 <div className="grid gap-4 sm:grid-cols-3">
                   <FormField
                     control={form.control}
