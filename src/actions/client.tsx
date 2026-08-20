@@ -12,6 +12,7 @@ import {
   job,
   representativeBalanceConfig,
   alert,
+  cliente,
 } from '@/drizzle/schema';
 import { auth } from '@/lib/auth';
 import {
@@ -363,15 +364,34 @@ export const getRepresentativesForSueldos = createServerFn({
       )
       .orderBy(asc(client.name));
 
-    return rows.map((p) => ({
-      id: `client:${p.clientId}`,
-      representativeId: p.representativeId,
-      clientId: p.clientId,
-      name: p.clientName,
-      label: `${p.clientName}${p.clientIdentityNumber || p.representativeIdentityNumber
-        ? ` (${p.clientIdentityNumber ?? p.representativeIdentityNumber})`
-        : ''
-        }`,
+    // Si hay datos en las tablas del schema inglés, usarlos
+    if (rows.length > 0) {
+      return rows.map((p) => ({
+        id: `client:${p.clientId}`,
+        representativeId: p.representativeId,
+        clientId: p.clientId,
+        name: p.clientName,
+        label: `${p.clientName}${p.clientIdentityNumber || p.representativeIdentityNumber
+          ? ` (${p.clientIdentityNumber ?? p.representativeIdentityNumber})`
+          : ''
+          }`,
+        type: 'client' as const,
+      }));
+    }
+
+    // Fallback: BD_IDEAL — usar tabla `cliente`
+    const clientes = await db
+      .select({ id: cliente.id, nombre: cliente.razonSocial })
+      .from(cliente)
+      .where(eq(cliente.orgId, orgId))
+      .orderBy(asc(cliente.razonSocial));
+
+    return clientes.map((c) => ({
+      id: `client:${c.id}`,
+      representativeId: c.id,
+      clientId: c.id,
+      name: c.nombre,
+      label: c.nombre,
       type: 'client' as const,
     }));
   } catch (error) {
