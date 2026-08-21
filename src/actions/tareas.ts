@@ -1,7 +1,8 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
+import { generateKeyBetween } from 'fractional-indexing';
 import { db } from '@/lib/db';
-import { and, desc, eq, inArray, isNull, lte } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
 import {
   tarea,
   tareaCliente,
@@ -15,8 +16,18 @@ import { getSessionWithOrg, getMemberRole, assertCanWrite } from './helpers';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
-export type TipoTarea = 'iva' | 'iibb' | 'ddjj' | 'sueldos' | 'convenios' | 'otro';
-export type EstadoTarea = 'pendiente' | 'presentada' | 'verificada';
+export const TIPOS_TAREA = [
+  'iva',
+  'iibb',
+  'ddjj',
+  'sueldos',
+  'convenios',
+  'otro',
+] as const;
+export const ESTADOS_TAREA = ['pendiente', 'presentada', 'verificada'] as const;
+
+export type TipoTarea = (typeof TIPOS_TAREA)[number];
+export type EstadoTarea = (typeof ESTADOS_TAREA)[number];
 
 // ─── Listado ─────────────────────────────────────────────────────────────────
 
@@ -25,7 +36,7 @@ export const listTareas = createServerFn({ method: 'GET' })
   .validator(
     z.object({
       periodo: z.string().optional(),
-      tipo: z.string().optional(),
+      tipo: z.enum(TIPOS_TAREA).optional(),
       asignadoA: z.string().optional(),
       clienteId: z.string().uuid().optional(),
       vencimientoHasta: z.string().optional(),
@@ -84,7 +95,12 @@ export const listTareas = createServerFn({ method: 'GET' })
       .from(tarea)
       .leftJoin(user, eq(tarea.asignadoA, user.id))
       .where(and(...conditions))
-      .orderBy(tarea.venceAt, tarea.createdAt);
+      // `posicion` es un índice fraccional: una clave de texto que ordena
+      // entre sus vecinas. La columna es `collate "C"` para que el orden sea
+      // por bytes — glibc y musl ordenan distinto y el tablero saldría
+      // desordenado en producción pero no en desarrollo.
+      // Las que todavía no tienen posición caen al final con el orden viejo.
+      .orderBy(sql`${tarea.posicion} asc nulls last`, tarea.venceAt, tarea.createdAt);
 
     if (tareas.length === 0) return [];
 
@@ -182,6 +198,35 @@ export const listOrgRepresentatives = createServerFn({ method: 'GET' }).handler(
     .orderBy(cliente.razonSocial);
 });
 
+// ─── Posicionamiento ─────────────────────────────────────────────────────────
+
+/**
+ * Devuelve una clave fraccional anterior a la primera tarea de la columna, o
+ * sea: la posición para entrar arriba de todo. `excluirId` saca a la propia
+ * tarea del cálculo cuando se la está moviendo.
+ */
+async function posicionAlPrincipio(
+  orgId: string,
+  columnaId: string | null,
+  excluirId?: string
+): Promise<string> {
+  const [primera] = await db
+    .select({ posicion: tarea.posicion })
+    .from(tarea)
+    .where(
+      and(
+        eq(tarea.orgId, orgId),
+        columnaId === null ? isNull(tarea.columnaId) : eq(tarea.columnaId, columnaId),
+        isNotNull(tarea.posicion),
+        ...(excluirId ? [ne(tarea.id, excluirId)] : [])
+      )
+    )
+    .orderBy(sql`${tarea.posicion} asc`)
+    .limit(1);
+
+  return generateKeyBetween(null, primera?.posicion ?? null);
+}
+
 // ─── Creación ─────────────────────────────────────────────────────────────────
 
 export const createTarea = createServerFn({ method: 'POST' })
@@ -189,7 +234,7 @@ export const createTarea = createServerFn({ method: 'POST' })
     z.object({
       titulo: z.string().min(1),
       descripcion: z.string().optional(),
-      tipo: z.enum(['iva', 'iibb', 'ddjj', 'sueldos', 'convenios', 'otro']),
+      tipo: z.enum(TIPOS_TAREA),
       asignadoA: z.string().optional().nullable(),
       periodo: z.string().optional().nullable(),
       venceAt: z.string().optional().nullable(),
@@ -201,15 +246,21 @@ export const createTarea = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
+    // La tarea nueva entra PRIMERA en su columna. Sin esto nacía con
+    // `posicion` en null y caía al fondo hasta que alguien la arrastrara.
+    const columnaId = ctx.data.columnaId ?? null;
+    const posicion = await posicionAlPrincipio(orgId, columnaId);
+
     const [task] = await db
       .insert(tarea)
       .values({
         orgId,
+        posicion,
         titulo: ctx.data.titulo.trim(),
         descripcion: ctx.data.descripcion?.trim() || null,
         tipo: ctx.data.tipo,
         estado: 'pendiente',
-        columnaId: ctx.data.columnaId || null,
+        columnaId,
         asignadoA: ctx.data.asignadoA || null,
         periodo: ctx.data.periodo || null,
         venceAt: ctx.data.venceAt
@@ -231,7 +282,7 @@ export const updateTarea = createServerFn({ method: 'POST' })
       id: z.string().uuid(),
       titulo: z.string().min(1).optional(),
       descripcion: z.string().optional().nullable(),
-      tipo: z.enum(['iva', 'iibb', 'ddjj', 'sueldos', 'convenios', 'otro']).optional(),
+      tipo: z.enum(TIPOS_TAREA).optional(),
       asignadoA: z.string().optional().nullable(),
       periodo: z.string().optional().nullable(),
       venceAt: z.string().optional().nullable(),
@@ -267,7 +318,7 @@ export const updateEstadoTarea = createServerFn({ method: 'POST' })
   .validator(
     z.object({
       id: z.string().uuid(),
-      estado: z.enum(['pendiente', 'presentada', 'verificada']),
+      estado: z.enum(ESTADOS_TAREA),
     })
   )
   .handler(async (ctx) => {
@@ -466,16 +517,33 @@ export const reorderColumnas = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/**
+ * Mueve una tarea de columna. La posición viaja en la misma escritura: si se
+ * mandan las dos por separado la tarjeta aparece un instante en el lugar que
+ * tenía en la columna vieja. Sin `posicion` explícita entra primera, igual que
+ * una tarea recién creada — es lo que pasa cuando se cambia la columna desde
+ * el detalle, donde no hay un punto de drop.
+ */
 export const moverTarea = createServerFn({ method: 'POST' })
-  .validator(z.object({ id: z.string().uuid(), columnaId: z.string().uuid().nullable() }))
+  .validator(
+    z.object({
+      id: z.string().uuid(),
+      columnaId: z.string().uuid().nullable(),
+      posicion: z.string().optional(),
+    })
+  )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
+    const posicion =
+      ctx.data.posicion ??
+      (await posicionAlPrincipio(orgId, ctx.data.columnaId, ctx.data.id));
+
     await db
       .update(tarea)
-      .set({ columnaId: ctx.data.columnaId, updatedAt: new Date() })
+      .set({ columnaId: ctx.data.columnaId, posicion, updatedAt: new Date() })
       .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
 
     return { ok: true };

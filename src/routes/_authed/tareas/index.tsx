@@ -1,3 +1,4 @@
+import { generateKeyBetween } from 'fractional-indexing';
 import { useState, useMemo } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -62,6 +63,7 @@ import {
   deleteColumna,
   reorderColumnas,
   moverTarea,
+  type TipoTarea,
   reorderTarea,
 } from '@/actions/tareas';
 import { TIPO_LABELS } from '@/components/tareas/utils';
@@ -104,6 +106,42 @@ function SortableTaskCard({ tarea }: { tarea: Tarea }) {
 
 // ─── TareasPage ──────────────────────────────────────────────────────────────
 
+/**
+ * Clave fraccional para insertar en `insertIdx` dentro de una lista ya ordenada
+ * (sin la tarjeta que se está moviendo).
+ *
+ * `generateKeyBetween` exige que los dos bordes sean claves válidas o `null`,
+ * así que se busca la vecina más cercana que TENGA posición en cada dirección:
+ * una tarea vieja sin backfillear no puede servir de borde. Devuelve `null` si
+ * la clave no se puede generar, para no escribir una posición inválida.
+ */
+function posicionEntre(lista: Tarea[], insertIdx: number): string | null {
+  let antes: string | null = null;
+  for (let i = insertIdx - 1; i >= 0; i--) {
+    const pos = lista[i]?.posicion;
+    if (pos != null) {
+      antes = pos;
+      break;
+    }
+  }
+  let despues: string | null = null;
+  for (let i = insertIdx; i < lista.length; i++) {
+    const pos = lista[i]?.posicion;
+    if (pos != null) {
+      despues = pos;
+      break;
+    }
+  }
+
+  try {
+    return generateKeyBetween(antes, despues);
+  } catch {
+    // Bordes incoherentes (antes >= despues). Pasa sólo si el cliente quedó con
+    // datos viejos; el refetch posterior lo acomoda.
+    return null;
+  }
+}
+
 function TareasPage() {
   const queryClient = useQueryClient();
   const [nuevaOpen, setNuevaOpen] = useState(false);
@@ -111,7 +149,7 @@ function TareasPage() {
 
   const [filtroAno, setFiltroAno] = useState('');
   const [filtroMes, setFiltroMes] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState<TipoTarea | ''>('');
   const [filtroAsignado, setFiltroAsignado] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [filtroVencimientoHasta, setFiltroVencimientoHasta] = useState('');
@@ -160,26 +198,16 @@ function TareasPage() {
 
   const isLoading = isColsLoading || isTareasLoading;
 
-  // Group tasks by columnaId, sorted by posicion within each column
+  // Agrupa por columna. NO reordena: `listTareas` ya devuelve las tareas por
+  // `posicion` con `collate "C"`, y ordenarlas de nuevo acá con parseFloat las
+  // rompía — las claves fraccionales son texto ("a0", "Zz"), no números.
   const tareasPorColumna = useMemo(() => {
     const map: Record<string, Tarea[]> = { __sin_columna__: [] };
     for (const col of columnas) map[col.id] = [];
     for (const t of tareas) {
       const key = t.columnaId ?? '__sin_columna__';
       if (map[key] !== undefined) map[key].push(t);
-          else map.__sin_columna__.push(t);
-    }
-    for (const key of Object.keys(map)) {
-      map[key]?.sort((a, b) => {
-        const pa = a.posicion != null ? parseFloat(a.posicion) : null;
-        const pb = b.posicion != null ? parseFloat(b.posicion) : null;
-        if (pa != null && pb != null) return pa - pb;
-        if (pa != null) return -1;
-        if (pb != null) return 1;
-        const va = a.venceAt ? new Date(a.venceAt).getTime() : Infinity;
-        const vb = b.venceAt ? new Date(b.venceAt).getTime() : Infinity;
-        return va !== vb ? va - vb : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      });
+      else map.__sin_columna__.push(t);
     }
     return map;
   }, [tareas, columnas]);
@@ -189,8 +217,15 @@ function TareasPage() {
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   const moveMutation = useMutation({
-    mutationFn: ({ id, columnaId }: { id: string; columnaId: string | null }) =>
-      moverTarea({ data: { id, columnaId } }),
+    mutationFn: ({
+      id,
+      columnaId,
+      posicion,
+    }: {
+      id: string;
+      columnaId: string | null;
+      posicion?: string;
+    }) => moverTarea({ data: { id, columnaId, posicion } }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false }),
     onError: () => toast.error('Error al mover la tarea'),
   });
@@ -252,46 +287,41 @@ function TareasPage() {
 
     const srcColKey = activeTarea.columnaId ?? '__sin_columna__';
 
-    // Determine destination column key
+    // `overId` es otra tarjeta, o el id de la columna cuando se suelta en el vacío.
     const overTarea = tareas.find((t) => t.id === overId);
-    const destColKey = overTarea
-      ? (overTarea.columnaId ?? '__sin_columna__')
-      : overId; // overId is a column droppable id
-
+    const destColKey = overTarea ? (overTarea.columnaId ?? '__sin_columna__') : overId;
     const destColumnaId = destColKey === '__sin_columna__' ? null : destColKey;
 
-    if (srcColKey !== destColKey) {
-      // Cross-column move
-      moveMutation.mutate({ id: activeId, columnaId: destColumnaId });
-      return;
+    const destino = (tareasPorColumna[destColKey] ?? []).filter((t) => t.id !== activeId);
+
+    // Dónde cae dentro de la columna destino.
+    let insertIdx: number;
+    if (!overTarea) {
+      // Soltada sobre la columna, no sobre una tarjeta: va al final.
+      insertIdx = destino.length;
+    } else {
+      const overIdx = destino.findIndex((t) => t.id === overId);
+      if (overIdx === -1) return;
+      if (srcColKey === destColKey) {
+        // Dentro de la misma columna, arrastrar hacia abajo inserta DESPUÉS
+        // de la tarjeta de destino; hacia arriba, antes.
+        const sorted = tareasPorColumna[srcColKey] ?? [];
+        const movingDown =
+          sorted.findIndex((t) => t.id === activeId) < sorted.findIndex((t) => t.id === overId);
+        insertIdx = movingDown ? overIdx + 1 : overIdx;
+      } else {
+        insertIdx = overIdx;
+      }
     }
 
-    // Same column — reorder by fractional position
-    if (!overTarea) return;
+    const posicion = posicionEntre(destino, insertIdx);
+    if (posicion === null) return;
 
-    const sorted = tareasPorColumna[srcColKey] ?? [];
-    const sortedActiveIdx = sorted.findIndex((t) => t.id === activeId);
-    const sortedOverIdx = sorted.findIndex((t) => t.id === overId);
-    if (sortedActiveIdx === sortedOverIdx) return;
-
-    const movingDown = sortedActiveIdx < sortedOverIdx;
-    const withoutActive = sorted.filter((t) => t.id !== activeId);
-    const overIdxInWithout = withoutActive.findIndex((t) => t.id === overId);
-
-    // Insert after over when moving down, before over when moving up
-    const insertIdx = movingDown ? overIdxInWithout + 1 : overIdxInWithout;
-
-    const before = withoutActive[insertIdx - 1];
-    const after = withoutActive[insertIdx];
-
-    const getPos = (t: Tarea, fallbackIdx: number) =>
-      t.posicion != null ? parseFloat(t.posicion) : (fallbackIdx + 1) * 1000;
-
-    const beforePos = before ? getPos(before, withoutActive.indexOf(before)) : 0;
-    const afterPos = after ? getPos(after, withoutActive.indexOf(after)) : beforePos + 2000;
-    const newPos = String((beforePos + afterPos) / 2);
-
-    reorderMutation.mutate({ id: activeId, posicion: newPos });
+    if (srcColKey !== destColKey) {
+      moveMutation.mutate({ id: activeId, columnaId: destColumnaId, posicion });
+    } else {
+      reorderMutation.mutate({ id: activeId, posicion });
+    }
   };
 
   // ─── Column handlers ──────────────────────────────────────────────────────
@@ -374,7 +404,7 @@ function TareasPage() {
             </SelectContent>
           </Select>
 
-          <Select value={filtroTipo} onValueChange={setFiltroTipo}>
+          <Select value={filtroTipo} onValueChange={(v) => setFiltroTipo(v as TipoTarea | '')}>
             <SelectTrigger className="h-8 w-40 text-xs">
               <SelectValue placeholder="Todos los tipos" />
             </SelectTrigger>
