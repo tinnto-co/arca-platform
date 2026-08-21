@@ -30,7 +30,6 @@ import {
   Check,
   X,
   Kanban,
-  GripVertical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -95,17 +94,10 @@ function SortableTaskCard({ tarea }: { tarea: Tarea }) {
     <div
       ref={setNodeRef}
       style={style}
-      className={cn('relative group/sortable', isDragging && 'opacity-40')}
+      {...attributes}
+      {...listeners}
+      className={cn('cursor-grab active:cursor-grabbing touch-none', isDragging && 'opacity-40')}
     >
-      {/* Drag handle — visible on hover, doesn't block card click */}
-      <div
-        {...attributes}
-        {...listeners}
-        className="absolute top-2 right-2 z-10 p-0.5 rounded opacity-0 group-hover/sortable:opacity-100 text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none transition-opacity"
-        title="Arrastrar para reordenar"
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </div>
       <TaskCard tarea={tarea} />
     </div>
   );
