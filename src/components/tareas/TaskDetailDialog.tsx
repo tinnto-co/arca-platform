@@ -78,6 +78,7 @@ import {
   updateEstadoTarea,
   addTareaComment,
   archivarTarea,
+  CLAVE_ARCHIVADAS,
   updateTareaComment,
   deleteTareaComment,
   addTareaPaso,
@@ -568,18 +569,21 @@ export function TaskDetailDialog({
                         <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
                       )}
                     </DropdownMenuItem>
-                    {columnas.map((col) => (
-                      <DropdownMenuItem
-                        key={col.id}
-                        onSelect={() => colMutation.mutate(col.id)}
-                        className="text-[12.5px]"
-                      >
-                        {col.nombre}
-                        {col.id === tarea.columnaId && (
-                          <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
+                    {/* Archivadas no se elige a mano: se llega archivando. */}
+                    {columnas
+                      .filter((col) => col.clave !== CLAVE_ARCHIVADAS)
+                      .map((col) => (
+                        <DropdownMenuItem
+                          key={col.id}
+                          onSelect={() => colMutation.mutate(col.id)}
+                          className="text-[12.5px]"
+                        >
+                          {col.nombre}
+                          {col.id === tarea.columnaId && (
+                            <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </CampoInline>

@@ -45,6 +45,7 @@ import {
   reorderTarea,
   COLORES_COLUMNA,
   TIPOS_TAREA,
+  CLAVE_ARCHIVADAS,
 } from '@/actions/tareas';
 import type { TareaConDetalle, TipoTarea } from '@/components/tareas/utils';
 import { cn } from '@/lib/utils';
@@ -266,6 +267,19 @@ function TareasPage() {
   });
 
   const cargando = cargandoCols || cargandoTareas;
+
+  // El tablero muestra las columnas del estudio; el archivo, sólo Archivadas.
+  // Es una columna real —la tienen todas las organizaciones— pero la maneja la
+  // aplicación, así que nunca se ven las dos cosas juntas.
+  const columnasVisibles = useMemo(
+    () =>
+      columnas.filter((c) =>
+        viendoArchivadas
+          ? c.clave === CLAVE_ARCHIVADAS
+          : c.clave !== CLAVE_ARCHIVADAS
+      ),
+    [columnas, viendoArchivadas]
+  );
 
   // Agrupa por columna. NO reordena: `listTareas` ya devuelve las tareas por
   // `posicion` con `collate "C"`, y ordenarlas de nuevo acá con parseFloat las
@@ -502,7 +516,7 @@ function TareasPage() {
           <div className="flex min-h-0 flex-1 snap-x snap-proximity gap-[14px] overflow-x-auto pt-[18px] pb-[22px]">
             {/* Sin columna: sólo si hay tareas ahí. No es una columna del
                 estudio, es dónde caen las que perdieron la suya. */}
-            {sinColumna.length > 0 && (
+            {!viendoArchivadas && sinColumna.length > 0 && (
               <BoardColumn
                 id={SIN_COLUMNA}
                 columnaId={null}
@@ -527,7 +541,7 @@ function TareasPage() {
               />
             )}
 
-            {columnas.map((col) => (
+            {columnasVisibles.map((col) => (
               <BoardColumn
                 key={col.id}
                 id={col.id}
@@ -538,7 +552,7 @@ function TareasPage() {
                 tareaAbierta={search.tarea ?? null}
                 composerAbierto={composerEn === col.id}
                 filtrosDefault={defaultsComposer}
-                editable
+                editable={col.clave === null}
                 soloLectura={viendoArchivadas}
                 onAbrirComposer={() => setComposerEn(col.id)}
                 onCerrarComposer={() => setComposerEn(null)}
@@ -565,39 +579,41 @@ function TareasPage() {
             ))}
 
             {/* Columna virtual */}
-            <div className="w-[180px] min-w-[180px] self-start rounded-[var(--arca-r-lg)] border border-dashed border-[var(--arca-border-strong)] p-[11px]">
-              {nuevaColumna ? (
-                <input
-                  autoFocus
-                  value={nombreNuevo}
-                  onChange={(e) => setNombreNuevo(e.target.value)}
-                  placeholder="Nombre"
-                  aria-label="Nombre de la columna nueva"
-                  className="w-full border-b border-dashed border-[var(--arca-border-strong)] bg-transparent pb-1 text-[12.5px] outline-none placeholder:text-[var(--arca-ink-4)]"
-                  onBlur={() => {
-                    const v = nombreNuevo.trim();
-                    if (v) crearCol.mutate(v);
-                    else setNuevaColumna(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur();
-                    if (e.key === 'Escape') {
-                      setNombreNuevo('');
-                      setNuevaColumna(false);
-                    }
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setNuevaColumna(true)}
-                  className="flex w-full items-center gap-1.5 text-left text-[12.5px] font-medium text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:text-[var(--arca-ink)]"
-                >
-                  <Plus className="size-3.5" />
-                  Crear columna
-                </button>
-              )}
-            </div>
+            {!viendoArchivadas && (
+              <div className="w-[180px] min-w-[180px] self-start rounded-[var(--arca-r-lg)] border border-dashed border-[var(--arca-border-strong)] p-[11px]">
+                {nuevaColumna ? (
+                  <input
+                    autoFocus
+                    value={nombreNuevo}
+                    onChange={(e) => setNombreNuevo(e.target.value)}
+                    placeholder="Nombre"
+                    aria-label="Nombre de la columna nueva"
+                    className="w-full border-b border-dashed border-[var(--arca-border-strong)] bg-transparent pb-1 text-[12.5px] outline-none placeholder:text-[var(--arca-ink-4)]"
+                    onBlur={() => {
+                      const v = nombreNuevo.trim();
+                      if (v) crearCol.mutate(v);
+                      else setNuevaColumna(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') {
+                        setNombreNuevo('');
+                        setNuevaColumna(false);
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setNuevaColumna(true)}
+                    className="flex w-full items-center gap-1.5 text-left text-[12.5px] font-medium text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:text-[var(--arca-ink)]"
+                  >
+                    <Plus className="size-3.5" />
+                    Crear columna
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
           {/* La card viaja acá para poder inclinarse sin deformar el hueco. */}

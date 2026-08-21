@@ -209,6 +209,63 @@ try {
     );
   }
 
+  // Columna de sistema 'archivadas' y la columna previa de cada tarea.
+  if (!(await tieneColumna('tarea_columna', 'clave'))) {
+    pasos.push(`alter table tarea_columna add column clave text`);
+  }
+  if (!(await existeIndice('uq_tarea_columna_clave'))) {
+    pasos.push(
+      `create unique index uq_tarea_columna_clave on tarea_columna(org_id, clave) where clave is not null`
+    );
+  }
+  if (!(await tieneColumna('tarea', 'columna_previa_id'))) {
+    pasos.push(
+      `alter table tarea add column columna_previa_id uuid references tarea_columna(id) on delete set null`
+    );
+  }
+
+  // La columna Archivadas para cada organización, y las tareas ya archivadas
+  // movidas ahí. Las que se archivaron antes de que la columna existiera
+  // quedaron en la suya: sin esto no aparecen en el archivo.
+  const [{ n: faltan }] = (await sql`
+    select count(*)::int n from organization o
+     where not exists (
+       select 1 from tarea_columna c
+        where c.org_id = o.id and c.clave = 'archivadas'
+     )
+  `) as unknown as { n: number }[];
+  if (faltan > 0) {
+    pasos.push(`insert into tarea_columna (org_id, nombre, clave, color, orden)
+       select o.id, 'Archivadas', 'archivadas', 'neutro', 9999
+         from organization o
+        where not exists (
+          select 1 from tarea_columna c
+           where c.org_id = o.id and c.clave = 'archivadas'
+        )`);
+  }
+
+  const [{ n: sueltas }] = (await sql`
+    select count(*)::int n from tarea t
+     where t.archivada_at is not null
+       and t.columna_id is distinct from (
+         select c.id from tarea_columna c
+          where c.org_id = t.org_id and c.clave = 'archivadas'
+       )
+  `) as unknown as { n: number }[];
+  if (sueltas > 0) {
+    pasos.push(`update tarea t
+        set columna_previa_id = coalesce(t.columna_previa_id, t.columna_id),
+            columna_id = (
+              select c.id from tarea_columna c
+               where c.org_id = t.org_id and c.clave = 'archivadas'
+            )
+      where t.archivada_at is not null
+        and t.columna_id is distinct from (
+          select c.id from tarea_columna c
+           where c.org_id = t.org_id and c.clave = 'archivadas'
+        )`);
+  }
+
   // Marca de edición de un comentario.
   if (!(await tieneColumna('tarea_comentario', 'updated_at'))) {
     pasos.push(`alter table tarea_comentario add column updated_at timestamp`);

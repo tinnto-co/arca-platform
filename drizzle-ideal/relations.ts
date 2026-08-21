@@ -97,10 +97,10 @@ export const organizationRelations = relations(organization, ({many}) => ({
 	cuentas: many(cuenta),
 	ejercicios: many(ejercicio),
 	eeccs: many(eecc),
-	tareas: many(tarea),
+	tareaColumnas: many(tareaColumna),
 	firmantes: many(firmante),
 	invitations: many(invitation),
-	tareaColumnas: many(tareaColumna),
+	tareas: many(tarea),
 	eventos: many(evento),
 	jobs: many(job),
 }));
@@ -158,6 +158,7 @@ export const userRelations = relations(user, ({many}) => ({
 	eeccs_pdfGeneradoPor: many(eecc, {
 		relationName: "eecc_pdfGeneradoPor_user_id"
 	}),
+	invitations: many(invitation),
 	tareas_asignadoA: many(tarea, {
 		relationName: "tarea_asignadoA_user_id"
 	}),
@@ -170,7 +171,6 @@ export const userRelations = relations(user, ({many}) => ({
 	tareas_archivadaPor: many(tarea, {
 		relationName: "tarea_archivadaPor_user_id"
 	}),
-	invitations: many(invitation),
 	tareaClientes: many(tareaCliente),
 }));
 
@@ -606,9 +606,10 @@ export const tareaRelations = relations(tarea, ({one, many}) => ({
 		fields: [tarea.orgId],
 		references: [organization.id]
 	}),
-	tareaColumna: one(tareaColumna, {
+	tareaColumna_columnaId: one(tareaColumna, {
 		fields: [tarea.columnaId],
-		references: [tareaColumna.id]
+		references: [tareaColumna.id],
+		relationName: "tarea_columnaId_tareaColumna_id"
 	}),
 	user_asignadoA: one(user, {
 		fields: [tarea.asignadoA],
@@ -629,6 +630,11 @@ export const tareaRelations = relations(tarea, ({one, many}) => ({
 		fields: [tarea.archivadaPor],
 		references: [user.id],
 		relationName: "tarea_archivadaPor_user_id"
+	}),
+	tareaColumna_columnaPreviaId: one(tareaColumna, {
+		fields: [tarea.columnaPreviaId],
+		references: [tareaColumna.id],
+		relationName: "tarea_columnaPreviaId_tareaColumna_id"
 	}),
 	tareaClientes: many(tareaCliente),
 	tareaNotificacions: many(tareaNotificacion),
@@ -1254,10 +1260,15 @@ export const eeccRelations = relations(eecc, ({one}) => ({
 }));
 
 export const tareaColumnaRelations = relations(tareaColumna, ({one, many}) => ({
-	tareas: many(tarea),
 	organization: one(organization, {
 		fields: [tareaColumna.orgId],
 		references: [organization.id]
+	}),
+	tareas_columnaId: many(tarea, {
+		relationName: "tarea_columnaId_tareaColumna_id"
+	}),
+	tareas_columnaPreviaId: many(tarea, {
+		relationName: "tarea_columnaPreviaId_tareaColumna_id"
 	}),
 }));
 

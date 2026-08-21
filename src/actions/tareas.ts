@@ -508,17 +508,44 @@ export const archivarTarea = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [t] = await db
-      .update(tarea)
-      .set({
-        archivadaAt: ctx.data.archivar ? new Date() : null,
-        archivadaPor: ctx.data.archivar ? userId : null,
-        updatedAt: new Date(),
+    const [actual] = await db
+      .select({
+        columnaId: tarea.columnaId,
+        columnaPreviaId: tarea.columnaPreviaId,
       })
+      .from(tarea)
       .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)))
-      .returning({ id: tarea.id });
+      .limit(1);
+    if (!actual) throw new Error('Tarea no encontrada');
 
-    if (!t) throw new Error('Tarea no encontrada');
+    if (ctx.data.archivar) {
+      // Se guarda de dónde salió para poder devolverla ahí.
+      const archivadas = await asegurarColumnaArchivadas(orgId);
+      await db
+        .update(tarea)
+        .set({
+          archivadaAt: new Date(),
+          archivadaPor: userId,
+          columnaPreviaId: actual.columnaId,
+          columnaId: archivadas,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
+    } else {
+      // Vuelve a su columna. Si la borraron mientras estaba archivada, queda
+      // sin columna en vez de perderse en Archivadas.
+      await db
+        .update(tarea)
+        .set({
+          archivadaAt: null,
+          archivadaPor: null,
+          columnaId: actual.columnaPreviaId,
+          columnaPreviaId: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
+    }
+
     return { ok: true };
   });
 
@@ -672,9 +699,64 @@ export const deleteTareaComment = createServerFn({ method: 'POST' })
 
 // ─── Columnas del kanban ──────────────────────────────────────────────────────
 
+/** La clave de la única columna de sistema que existe hoy. */
+export const CLAVE_ARCHIVADAS = 'archivadas';
+
+/**
+ * Devuelve la columna Archivadas de la organización, creándola si falta.
+ *
+ * Se resuelve así y no con un seed porque las organizaciones se crean desde
+ * Better Auth, fuera de este módulo: cualquier org —vieja o nueva— la tiene la
+ * primera vez que abre el tablero. El índice único la hace idempotente aun con
+ * dos pestañas cargando a la vez.
+ */
+async function asegurarColumnaArchivadas(orgId: string) {
+  const [existente] = await db
+    .select({ id: tareaColumna.id })
+    .from(tareaColumna)
+    .where(
+      and(
+        eq(tareaColumna.orgId, orgId),
+        eq(tareaColumna.clave, CLAVE_ARCHIVADAS)
+      )
+    )
+    .limit(1);
+  if (existente) return existente.id;
+
+  const [creada] = await db
+    .insert(tareaColumna)
+    .values({
+      orgId,
+      nombre: 'Archivadas',
+      clave: CLAVE_ARCHIVADAS,
+      color: 'neutro',
+      // Al final del tablero, aunque no se muestre entre las comunes.
+      orden: 9999,
+    })
+    .onConflictDoNothing()
+    .returning({ id: tareaColumna.id });
+
+  if (creada) return creada.id;
+
+  // Otra pestaña ganó la carrera: la que quedó es la suya.
+  const [ganadora] = await db
+    .select({ id: tareaColumna.id })
+    .from(tareaColumna)
+    .where(
+      and(
+        eq(tareaColumna.orgId, orgId),
+        eq(tareaColumna.clave, CLAVE_ARCHIVADAS)
+      )
+    )
+    .limit(1);
+  if (!ganadora) throw new Error('No se pudo crear la columna Archivadas');
+  return ganadora.id;
+}
+
 export const listColumnas = createServerFn({ method: 'GET' }).handler(
   async () => {
     const { orgId } = await getSessionWithOrg();
+    await asegurarColumnaArchivadas(orgId);
     return db
       .select()
       .from(tareaColumna)
@@ -682,6 +764,17 @@ export const listColumnas = createServerFn({ method: 'GET' }).handler(
       .orderBy(tareaColumna.orden, tareaColumna.createdAt);
   }
 );
+
+/** Frena renombrar, recolorear o borrar una columna que maneja la aplicación. */
+async function noEsDeSistema(id: string, orgId: string) {
+  const [col] = await db
+    .select({ clave: tareaColumna.clave })
+    .from(tareaColumna)
+    .where(and(eq(tareaColumna.id, id), eq(tareaColumna.orgId, orgId)))
+    .limit(1);
+  if (!col) throw new Error('Columna no encontrada');
+  if (col.clave !== null) throw new Error('Esa columna la maneja el sistema');
+}
 
 export const createColumna = createServerFn({ method: 'POST' })
   .validator(
@@ -729,6 +822,8 @@ export const updateColumna = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
+    await noEsDeSistema(ctx.data.id, orgId);
+
     const set: Record<string, unknown> = {};
     if (ctx.data.nombre !== undefined) set.nombre = ctx.data.nombre.trim();
     if (ctx.data.color !== undefined) set.color = ctx.data.color;
@@ -750,6 +845,8 @@ export const deleteColumna = createServerFn({ method: 'POST' })
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
+
+    await noEsDeSistema(ctx.data.id, orgId);
 
     // Borrar la columna se lleva sus tareas. Es la contrapartida de que una
     // tarea suelta no se pueda eliminar: si no, la única forma de borrar sería

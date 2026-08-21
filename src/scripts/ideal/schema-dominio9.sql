@@ -49,10 +49,18 @@ create table if not exists tarea_columna (
   -- `src/components/tareas/utils.ts`.
   color text not null default 'neutro',
 
+  -- Columna del sistema. Hoy sólo 'archivadas', que toda organización tiene y
+  -- nadie puede renombrar, mover ni borrar: la maneja la aplicación. En una
+  -- columna común es null.
+  clave text,
+
   created_at timestamp not null default now()
 );
 
 create index if not exists ix_tarea_columna_org on tarea_columna(org_id);
+-- Una sola columna de sistema por clave y organización.
+create unique index if not exists uq_tarea_columna_clave
+  on tarea_columna(org_id, clave) where clave is not null;
 
 create table if not exists tarea (
   id uuid primary key default gen_random_uuid(),
@@ -86,6 +94,10 @@ create table if not exists tarea (
   -- sacó de circulación.
   archivada_at timestamp,
   archivada_por text references "user"(id) on delete set null,
+
+  -- De dónde salió al archivarse, para poder devolverla ahí. Sin esto,
+  -- desarchivar la dejaría en Archivadas, que es donde no va.
+  columna_previa_id uuid references tarea_columna(id) on delete set null,
 
   estado_cambiado_at timestamp,
   estado_cambiado_por text references "user"(id) on delete set null,
