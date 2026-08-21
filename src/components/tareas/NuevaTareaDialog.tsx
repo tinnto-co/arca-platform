@@ -66,7 +66,12 @@ interface NuevaTareaDialogProps {
   defaultColumnaId?: string;
 }
 
-export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultColumnaId }: NuevaTareaDialogProps) {
+export function NuevaTareaDialog({
+  open,
+  onOpenChange,
+  columnas = [],
+  defaultColumnaId,
+}: NuevaTareaDialogProps) {
   const queryClient = useQueryClient();
 
   const { data: members = [] } = useQuery({
@@ -115,17 +120,23 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
       return createTarea({
         data: {
           titulo: values.titulo,
-          descripcion: values.descripcion !== '' ? values.descripcion : undefined,
+          descripcion:
+            values.descripcion !== '' ? values.descripcion : undefined,
           tipo: values.tipo,
-          asignadoA: values.asignadoAUserId !== '' ? values.asignadoAUserId : null,
+          asignadoA:
+            values.asignadoAUserId !== '' ? values.asignadoAUserId : null,
           periodo: periodoMes,
-          venceAt: values.fechaVencimiento !== '' ? values.fechaVencimiento : null,
+          venceAt:
+            values.fechaVencimiento !== '' ? values.fechaVencimiento : null,
           columnaId: values.columnaId !== '' ? values.columnaId : null,
         },
       });
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false });
+      void queryClient.invalidateQueries({
+        queryKey: ['tareas'],
+        exact: false,
+      });
       toast.success('Tarea creada');
       form.reset();
       onOpenChange(false);
@@ -140,7 +151,10 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
           <DialogTitle>Nueva tarea</DialogTitle>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+          <form
+            onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
+            className="space-y-4"
+          >
             <FormField
               control={form.control}
               name="titulo"
@@ -189,7 +203,10 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
-                      Columna <span className="text-muted-foreground font-normal">(opcional)</span>
+                      Columna{' '}
+                      <span className="text-muted-foreground font-normal">
+                        (opcional)
+                      </span>
                     </FormLabel>
                     <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
@@ -214,14 +231,22 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
 
             {/* Período: año + mes */}
             <div>
-              <p className="text-sm font-medium mb-1.5">Período <span className="text-muted-foreground font-normal">(opcional)</span></p>
+              <p className="text-sm font-medium mb-1.5">
+                Período{' '}
+                <span className="text-muted-foreground font-normal">
+                  (opcional)
+                </span>
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <FormField
                   control={form.control}
                   name="periodoAno"
                   render={({ field }) => (
                     <FormItem>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Año" />
@@ -230,7 +255,9 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
                         <SelectContent>
                           <SelectItem value="">Sin año</SelectItem>
                           {ANOS.map((a) => (
-                            <SelectItem key={a} value={a}>{a}</SelectItem>
+                            <SelectItem key={a} value={a}>
+                              {a}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -242,7 +269,10 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
                   name="periodoMes"
                   render={({ field }) => (
                     <FormItem>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Mes" />
@@ -251,7 +281,9 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
                         <SelectContent>
                           <SelectItem value="">Sin mes</SelectItem>
                           {MESES.map((m) => (
-                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                            <SelectItem key={m.value} value={m.value}>
+                              {m.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -268,7 +300,10 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Fecha de vencimiento <span className="text-muted-foreground font-normal">(opcional)</span>
+                    Fecha de vencimiento{' '}
+                    <span className="text-muted-foreground font-normal">
+                      (opcional)
+                    </span>
                   </FormLabel>
                   <FormControl>
                     <Input type="date" {...field} />
@@ -310,7 +345,10 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
-                    Descripción <span className="text-muted-foreground font-normal">(opcional)</span>
+                    Descripción{' '}
+                    <span className="text-muted-foreground font-normal">
+                      (opcional)
+                    </span>
                   </FormLabel>
                   <FormControl>
                     <Textarea rows={2} className="resize-none" {...field} />
@@ -321,7 +359,11 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultCol
             />
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
                 Cancelar
               </Button>
               <Button type="submit" disabled={mutation.isPending}>

@@ -2,7 +2,17 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { generateKeyBetween } from 'fractional-indexing';
 import { db } from '@/lib/db';
-import { and, desc, eq, inArray, isNotNull, isNull, lte, ne, sql } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  sql,
+} from 'drizzle-orm';
 import {
   tarea,
   tareaCliente,
@@ -100,7 +110,11 @@ export const listTareas = createServerFn({ method: 'GET' })
       // por bytes — glibc y musl ordenan distinto y el tablero saldría
       // desordenado en producción pero no en desarrollo.
       // Las que todavía no tienen posición caen al final con el orden viejo.
-      .orderBy(sql`${tarea.posicion} asc nulls last`, tarea.venceAt, tarea.createdAt);
+      .orderBy(
+        sql`${tarea.posicion} asc nulls last`,
+        tarea.venceAt,
+        tarea.createdAt
+      );
 
     if (tareas.length === 0) return [];
 
@@ -178,25 +192,29 @@ export const listTareaComments = createServerFn({ method: 'GET' })
   });
 
 /** Devuelve los miembros de la org para el selector de asignados. */
-export const listOrgMembers = createServerFn({ method: 'GET' }).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
-  return db
-    .select({ id: user.id, name: user.name, email: user.email })
-    .from(user)
-    .innerJoin(member, eq(user.id, member.userId))
-    .where(eq(member.organizationId, orgId))
-    .orderBy(user.name);
-});
+export const listOrgMembers = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+    return db
+      .select({ id: user.id, name: user.name, email: user.email })
+      .from(user)
+      .innerJoin(member, eq(user.id, member.userId))
+      .where(eq(member.organizationId, orgId))
+      .orderBy(user.name);
+  }
+);
 
 /** Devuelve los clientes (empresas) de la org para el filtro. */
-export const listOrgRepresentatives = createServerFn({ method: 'GET' }).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
-  return db
-    .select({ id: cliente.id, name: cliente.razonSocial })
-    .from(cliente)
-    .where(eq(cliente.orgId, orgId))
-    .orderBy(cliente.razonSocial);
-});
+export const listOrgRepresentatives = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+    return db
+      .select({ id: cliente.id, name: cliente.razonSocial })
+      .from(cliente)
+      .where(eq(cliente.orgId, orgId))
+      .orderBy(cliente.razonSocial);
+  }
+);
 
 // ─── Posicionamiento ─────────────────────────────────────────────────────────
 
@@ -216,7 +234,9 @@ async function posicionAlPrincipio(
     .where(
       and(
         eq(tarea.orgId, orgId),
-        columnaId === null ? isNull(tarea.columnaId) : eq(tarea.columnaId, columnaId),
+        columnaId === null
+          ? isNull(tarea.columnaId)
+          : eq(tarea.columnaId, columnaId),
         isNotNull(tarea.posicion),
         ...(excluirId ? [ne(tarea.id, excluirId)] : [])
       )
@@ -263,9 +283,7 @@ export const createTarea = createServerFn({ method: 'POST' })
         columnaId,
         asignadoA: ctx.data.asignadoA || null,
         periodo: ctx.data.periodo || null,
-        venceAt: ctx.data.venceAt
-          ? new Date(ctx.data.venceAt)
-          : null,
+        venceAt: ctx.data.venceAt ? new Date(ctx.data.venceAt) : null,
         fuente: 'manual',
         creadoPor: userId,
       })
@@ -295,14 +313,14 @@ export const updateTarea = createServerFn({ method: 'POST' })
 
     const set: Record<string, unknown> = { updatedAt: new Date() };
     if (ctx.data.titulo !== undefined) set.titulo = ctx.data.titulo.trim();
-    if (ctx.data.descripcion !== undefined) set.descripcion = ctx.data.descripcion?.trim() || null;
+    if (ctx.data.descripcion !== undefined)
+      set.descripcion = ctx.data.descripcion?.trim() || null;
     if (ctx.data.tipo !== undefined) set.tipo = ctx.data.tipo;
-    if (ctx.data.asignadoA !== undefined) set.asignadoA = ctx.data.asignadoA || null;
+    if (ctx.data.asignadoA !== undefined)
+      set.asignadoA = ctx.data.asignadoA || null;
     if (ctx.data.periodo !== undefined) set.periodo = ctx.data.periodo || null;
     if (ctx.data.venceAt !== undefined) {
-      set.venceAt = ctx.data.venceAt
-        ? new Date(ctx.data.venceAt)
-        : null;
+      set.venceAt = ctx.data.venceAt ? new Date(ctx.data.venceAt) : null;
     }
 
     await db
@@ -431,14 +449,16 @@ export const addTareaComment = createServerFn({ method: 'POST' })
 
 // ─── Columnas del kanban ──────────────────────────────────────────────────────
 
-export const listColumnas = createServerFn({ method: 'GET' }).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
-  return db
-    .select()
-    .from(tareaColumna)
-    .where(eq(tareaColumna.orgId, orgId))
-    .orderBy(tareaColumna.orden, tareaColumna.createdAt);
-});
+export const listColumnas = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+    return db
+      .select()
+      .from(tareaColumna)
+      .where(eq(tareaColumna.orgId, orgId))
+      .orderBy(tareaColumna.orden, tareaColumna.createdAt);
+  }
+);
 
 export const createColumna = createServerFn({ method: 'POST' })
   .validator(z.object({ nombre: z.string().min(1) }))
@@ -473,7 +493,9 @@ export const updateColumna = createServerFn({ method: 'POST' })
     await db
       .update(tareaColumna)
       .set({ nombre: ctx.data.nombre.trim() })
-      .where(and(eq(tareaColumna.id, ctx.data.id), eq(tareaColumna.orgId, orgId)));
+      .where(
+        and(eq(tareaColumna.id, ctx.data.id), eq(tareaColumna.orgId, orgId))
+      );
 
     return { ok: true };
   });
@@ -493,7 +515,9 @@ export const deleteColumna = createServerFn({ method: 'POST' })
 
     await db
       .delete(tareaColumna)
-      .where(and(eq(tareaColumna.id, ctx.data.id), eq(tareaColumna.orgId, orgId)));
+      .where(
+        and(eq(tareaColumna.id, ctx.data.id), eq(tareaColumna.orgId, orgId))
+      );
 
     return { ok: true };
   });

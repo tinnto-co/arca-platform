@@ -1,12 +1,23 @@
 'use client';
 
+/**
+ * Card del tablero. Fila de etiquetas, título, progreso de empresas y footer
+ * de métricas, según el handoff hi-fi.
+ *
+ * El estado de vencimiento va como pill de color y no como ícono suelto: en
+ * una columna de doce tarjetas el color se lee de un vistazo y el ícono no.
+ */
+
 import { useState } from 'react';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
-import { MessageSquare, User, Calendar, AlertCircle } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { MessageSquare, CheckSquare } from 'lucide-react';
 import { TaskDetailDialog } from './TaskDetailDialog';
-import { TIPO_LABELS, TIPO_COLORS } from './utils';
+import {
+  TIPO_LABELS,
+  TIPO_PILL,
+  TONO_PILL,
+  vencimiento,
+  iniciales,
+} from './utils';
 import type { TareaConDetalle } from './utils';
 import { cn } from '@/lib/utils';
 
@@ -19,94 +30,105 @@ export function TaskCard({ tarea }: TaskCardProps) {
 
   const completados = tarea.clientes.filter((c) => c.completado).length;
   const total = tarea.clientes.length;
-  const hasClientes = total > 0;
-  const progreso = hasClientes ? completados / total : null;
-
-  const vencimiento = tarea.venceAt ? new Date(tarea.venceAt) : null;
-  const hoy = new Date();
-  const estaVencido = vencimiento && vencimiento < hoy;
-  const venceHoy = vencimiento?.toDateString() === hoy.toDateString();
+  const progreso = total > 0 ? (completados / total) * 100 : null;
+  const vence = vencimiento(tarea.venceAt);
 
   return (
     <>
       <button
+        type="button"
         onClick={() => setOpen(true)}
-        className="w-full text-left bg-white border border-border rounded-lg p-3.5 shadow-sm hover:shadow-md hover:border-primary/30 transition-all group"
+        className={cn(
+          'flex w-full flex-col gap-2 rounded-[var(--arca-r-md)] border p-[11px] text-left',
+          'bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]',
+          'transition-colors duration-[120ms] ease-[ease]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-navy-600)]',
+          open
+            ? 'border-[var(--arca-navy-700)] shadow-[var(--arca-shadow-md)]'
+            : 'border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)]'
+        )}
       >
-        {/* Tipo badge */}
-        <div className="flex items-center gap-1.5 mb-2">
-          <Badge
-            variant="outline"
-            className={cn('text-xs px-1.5 py-0', TIPO_COLORS[tarea.tipo])}
+        {/* Etiquetas */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={cn(
+              'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium',
+              TIPO_PILL[tarea.tipo] ?? TIPO_PILL.otro
+            )}
           >
             {TIPO_LABELS[tarea.tipo] ?? tarea.tipo}
-          </Badge>
-          {tarea.fuente === 'automatica' && (
-            <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground">
-              Auto
-            </Badge>
-          )}
-          {(estaVencido || venceHoy) && (
-            <AlertCircle
+          </span>
+
+          {vence && (
+            <span
               className={cn(
-                'h-3.5 w-3.5 ml-auto',
-                estaVencido ? 'text-red-500' : 'text-amber-500'
+                'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium tabular-nums',
+                TONO_PILL[vence.tono]
               )}
-            />
+            >
+              {vence.dias < 0 ? `Vencido ${vence.etiqueta}` : vence.etiqueta}
+            </span>
+          )}
+
+          {tarea.fuente !== 'manual' && (
+            <span className="ml-auto text-[10.5px] text-[var(--arca-ink-4)]">
+              auto
+            </span>
           )}
         </div>
 
         {/* Título */}
-        <p className="text-sm font-medium leading-snug mb-2.5 group-hover:text-primary transition-colors line-clamp-2">
+        <p className="line-clamp-2 text-[12.5px] leading-[1.35] font-semibold text-[var(--arca-ink)]">
           {tarea.titulo}
         </p>
 
-        {/* Progreso empresas */}
-        {hasClientes && (
-          <div className="mb-2.5">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-muted-foreground">
-                {completados}/{total} empresas
-              </span>
-              <span className="text-xs font-medium">
-                {Math.round((progreso ?? 0) * 100)}%
-              </span>
-            </div>
-            <div className="h-1 bg-muted rounded-full overflow-hidden">
+        {/* Progreso de empresas */}
+        {progreso !== null && (
+          <div className="flex flex-col gap-1">
+            <div className="h-[5px] overflow-hidden rounded-[3px] bg-[var(--arca-border)]">
               <div
-                className="h-full bg-green-500 transition-all"
-                style={{ width: `${(progreso ?? 0) * 100}%` }}
+                className="h-full rounded-[3px] bg-[var(--arca-chart-1)]"
+                style={{ width: `${progreso}%` }}
               />
             </div>
+            <span className="text-[10.5px] text-[var(--arca-ink-3)] tabular-nums">
+              {completados} de {total} empresas
+            </span>
           </div>
         )}
 
-        {/* Footer */}
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          {tarea.asignadoNombre && (
-            <span className="flex items-center gap-1">
-              <User className="h-3 w-3" />
-              {tarea.asignadoNombre.split(' ')[0]}
-            </span>
-          )}
-          {vencimiento && (
-            <span
-              className={cn(
-                'flex items-center gap-1',
-                estaVencido && 'text-red-500 font-medium',
-                venceHoy && 'text-amber-500 font-medium'
-              )}
-            >
-              <Calendar className="h-3 w-3" />
-              {format(vencimiento, 'd MMM', { locale: es })}
+        {/* Footer: métricas + asignado */}
+        <div className="flex items-center gap-3 text-[10.5px] text-[var(--arca-ink-3)]">
+          {total > 0 && (
+            <span className="flex items-center gap-1 tabular-nums">
+              <CheckSquare className="size-3" />
+              {completados}/{total}
             </span>
           )}
           {tarea.comentariosCount > 0 && (
-            <span className="flex items-center gap-1 ml-auto">
-              <MessageSquare className="h-3 w-3" />
+            <span className="flex items-center gap-1 tabular-nums">
+              <MessageSquare className="size-3" />
               {tarea.comentariosCount}
             </span>
           )}
+
+          <span className="ml-auto">
+            {tarea.asignadoNombre ? (
+              <span
+                title={tarea.asignadoNombre}
+                className="grid size-5 place-items-center rounded-full bg-[var(--arca-navy-700)] text-[9px] font-semibold text-white"
+              >
+                {iniciales(tarea.asignadoNombre)}
+              </span>
+            ) : (
+              <span
+                title="Sin asignar"
+                className="grid size-5 place-items-center rounded-full border border-dashed border-[var(--arca-border-strong)] text-[11px] leading-none text-[var(--arca-ink-4)]"
+              >
+                +
+              </span>
+            )}
+          </span>
         </div>
       </button>
 
