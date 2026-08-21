@@ -6,7 +6,6 @@ import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
   Plus,
-  Zap,
   Loader2,
   Pencil,
   Trash2,
@@ -32,7 +31,6 @@ import {
   listTareas,
   listOrgMembers,
   listOrgRepresentatives,
-  autoGenerarTareas,
   listColumnas,
   createColumna,
   updateColumna,
@@ -121,31 +119,6 @@ function TareasPage() {
 
   // ─── Mutations ────────────────────────────────────────────────────────────
 
-  const autoGenMutation = useMutation({
-    mutationFn: (periodo: string) => autoGenerarTareas({ data: { periodo } }),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['tareas'] });
-      const parts: string[] = [];
-      if (result.omitidas > 0) parts.push(`${result.omitidas} ya existían`);
-      if (result.sinCliente > 0) parts.push(`${result.sinCliente} sin cliente asociado`);
-      const detalle = parts.length > 0 ? ` (${parts.join(', ')})` : '';
-
-      if (result.creadas === 0) {
-        toast.info(
-          result.omitidas > 0 && result.sinCliente === 0
-            ? `Todas las tareas de este período ya existen (${result.omitidas} omitidas)`
-            : result.sinCliente > 0
-              ? `Se encontraron vencimientos pero ${result.sinCliente} no se pudieron asociar a ningún cliente`
-              : 'No se encontraron vencimientos para este período'
-        );
-      } else {
-        toast.success(
-          `${result.creadas} tarea${result.creadas !== 1 ? 's' : ''} generada${result.creadas !== 1 ? 's' : ''}${detalle}`
-        );
-      }
-    },
-    onError: () => toast.error('Error al generar tareas'),
-  });
 
   const moveMutation = useMutation({
     mutationFn: ({ id, columnaId }: { id: string; columnaId: string | null }) =>
@@ -234,7 +207,6 @@ function TareasPage() {
     updateColMutation.mutate({ id: editingColId, nombre: editingColNombre });
   };
 
-  const periodoParaGenerar = filtroPeriodo || format(now, 'yyyy-MM');
   const hayFiltros = !!(filtroAno || filtroMes || filtroTipo || filtroAsignado || filtroCliente || filtroVencimientoHasta);
 
   return (
@@ -251,20 +223,7 @@ function TareasPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => autoGenMutation.mutate(periodoParaGenerar)}
-              disabled={autoGenMutation.isPending}
-            >
-              {autoGenMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-              ) : (
-                <Zap className="h-4 w-4 mr-1.5" />
-              )}
-              Generar tareas del mes
-            </Button>
-            <Button size="sm" onClick={() => setNuevaOpen(true)}>
+<Button size="sm" onClick={() => setNuevaOpen(true)}>
               <Plus className="h-4 w-4 mr-1.5" />
               Nueva tarea
             </Button>
