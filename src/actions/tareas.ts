@@ -1,15 +1,15 @@
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { db } from '@/lib/db';
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lte } from 'drizzle-orm';
 import {
   tarea,
   tareaCliente,
   tareaComentario,
   tareaColumna,
   cliente,
-  vencimiento,
 } from '@/drizzle/schema';
+import { autoGenerarTareasParaOrg } from '@/lib/tareas-batch';
 import { user, member } from '@/drizzle/auth';
 import { getSessionWithOrg, getMemberRole, assertCanWrite } from './helpers';
 
@@ -482,203 +482,11 @@ export const moverTarea = createServerFn({ method: 'POST' })
 
 // ─── Auto-generación desde vencimientos ──────────────────────────────────────
 
-const TAX_TO_TIPO: Record<string, TipoTarea> = {
-  iva: 'iva',
-  'i.v.a': 'iva',
-  iibb: 'iibb',
-  'ingresos brutos': 'iibb',
-  ganancias: 'ddjj',
-  ddjj: 'ddjj',
-  sueldos: 'sueldos',
-  convenios: 'convenios',
-};
-
-function taxToTipo(tax: string): TipoTarea {
-  const normalized = tax.toLowerCase().trim();
-  for (const [key, tipo] of Object.entries(TAX_TO_TIPO)) {
-    if (normalized.includes(key)) return tipo;
-  }
-  return 'otro';
-}
-
-/**
- * Auto-genera tareas para un período dado a partir de los vencimientos scrapeados.
- *
- * Resolución de cliente: prefiere vencimiento.cliente_id; si está vacío, busca por vencimiento.cuit.
- * Deduplicación: si el vencimiento ya tiene fila en studio_task_client (via vencimiento_id) → se omite.
- * Agrupación: mismo (tipo + fecha) = una sola tarea con N empresas.
- */
 export const autoGenerarTareas = createServerFn({ method: 'POST' })
   .validator(z.object({ periodo: z.string().regex(/^\d{4}-\d{2}$/) }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
-
-    const [year, month] = ctx.data.periodo.split('-').map(Number) as [number, number];
-    const fromStr = `${year}-${String(month).padStart(2, '0')}-01`;
-    const lastDay = new Date(year, month, 0).getDate();
-    const toStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-
-    // Traer clientes de la org con su CUIT para resolver vencimientos por CUIT
-    const orgClientes = await db
-      .select({ id: cliente.id, cuit: cliente.cuit, name: cliente.razonSocial })
-      .from(cliente)
-      .where(eq(cliente.orgId, orgId));
-
-    if (orgClientes.length === 0) return { creadas: 0, omitidas: 0, sinCliente: 0 };
-
-    const clienteById = Object.fromEntries(orgClientes.map((c) => [c.id, c]));
-    const clienteByCuit = Object.fromEntries(orgClientes.map((c) => [c.cuit, c]));
-
-    // Traer vencimientos del período para esta org (filtramos por org, no por cliente_id)
-    const vencimientosRaw = await db
-      .select({
-        id: vencimiento.id,
-        tax: vencimiento.impuesto,
-        concept: vencimiento.concepto,
-        dueDate: vencimiento.venceAt,
-        clienteId: vencimiento.clienteId,
-        cuit: vencimiento.cuit,
-      })
-      .from(vencimiento)
-      .where(
-        and(
-          eq(vencimiento.orgId, orgId),
-          gte(vencimiento.venceAt, fromStr),
-          lte(vencimiento.venceAt, toStr),
-          or(isNotNull(vencimiento.clienteId), isNotNull(vencimiento.cuit))
-        )
-      );
-
-    if (vencimientosRaw.length === 0) return { creadas: 0, omitidas: 0, sinCliente: 0 };
-
-    // Buscar los vencimientos que ya tienen fila en studio_task_client (ya cubiertos)
-    const vencimientoIds = vencimientosRaw.map((v) => v.id);
-    const yaAsignados = await db
-      .select({ vencimientoId: tareaCliente.vencimientoId })
-      .from(tareaCliente)
-      .where(inArray(tareaCliente.vencimientoId, vencimientoIds));
-
-    const cubiertos = new Set(yaAsignados.map((r) => r.vencimientoId).filter(Boolean) as string[]);
-
-    // Resolver cliente por vencimiento
-    let sinCliente = 0;
-    const vencimientos: {
-      id: string;
-      tax: string;
-      concept: string;
-      dueDate: string;
-      clienteId: string;
-      clienteNombre: string;
-    }[] = [];
-
-    for (const v of vencimientosRaw) {
-      if (cubiertos.has(v.id)) continue; // ya tiene tarea_cliente
-
-      // Resolver cliente: prefer cliente_id, fallback a cuit
-      const resolved = v.clienteId
-        ? clienteById[v.clienteId]
-        : clienteByCuit[v.cuit];
-
-      if (!resolved) {
-        sinCliente++;
-        continue;
-      }
-
-      vencimientos.push({
-        id: v.id,
-        tax: v.tax,
-        concept: v.concept,
-        dueDate: v.dueDate,
-        clienteId: resolved.id,
-        clienteNombre: resolved.name,
-      });
-    }
-
-    if (vencimientos.length === 0) {
-      return { creadas: 0, omitidas: cubiertos.size, sinCliente };
-    }
-
-    // Agrupar por (tipo + fecha) para crear una tarea por grupo
-    const grupos = new Map<
-      string,
-      {
-        tipo: TipoTarea;
-        taxLabel: string;
-        concept: string;
-        fecha: string;
-        items: { clienteId: string; clienteNombre: string; vencimientoId: string }[];
-      }
-    >();
-
-    for (const v of vencimientos) {
-      const tipo = taxToTipo(v.tax);
-      const key = `${tipo}|${v.dueDate}`;
-
-      if (!grupos.has(key)) {
-        grupos.set(key, { tipo, taxLabel: v.tax, concept: v.concept, fecha: v.dueDate, items: [] });
-      }
-      grupos.get(key)!.items.push({
-        clienteId: v.clienteId,
-        clienteNombre: v.clienteNombre,
-        vencimientoId: v.id,
-      });
-    }
-
-    let creadas = 0;
-
-    for (const grupo of grupos.values()) {
-      const fechaDate = new Date(grupo.fecha + 'T12:00:00Z');
-      const fechaStr = fechaDate.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' });
-      const titulo = `${grupo.taxLabel}${grupo.concept ? ` — ${grupo.concept}` : ''} · vence ${fechaStr}`;
-
-      // Buscar tarea existente para este (tipo, fecha, período) o crearla
-      const [existing] = await db
-        .select({ id: tarea.id })
-        .from(tarea)
-        .where(
-          and(
-            eq(tarea.orgId, orgId),
-            eq(tarea.tipo, grupo.tipo),
-            eq(tarea.periodo, ctx.data.periodo),
-            eq(tarea.fuente, 'automatica')
-          )
-        )
-        .limit(1);
-
-      const tareaId = existing
-        ? existing.id
-        : (await db
-            .insert(tarea)
-            .values({
-              orgId,
-              titulo,
-              tipo: grupo.tipo,
-              estado: 'pendiente',
-              periodo: ctx.data.periodo,
-              venceAt: fechaDate,
-              fuente: 'automatica',
-              creadoPor: userId,
-            })
-            .returning()
-            .then((r) => r[0]!.id));
-
-      if (!existing) creadas++;
-
-      // Insertar tarea_cliente por vencimiento (ignorar duplicados por uq_studio_task_client)
-      for (const item of grupo.items) {
-        await db
-          .insert(tareaCliente)
-          .values({
-            tareaId,
-            clienteId: item.clienteId,
-            vencimientoId: item.vencimientoId,
-            completado: false,
-          })
-          .onConflictDoNothing();
-      }
-    }
-
-    return { creadas, omitidas: cubiertos.size, sinCliente };
+    return autoGenerarTareasParaOrg(orgId, ctx.data.periodo, userId);
   });

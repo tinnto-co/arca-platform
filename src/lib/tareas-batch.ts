@@ -1,0 +1,174 @@
+/**
+ * Lógica de auto-generación de tareas sin dependencia de sesión HTTP.
+ * Puede ser invocada tanto desde server actions como desde crons.
+ */
+import { and, eq, gte, inArray, isNotNull, lte, or } from 'drizzle-orm';
+import { db } from '@/lib/db';
+import { tarea, tareaCliente, cliente, vencimiento } from '@/drizzle/schema';
+
+export type TipoTarea = 'iva' | 'iibb' | 'ddjj' | 'sueldos' | 'convenios' | 'otro';
+
+const TAX_TO_TIPO: Record<string, TipoTarea> = {
+  iva: 'iva',
+  'i.v.a': 'iva',
+  iibb: 'iibb',
+  'ingresos brutos': 'iibb',
+  ganancias: 'ddjj',
+  ddjj: 'ddjj',
+  sueldos: 'sueldos',
+  convenios: 'convenios',
+};
+
+function taxToTipo(tax: string): TipoTarea {
+  const normalized = tax.toLowerCase().trim();
+  for (const [key, tipo] of Object.entries(TAX_TO_TIPO)) {
+    if (normalized.includes(key)) return tipo;
+  }
+  return 'otro';
+}
+
+export interface AutoGenResult {
+  creadas: number;
+  omitidas: number;
+  sinCliente: number;
+}
+
+/**
+ * Auto-genera tareas para una org y período dados, sin requerir sesión HTTP.
+ *
+ * @param orgId  - ID de la organización
+ * @param periodo - Período en formato YYYY-MM
+ * @param creadoPor - user_id que figura como creador (null para tareas de sistema)
+ */
+export async function autoGenerarTareasParaOrg(
+  orgId: string,
+  periodo: string,
+  creadoPor: string | null = null
+): Promise<AutoGenResult> {
+  const [year, month] = periodo.split('-').map(Number) as [number, number];
+  const fromStr = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const toStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+  const orgClientes = await db
+    .select({ id: cliente.id, cuit: cliente.cuit, name: cliente.razonSocial })
+    .from(cliente)
+    .where(eq(cliente.orgId, orgId));
+
+  if (orgClientes.length === 0) return { creadas: 0, omitidas: 0, sinCliente: 0 };
+
+  const clienteById = Object.fromEntries(orgClientes.map((c) => [c.id, c]));
+  const clienteByCuit = Object.fromEntries(orgClientes.map((c) => [c.cuit, c]));
+
+  const vencimientosRaw = await db
+    .select({
+      id: vencimiento.id,
+      tax: vencimiento.impuesto,
+      concept: vencimiento.concepto,
+      dueDate: vencimiento.venceAt,
+      clienteId: vencimiento.clienteId,
+      cuit: vencimiento.cuit,
+    })
+    .from(vencimiento)
+    .where(
+      and(
+        eq(vencimiento.orgId, orgId),
+        gte(vencimiento.venceAt, fromStr),
+        lte(vencimiento.venceAt, toStr),
+        or(isNotNull(vencimiento.clienteId), isNotNull(vencimiento.cuit))
+      )
+    );
+
+  if (vencimientosRaw.length === 0) return { creadas: 0, omitidas: 0, sinCliente: 0 };
+
+  const vencimientoIds = vencimientosRaw.map((v) => v.id);
+  const yaAsignados = await db
+    .select({ vencimientoId: tareaCliente.vencimientoId })
+    .from(tareaCliente)
+    .where(inArray(tareaCliente.vencimientoId, vencimientoIds));
+
+  const cubiertos = new Set(yaAsignados.map((r) => r.vencimientoId).filter(Boolean) as string[]);
+
+  let sinCliente = 0;
+  const resueltos: {
+    id: string;
+    tax: string;
+    concept: string;
+    dueDate: string;
+    clienteId: string;
+    clienteNombre: string;
+  }[] = [];
+
+  for (const v of vencimientosRaw) {
+    if (cubiertos.has(v.id)) continue;
+    const resolved = v.clienteId ? clienteById[v.clienteId] : clienteByCuit[v.cuit];
+    if (!resolved) { sinCliente++; continue; }
+    resueltos.push({
+      id: v.id, tax: v.tax, concept: v.concept, dueDate: v.dueDate,
+      clienteId: resolved.id, clienteNombre: resolved.name,
+    });
+  }
+
+  if (resueltos.length === 0) return { creadas: 0, omitidas: cubiertos.size, sinCliente };
+
+  const grupos = new Map<string, {
+    tipo: TipoTarea; taxLabel: string; concept: string; fecha: string;
+    items: { clienteId: string; vencimientoId: string }[];
+  }>();
+
+  for (const v of resueltos) {
+    const tipo = taxToTipo(v.tax);
+    const key = `${tipo}|${v.dueDate}`;
+    if (!grupos.has(key)) {
+      grupos.set(key, { tipo, taxLabel: v.tax, concept: v.concept, fecha: v.dueDate, items: [] });
+    }
+    grupos.get(key)!.items.push({ clienteId: v.clienteId, vencimientoId: v.id });
+  }
+
+  let creadas = 0;
+
+  for (const grupo of grupos.values()) {
+    const fechaDate = new Date(grupo.fecha + 'T12:00:00Z');
+    const fechaStr = fechaDate.toLocaleDateString('es-AR', {
+      day: '2-digit', month: '2-digit', timeZone: 'America/Argentina/Buenos_Aires',
+    });
+    const titulo = `${grupo.taxLabel}${grupo.concept ? ` — ${grupo.concept}` : ''} · vence ${fechaStr}`;
+
+    const [existing] = await db
+      .select({ id: tarea.id })
+      .from(tarea)
+      .where(and(
+        eq(tarea.orgId, orgId),
+        eq(tarea.tipo, grupo.tipo),
+        eq(tarea.periodo, periodo),
+        eq(tarea.fuente, 'automatica')
+      ))
+      .limit(1);
+
+    const tareaId = existing
+      ? existing.id
+      : (await db.insert(tarea).values({
+          orgId, titulo, tipo: grupo.tipo, estado: 'pendiente',
+          periodo, venceAt: fechaDate, fuente: 'automatica', creadoPor,
+        }).returning().then((r) => r[0]!.id));
+
+    if (!existing) creadas++;
+
+    for (const item of grupo.items) {
+      await db.insert(tareaCliente).values({
+        tareaId, clienteId: item.clienteId, vencimientoId: item.vencimientoId, completado: false,
+      }).onConflictDoNothing();
+    }
+  }
+
+  return { creadas, omitidas: cubiertos.size, sinCliente };
+}
+
+/** Retorna el período actual en formato YYYY-MM usando hora de Argentina (UTC-3). */
+export function getPeriodoActualAR(): string {
+  const now = new Date();
+  const ar = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  const year = ar.getUTCFullYear();
+  const month = String(ar.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}

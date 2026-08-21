@@ -473,6 +473,16 @@ async function initializeServer() {
     log.warning(`Inflation index cron not started: ${String(error)}`);
   }
 
+  try {
+    const { startTareasAutoCron } =
+      (await import('./src/lib/tareas-auto-cron')) as {
+        startTareasAutoCron: () => void;
+      };
+    startTareasAutoCron();
+  } catch (error) {
+    log.warning(`Tareas auto-gen cron not started: ${String(error)}`);
+  }
+
   // Build static routes with intelligent preloading
   const { routes } = await initializeStaticRoutes(CLIENT_DIRECTORY);
 
