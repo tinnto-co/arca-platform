@@ -137,6 +137,28 @@ create table if not exists tarea_paso (
 
 create index if not exists ix_tarea_paso_tarea on tarea_paso(tarea_id, posicion);
 
+-- Notificaciones que dieron origen a la tarea, o que se le fueron sumando.
+--
+-- N-M y no una columna en `tarea`: una notificación puede generar varias
+-- tareas, y la deduplicación de las reglas hace lo inverso —cuando ya hay una
+-- tarea abierta para la misma empresa y período, la notificación nueva se
+-- adjunta a esa en vez de crear otra.
+create table if not exists tarea_notificacion (
+  id uuid primary key default gen_random_uuid(),
+  tarea_id uuid not null references tarea(id) on delete cascade,
+  notificacion_id uuid not null references notificacion(id) on delete cascade,
+
+  -- 'manual' o el nombre de la regla que la vinculó.
+  fuente text not null default 'manual',
+
+  created_at timestamp not null default now()
+);
+
+create unique index if not exists uq_tarea_notificacion
+  on tarea_notificacion(tarea_id, notificacion_id);
+create index if not exists ix_tarea_notificacion_notificacion
+  on tarea_notificacion(notificacion_id);
+
 create table if not exists tarea_comentario (
   id uuid primary key default gen_random_uuid(),
   tarea_id uuid not null references tarea(id) on delete cascade,
@@ -153,12 +175,13 @@ create index if not exists ix_tarea_comentario_tarea on tarea_comentario(tarea_i
 
 -- ---------------------------------------------------------------------------
 -- RLS. `tarea` y `tarea_columna` filtran por su propia columna de organización;
--- las tres hijas de la tarea se alcanzan a través del padre.
+-- las cuatro hijas de la tarea se alcanzan a través del padre.
 -- ---------------------------------------------------------------------------
 alter table tarea_columna enable row level security;
 alter table tarea enable row level security;
 alter table tarea_cliente enable row level security;
 alter table tarea_paso enable row level security;
+alter table tarea_notificacion enable row level security;
 alter table tarea_comentario enable row level security;
 
 drop policy if exists tenant on tarea_columna;
@@ -185,6 +208,14 @@ create policy tenant on tarea_paso to arca_app, arca_agent
        and t.org_id = current_setting('app.org_id', true)
   ));
 
+drop policy if exists tenant on tarea_notificacion;
+create policy tenant on tarea_notificacion to arca_app, arca_agent
+  using (exists (
+    select 1 from tarea t
+     where t.id = tarea_notificacion.tarea_id
+       and t.org_id = current_setting('app.org_id', true)
+  ));
+
 drop policy if exists tenant on tarea_comentario;
 create policy tenant on tarea_comentario to arca_app, arca_agent
   using (exists (
@@ -194,8 +225,10 @@ create policy tenant on tarea_comentario to arca_app, arca_agent
   ));
 
 grant select, insert, update, delete
-  on tarea_columna, tarea, tarea_cliente, tarea_paso, tarea_comentario
+  on tarea_columna, tarea, tarea_cliente, tarea_paso, tarea_notificacion,
+     tarea_comentario
   to arca_app;
 grant select
-  on tarea_columna, tarea, tarea_cliente, tarea_paso, tarea_comentario
+  on tarea_columna, tarea, tarea_cliente, tarea_paso, tarea_notificacion,
+     tarea_comentario
   to arca_agent;

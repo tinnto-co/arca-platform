@@ -19,6 +19,8 @@ import {
   tareaComentario,
   tareaColumna,
   tareaPaso,
+  tareaNotificacion,
+  notificacion,
   cliente,
 } from '@/drizzle/schema';
 import { autoGenerarTareasParaOrg } from '@/lib/tareas-batch';
@@ -337,6 +339,11 @@ export const createTarea = createServerFn({ method: 'POST' })
        * seguidas y `inicio` invertiría el orden en que se tipearon.
        */
       extremo: z.enum(['inicio', 'fin']).optional(),
+
+      /** Notificación que originó la tarea, cuando se crea desde la bandeja. */
+      notificacionId: z.string().uuid().optional(),
+      /** Empresas que alcanza. Desde la bandeja viene la de la notificación. */
+      clienteIds: z.array(z.string().uuid()).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -376,6 +383,40 @@ export const createTarea = createServerFn({ method: 'POST' })
         return creada;
       }
     );
+
+    // Empresas alcanzadas y notificación de origen. Van fuera del lock: ese
+    // sólo protege el cálculo de la posición.
+    if (task && ctx.data.clienteIds?.length) {
+      await db
+        .insert(tareaCliente)
+        .values(
+          ctx.data.clienteIds.map((clienteId) => ({
+            tareaId: task.id,
+            clienteId,
+          }))
+        )
+        .onConflictDoNothing();
+    }
+
+    if (task && ctx.data.notificacionId) {
+      // El id llega del cliente, así que se comprueba que sea de la org.
+      const [n] = await db
+        .select({ id: notificacion.id })
+        .from(notificacion)
+        .where(
+          and(
+            eq(notificacion.id, ctx.data.notificacionId),
+            eq(notificacion.orgId, orgId)
+          )
+        )
+        .limit(1);
+      if (n) {
+        await db
+          .insert(tareaNotificacion)
+          .values({ tareaId: task.id, notificacionId: n.id })
+          .onConflictDoNothing();
+      }
+    }
 
     return task;
   });

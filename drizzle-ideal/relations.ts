@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { cliente, agentConversation, organization, user, clienteCredencial, credencialAfip, plantillaInformeAuditor, ajusteInflacion, ejercicio, asiento, ajusteInflacionLinea, cuenta, bienDeUso, cierreSueldos, cuentaBancaria, periodoContable, agentRun, recibo, empleado, obraSocial, situacionRevista, tarea, tareaPaso, tareaComentario, session, deuda, proyeccionImpuesto, convenioCategoria, escalaSalarial, vencimiento, actividad, condicionTrabajador, convenio, localidad, modalidadContratacion, nacionalidad, provincia, siniestrado, zona, ivaDeclaracion, notificacion, documento, accesoUsuarioCliente, agentMessage, anexoCmv, asientoLinea, reglaMapeo, alerta, job, account, agentAction, clienteCct, baseCalculo, clienteConcepto, conceptoAfip, concepto, cct, cctFuente, comprobante, contraparte, comprobanteTipo, comprobanteAlicuota, clienteEeccConfig, firmante, clienteCuenta, conciliacionComprobante, movimientoBancario, clienteEmpleadorConfig, liquidacionIibb, organizationModule, lsdPresentacion, member, reglaMapeoLinea, riesgoSnapshot, reciboConcepto, solicitud, notificacionAdjunto, jobLog, eecc, tareaColumna, convenioFuente, invitation, tareaCliente, evento, baseCalculoConcepto } from "./schema";
+import { cliente, agentConversation, organization, user, clienteCredencial, credencialAfip, plantillaInformeAuditor, ajusteInflacion, ejercicio, asiento, ajusteInflacionLinea, cuenta, bienDeUso, cierreSueldos, cuentaBancaria, periodoContable, agentRun, recibo, empleado, obraSocial, situacionRevista, tarea, tareaComentario, session, deuda, proyeccionImpuesto, convenioCategoria, escalaSalarial, vencimiento, actividad, condicionTrabajador, convenio, localidad, modalidadContratacion, nacionalidad, provincia, siniestrado, zona, ivaDeclaracion, notificacion, documento, accesoUsuarioCliente, agentMessage, anexoCmv, asientoLinea, reglaMapeo, alerta, job, tareaPaso, account, agentAction, clienteCct, baseCalculo, clienteConcepto, conceptoAfip, concepto, cct, cctFuente, comprobante, contraparte, comprobanteTipo, comprobanteAlicuota, clienteEeccConfig, firmante, clienteCuenta, conciliacionComprobante, movimientoBancario, clienteEmpleadorConfig, liquidacionIibb, organizationModule, lsdPresentacion, member, reglaMapeoLinea, riesgoSnapshot, reciboConcepto, solicitud, notificacionAdjunto, jobLog, eecc, convenioFuente, invitation, tareaColumna, tareaCliente, tareaNotificacion, evento, baseCalculoConcepto } from "./schema";
 
 export const agentConversationRelations = relations(agentConversation, ({one, many}) => ({
 	cliente: one(cliente, {
@@ -97,10 +97,10 @@ export const organizationRelations = relations(organization, ({many}) => ({
 	cuentas: many(cuenta),
 	ejercicios: many(ejercicio),
 	eeccs: many(eecc),
-	tareas: many(tarea),
 	firmantes: many(firmante),
 	invitations: many(invitation),
 	tareaColumnas: many(tareaColumna),
+	tareas: many(tarea),
 	eventos: many(evento),
 	jobs: many(job),
 }));
@@ -117,7 +117,6 @@ export const userRelations = relations(user, ({many}) => ({
 		relationName: "cierreSueldos_reabiertoPor_user_id"
 	}),
 	periodoContables: many(periodoContable),
-	tareaPasos: many(tareaPaso),
 	tareaComentarios: many(tareaComentario),
 	sessions: many(session),
 	vencimientos: many(vencimiento),
@@ -141,6 +140,7 @@ export const userRelations = relations(user, ({many}) => ({
 	alertas_resueltaPor: many(alerta, {
 		relationName: "alerta_resueltaPor_user_id"
 	}),
+	tareaPasos: many(tareaPaso),
 	accounts: many(account),
 	agentActions: many(agentAction),
 	conciliacionComprobantes: many(conciliacionComprobante),
@@ -158,6 +158,7 @@ export const userRelations = relations(user, ({many}) => ({
 	eeccs_pdfGeneradoPor: many(eecc, {
 		relationName: "eecc_pdfGeneradoPor_user_id"
 	}),
+	invitations: many(invitation),
 	tareas_asignadoA: many(tarea, {
 		relationName: "tarea_asignadoA_user_id"
 	}),
@@ -167,7 +168,6 @@ export const userRelations = relations(user, ({many}) => ({
 	tareas_creadoPor: many(tarea, {
 		relationName: "tarea_creadoPor_user_id"
 	}),
-	invitations: many(invitation),
 	tareaClientes: many(tareaCliente),
 }));
 
@@ -585,20 +585,20 @@ export const situacionRevistaRelations = relations(situacionRevista, ({many}) =>
 	empleados: many(empleado),
 }));
 
-export const tareaPasoRelations = relations(tareaPaso, ({one}) => ({
+export const tareaComentarioRelations = relations(tareaComentario, ({one}) => ({
 	tarea: one(tarea, {
-		fields: [tareaPaso.tareaId],
+		fields: [tareaComentario.tareaId],
 		references: [tarea.id]
 	}),
 	user: one(user, {
-		fields: [tareaPaso.completadoPor],
+		fields: [tareaComentario.autorId],
 		references: [user.id]
 	}),
 }));
 
 export const tareaRelations = relations(tarea, ({one, many}) => ({
-	tareaPasos: many(tareaPaso),
 	tareaComentarios: many(tareaComentario),
+	tareaPasos: many(tareaPaso),
 	organization: one(organization, {
 		fields: [tarea.orgId],
 		references: [organization.id]
@@ -623,17 +623,7 @@ export const tareaRelations = relations(tarea, ({one, many}) => ({
 		relationName: "tarea_creadoPor_user_id"
 	}),
 	tareaClientes: many(tareaCliente),
-}));
-
-export const tareaComentarioRelations = relations(tareaComentario, ({one}) => ({
-	tarea: one(tarea, {
-		fields: [tareaComentario.tareaId],
-		references: [tarea.id]
-	}),
-	user: one(user, {
-		fields: [tareaComentario.autorId],
-		references: [user.id]
-	}),
+	tareaNotificacions: many(tareaNotificacion),
 }));
 
 export const sessionRelations = relations(session, ({one}) => ({
@@ -786,6 +776,7 @@ export const notificacionRelations = relations(notificacion, ({one, many}) => ({
 		relationName: "notificacion_resueltaPor_user_id"
 	}),
 	notificacionAdjuntos: many(notificacionAdjunto),
+	tareaNotificacions: many(tareaNotificacion),
 }));
 
 export const documentoRelations = relations(documento, ({one, many}) => ({
@@ -908,6 +899,17 @@ export const jobRelations = relations(job, ({one, many}) => ({
 	organization: one(organization, {
 		fields: [job.orgId],
 		references: [organization.id]
+	}),
+}));
+
+export const tareaPasoRelations = relations(tareaPaso, ({one}) => ({
+	tarea: one(tarea, {
+		fields: [tareaPaso.tareaId],
+		references: [tarea.id]
+	}),
+	user: one(user, {
+		fields: [tareaPaso.completadoPor],
+		references: [user.id]
 	}),
 }));
 
@@ -1243,14 +1245,6 @@ export const eeccRelations = relations(eecc, ({one}) => ({
 	}),
 }));
 
-export const tareaColumnaRelations = relations(tareaColumna, ({one, many}) => ({
-	tareas: many(tarea),
-	organization: one(organization, {
-		fields: [tareaColumna.orgId],
-		references: [organization.id]
-	}),
-}));
-
 export const convenioFuenteRelations = relations(convenioFuente, ({one}) => ({
 	convenio: one(convenio, {
 		fields: [convenioFuente.convenioId],
@@ -1269,6 +1263,14 @@ export const invitationRelations = relations(invitation, ({one}) => ({
 	}),
 }));
 
+export const tareaColumnaRelations = relations(tareaColumna, ({one, many}) => ({
+	organization: one(organization, {
+		fields: [tareaColumna.orgId],
+		references: [organization.id]
+	}),
+	tareas: many(tarea),
+}));
+
 export const tareaClienteRelations = relations(tareaCliente, ({one}) => ({
 	tarea: one(tarea, {
 		fields: [tareaCliente.tareaId],
@@ -1285,6 +1287,17 @@ export const tareaClienteRelations = relations(tareaCliente, ({one}) => ({
 	vencimiento: one(vencimiento, {
 		fields: [tareaCliente.vencimientoId],
 		references: [vencimiento.id]
+	}),
+}));
+
+export const tareaNotificacionRelations = relations(tareaNotificacion, ({one}) => ({
+	tarea: one(tarea, {
+		fields: [tareaNotificacion.tareaId],
+		references: [tarea.id]
+	}),
+	notificacion: one(notificacion, {
+		fields: [tareaNotificacion.notificacionId],
+		references: [notificacion.id]
 	}),
 }));
 
