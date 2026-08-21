@@ -26,6 +26,8 @@ import { es } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
   Activity,
+  Archive,
+  ArchiveRestore,
   Calendar as CalendarIcon,
   Check,
   MoreHorizontal,
@@ -75,6 +77,7 @@ import {
   updateTarea,
   updateEstadoTarea,
   addTareaComment,
+  archivarTarea,
   updateTareaComment,
   deleteTareaComment,
   addTareaPaso,
@@ -350,6 +353,24 @@ export function TaskDetailDialog({
     onError: () => toast.error('No se pudo eliminar el comentario'),
   });
 
+  const archivada = tarea.archivadaAt !== null;
+
+  const archivar = useMutation({
+    mutationFn: (v: boolean) =>
+      archivarTarea({ data: { id: tarea.id, archivar: v } }),
+    onSuccess: (_r, v) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['tareas'],
+        exact: false,
+      });
+      // Al archivar la tarea sale del tablero: dejar el modal abierto sobre
+      // algo que ya no está ahí confunde.
+      if (v) onOpenChange(false);
+      toast.success(v ? 'Tarea archivada' : 'Tarea desarchivada');
+    },
+    onError: () => toast.error('No se pudo archivar la tarea'),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteTarea({ data: { id: tarea.id } }),
     onSuccess: () => {
@@ -484,13 +505,29 @@ export function TaskDetailDialog({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
-                      variant="destructive"
-                      onSelect={() => setConfirmDelete(true)}
+                      onSelect={() => archivar.mutate(!archivada)}
                       className="text-[12.5px]"
                     >
-                      <Trash2 className="size-3.5" />
-                      Eliminar tarea
+                      {archivada ? (
+                        <ArchiveRestore className="size-3.5" />
+                      ) : (
+                        <Archive className="size-3.5" />
+                      )}
+                      {archivada ? 'Desarchivar' : 'Archivar tarea'}
                     </DropdownMenuItem>
+
+                    {/* Eliminar sólo aparece con la tarea archivada: archivar
+                        es el paso obligado antes de borrar. */}
+                    {archivada && (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onSelect={() => setConfirmDelete(true)}
+                        className="text-[12.5px]"
+                      >
+                        <Trash2 className="size-3.5" />
+                        Eliminar definitivamente
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -1085,7 +1122,9 @@ export function TaskDetailDialog({
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar la tarea?</AlertDialogTitle>
+            <AlertDialogTitle>
+              ¿Eliminar definitivamente la tarea?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               Se elimina «{tarea.titulo}» junto con sus comentarios y las
               {total > 0

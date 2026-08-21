@@ -81,6 +81,12 @@ create table if not exists tarea (
   -- (ej. 'vencimiento'). Reemplaza al `es_auto_generada` booleano.
   fuente text not null default 'manual',
 
+  -- Archivada: sale del tablero pero sigue existiendo. Es el único camino a
+  -- borrarla, y por eso es una fecha y no un booleano — importa cuándo se
+  -- sacó de circulación.
+  archivada_at timestamp,
+  archivada_por text references "user"(id) on delete set null,
+
   estado_cambiado_at timestamp,
   estado_cambiado_por text references "user"(id) on delete set null,
   creado_por text references "user"(id) on delete set null,
@@ -89,6 +95,10 @@ create table if not exists tarea (
 );
 
 create index if not exists ix_tarea_org on tarea(org_id);
+-- El tablero pide siempre las no archivadas: el índice parcial cubre ese caso,
+-- que es el 99% de las lecturas.
+create index if not exists ix_tarea_activas on tarea(org_id)
+  where archivada_at is null;
 create index if not exists ix_tarea_estado on tarea(org_id, estado);
 create index if not exists ix_tarea_vence on tarea(vence_at);
 -- El tablero lee por columna y ordena por posición: este índice cubre las dos.

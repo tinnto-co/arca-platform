@@ -66,12 +66,21 @@ export const listTareas = createServerFn({ method: 'GET' })
       asignadoA: z.string().optional(),
       clienteId: z.string().uuid().optional(),
       vencimientoHasta: z.string().optional(),
+      /** El tablero muestra las activas; el archivo pide las archivadas. */
+      archivadas: z.boolean().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const conditions = [eq(tarea.orgId, orgId)];
+    const conditions = [
+      eq(tarea.orgId, orgId),
+      // Las archivadas salen del tablero. No es un filtro más: es la
+      // diferencia entre lo que está en curso y lo que ya se guardó.
+      ctx.data.archivadas
+        ? isNotNull(tarea.archivadaAt)
+        : isNull(tarea.archivadaAt),
+    ];
     if (ctx.data.periodo) {
       conditions.push(eq(tarea.periodo, ctx.data.periodo));
     }
@@ -113,6 +122,7 @@ export const listTareas = createServerFn({ method: 'GET' })
         fuente: tarea.fuente,
         estadoCambiadoAt: tarea.estadoCambiadoAt,
         estadoCambiadoPor: tarea.estadoCambiadoPor,
+        archivadaAt: tarea.archivadaAt,
         creadoPor: tarea.creadoPor,
         posicion: tarea.posicion,
         createdAt: tarea.createdAt,
@@ -486,12 +496,52 @@ export const updateEstadoTarea = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/**
+ * Archivar saca la tarea del tablero sin perderla. Es el reemplazo del borrado
+ * directo: desde el tablero no se elimina nada, y recién estando archivada una
+ * tarea se puede borrar de verdad.
+ */
+export const archivarTarea = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid(), archivar: z.boolean() }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const [t] = await db
+      .update(tarea)
+      .set({
+        archivadaAt: ctx.data.archivar ? new Date() : null,
+        archivadaPor: ctx.data.archivar ? userId : null,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)))
+      .returning({ id: tarea.id });
+
+    if (!t) throw new Error('Tarea no encontrada');
+    return { ok: true };
+  });
+
+/**
+ * Borrado definitivo. Sólo sobre una tarea archivada: la comprobación va acá y
+ * no sólo en la pantalla, porque es la regla y no una preferencia de la UI.
+ */
 export const deleteTarea = createServerFn({ method: 'POST' })
   .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
+
+    const [t] = await db
+      .select({ archivadaAt: tarea.archivadaAt })
+      .from(tarea)
+      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)))
+      .limit(1);
+
+    if (!t) throw new Error('Tarea no encontrada');
+    if (t.archivadaAt === null)
+      throw new Error('Sólo se puede eliminar una tarea archivada');
 
     await db
       .delete(tarea)
@@ -701,10 +751,12 @@ export const deleteColumna = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    // Desasignar tareas de esta columna
+    // Borrar la columna se lleva sus tareas. Es la contrapartida de que una
+    // tarea suelta no se pueda eliminar: si no, la única forma de borrar sería
+    // dejarlas huérfanas, que es peor —quedan invisibles pero existiendo—.
+    // Las hijas (pasos, comentarios, empresas) caen por `on delete cascade`.
     await db
-      .update(tarea)
-      .set({ columnaId: null })
+      .delete(tarea)
       .where(and(eq(tarea.columnaId, ctx.data.id), eq(tarea.orgId, orgId)));
 
     await db

@@ -195,6 +195,20 @@ try {
     );
   }
 
+  // Archivado de tareas. Reemplaza al borrado directo desde el tablero: una
+  // tarea se archiva, y recién desde el archivo se puede eliminar.
+  if (!(await tieneColumna('tarea', 'archivada_at'))) {
+    pasos.push(
+      `alter table tarea add column archivada_at timestamp`,
+      `alter table tarea add column archivada_por text references "user"(id) on delete set null`
+    );
+  }
+  if (!(await existeIndice('ix_tarea_activas'))) {
+    pasos.push(
+      `create index ix_tarea_activas on tarea(org_id) where archivada_at is null`
+    );
+  }
+
   // Marca de edición de un comentario.
   if (!(await tieneColumna('tarea_comentario', 'updated_at'))) {
     pasos.push(`alter table tarea_comentario add column updated_at timestamp`);

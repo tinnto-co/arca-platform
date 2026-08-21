@@ -61,6 +61,7 @@ interface Busqueda {
   empresa?: string;
   vence_hasta?: string;
   tarea?: string;
+  archivadas?: boolean;
 }
 
 // Cada campo lleva su `.catch`: un parámetro basura en la URL no puede tumbar
@@ -76,6 +77,7 @@ const esquemaBusqueda = z.object({
   empresa: z.string().optional().catch(undefined),
   vence_hasta: z.string().optional().catch(undefined),
   tarea: z.string().uuid().optional().catch(undefined),
+  archivadas: z.boolean().optional().catch(undefined),
 });
 
 export const Route = createFileRoute('/_authed/tareas/')({
@@ -179,6 +181,8 @@ function TareasPage() {
   // filtros sin que tsc diga nada.
   const search: Busqueda = Route.useSearch();
 
+  const viendoArchivadas = search.archivadas === true;
+
   const [composerEn, setComposerEn] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [arrastrando, setArrastrando] = useState<string | null>(null);
@@ -187,6 +191,7 @@ function TareasPage() {
   const [aEliminar, setAEliminar] = useState<{
     id: string;
     nombre: string;
+    tareas: number;
   } | null>(null);
 
   const filtros = {
@@ -245,6 +250,7 @@ function TareasPage() {
       filtros.asignado,
       filtros.cliente,
       filtros.venceHasta,
+      viendoArchivadas,
     ],
     queryFn: () =>
       listTareas({
@@ -254,6 +260,7 @@ function TareasPage() {
           asignadoA: oQuitar(filtros.asignado),
           clienteId: oQuitar(filtros.cliente),
           vencimientoHasta: oQuitar(filtros.venceHasta),
+          archivadas: viendoArchivadas || undefined,
         },
       }),
   });
@@ -430,6 +437,16 @@ function TareasPage() {
         empresas={empresas}
         resumen={resumen}
         onBuscar={() => setBuscando(true)}
+        viendoArchivadas={viendoArchivadas}
+        onVerArchivadas={(v) =>
+          void navigate({
+            search: (prev: Busqueda) => ({
+              ...prev,
+              archivadas: v || undefined,
+            }),
+            replace: true,
+          })
+        }
       />
 
       {cargando ? (
@@ -482,7 +499,7 @@ function TareasPage() {
           onDragCancel={() => setArrastrando(null)}
           onDragEnd={onDragEnd}
         >
-          <div className="flex min-h-0 flex-1 snap-x snap-proximity gap-[14px] overflow-x-auto px-7 pt-[18px] pb-[22px]">
+          <div className="flex min-h-0 flex-1 snap-x snap-proximity gap-[14px] overflow-x-auto pt-[18px] pb-[22px]">
             {/* Sin columna: sólo si hay tareas ahí. No es una columna del
                 estudio, es dónde caen las que perdieron la suya. */}
             {sinColumna.length > 0 && (
@@ -496,6 +513,7 @@ function TareasPage() {
                 composerAbierto={composerEn === SIN_COLUMNA}
                 filtrosDefault={defaultsComposer}
                 editable={false}
+                soloLectura={viendoArchivadas}
                 onAbrirComposer={() => setComposerEn(SIN_COLUMNA)}
                 onCerrarComposer={() => setComposerEn(null)}
                 renderCard={(t) => (
@@ -521,6 +539,7 @@ function TareasPage() {
                 composerAbierto={composerEn === col.id}
                 filtrosDefault={defaultsComposer}
                 editable
+                soloLectura={viendoArchivadas}
                 onAbrirComposer={() => setComposerEn(col.id)}
                 onCerrarComposer={() => setComposerEn(null)}
                 onRenombrar={(nombre) =>
@@ -528,7 +547,11 @@ function TareasPage() {
                 }
                 onColor={(color) => editarCol.mutate({ id: col.id, color })}
                 onEliminar={() =>
-                  setAEliminar({ id: col.id, nombre: col.nombre })
+                  setAEliminar({
+                    id: col.id,
+                    nombre: col.nombre,
+                    tareas: (porColumna[col.id] ?? []).length,
+                  })
                 }
                 renderCard={(t) => (
                   <CardArrastrable
@@ -611,8 +634,21 @@ function TareasPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar la columna?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se elimina «{aEliminar?.nombre}». Las tareas que tenga quedan sin
-              columna, no se borran. No se puede deshacer.
+              Se elimina «{aEliminar?.nombre}»{' '}
+              {aEliminar && aEliminar.tareas > 0 ? (
+                <>
+                  y sus{' '}
+                  <strong>
+                    {aEliminar.tareas}{' '}
+                    {aEliminar.tareas === 1 ? 'tarea' : 'tareas'}
+                  </strong>
+                  , con sus pasos y comentarios
+                </>
+              ) : (
+                <>, que está vacía</>
+              )}
+              . Es la única forma de borrar tareas de a muchas y no se puede
+              deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

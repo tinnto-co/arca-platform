@@ -46,6 +46,8 @@ interface BoardColumnProps {
   composerAbierto: boolean;
   filtrosDefault: { tipo?: TipoTarea; periodo?: string };
   editable: boolean;
+  /** En el archivo no se crean tareas ni se renombran columnas: sólo se mira. */
+  soloLectura?: boolean;
   renderCard: (t: TareaConDetalle) => React.ReactNode;
   onAbrirComposer: () => void;
   onCerrarComposer: () => void;
@@ -63,6 +65,7 @@ export function BoardColumn({
   composerAbierto,
   filtrosDefault,
   editable,
+  soloLectura = false,
   renderCard,
   onAbrirComposer,
   onCerrarComposer,
@@ -125,7 +128,7 @@ export function BoardColumn({
           {tareas.length}
         </span>
 
-        {editable && (
+        {editable && !soloLectura && (
           <DropdownMenu>
             <DropdownMenuTrigger
               aria-label={`Opciones de ${nombre}`}
@@ -196,7 +199,7 @@ export function BoardColumn({
 
         {tareas.length === 0 && (
           <p className="grid h-[76px] place-items-center rounded-[var(--arca-r-md)] border border-dashed border-[var(--arca-border-strong)] text-[12px] text-[var(--arca-ink-3)]">
-            Sin tareas
+            {soloLectura ? 'Nada archivado' : 'Sin tareas'}
           </p>
         )}
 
@@ -211,16 +214,18 @@ export function BoardColumn({
         )}
       </div>
 
-      {/* Pie fijo */}
-      <div className="shrink-0">
-        <ComposerTarea
-          columnaId={columnaId}
-          abierto={composerAbierto}
-          onAbrir={onAbrirComposer}
-          onCerrar={onCerrarComposer}
-          defaults={filtrosDefault}
-        />
-      </div>
+      {/* Pie fijo. En el archivo no va: no se crean tareas archivadas. */}
+      {!soloLectura && (
+        <div className="shrink-0">
+          <ComposerTarea
+            columnaId={columnaId}
+            abierto={composerAbierto}
+            onAbrir={onAbrirComposer}
+            onCerrar={onCerrarComposer}
+            defaults={filtrosDefault}
+          />
+        </div>
+      )}
     </section>
   );
 }

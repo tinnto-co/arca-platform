@@ -12,6 +12,7 @@
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
+  Archive,
   Calendar as CalendarIcon,
   Check,
   MoreHorizontal,
@@ -60,6 +61,9 @@ export interface FiltrosTablero {
 
 interface BoardHeaderProps {
   filtros: FiltrosTablero;
+  /** El tablero muestra las activas; con esto se ve el archivo. */
+  viendoArchivadas: boolean;
+  onVerArchivadas: (v: boolean) => void;
   onFiltro: (parcial: Partial<FiltrosTablero>) => void;
   onLimpiar: () => void;
   miembros: { id: string; name: string; email: string }[];
@@ -77,6 +81,8 @@ function etiquetaPeriodo(p: string) {
 
 export function BoardHeader({
   filtros,
+  viendoArchivadas,
+  onVerArchivadas,
   onFiltro,
   onLimpiar,
   miembros,
@@ -359,6 +365,23 @@ export function BoardHeader({
           </Popover>
 
           {activos > 0 && <LimpiarFiltros onLimpiar={onLimpiar} />}
+
+          {/* El archivo no es un filtro más: cambia qué lista se está mirando,
+            así que va separado y a la derecha. */}
+          <button
+            type="button"
+            aria-pressed={viendoArchivadas}
+            onClick={() => onVerArchivadas(!viendoArchivadas)}
+            className={cn(
+              'ml-auto inline-flex items-center gap-1.5 rounded-[var(--arca-r-pill)] border px-[10px] py-1 text-[11.5px] transition-colors duration-[120ms]',
+              viendoArchivadas
+                ? 'border-[var(--arca-navy-700)] bg-[var(--arca-navy-700)] font-medium text-white'
+                : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
+            )}
+          >
+            <Archive className="size-3" />
+            {viendoArchivadas ? 'Viendo archivadas' : 'Archivadas'}
+          </button>
         </>
       }
     />
