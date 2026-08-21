@@ -7,7 +7,8 @@ import { toast } from 'sonner';
 import {
   DndContext,
   closestCenter,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -29,6 +30,7 @@ import {
   Check,
   X,
   Kanban,
+  GripVertical,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -93,10 +95,17 @@ function SortableTaskCard({ tarea }: { tarea: Tarea }) {
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
-      className={cn('touch-none', isDragging && 'opacity-40')}
+      className={cn('relative group/sortable', isDragging && 'opacity-40')}
     >
+      {/* Drag handle — visible on hover, doesn't block card click */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute top-2 right-2 z-10 p-0.5 rounded opacity-0 group-hover/sortable:opacity-100 text-muted-foreground/50 hover:text-muted-foreground cursor-grab active:cursor-grabbing touch-none transition-opacity"
+        title="Arrastrar para reordenar"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </div>
       <TaskCard tarea={tarea} />
     </div>
   );
@@ -126,7 +135,8 @@ function TareasPage() {
   const filtroPeriodo = filtroAno && filtroMes ? `${filtroAno}-${filtroMes}` : '';
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   );
 
   const { data: members = [] } = useQuery({
@@ -646,9 +656,9 @@ function KanbanColumn({
   const { setNodeRef, isOver } = useDroppable({ id: droppableId });
 
   return (
-    <div className="w-72 shrink-0 flex flex-col gap-3">
+    <div className="w-72 shrink-0 flex flex-col gap-0 bg-[#EBECF0] rounded-xl p-2">
       {/* Column header */}
-      <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border bg-white shadow-sm group/header">
+      <div className="flex items-center gap-1.5 px-2 py-2 rounded-lg group/header mb-2">
         {isEditing ? (
           <div className="flex items-center gap-1 flex-1 min-w-0">
             <input
@@ -671,7 +681,7 @@ function KanbanColumn({
         ) : (
           <>
             <span
-              className="text-sm font-semibold flex-1 truncate"
+              className="text-sm font-semibold flex-1 truncate text-[#172B4D]"
               onDoubleClick={!readOnly ? onEditStart : undefined}
               title={readOnly ? nombre : 'Doble clic para editar'}
             >
@@ -723,15 +733,15 @@ function KanbanColumn({
         <div
           ref={setNodeRef}
           className={cn(
-            'flex flex-col gap-2.5 min-h-[60px] rounded-lg p-1 transition-colors',
-            isOver && 'bg-primary/5 ring-2 ring-primary/20 ring-offset-1'
+            'flex flex-col gap-2 min-h-[60px] rounded-lg transition-colors',
+            isOver && 'bg-primary/10 ring-2 ring-primary/20 ring-inset'
           )}
         >
           {tasks.length === 0 ? (
             <div
               className={cn(
-                'text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg bg-white/50',
-                isOver && 'border-primary/40 text-primary/60'
+                'text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg border-[#C1C4CF]',
+                isOver && 'border-primary/40 text-primary/60 bg-primary/5'
               )}
             >
               {isOver ? 'Soltar aquí' : 'Sin tareas'}
@@ -755,7 +765,7 @@ function KanbanColumn({
       {!readOnly && onAddCard && (
         <button
           onClick={onAddCard}
-          className="flex items-center gap-1.5 w-full px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-black/5 rounded-md transition-colors"
+          className="flex items-center gap-1.5 w-full px-2 py-1.5 mt-1.5 text-xs text-[#5E6C84] hover:text-foreground hover:bg-black/10 rounded-lg transition-colors"
         >
           <Plus className="h-3.5 w-3.5" />
           Agregar tarea
