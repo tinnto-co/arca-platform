@@ -8,6 +8,7 @@
  * del trabajo.
  */
 
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -16,7 +17,9 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Eye,
   FileText,
+  Image as ImageIcon,
   Mail,
   MoreHorizontal,
   Plus,
@@ -65,6 +68,125 @@ function peso(bytes: number | null) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} kB`;
   return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+}
+
+/**
+ * Adjunto con vista previa desplegable.
+ *
+ * El endpoint `/api/documents/:id` sirve el archivo inline y con `?download=1`
+ * fuerza la descarga, así que el mismo id da preview y bajada; sólo cambia el
+ * parámetro. Antes "Descargar" abría el PDF en otra pestaña en vez de bajarlo.
+ *
+ * El preview se monta recién al abrirlo: un iframe por adjunto pediría todos
+ * los PDF de la notificación aunque no se mire ninguno.
+ */
+function Adjunto({
+  nombre,
+  url,
+  mimeType,
+  tamanoBytes,
+}: {
+  nombre: string;
+  url: string;
+  mimeType: string | null;
+  tamanoBytes: number | null;
+}) {
+  const esPdf =
+    mimeType === 'application/pdf' || nombre.toLowerCase().endsWith('.pdf');
+  const esImagen = mimeType?.startsWith('image/') ?? false;
+  const previsualizable = esPdf || esImagen;
+
+  // Abierto de entrada: en una notificación de AFIP el adjunto suele SER el
+  // contenido, y el mensaje apenas lo anuncia.
+  const [abierto, setAbierto] = useState(previsualizable);
+
+  return (
+    <div className="border-t border-[var(--arca-border)] py-2.5 first:border-t-0">
+      <div className="flex items-center gap-3">
+        <span className="grid size-[30px] shrink-0 place-items-center rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+          {esImagen ? (
+            <ImageIcon className="size-3.5" />
+          ) : (
+            <FileText className="size-3.5" />
+          )}
+        </span>
+
+        {previsualizable ? (
+          <button
+            type="button"
+            onClick={() => setAbierto((v) => !v)}
+            aria-expanded={abierto}
+            className="min-w-0 flex-1 truncate text-left text-[12.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] hover:underline"
+          >
+            {nombre}
+          </button>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--arca-ink-2)]">
+            {nombre}
+          </span>
+        )}
+
+        {peso(tamanoBytes) && (
+          <span className="shrink-0 text-[10.5px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
+            {peso(tamanoBytes)}
+          </span>
+        )}
+
+        {previsualizable && (
+          <button
+            type="button"
+            onClick={() => setAbierto((v) => !v)}
+            className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+          >
+            {abierto ? (
+              <>
+                <ChevronUp className="size-3" />
+                Ocultar
+              </>
+            ) : (
+              <>
+                <Eye className="size-3" />
+                Ver
+              </>
+            )}
+          </button>
+        )}
+
+        <a
+          href={`${url}?download=1`}
+          className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+        >
+          <Download className="size-3" />
+          Descargar
+        </a>
+      </div>
+
+      {abierto && (
+        <div className="mt-2.5 overflow-hidden rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
+          {esImagen ? (
+            <img
+              src={url}
+              alt={nombre}
+              className="max-h-[560px] w-full object-contain"
+            />
+          ) : (
+            // Sin `sandbox`: el visor de PDF del navegador no arranca dentro
+            // de un iframe restringido y queda un recuadro gris. El archivo es
+            // del mismo origen y lo sirve nuestro endpoint autenticado.
+            <iframe src={url} title={nombre} className="h-[560px] w-full" />
+          )}
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="block border-t border-[var(--arca-border)] px-3 py-2 text-[11.5px] text-[var(--arca-navy-700)] hover:underline"
+          >
+            Abrir en una pestaña nueva
+          </a>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function PanelLectura({
@@ -387,31 +509,13 @@ export function PanelLectura({
         {n.adjuntos.length > 0 && (
           <div className="flex max-w-[72ch] flex-col">
             {n.adjuntos.map((a) => (
-              <div
+              <Adjunto
                 key={a.id}
-                className="flex items-center gap-3 border-t border-[var(--arca-border)] py-2.5 first:border-t-0"
-              >
-                <span className="grid size-[30px] shrink-0 place-items-center rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                  <FileText className="size-3.5" />
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-[var(--arca-ink-2)]">
-                  {a.nombre}
-                </span>
-                {peso(a.tamanoBytes) && (
-                  <span className="shrink-0 text-[10.5px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
-                    {peso(a.tamanoBytes)}
-                  </span>
-                )}
-                <a
-                  href={a.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
-                >
-                  <Download className="size-3" />
-                  Descargar
-                </a>
-              </div>
+                nombre={a.nombre}
+                url={a.url}
+                mimeType={a.mimeType}
+                tamanoBytes={a.tamanoBytes}
+              />
             ))}
           </div>
         )}

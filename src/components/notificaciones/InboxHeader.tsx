@@ -138,7 +138,7 @@ export function InboxHeader({
     ].filter(Boolean).length;
 
   return (
-    <header className="sticky top-0 z-[5] flex shrink-0 flex-col gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-6 pt-[18px] pb-3">
+    <header className="z-[5] flex shrink-0 flex-col gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-6 pt-[18px] pb-3">
       {/* Fila 1 */}
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">

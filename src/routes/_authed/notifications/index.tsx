@@ -251,71 +251,76 @@ function RouteComponent() {
   const hayMas = notificaciones.length < total;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--arca-bg)]">
-      <InboxHeader
-        filtros={filtros}
-        onFiltro={setFiltros}
-        onLimpiar={() =>
-          setFiltros({
-            estado: 'todas',
-            credencial: '',
-            categoria: '',
-            severidad: '',
-            empresa: '',
-            desde: '',
-            hasta: '',
-            soloConAdjunto: false,
-            q: '',
-          })
-        }
-        credenciales={credenciales}
-        categorias={resumen?.categorias ?? []}
-        empresas={empresas}
-        resumen={{
-          total: resumen?.total ?? 0,
-          sinLeer: resumen?.sinLeer ?? 0,
-          resultados: total,
-        }}
-        ultimaSync={resumen?.ultimaSync ?? null}
-        onMarcarTodasLeidas={() => {
-          const ids = notificaciones.filter((n) => !n.leida).map((n) => n.id);
-          if (ids.length === 0) {
-            toast.info('No hay notificaciones sin leer en este recorte');
-            return;
+    // El espacio va como padding del contenedor y no como margen del panel:
+    // con margen, `h-full` mide el alto completo Y ADEMÁS empuja, así que el
+    // pie de la lista quedaba cortado abajo.
+    <div className="h-full min-h-0 p-3 md:p-4">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[var(--arca-r-lg)] bg-[var(--arca-bg)]">
+        <InboxHeader
+          filtros={filtros}
+          onFiltro={setFiltros}
+          onLimpiar={() =>
+            setFiltros({
+              estado: 'todas',
+              credencial: '',
+              categoria: '',
+              severidad: '',
+              empresa: '',
+              desde: '',
+              hasta: '',
+              soloConAdjunto: false,
+              q: '',
+            })
           }
-          marcarTodas.mutate(ids);
-        }}
-      />
-
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        <ListaNotificaciones
-          notificaciones={notificaciones}
-          seleccionada={seleccionada}
-          onSeleccionar={(id) => seleccionar(id)}
-          cargando={isLoading}
-          total={total}
-          vacio={
-            filtros.estado === 'sin_leer'
-              ? 'Estás al día'
-              : filtros.estado === 'resueltas'
-                ? 'Todavía no hay notificaciones resueltas'
-                : 'No hay notificaciones con estos filtros'
-          }
-          hayMas={hayMas}
-          onCargarMas={() => setPaginas((p) => p + 1)}
+          credenciales={credenciales}
+          categorias={resumen?.categorias ?? []}
+          empresas={empresas}
+          resumen={{
+            total: resumen?.total ?? 0,
+            sinLeer: resumen?.sinLeer ?? 0,
+            resultados: total,
+          }}
+          ultimaSync={resumen?.ultimaSync ?? null}
+          onMarcarTodasLeidas={() => {
+            const ids = notificaciones.filter((n) => !n.leida).map((n) => n.id);
+            if (ids.length === 0) {
+              toast.info('No hay notificaciones sin leer en este recorte');
+              return;
+            }
+            marcarTodas.mutate(ids);
+          }}
         />
 
-        <PanelLectura
-          notificacionId={seleccionada}
-          onCrearTarea={() => setCreandoTarea(true)}
-          onIrATarea={(tareaId) =>
-            void navigate({ to: '/tareas', search: { tarea: tareaId } })
-          }
-          onAnterior={() => irA(-1)}
-          onSiguiente={() => irA(1)}
-          hayAnterior={idx > 0}
-          haySiguiente={idx >= 0 && idx < notificaciones.length - 1}
-        />
+        <div className="flex min-h-0 flex-1 overflow-hidden border">
+          <ListaNotificaciones
+            notificaciones={notificaciones}
+            seleccionada={seleccionada}
+            onSeleccionar={(id) => seleccionar(id)}
+            cargando={isLoading}
+            total={total}
+            vacio={
+              filtros.estado === 'sin_leer'
+                ? 'Estás al día'
+                : filtros.estado === 'resueltas'
+                  ? 'Todavía no hay notificaciones resueltas'
+                  : 'No hay notificaciones con estos filtros'
+            }
+            hayMas={hayMas}
+            onCargarMas={() => setPaginas((p) => p + 1)}
+          />
+
+          <PanelLectura
+            notificacionId={seleccionada}
+            onCrearTarea={() => setCreandoTarea(true)}
+            onIrATarea={(tareaId) =>
+              void navigate({ to: '/tareas', search: { tarea: tareaId } })
+            }
+            onAnterior={() => irA(-1)}
+            onSiguiente={() => irA(1)}
+            hayAnterior={idx > 0}
+            haySiguiente={idx >= 0 && idx < notificaciones.length - 1}
+          />
+        </div>
       </div>
 
       <CrearTareaDesdeNotificacion

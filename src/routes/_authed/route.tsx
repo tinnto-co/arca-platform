@@ -57,6 +57,15 @@ function RouteComponent() {
   const isChatDetail = pathname.startsWith('/chat/');
   const isChatRoute = isChatDetail || pathname === '/chat';
 
+  /**
+   * Pantallas que manejan su propio scroll y ocupan el alto completo: la
+   * bandeja de notificaciones y el tablero de tareas tienen columnas que
+   * scrollean por dentro, así que no pueden convivir con el padding que deja
+   * lugar al input del asistente ni con el input flotando encima.
+   */
+  const altoCompleto =
+    pathname.startsWith('/notifications') || pathname.startsWith('/tareas');
+
   const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
@@ -64,7 +73,7 @@ function RouteComponent() {
 
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
-  const hideAgentInput = isChatRoute || !aiAgentEnabled;
+  const hideAgentInput = isChatRoute || altoCompleto || !aiAgentEnabled;
 
   const shell = (agentInputSlot: React.ReactNode) => (
     <OrgSwitchProvider>
@@ -75,7 +84,7 @@ function RouteComponent() {
             data-arca-content
             className={cn(
               'min-w-0 flex-1 min-h-0 overflow-y-auto',
-              isChatDetail
+              isChatDetail || altoCompleto
                 ? 'h-full overflow-hidden'
                 : 'bg-[var(--arca-bg)] pb-28 md:pb-24 min-h-full'
             )}
@@ -102,7 +111,7 @@ function RouteComponent() {
           <GlobalCopilotReadables />
           <VisiblePageReadable />
           {shell(!hideAgentInput ? <AgentInput /> : null)}
-          {!isChatRoute && <CopilotBottomPanel />}
+          {!isChatRoute && !altoCompleto && <CopilotBottomPanel />}
         </CopilotAttachmentProvider>
       </CopilotKit>
     );
