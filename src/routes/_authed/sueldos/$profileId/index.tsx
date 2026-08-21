@@ -178,7 +178,7 @@ function RouteComponent() {
             >
               <ChevronLeft className="h-[15px] w-[15px]" />
             </Link>
-            <h1 className="font-[family-name:var(--ff-display)] text-[29px] font-bold tracking-[-0.025em] leading-[1.1] text-[#12131A] truncate">
+            <h1 className="truncate text-[30px] leading-none font-semibold tracking-[-0.025em] text-[var(--arca-ink)] [font-family:var(--ff-display)]">
               {selectedOption?.name ?? 'Cargando…'}
             </h1>
           </div>
