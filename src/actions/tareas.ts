@@ -77,6 +77,7 @@ export const listTareas = createServerFn({ method: 'GET' })
         estadoCambiadoAt: tarea.estadoCambiadoAt,
         estadoCambiadoPor: tarea.estadoCambiadoPor,
         creadoPor: tarea.creadoPor,
+        posicion: tarea.posicion,
         createdAt: tarea.createdAt,
         updatedAt: tarea.updatedAt,
       })
@@ -477,6 +478,19 @@ export const moverTarea = createServerFn({ method: 'POST' })
       .set({ columnaId: ctx.data.columnaId, updatedAt: new Date() })
       .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
 
+    return { ok: true };
+  });
+
+export const reorderTarea = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid(), posicion: z.string() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await db
+      .update(tarea)
+      .set({ posicion: ctx.data.posicion, updatedAt: new Date() })
+      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
     return { ok: true };
   });
 

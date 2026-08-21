@@ -12,6 +12,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
@@ -52,6 +62,7 @@ function fmtDateTime(d: Date | string | null | undefined) {
 export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialogProps) {
   const queryClient = useQueryClient();
   const [comentario, setComentario] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const { data: comments = [] } = useQuery({
     queryKey: ['tarea-comments', tarea.id],
@@ -68,7 +79,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
   const toggleMutation = useMutation({
     mutationFn: (vars: { tareaClienteId: string; completado: boolean }) =>
       toggleTareaCliente({ data: vars }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tareas'] }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tareas'] }),
     onError: () => toast.error('Error al actualizar'),
   });
 
@@ -76,7 +87,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
     mutationFn: (columnaId: string | null) =>
       moverTarea({ data: { id: tarea.id, columnaId } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tareas'] });
+      void queryClient.invalidateQueries({ queryKey: ['tareas'] });
       toast.success('Columna actualizada');
     },
     onError: () => toast.error('Error al cambiar columna'),
@@ -87,8 +98,8 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
       addTareaComment({ data: { tareaId: tarea.id, contenido } }),
     onSuccess: () => {
       setComentario('');
-      queryClient.invalidateQueries({ queryKey: ['tarea-comments', tarea.id] });
-      queryClient.invalidateQueries({ queryKey: ['tareas'] });
+      void queryClient.invalidateQueries({ queryKey: ['tarea-comments', tarea.id] });
+      void queryClient.invalidateQueries({ queryKey: ['tareas'] });
     },
     onError: () => toast.error('Error al agregar comentario'),
   });
@@ -96,7 +107,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
   const deleteMutation = useMutation({
     mutationFn: () => deleteTarea({ data: { id: tarea.id } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tareas'] });
+      void queryClient.invalidateQueries({ queryKey: ['tareas'] });
       onOpenChange(false);
       toast.success('Tarea eliminada');
     },
@@ -109,6 +120,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
   const columnaActual = columnas.find((c) => c.id === tarea.columnaId);
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-0 p-0">
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
@@ -130,9 +142,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
               variant="ghost"
               size="icon"
               className="text-muted-foreground hover:text-destructive shrink-0"
-              onClick={() => {
-                deleteMutation.mutate();
-              }}
+              onClick={() => setConfirmDelete(true)}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
@@ -285,5 +295,26 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
         </ScrollArea>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>¿Eliminar tarea?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Esta acción no se puede deshacer. Se eliminará la tarea y todos sus comentarios.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => deleteMutation.mutate()}
+          >
+            Eliminar
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>
   );
 }

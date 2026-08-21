@@ -11,6 +11,8 @@ import { sql } from "drizzle-orm"
 import { user, organization } from "./auth"
 
 export const accesoRol = pgEnum("acceso_rol", ['cliente_lector'])
+export const tareaEstado = pgEnum("tarea_estado", ['pendiente', 'presentada', 'verificada'])
+export const tareaTipo = pgEnum("tarea_tipo", ['iva', 'iibb', 'ddjj', 'sueldos', 'convenios', 'otro'])
 export const actorTipo = pgEnum("actor_tipo", ['user', 'job', 'agent'])
 export const agentActionEstado = pgEnum("agent_action_estado", ['propuesta', 'aprobada', 'rechazada', 'ejecutada'])
 export const agentMessageRole = pgEnum("agent_message_role", ['user', 'assistant', 'system', 'tool'])
@@ -2507,8 +2509,8 @@ export const tarea = pgTable("tarea", {
 	orgId: text("org_id").notNull(),
 	titulo: text().notNull(),
 	descripcion: text(),
-	tipo: text().default('otro').notNull(),
-	estado: text().default('pendiente').notNull(),
+	tipo: tareaTipo().default('otro').notNull(),
+	estado: tareaEstado().default('pendiente').notNull(),
 	columnaId: uuid("columna_id"),
 	asignadoA: text("asignado_a"),
 	periodo: text("periodo"),

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -62,9 +63,10 @@ interface NuevaTareaDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   columnas?: Columna[];
+  defaultColumnaId?: string;
 }
 
-export function NuevaTareaDialog({ open, onOpenChange, columnas = [] }: NuevaTareaDialogProps) {
+export function NuevaTareaDialog({ open, onOpenChange, columnas = [], defaultColumnaId }: NuevaTareaDialogProps) {
   const queryClient = useQueryClient();
 
   const { data: members = [] } = useQuery({
@@ -87,6 +89,23 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [] }: NuevaTar
     },
   });
 
+  useEffect(() => {
+    if (open) {
+      form.reset({
+        titulo: '',
+        descripcion: '',
+        tipo: 'otro',
+        asignadoAUserId: '',
+        periodoAno: '',
+        periodoMes: '',
+        fechaVencimiento: '',
+        columnaId: defaultColumnaId ?? '',
+      });
+    }
+    // form is stable from useForm — safe to omit
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultColumnaId]);
+
   const mutation = useMutation({
     mutationFn: (values: FormValues) => {
       const periodoMes =
@@ -96,17 +115,17 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [] }: NuevaTar
       return createTarea({
         data: {
           titulo: values.titulo,
-          descripcion: values.descripcion || undefined,
+          descripcion: values.descripcion !== '' ? values.descripcion : undefined,
           tipo: values.tipo,
-          asignadoA: values.asignadoAUserId || null,
+          asignadoA: values.asignadoAUserId !== '' ? values.asignadoAUserId : null,
           periodo: periodoMes,
-          venceAt: values.fechaVencimiento || null,
-          columnaId: values.columnaId || null,
+          venceAt: values.fechaVencimiento !== '' ? values.fechaVencimiento : null,
+          columnaId: values.columnaId !== '' ? values.columnaId : null,
         },
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false });
+      void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false });
       toast.success('Tarea creada');
       form.reset();
       onOpenChange(false);
