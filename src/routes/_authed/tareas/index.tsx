@@ -94,10 +94,10 @@ function TareasPage() {
     queryFn: () =>
       listTareas({
         data: {
-          periodoMes: filtroPeriodo || undefined,
+          periodo: filtroPeriodo || undefined,
           tipo: filtroTipo || undefined,
-          asignadoAUserId: filtroAsignado || undefined,
-          representativeId: filtroCliente || undefined,
+          asignadoA: filtroAsignado || undefined,
+          clienteId: filtroCliente || undefined,
           vencimientoHasta: filtroVencimientoHasta || undefined,
         },
       }),
@@ -122,7 +122,7 @@ function TareasPage() {
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   const autoGenMutation = useMutation({
-    mutationFn: (periodoMes: string) => autoGenerarTareas({ data: { periodoMes } }),
+    mutationFn: (periodo: string) => autoGenerarTareas({ data: { periodo } }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['tareas'] });
       const parts: string[] = [];

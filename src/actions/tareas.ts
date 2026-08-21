@@ -3,10 +3,10 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 import {
-  studioTask,
-  studioTaskClient,
-  studioTaskComment,
-  studioTaskColumn,
+  tarea,
+  tareaCliente,
+  tareaComentario,
+  tareaColumna,
   cliente,
   vencimiento,
 } from '@/drizzle/schema';
@@ -24,66 +24,66 @@ export type EstadoTarea = 'pendiente' | 'presentada' | 'verificada';
 export const listTareas = createServerFn({ method: 'GET' })
   .validator(
     z.object({
-      periodoMes: z.string().optional(),
+      periodo: z.string().optional(),
       tipo: z.string().optional(),
-      asignadoAUserId: z.string().optional(),
-      representativeId: z.string().uuid().optional(),
+      asignadoA: z.string().optional(),
+      clienteId: z.string().uuid().optional(),
       vencimientoHasta: z.string().optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const conditions = [eq(studioTask.organizationId, orgId)];
-    if (ctx.data.periodoMes) {
-      conditions.push(eq(studioTask.periodoMes, ctx.data.periodoMes));
+    const conditions = [eq(tarea.orgId, orgId)];
+    if (ctx.data.periodo) {
+      conditions.push(eq(tarea.periodo, ctx.data.periodo));
     }
     if (ctx.data.tipo) {
-      conditions.push(eq(studioTask.tipo, ctx.data.tipo));
+      conditions.push(eq(tarea.tipo, ctx.data.tipo));
     }
-    if (ctx.data.asignadoAUserId) {
-      if (ctx.data.asignadoAUserId === 'sin_asignar') {
-        conditions.push(isNull(studioTask.asignadoAUserId));
+    if (ctx.data.asignadoA) {
+      if (ctx.data.asignadoA === 'sin_asignar') {
+        conditions.push(isNull(tarea.asignadoA));
       } else {
-        conditions.push(eq(studioTask.asignadoAUserId, ctx.data.asignadoAUserId));
+        conditions.push(eq(tarea.asignadoA, ctx.data.asignadoA));
       }
     }
-    if (ctx.data.representativeId) {
+    if (ctx.data.clienteId) {
       const taskIdsWithRep = await db
-        .select({ taskId: studioTaskClient.taskId })
-        .from(studioTaskClient)
-        .where(eq(studioTaskClient.representativeId, ctx.data.representativeId));
-      const ids = taskIdsWithRep.map((r) => r.taskId);
+        .select({ tareaId: tareaCliente.tareaId })
+        .from(tareaCliente)
+        .where(eq(tareaCliente.clienteId, ctx.data.clienteId));
+      const ids = taskIdsWithRep.map((r) => r.tareaId);
       if (ids.length === 0) return [];
-      conditions.push(inArray(studioTask.id, ids));
+      conditions.push(inArray(tarea.id, ids));
     }
     if (ctx.data.vencimientoHasta) {
-      conditions.push(lte(studioTask.fechaVencimiento, new Date(ctx.data.vencimientoHasta)));
+      conditions.push(lte(tarea.venceAt, new Date(ctx.data.vencimientoHasta)));
     }
 
     const tareas = await db
       .select({
-        id: studioTask.id,
-        titulo: studioTask.titulo,
-        descripcion: studioTask.descripcion,
-        tipo: studioTask.tipo,
-        estado: studioTask.estado,
-        columnaId: studioTask.columnaId,
-        asignadoAUserId: studioTask.asignadoAUserId,
+        id: tarea.id,
+        titulo: tarea.titulo,
+        descripcion: tarea.descripcion,
+        tipo: tarea.tipo,
+        estado: tarea.estado,
+        columnaId: tarea.columnaId,
+        asignadoA: tarea.asignadoA,
         asignadoNombre: user.name,
-        periodoMes: studioTask.periodoMes,
-        fechaVencimiento: studioTask.fechaVencimiento,
-        esAutoGenerada: studioTask.esAutoGenerada,
-        estadoChangedAt: studioTask.estadoChangedAt,
-        estadoChangedByUserId: studioTask.estadoChangedByUserId,
-        createdByUserId: studioTask.createdByUserId,
-        createdAt: studioTask.createdAt,
-        updatedAt: studioTask.updatedAt,
+        periodo: tarea.periodo,
+        venceAt: tarea.venceAt,
+        fuente: tarea.fuente,
+        estadoCambiadoAt: tarea.estadoCambiadoAt,
+        estadoCambiadoPor: tarea.estadoCambiadoPor,
+        creadoPor: tarea.creadoPor,
+        createdAt: tarea.createdAt,
+        updatedAt: tarea.updatedAt,
       })
-      .from(studioTask)
-      .leftJoin(user, eq(studioTask.asignadoAUserId, user.id))
+      .from(tarea)
+      .leftJoin(user, eq(tarea.asignadoA, user.id))
       .where(and(...conditions))
-      .orderBy(studioTask.fechaVencimiento, studioTask.createdAt);
+      .orderBy(tarea.venceAt, tarea.createdAt);
 
     if (tareas.length === 0) return [];
 
@@ -92,35 +92,35 @@ export const listTareas = createServerFn({ method: 'GET' })
     const [clientes, comments] = await Promise.all([
       db
         .select({
-          taskId: studioTaskClient.taskId,
-          id: studioTaskClient.id,
-          representativeId: studioTaskClient.representativeId,
-          representativeNombre: cliente.razonSocial,
-          completado: studioTaskClient.completado,
-          completadoAt: studioTaskClient.completadoAt,
-          completadoByUserId: studioTaskClient.completadoByUserId,
+          tareaId: tareaCliente.tareaId,
+          id: tareaCliente.id,
+          clienteId: tareaCliente.clienteId,
+          clienteNombre: cliente.razonSocial,
+          completado: tareaCliente.completado,
+          completadoAt: tareaCliente.completadoAt,
+          completadoPor: tareaCliente.completadoPor,
         })
-        .from(studioTaskClient)
-        .leftJoin(cliente, eq(studioTaskClient.representativeId, cliente.id))
-        .where(inArray(studioTaskClient.taskId, taskIds)),
+        .from(tareaCliente)
+        .leftJoin(cliente, eq(tareaCliente.clienteId, cliente.id))
+        .where(inArray(tareaCliente.tareaId, taskIds)),
       db
-        .select({ taskId: studioTaskComment.taskId, count: studioTaskComment.id })
-        .from(studioTaskComment)
-        .where(inArray(studioTaskComment.taskId, taskIds)),
+        .select({ tareaId: tareaComentario.tareaId, count: tareaComentario.id })
+        .from(tareaComentario)
+        .where(inArray(tareaComentario.tareaId, taskIds)),
     ]);
 
-    const clientesByTask = clientes.reduce<Record<string, typeof clientes>>(
+    const clientesByTarea = clientes.reduce<Record<string, typeof clientes>>(
       (acc, c) => {
-        if (!acc[c.taskId]) acc[c.taskId] = [];
-        acc[c.taskId].push(c);
+        if (!acc[c.tareaId]) acc[c.tareaId] = [];
+        acc[c.tareaId].push(c);
         return acc;
       },
       {}
     );
 
-    const commentCountByTask = comments.reduce<Record<string, number>>(
+    const commentCountByTarea = comments.reduce<Record<string, number>>(
       (acc, c) => {
-        acc[c.taskId] = (acc[c.taskId] ?? 0) + 1;
+        acc[c.tareaId] = (acc[c.tareaId] ?? 0) + 1;
         return acc;
       },
       {}
@@ -128,36 +128,36 @@ export const listTareas = createServerFn({ method: 'GET' })
 
     return tareas.map((t) => ({
       ...t,
-      clientes: clientesByTask[t.id] ?? [],
-      comentariosCount: commentCountByTask[t.id] ?? 0,
+      clientes: clientesByTarea[t.id] ?? [],
+      comentariosCount: commentCountByTarea[t.id] ?? 0,
     }));
   });
 
 /** Devuelve los comentarios de una tarea específica. */
 export const listTareaComments = createServerFn({ method: 'GET' })
-  .validator(z.object({ taskId: z.string().uuid() }))
+  .validator(z.object({ tareaId: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
     const [task] = await db
-      .select({ id: studioTask.id })
-      .from(studioTask)
-      .where(and(eq(studioTask.id, ctx.data.taskId), eq(studioTask.organizationId, orgId)))
+      .select({ id: tarea.id })
+      .from(tarea)
+      .where(and(eq(tarea.id, ctx.data.tareaId), eq(tarea.orgId, orgId)))
       .limit(1);
     if (!task) throw new Error('Tarea no encontrada');
 
     return db
       .select({
-        id: studioTaskComment.id,
-        contenido: studioTaskComment.contenido,
-        createdAt: studioTaskComment.createdAt,
-        userId: studioTaskComment.userId,
-        userName: user.name,
+        id: tareaComentario.id,
+        contenido: tareaComentario.contenido,
+        createdAt: tareaComentario.createdAt,
+        autorId: tareaComentario.autorId,
+        autorNombre: user.name,
       })
-      .from(studioTaskComment)
-      .leftJoin(user, eq(studioTaskComment.userId, user.id))
-      .where(eq(studioTaskComment.taskId, ctx.data.taskId))
-      .orderBy(studioTaskComment.createdAt);
+      .from(tareaComentario)
+      .leftJoin(user, eq(tareaComentario.autorId, user.id))
+      .where(eq(tareaComentario.tareaId, ctx.data.tareaId))
+      .orderBy(tareaComentario.createdAt);
   });
 
 /** Devuelve los miembros de la org para el selector de asignados. */
@@ -189,9 +189,9 @@ export const createTarea = createServerFn({ method: 'POST' })
       titulo: z.string().min(1),
       descripcion: z.string().optional(),
       tipo: z.enum(['iva', 'iibb', 'ddjj', 'sueldos', 'convenios', 'otro']),
-      asignadoAUserId: z.string().optional().nullable(),
-      periodoMes: z.string().optional().nullable(),
-      fechaVencimiento: z.string().optional().nullable(),
+      asignadoA: z.string().optional().nullable(),
+      periodo: z.string().optional().nullable(),
+      venceAt: z.string().optional().nullable(),
       columnaId: z.string().uuid().optional().nullable(),
     })
   )
@@ -201,21 +201,21 @@ export const createTarea = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     const [task] = await db
-      .insert(studioTask)
+      .insert(tarea)
       .values({
-        organizationId: orgId,
+        orgId,
         titulo: ctx.data.titulo.trim(),
         descripcion: ctx.data.descripcion?.trim() || null,
         tipo: ctx.data.tipo,
         estado: 'pendiente',
         columnaId: ctx.data.columnaId || null,
-        asignadoAUserId: ctx.data.asignadoAUserId || null,
-        periodoMes: ctx.data.periodoMes || null,
-        fechaVencimiento: ctx.data.fechaVencimiento
-          ? new Date(ctx.data.fechaVencimiento)
+        asignadoA: ctx.data.asignadoA || null,
+        periodo: ctx.data.periodo || null,
+        venceAt: ctx.data.venceAt
+          ? new Date(ctx.data.venceAt)
           : null,
-        esAutoGenerada: false,
-        createdByUserId: userId,
+        fuente: 'manual',
+        creadoPor: userId,
       })
       .returning();
 
@@ -231,9 +231,9 @@ export const updateTarea = createServerFn({ method: 'POST' })
       titulo: z.string().min(1).optional(),
       descripcion: z.string().optional().nullable(),
       tipo: z.enum(['iva', 'iibb', 'ddjj', 'sueldos', 'convenios', 'otro']).optional(),
-      asignadoAUserId: z.string().optional().nullable(),
-      periodoMes: z.string().optional().nullable(),
-      fechaVencimiento: z.string().optional().nullable(),
+      asignadoA: z.string().optional().nullable(),
+      periodo: z.string().optional().nullable(),
+      venceAt: z.string().optional().nullable(),
     })
   )
   .handler(async (ctx) => {
@@ -245,18 +245,18 @@ export const updateTarea = createServerFn({ method: 'POST' })
     if (ctx.data.titulo !== undefined) set.titulo = ctx.data.titulo.trim();
     if (ctx.data.descripcion !== undefined) set.descripcion = ctx.data.descripcion?.trim() || null;
     if (ctx.data.tipo !== undefined) set.tipo = ctx.data.tipo;
-    if (ctx.data.asignadoAUserId !== undefined) set.asignadoAUserId = ctx.data.asignadoAUserId || null;
-    if (ctx.data.periodoMes !== undefined) set.periodoMes = ctx.data.periodoMes || null;
-    if (ctx.data.fechaVencimiento !== undefined) {
-      set.fechaVencimiento = ctx.data.fechaVencimiento
-        ? new Date(ctx.data.fechaVencimiento)
+    if (ctx.data.asignadoA !== undefined) set.asignadoA = ctx.data.asignadoA || null;
+    if (ctx.data.periodo !== undefined) set.periodo = ctx.data.periodo || null;
+    if (ctx.data.venceAt !== undefined) {
+      set.venceAt = ctx.data.venceAt
+        ? new Date(ctx.data.venceAt)
         : null;
     }
 
     await db
-      .update(studioTask)
+      .update(tarea)
       .set(set)
-      .where(and(eq(studioTask.id, ctx.data.id), eq(studioTask.organizationId, orgId)));
+      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
 
     return { ok: true };
   });
@@ -275,14 +275,14 @@ export const updateEstadoTarea = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     await db
-      .update(studioTask)
+      .update(tarea)
       .set({
         estado: ctx.data.estado,
-        estadoChangedAt: new Date(),
-        estadoChangedByUserId: userId,
+        estadoCambiadoAt: new Date(),
+        estadoCambiadoPor: userId,
         updatedAt: new Date(),
       })
-      .where(and(eq(studioTask.id, ctx.data.id), eq(studioTask.organizationId, orgId)));
+      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
 
     return { ok: true };
   });
@@ -295,8 +295,8 @@ export const deleteTarea = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     await db
-      .delete(studioTask)
-      .where(and(eq(studioTask.id, ctx.data.id), eq(studioTask.organizationId, orgId)));
+      .delete(tarea)
+      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
 
     return { ok: true };
   });
@@ -307,7 +307,7 @@ export const deleteTarea = createServerFn({ method: 'POST' })
 export const toggleTareaCliente = createServerFn({ method: 'POST' })
   .validator(
     z.object({
-      taskClientId: z.string().uuid(),
+      tareaClienteId: z.string().uuid(),
       completado: z.boolean(),
     })
   )
@@ -318,28 +318,28 @@ export const toggleTareaCliente = createServerFn({ method: 'POST' })
 
     // Obtener la tarea para validar org
     const [tc] = await db
-      .select({ taskId: studioTaskClient.taskId })
-      .from(studioTaskClient)
-      .where(eq(studioTaskClient.id, ctx.data.taskClientId))
+      .select({ tareaId: tareaCliente.tareaId })
+      .from(tareaCliente)
+      .where(eq(tareaCliente.id, ctx.data.tareaClienteId))
       .limit(1);
     if (!tc) throw new Error('Empresa no encontrada en esta tarea');
 
     const [task] = await db
-      .select({ id: studioTask.id, estado: studioTask.estado })
-      .from(studioTask)
-      .where(and(eq(studioTask.id, tc.taskId), eq(studioTask.organizationId, orgId)))
+      .select({ id: tarea.id, estado: tarea.estado })
+      .from(tarea)
+      .where(and(eq(tarea.id, tc.tareaId), eq(tarea.orgId, orgId)))
       .limit(1);
     if (!task) throw new Error('Tarea no encontrada');
 
     // Actualizar el check
     await db
-      .update(studioTaskClient)
+      .update(tareaCliente)
       .set({
         completado: ctx.data.completado,
         completadoAt: ctx.data.completado ? new Date() : null,
-        completadoByUserId: ctx.data.completado ? userId : null,
+        completadoPor: ctx.data.completado ? userId : null,
       })
-      .where(eq(studioTaskClient.id, ctx.data.taskClientId));
+      .where(eq(tareaCliente.id, ctx.data.tareaClienteId));
 
     return { ok: true };
   });
@@ -349,7 +349,7 @@ export const toggleTareaCliente = createServerFn({ method: 'POST' })
 export const addTareaComment = createServerFn({ method: 'POST' })
   .validator(
     z.object({
-      taskId: z.string().uuid(),
+      tareaId: z.string().uuid(),
       contenido: z.string().min(1),
     })
   )
@@ -359,17 +359,17 @@ export const addTareaComment = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     const [task] = await db
-      .select({ id: studioTask.id })
-      .from(studioTask)
-      .where(and(eq(studioTask.id, ctx.data.taskId), eq(studioTask.organizationId, orgId)))
+      .select({ id: tarea.id })
+      .from(tarea)
+      .where(and(eq(tarea.id, ctx.data.tareaId), eq(tarea.orgId, orgId)))
       .limit(1);
     if (!task) throw new Error('Tarea no encontrada');
 
     const [comment] = await db
-      .insert(studioTaskComment)
+      .insert(tareaComentario)
       .values({
-        taskId: ctx.data.taskId,
-        userId,
+        tareaId: ctx.data.tareaId,
+        autorId: userId,
         contenido: ctx.data.contenido.trim(),
       })
       .returning();
@@ -383,9 +383,9 @@ export const listColumnas = createServerFn({ method: 'GET' }).handler(async () =
   const { orgId } = await getSessionWithOrg();
   return db
     .select()
-    .from(studioTaskColumn)
-    .where(eq(studioTaskColumn.organizationId, orgId))
-    .orderBy(studioTaskColumn.orden, studioTaskColumn.createdAt);
+    .from(tareaColumna)
+    .where(eq(tareaColumna.orgId, orgId))
+    .orderBy(tareaColumna.orden, tareaColumna.createdAt);
 });
 
 export const createColumna = createServerFn({ method: 'POST' })
@@ -396,17 +396,17 @@ export const createColumna = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     const [last] = await db
-      .select({ orden: studioTaskColumn.orden })
-      .from(studioTaskColumn)
-      .where(eq(studioTaskColumn.organizationId, orgId))
-      .orderBy(desc(studioTaskColumn.orden))
+      .select({ orden: tareaColumna.orden })
+      .from(tareaColumna)
+      .where(eq(tareaColumna.orgId, orgId))
+      .orderBy(desc(tareaColumna.orden))
       .limit(1);
 
     const nextOrden = last ? last.orden + 1 : 0;
 
     const [col] = await db
-      .insert(studioTaskColumn)
-      .values({ organizationId: orgId, nombre: ctx.data.nombre.trim(), orden: nextOrden })
+      .insert(tareaColumna)
+      .values({ orgId, nombre: ctx.data.nombre.trim(), orden: nextOrden })
       .returning();
     return col;
   });
@@ -419,9 +419,9 @@ export const updateColumna = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     await db
-      .update(studioTaskColumn)
+      .update(tareaColumna)
       .set({ nombre: ctx.data.nombre.trim() })
-      .where(and(eq(studioTaskColumn.id, ctx.data.id), eq(studioTaskColumn.organizationId, orgId)));
+      .where(and(eq(tareaColumna.id, ctx.data.id), eq(tareaColumna.orgId, orgId)));
 
     return { ok: true };
   });
@@ -435,13 +435,13 @@ export const deleteColumna = createServerFn({ method: 'POST' })
 
     // Desasignar tareas de esta columna
     await db
-      .update(studioTask)
+      .update(tarea)
       .set({ columnaId: null })
-      .where(and(eq(studioTask.columnaId, ctx.data.id), eq(studioTask.organizationId, orgId)));
+      .where(and(eq(tarea.columnaId, ctx.data.id), eq(tarea.orgId, orgId)));
 
     await db
-      .delete(studioTaskColumn)
-      .where(and(eq(studioTaskColumn.id, ctx.data.id), eq(studioTaskColumn.organizationId, orgId)));
+      .delete(tareaColumna)
+      .where(and(eq(tareaColumna.id, ctx.data.id), eq(tareaColumna.orgId, orgId)));
 
     return { ok: true };
   });
@@ -456,9 +456,9 @@ export const reorderColumnas = createServerFn({ method: 'POST' })
     await Promise.all(
       ctx.data.ids.map((id, orden) =>
         db
-          .update(studioTaskColumn)
+          .update(tareaColumna)
           .set({ orden })
-          .where(and(eq(studioTaskColumn.id, id), eq(studioTaskColumn.organizationId, orgId)))
+          .where(and(eq(tareaColumna.id, id), eq(tareaColumna.orgId, orgId)))
       )
     );
 
@@ -473,9 +473,9 @@ export const moverTarea = createServerFn({ method: 'POST' })
     assertCanWrite(role);
 
     await db
-      .update(studioTask)
+      .update(tarea)
       .set({ columnaId: ctx.data.columnaId, updatedAt: new Date() })
-      .where(and(eq(studioTask.id, ctx.data.id), eq(studioTask.organizationId, orgId)));
+      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
 
     return { ok: true };
   });
@@ -509,13 +509,13 @@ function taxToTipo(tax: string): TipoTarea {
  * Agrupación: mismo (tipo + fecha) = una sola tarea con N empresas.
  */
 export const autoGenerarTareas = createServerFn({ method: 'POST' })
-  .validator(z.object({ periodoMes: z.string().regex(/^\d{4}-\d{2}$/) }))
+  .validator(z.object({ periodo: z.string().regex(/^\d{4}-\d{2}$/) }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const [year, month] = ctx.data.periodoMes.split('-').map(Number) as [number, number];
+    const [year, month] = ctx.data.periodo.split('-').map(Number) as [number, number];
     const fromStr = `${year}-${String(month).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month, 0).getDate();
     const toStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
@@ -556,9 +556,9 @@ export const autoGenerarTareas = createServerFn({ method: 'POST' })
     // Buscar los vencimientos que ya tienen fila en studio_task_client (ya cubiertos)
     const vencimientoIds = vencimientosRaw.map((v) => v.id);
     const yaAsignados = await db
-      .select({ vencimientoId: studioTaskClient.vencimientoId })
-      .from(studioTaskClient)
-      .where(inArray(studioTaskClient.vencimientoId, vencimientoIds));
+      .select({ vencimientoId: tareaCliente.vencimientoId })
+      .from(tareaCliente)
+      .where(inArray(tareaCliente.vencimientoId, vencimientoIds));
 
     const cubiertos = new Set(yaAsignados.map((r) => r.vencimientoId).filter(Boolean) as string[]);
 
@@ -635,31 +635,31 @@ export const autoGenerarTareas = createServerFn({ method: 'POST' })
 
       // Buscar tarea existente para este (tipo, fecha, período) o crearla
       const [existing] = await db
-        .select({ id: studioTask.id })
-        .from(studioTask)
+        .select({ id: tarea.id })
+        .from(tarea)
         .where(
           and(
-            eq(studioTask.organizationId, orgId),
-            eq(studioTask.tipo, grupo.tipo),
-            eq(studioTask.periodoMes, ctx.data.periodoMes),
-            eq(studioTask.esAutoGenerada, true)
+            eq(tarea.orgId, orgId),
+            eq(tarea.tipo, grupo.tipo),
+            eq(tarea.periodo, ctx.data.periodo),
+            eq(tarea.fuente, 'automatica')
           )
         )
         .limit(1);
 
-      const taskId = existing
+      const tareaId = existing
         ? existing.id
         : (await db
-            .insert(studioTask)
+            .insert(tarea)
             .values({
-              organizationId: orgId,
+              orgId,
               titulo,
               tipo: grupo.tipo,
               estado: 'pendiente',
-              periodoMes: ctx.data.periodoMes,
-              fechaVencimiento: fechaDate,
-              esAutoGenerada: true,
-              createdByUserId: userId,
+              periodo: ctx.data.periodo,
+              venceAt: fechaDate,
+              fuente: 'automatica',
+              creadoPor: userId,
             })
             .returning()
             .then((r) => r[0]!.id));
@@ -669,10 +669,10 @@ export const autoGenerarTareas = createServerFn({ method: 'POST' })
       // Insertar tarea_cliente por vencimiento (ignorar duplicados por uq_studio_task_client)
       for (const item of grupo.items) {
         await db
-          .insert(studioTaskClient)
+          .insert(tareaCliente)
           .values({
-            taskId,
-            representativeId: item.clienteId,
+            tareaId,
+            clienteId: item.clienteId,
             vencimientoId: item.vencimientoId,
             completado: false,
           })

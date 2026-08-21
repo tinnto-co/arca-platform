@@ -98,9 +98,9 @@ export function NuevaTareaDialog({ open, onOpenChange, columnas = [] }: NuevaTar
           titulo: values.titulo,
           descripcion: values.descripcion || undefined,
           tipo: values.tipo,
-          asignadoAUserId: values.asignadoAUserId || null,
-          periodoMes,
-          fechaVencimiento: values.fechaVencimiento || null,
+          asignadoA: values.asignadoAUserId || null,
+          periodo: periodoMes,
+          venceAt: values.fechaVencimiento || null,
           columnaId: values.columnaId || null,
         },
       });

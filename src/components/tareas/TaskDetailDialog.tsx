@@ -55,7 +55,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
 
   const { data: comments = [] } = useQuery({
     queryKey: ['tarea-comments', tarea.id],
-    queryFn: () => listTareaComments({ data: { taskId: tarea.id } }),
+    queryFn: () => listTareaComments({ data: { tareaId: tarea.id } }),
     enabled: open,
   });
 
@@ -66,7 +66,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
   });
 
   const toggleMutation = useMutation({
-    mutationFn: (vars: { taskClientId: string; completado: boolean }) =>
+    mutationFn: (vars: { tareaClienteId: string; completado: boolean }) =>
       toggleTareaCliente({ data: vars }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tareas'] }),
     onError: () => toast.error('Error al actualizar'),
@@ -84,7 +84,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
 
   const commentMutation = useMutation({
     mutationFn: (contenido: string) =>
-      addTareaComment({ data: { taskId: tarea.id, contenido } }),
+      addTareaComment({ data: { tareaId: tarea.id, contenido } }),
     onSuccess: () => {
       setComentario('');
       queryClient.invalidateQueries({ queryKey: ['tarea-comments', tarea.id] });
@@ -118,7 +118,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
                 <Badge className={TIPO_COLORS[tarea.tipo] ?? ''}>
                   {TIPO_LABELS[tarea.tipo] ?? tarea.tipo}
                 </Badge>
-                {tarea.esAutoGenerada && (
+                {tarea.fuente === 'automatica' && (
                   <Badge variant="outline" className="text-xs">Auto</Badge>
                 )}
               </div>
@@ -131,7 +131,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
               size="icon"
               className="text-muted-foreground hover:text-destructive shrink-0"
               onClick={() => {
-                if (confirm('¿Eliminar esta tarea?')) deleteMutation.mutate();
+                deleteMutation.mutate();
               }}
             >
               <Trash2 className="h-4 w-4" />
@@ -173,11 +173,11 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
               </div>
               <div>
                 <span className="text-muted-foreground">Período</span>
-                <p className="mt-1 font-medium">{tarea.periodoMes ?? '—'}</p>
+                <p className="mt-1 font-medium">{tarea.periodo ?? '—'}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Vencimiento</span>
-                <p className="mt-1 font-medium">{fmtDate(tarea.fechaVencimiento)}</p>
+                <p className="mt-1 font-medium">{fmtDate(tarea.venceAt)}</p>
               </div>
             </div>
 
@@ -209,7 +209,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
                       className="flex items-center gap-2.5 w-full text-left rounded-md px-2 py-1.5 hover:bg-muted/60 transition-colors group"
                       onClick={() =>
                         toggleMutation.mutate({
-                          taskClientId: c.id,
+                          tareaClienteId: c.id,
                           completado: !c.completado,
                         })
                       }
@@ -221,7 +221,7 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
                         <Circle className="h-4 w-4 text-muted-foreground shrink-0 group-hover:text-foreground" />
                       )}
                       <span className={`text-sm flex-1 ${c.completado ? 'line-through text-muted-foreground' : ''}`}>
-                        {c.representativeNombre ?? c.representativeId}
+                        {c.clienteNombre ?? c.clienteId}
                       </span>
                       {c.completado && c.completadoAt && (
                         <span className="text-xs text-muted-foreground">
@@ -244,11 +244,11 @@ export function TaskDetailDialog({ tarea, open, onOpenChange }: TaskDetailDialog
                   {comments.map((c) => (
                     <div key={c.id} className="flex gap-2.5">
                       <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium shrink-0">
-                        {(c.userName ?? '?')[0]?.toUpperCase()}
+                        {(c.autorNombre ?? '?')[0]?.toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2">
-                          <span className="text-xs font-medium">{c.userName ?? 'Usuario'}</span>
+                          <span className="text-xs font-medium">{c.autorNombre ?? 'Usuario'}</span>
                           <span className="text-xs text-muted-foreground">
                             {fmtDateTime(c.createdAt)}
                           </span>

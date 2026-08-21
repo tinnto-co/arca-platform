@@ -22,7 +22,7 @@ export function TaskCard({ tarea }: TaskCardProps) {
   const hasClientes = total > 0;
   const progreso = hasClientes ? completados / total : null;
 
-  const vencimiento = tarea.fechaVencimiento ? new Date(tarea.fechaVencimiento) : null;
+  const vencimiento = tarea.venceAt ? new Date(tarea.venceAt) : null;
   const hoy = new Date();
   const estaVencido = vencimiento && vencimiento < hoy;
   const venceHoy = vencimiento?.toDateString() === hoy.toDateString();
@@ -41,7 +41,7 @@ export function TaskCard({ tarea }: TaskCardProps) {
           >
             {TIPO_LABELS[tarea.tipo] ?? tarea.tipo}
           </Badge>
-          {tarea.esAutoGenerada && (
+          {tarea.fuente === 'automatica' && (
             <Badge variant="outline" className="text-xs px-1.5 py-0 text-muted-foreground">
               Auto
             </Badge>
