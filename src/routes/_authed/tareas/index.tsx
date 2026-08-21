@@ -32,6 +32,7 @@ import { TaskDetailDialog } from '@/components/tareas/TaskDetailDialog';
 import { BoardColumn } from '@/components/tareas/BoardColumn';
 import { BoardHeader } from '@/components/tareas/BoardHeader';
 import { BuscarTareas } from '@/components/tareas/BuscarTareas';
+import { PageShell } from '@/components/shared/page-shell';
 import {
   listTareas,
   listOrgMembers,
@@ -412,7 +413,7 @@ function TareasPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--arca-bg)]">
+    <PageShell variant="panel">
       <BoardHeader
         filtros={filtros}
         onFiltro={setFiltros}
@@ -625,6 +626,6 @@ function TareasPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }
