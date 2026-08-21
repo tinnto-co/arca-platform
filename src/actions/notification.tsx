@@ -471,6 +471,8 @@ export const getInboxResumen = createServerFn({
       .select({
         total: sql<number>`count(*)::int`,
         sinLeer: sql<number>`count(*) filter (where ${notificacion.leida} = false)::int`,
+        // Mensajes distintos sin clasificar: es lo que cuesta, no las filas.
+        sinClasificar: sql<number>`count(distinct ${notificacion.mensaje}) filter (where ${notificacion.aiClasificadaAt} is null)::int`,
         // Cuándo entró la última: es lo que el header muestra como
         // "última sincronización".
         ultima: sql<Date | null>`max(${notificacion.createdAt})`,
@@ -489,6 +491,7 @@ export const getInboxResumen = createServerFn({
   return {
     total: totales?.total ?? 0,
     sinLeer: totales?.sinLeer ?? 0,
+    sinClasificar: totales?.sinClasificar ?? 0,
     ultimaSync: totales?.ultima ?? null,
     categorias: categorias
       .map((c) => c.categoria)
@@ -614,6 +617,120 @@ async function registrarEventoClasificacion(
     detalle: { severidad: result.severidad, categoria: result.categoria },
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clasificación automática
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Copia la clasificación entre notificaciones con el MISMO texto.
+ *
+ * Las de AFIP se repiten muchísimo: en la base de un estudio hay 1.006
+ * notificaciones y 181 mensajes distintos; «SCT - Intimación» sola aparece 240
+ * veces. Clasificar cada fila sería pagarle a Gemini 825 veces por leer un
+ * texto que ya leyó.
+ *
+ * Corre antes de cualquier llamada al modelo y es sólo SQL.
+ */
+async function propagarClasificacion(orgId: string) {
+  const r = await db.execute(sql`
+    update notificacion n
+       set severidad = f.severidad,
+           categoria = f.categoria,
+           ai_resumen = f.ai_resumen,
+           ai_clasificada_at = f.ai_clasificada_at,
+           updated_at = now()
+      from (
+        select distinct on (mensaje)
+               mensaje, severidad, categoria, ai_resumen, ai_clasificada_at
+          from notificacion
+         where org_id = ${orgId} and ai_clasificada_at is not null
+         order by mensaje, ai_clasificada_at desc
+      ) f
+     where n.org_id = ${orgId}
+       and n.ai_clasificada_at is null
+       and n.mensaje = f.mensaje
+  `);
+  return r.count ?? 0;
+}
+
+/**
+ * Clasifica lo que quede pendiente, de a poco.
+ *
+ * Devuelve cuántas faltan para que la pantalla vuelva a llamar hasta llegar a
+ * cero: así el trabajo se reparte en tandas cortas en vez de un request de
+ * media hora que el servidor corta por timeout.
+ *
+ * Agrupa por texto: una llamada por mensaje distinto, aplicada a todas las
+ * filas que lo comparten.
+ */
+export const clasificarPendientes = createServerFn({ method: 'POST' })
+  .validator(
+    z
+      .object({ mensajes: z.number().int().min(1).max(20).default(8) })
+      .optional()
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const copiadas = await propagarClasificacion(orgId);
+
+    // Los textos distintos que siguen sin clasificar.
+    const pendientes = await db
+      .selectDistinct({ mensaje: notificacion.mensaje })
+      .from(notificacion)
+      .where(
+        and(eq(notificacion.orgId, orgId), isNull(notificacion.aiClasificadaAt))
+      )
+      .limit(ctx.data?.mensajes ?? 8);
+
+    let clasificados = 0;
+    let errores = 0;
+
+    // En paralelo: son pocas por tanda y el cuello es la latencia del modelo,
+    // no el CPU.
+    await Promise.all(
+      pendientes.map(async ({ mensaje }) => {
+        try {
+          const r = await classifyWithGemini(mensaje);
+          const now = new Date();
+          await db
+            .update(notificacion)
+            .set({
+              severidad: r.severidad,
+              categoria: r.categoria,
+              aiResumen: r.resumen,
+              aiClasificadaAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(notificacion.orgId, orgId),
+                eq(notificacion.mensaje, mensaje),
+                isNull(notificacion.aiClasificadaAt)
+              )
+            );
+          clasificados++;
+        } catch {
+          // Una falla no frena la tanda: la próxima vuelta lo reintenta.
+          errores++;
+        }
+      })
+    );
+
+    const [{ faltan }] = (await db
+      .select({
+        faltan: sql<number>`count(distinct ${notificacion.mensaje})::int`,
+      })
+      .from(notificacion)
+      .where(
+        and(eq(notificacion.orgId, orgId), isNull(notificacion.aiClasificadaAt))
+      )) as { faltan: number }[];
+
+    return { copiadas, clasificados, errores, faltan };
+  });
 
 export const classifyNotification = createServerFn({
   method: 'POST',

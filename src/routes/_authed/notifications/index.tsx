@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ import {
   markNotificationOpened,
   markAllNotificationsRead,
   resolveNotification,
+  clasificarPendientes,
 } from '@/actions/notification';
 import { getCredenciales } from '@/actions/client';
 import { listOrgRepresentatives } from '@/actions/tareas';
@@ -194,6 +195,44 @@ function RouteComponent() {
     },
     onError: () => toast.error('No se pudo marcar como resuelta'),
   });
+
+  /**
+   * Clasificación automática.
+   *
+   * Se dispara sola al abrir la bandeja y se vuelve a llamar mientras queden
+   * mensajes sin clasificar, en tandas cortas. No hay cron en la plataforma y
+   * las notificaciones las inserta el scrapper, así que este es el lugar donde
+   * el trabajo puede engancharse sin infraestructura nueva.
+   *
+   * Después de la primera pasada casi no cuesta: los textos se repiten y la
+   * clasificación se copia entre iguales sin llamar al modelo.
+   */
+  const clasificar = useMutation({
+    mutationFn: () => clasificarPendientes({ data: { mensajes: 8 } }),
+    onSuccess: (r) => {
+      if (r.clasificados > 0 || r.copiadas > 0) {
+        void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
+      }
+      // Sigue mientras haya trabajo y la tanda haya avanzado: si todas
+      // fallaron, para en vez de reintentar en bucle.
+      if (r.faltan > 0 && (r.clasificados > 0 || r.copiadas > 0)) {
+        setTimeout(() => clasificar.mutate(), 400);
+      }
+    },
+  });
+
+  const pendientesDeClasificar = resumen?.sinClasificar ?? 0;
+  const arrancoClasificacion = useRef(false);
+
+  useEffect(() => {
+    if (arrancoClasificacion.current) return;
+    if (pendientesDeClasificar === 0) return;
+    arrancoClasificacion.current = true;
+    clasificar.mutate();
+    // `clasificar` es estable; incluirla reiniciaría el barrido en cada render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendientesDeClasificar]);
 
   // Se marca leída tras 1,5 s de lectura: abrir de paso mientras se navega con
   // el teclado no debería contar como leída.
