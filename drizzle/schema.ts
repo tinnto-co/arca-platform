@@ -2558,9 +2558,11 @@ export const studioTaskClient = pgTable("studio_task_client", {
 	completado: boolean().default(false).notNull(),
 	completadoAt: timestamp("completado_at"),
 	completadoByUserId: text("completado_by_user_id"),
+	vencimientoId: uuid("vencimiento_id"),
 }, (table) => [
 	index("ix_studio_task_client_cliente").using("btree", table.representativeId.asc().nullsLast().op("uuid_ops")),
 	uniqueIndex("uq_studio_task_client").using("btree", table.taskId.asc().nullsLast().op("uuid_ops"), table.representativeId.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("uq_tarea_cliente_vencimiento").using("btree", table.vencimientoId.asc().nullsLast().op("uuid_ops")).where(sql`(vencimiento_id IS NOT NULL)`),
 	foreignKey({
 			columns: [table.taskId],
 			foreignColumns: [studioTask.id],
@@ -2575,6 +2577,11 @@ export const studioTaskClient = pgTable("studio_task_client", {
 			columns: [table.completadoByUserId],
 			foreignColumns: [user.id],
 			name: "studio_task_client_completado_by_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.vencimientoId],
+			foreignColumns: [vencimiento.id],
+			name: "studio_task_client_vencimiento_id_fkey"
 		}).onDelete("set null"),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
    FROM studio_task t

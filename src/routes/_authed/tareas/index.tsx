@@ -125,15 +125,22 @@ function TareasPage() {
     mutationFn: (periodoMes: string) => autoGenerarTareas({ data: { periodoMes } }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['tareas'] });
+      const parts: string[] = [];
+      if (result.omitidas > 0) parts.push(`${result.omitidas} ya existían`);
+      if (result.sinCliente > 0) parts.push(`${result.sinCliente} sin cliente asociado`);
+      const detalle = parts.length > 0 ? ` (${parts.join(', ')})` : '';
+
       if (result.creadas === 0) {
         toast.info(
-          result.omitidas > 0
+          result.omitidas > 0 && result.sinCliente === 0
             ? `Todas las tareas de este período ya existen (${result.omitidas} omitidas)`
-            : 'No se encontraron vencimientos para este período'
+            : result.sinCliente > 0
+              ? `Se encontraron vencimientos pero ${result.sinCliente} no se pudieron asociar a ningún cliente`
+              : 'No se encontraron vencimientos para este período'
         );
       } else {
         toast.success(
-          `${result.creadas} tarea${result.creadas !== 1 ? 's' : ''} generada${result.creadas !== 1 ? 's' : ''}${result.omitidas > 0 ? ` (${result.omitidas} ya existían)` : ''}`
+          `${result.creadas} tarea${result.creadas !== 1 ? 's' : ''} generada${result.creadas !== 1 ? 's' : ''}${detalle}`
         );
       }
     },
