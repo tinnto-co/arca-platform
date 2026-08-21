@@ -13,7 +13,6 @@ import { Paperclip } from 'lucide-react';
 import {
   SEVERIDAD_LABEL,
   SEVERIDAD_PILL,
-  SEVERIDAD_PUNTO,
   asuntoYPreview,
   grupoDeFecha,
   horaOFecha,
@@ -144,16 +143,25 @@ export function ListaNotificaciones({
                             : 'hover:bg-[var(--arca-surface-2)]'
                         )}
                       >
-                        {/* Punto de severidad. Leída = transparente, pero
-                            ocupa el lugar para no mover la sangría. */}
+                        {/* Marca de no leída. Un solo significado y un solo
+                            color: se reconoce por estar o no estar, no por
+                            distinguir un matiz a 7px.
+
+                            Antes el punto también codificaba la severidad, y
+                            ese canal está vacío —las notificaciones llegan
+                            `sin_clasificar` y nada las clasifica—, así que el
+                            marcador quedaba gris sobre crema. La severidad
+                            ahora vive sólo en la pill.
+
+                            La leída deja el hueco para no mover la sangría. */}
                         <span
-                          className="mt-1.5 size-[7px] shrink-0 rounded-full"
-                          style={{
-                            background: n.leida
-                              ? 'transparent'
-                              : (SEVERIDAD_PUNTO[n.severidad] ??
-                                SEVERIDAD_PUNTO.sin_clasificar),
-                          }}
+                          aria-hidden="true"
+                          className={cn(
+                            'mt-1.5 size-2 shrink-0 rounded-full',
+                            n.leida
+                              ? 'bg-transparent'
+                              : 'bg-[var(--arca-navy-700)]'
+                          )}
                         />
 
                         <div className="flex min-w-0 flex-1 flex-col gap-[3px]">

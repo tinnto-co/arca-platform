@@ -13,14 +13,6 @@ export const SEVERIDAD_LABEL: Record<string, string> = {
   sin_clasificar: 'Sin clasificar',
 };
 
-/** Punto de severidad de la lista. La leída lo deja transparente. */
-export const SEVERIDAD_PUNTO: Record<string, string> = {
-  urgente: 'var(--arca-accent-neg)',
-  accion_requerida: 'var(--arca-accent-warn)',
-  informativa: 'var(--arca-accent-info)',
-  sin_clasificar: 'var(--arca-border-strong)',
-};
-
 export const SEVERIDAD_PILL: Record<string, string> = {
   urgente: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
   accion_requerida:
