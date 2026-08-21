@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import {
   getIvaResumenRI,
   getMonotributistasFacturacion,
@@ -909,7 +910,7 @@ function RouteComponent() {
   const [search, setSearch] = useState('');
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
+    <PageShell>
       <PageHeader
         title="IVA"
         subtitle="Posición mensual de IVA por empresa y monitoreo de monotributo"
@@ -940,6 +941,6 @@ function RouteComponent() {
       </Tabs>
 
       <SinClasificarBlock search={search} />
-    </div>
+    </PageShell>
   );
 }

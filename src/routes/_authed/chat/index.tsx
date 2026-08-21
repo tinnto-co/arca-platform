@@ -183,31 +183,71 @@ const markdownComponents: React.ComponentProps<
     </p>
   ),
   h1: ({ children }) => (
-    <p className="mb-1 mt-3 text-[14px] font-semibold text-[var(--arca-ink)] first:mt-0" style={{ fontFamily: 'var(--ff-display)' }}>{children}</p>
+    <p
+      className="mb-1 mt-3 text-[14px] font-semibold text-[var(--arca-ink)] first:mt-0"
+      style={{ fontFamily: 'var(--ff-display)' }}
+    >
+      {children}
+    </p>
   ),
   h2: ({ children }) => (
-    <p className="mb-1 mt-3 text-[13px] font-semibold text-[var(--arca-ink)] first:mt-0" style={{ fontFamily: 'var(--ff-display)' }}>{children}</p>
+    <p
+      className="mb-1 mt-3 text-[13px] font-semibold text-[var(--arca-ink)] first:mt-0"
+      style={{ fontFamily: 'var(--ff-display)' }}
+    >
+      {children}
+    </p>
   ),
   h3: ({ children }) => (
-    <p className="mb-1 mt-2 text-[13px] font-semibold text-[var(--arca-ink)] first:mt-0" style={{ fontFamily: 'var(--ff-display)' }}>{children}</p>
+    <p
+      className="mb-1 mt-2 text-[13px] font-semibold text-[var(--arca-ink)] first:mt-0"
+      style={{ fontFamily: 'var(--ff-display)' }}
+    >
+      {children}
+    </p>
   ),
   ul: ({ children }) => (
-    <ul className="mb-2 ml-4 list-disc space-y-0.5 text-[13px] text-[var(--arca-ink-2)]">{children}</ul>
+    <ul className="mb-2 ml-4 list-disc space-y-0.5 text-[13px] text-[var(--arca-ink-2)]">
+      {children}
+    </ul>
   ),
   ol: ({ children }) => (
-    <ol className="mb-2 ml-4 list-decimal space-y-0.5 text-[13px] text-[var(--arca-ink-2)]">{children}</ol>
+    <ol className="mb-2 ml-4 list-decimal space-y-0.5 text-[13px] text-[var(--arca-ink-2)]">
+      {children}
+    </ol>
   ),
-  li: ({ children }) => <li className="text-[13px] leading-relaxed">{children}</li>,
-  strong: ({ children }) => <strong className="font-semibold text-[var(--arca-ink)]">{children}</strong>,
+  li: ({ children }) => (
+    <li className="text-[13px] leading-relaxed">{children}</li>
+  ),
+  strong: ({ children }) => (
+    <strong className="font-semibold text-[var(--arca-ink)]">{children}</strong>
+  ),
   em: ({ children }) => <em className="italic">{children}</em>,
   a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-[var(--arca-navy-700)] underline underline-offset-2 hover:text-[var(--arca-navy-600)]">{children}</a>
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-[var(--arca-navy-700)] underline underline-offset-2 hover:text-[var(--arca-navy-600)]"
+    >
+      {children}
+    </a>
   ),
   code: ({ children, className }) =>
     className ? (
-      <code className="my-2 block overflow-x-auto rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 text-[11.5px] leading-relaxed text-[var(--arca-ink-2)]" style={{ fontFamily: 'var(--ff-mono)' }}>{children}</code>
+      <code
+        className="my-2 block overflow-x-auto rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 text-[11.5px] leading-relaxed text-[var(--arca-ink-2)]"
+        style={{ fontFamily: 'var(--ff-mono)' }}
+      >
+        {children}
+      </code>
     ) : (
-      <code className="rounded bg-[var(--arca-surface-2)] px-1 py-0.5 text-[11.5px] text-[var(--arca-ink-2)]" style={{ fontFamily: 'var(--ff-mono)' }}>{children}</code>
+      <code
+        className="rounded bg-[var(--arca-surface-2)] px-1 py-0.5 text-[11.5px] text-[var(--arca-ink-2)]"
+        style={{ fontFamily: 'var(--ff-mono)' }}
+      >
+        {children}
+      </code>
     ),
   pre: ({ children }) => <>{children}</>,
   table: ({ children }) => (
@@ -216,14 +256,20 @@ const markdownComponents: React.ComponentProps<
     </div>
   ),
   th: ({ children }) => (
-    <th className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-1.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-3)]">{children}</th>
+    <th className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-1.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-3)]">
+      {children}
+    </th>
   ),
   td: ({ children }) => (
-    <td className="border-b border-[var(--arca-border)] px-3 py-1.5 text-[var(--arca-ink-2)] last:border-b-0">{children}</td>
+    <td className="border-b border-[var(--arca-border)] px-3 py-1.5 text-[var(--arca-ink-2)] last:border-b-0">
+      {children}
+    </td>
   ),
   hr: () => <hr className="my-3 border-[var(--arca-border)]" />,
   blockquote: ({ children }) => (
-    <blockquote className="my-2 border-l-2 border-[var(--arca-border-strong)] pl-3 text-[13px] italic text-[var(--arca-ink-3)]">{children}</blockquote>
+    <blockquote className="my-2 border-l-2 border-[var(--arca-border-strong)] pl-3 text-[13px] italic text-[var(--arca-ink-3)]">
+      {children}
+    </blockquote>
   ),
 };
 
@@ -457,15 +503,23 @@ function SidebarItem({
           : 'hover:bg-[var(--arca-surface-2)] border-l-2 border-l-transparent'
       )}
     >
-      <MessagesSquare className={cn(
-        'w-3.5 h-3.5 shrink-0',
-        isSelected ? 'text-[var(--arca-navy-700)]' : 'text-[var(--arca-ink-4)]'
-      )} />
+      <MessagesSquare
+        className={cn(
+          'w-3.5 h-3.5 shrink-0',
+          isSelected
+            ? 'text-[var(--arca-navy-700)]'
+            : 'text-[var(--arca-ink-4)]'
+        )}
+      />
       <div className="flex-1 min-w-0">
-        <div className={cn(
-          'text-[12.5px] truncate',
-          isSelected ? 'font-semibold text-[var(--arca-ink)]' : 'font-medium text-[var(--arca-ink-2)]'
-        )}>
+        <div
+          className={cn(
+            'text-[12.5px] truncate',
+            isSelected
+              ? 'font-semibold text-[var(--arca-ink)]'
+              : 'font-medium text-[var(--arca-ink-2)]'
+          )}
+        >
           {conv.titulo || 'Sin título'}
         </div>
         <div className="text-[10.5px] text-[var(--arca-ink-4)] mt-0.5">
@@ -488,7 +542,15 @@ function SidebarItem({
 
 // ─── Empty state ─────────────────────────────────────────────────────
 // ─── Chat area ───────────────────────────────────────────────────────
-function ChatArea({ id, sidebarOpen, onToggleSidebar }: { id: string; sidebarOpen: boolean; onToggleSidebar: () => void }) {
+function ChatArea({
+  id,
+  sidebarOpen,
+  onToggleSidebar,
+}: {
+  id: string;
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+}) {
   const queryClient = useQueryClient();
   const [input, setInput] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -522,7 +584,8 @@ function ChatArea({ id, sidebarOpen, onToggleSidebar }: { id: string; sidebarOpe
     }),
   } as any);
 
-  const isChatLoading = chat.status === 'streaming' || chat.status === 'submitted';
+  const isChatLoading =
+    chat.status === 'streaming' || chat.status === 'submitted';
 
   useEffect(() => {
     if (loadedIdRef.current === id) return;

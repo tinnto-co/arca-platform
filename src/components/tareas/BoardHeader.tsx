@@ -100,8 +100,6 @@ export function BoardHeader({
 
   return (
     <PageHeader
-      variant="bar"
-      className="px-7"
       title="Tareas"
       subtitle={
         <>

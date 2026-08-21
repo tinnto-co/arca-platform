@@ -1,63 +1,44 @@
-import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
- * Encabezado de pantalla. Es el único lugar donde se decide el tamaño del H1,
- * el del subtítulo y el aire alrededor.
+ * Encabezado de pantalla. Es igual en todas las vistas: mismo H1, mismo
+ * subtítulo, mismo aire, sin ícono y sin borde.
  *
- * Antes cada pantalla lo resolvía por su cuenta y había cinco tamaños de H1
- * conviviendo (22, 24, 28 y 30 px). El valor del design system es 30/600 con
- * `-0.025em`, que es además el que piden los handoffs, así que ese es el que
- * queda.
+ * Antes cada pantalla lo resolvía por su cuenta —cinco tamaños de H1 (22, 24,
+ * 28 y 30 px), cuatro paddings distintos, y unas con tile de ícono y otras
+ * no—, así que pasar de Clientes a Notificaciones se sentía como cambiar de
+ * aplicación. El valor del design system es 30/600 con `-0.025em`.
  *
- * Dos variantes, según cómo esté armada la pantalla:
- *
- *  · `plain` — sólo el bloque tipográfico. Para las pantallas que ya tienen su
- *    propio padding de página (`PageShell`). Es el default.
- *  · `bar` — barra con borde inferior y padding propio, para las pantallas a
- *    sangre que ocupan el alto completo y scrollean por dentro (el tablero de
- *    tareas, la bandeja). Admite una segunda fila de filtros.
+ * No lleva padding propio: el aire lo pone `PageShell`, que es el mismo para
+ * las pantallas que scrollean con la página y para las que ocupan el alto
+ * completo.
  */
 interface PageHeaderProps {
-  icon?: LucideIcon;
   title: string;
   /** Texto o nodos: el resumen suele llevar números resaltados. */
   subtitle?: ReactNode;
   actions?: ReactNode;
-  /** Segunda fila, debajo del título. Sólo en `bar`. */
+  /** Segunda fila, para la barra de filtros. */
   filters?: ReactNode;
-  variant?: 'plain' | 'bar';
   className?: string;
 }
 
 export function PageHeader({
-  icon: Icon,
   title,
   subtitle,
   actions,
   filters,
-  variant = 'plain',
   className,
 }: PageHeaderProps) {
-  const bloque = (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="flex min-w-0 flex-1 items-center gap-3">
-        {Icon && (
-          <div
-            className="flex size-9 shrink-0 items-center justify-center rounded-[10px]"
-            style={{
-              background: 'var(--arca-surface-2)',
-              border: '1px solid var(--arca-border)',
-            }}
-          >
-            <Icon
-              className="size-[18px] text-[var(--arca-ink-2)]"
-              strokeWidth={1.8}
-            />
-          </div>
-        )}
-        <div className="min-w-0">
+  return (
+    <div className={cn('mb-5 flex shrink-0 flex-col gap-3', className)}>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        {/* `basis` y no `min-w-0`: con `min-w-0` el bloque del título se
+            aplasta hasta cero antes de que las acciones bajen de línea, y el
+            buscador termina encima del H1. Con un ancho base, cuando no entran
+            las dos columnas las acciones se van abajo. */}
+        <div className="min-w-[min(100%,260px)] flex-1">
           <h1 className="text-[30px] leading-none font-semibold tracking-[-0.025em] text-[var(--arca-ink)] [font-family:var(--ff-display)]">
             {title}
           </h1>
@@ -67,29 +48,15 @@ export function PageHeader({
             </p>
           )}
         </div>
+
+        {actions && (
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        )}
       </div>
 
-      {actions && (
-        <div className="flex shrink-0 items-center gap-2">{actions}</div>
-      )}
-    </div>
-  );
-
-  if (variant === 'plain') {
-    return <div className={cn('mb-6', className)}>{bloque}</div>;
-  }
-
-  return (
-    <header
-      className={cn(
-        'z-[5] flex shrink-0 flex-col gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-6 pt-[18px] pb-3',
-        className
-      )}
-    >
-      {bloque}
       {filters && (
         <div className="flex flex-wrap items-center gap-2">{filters}</div>
       )}
-    </header>
+    </div>
   );
 }

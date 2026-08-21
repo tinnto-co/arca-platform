@@ -108,7 +108,6 @@ export function InboxHeader({
 
   return (
     <PageHeader
-      variant="bar"
       title="Notificaciones"
       subtitle={
         <>

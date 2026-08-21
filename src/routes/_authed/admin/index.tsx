@@ -79,6 +79,7 @@ import {
 } from 'lucide-react';
 import { userQuery } from '../../../lib/user-query';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 
 const logoUrlSchema = z.union([z.string().url(), z.literal('')]);
 
@@ -111,9 +112,8 @@ function AdminPanel() {
   });
 
   return (
-    <div className="p-[28px_36px_60px] max-w-[1440px] space-y-6">
+    <PageShell className="space-y-6">
       <PageHeader
-        icon={Building}
         title={isLoading ? 'Administración' : (org?.name ?? 'Administración')}
         subtitle={
           isLoading
@@ -154,7 +154,7 @@ function AdminPanel() {
           <ModulesTab />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }
 
@@ -508,69 +508,69 @@ function SettingsTab() {
 
   return (
     <div className="space-y-6">
-    <Card>
-      <CardHeader>
-        <CardTitle>Configuración de la organización</CardTitle>
-        <CardDescription>
-          Edita el nombre, identificador y logo de tu organización
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
-          <div className="space-y-2">
-            <Label>Logo (URL)</Label>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-              <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[var(--arca-surface-2)]">
-                {logoUrl.trim() ? (
-                  <Avatar className="size-20 rounded-lg">
-                    <AvatarImage
-                      src={logoUrl.trim()}
-                      alt="Vista previa"
-                      className="object-cover"
-                    />
-                    <AvatarFallback className="rounded-lg text-xs">
-                      ?
-                    </AvatarFallback>
-                  </Avatar>
-                ) : (
-                  <Building className="size-8 text-[var(--arca-ink-3)]" />
-                )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Configuración de la organización</CardTitle>
+          <CardDescription>
+            Edita el nombre, identificador y logo de tu organización
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+            <div className="space-y-2">
+              <Label>Logo (URL)</Label>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[var(--arca-surface-2)]">
+                  {logoUrl.trim() ? (
+                    <Avatar className="size-20 rounded-lg">
+                      <AvatarImage
+                        src={logoUrl.trim()}
+                        alt="Vista previa"
+                        className="object-cover"
+                      />
+                      <AvatarFallback className="rounded-lg text-xs">
+                        ?
+                      </AvatarFallback>
+                    </Avatar>
+                  ) : (
+                    <Building className="size-8 text-[var(--arca-ink-3)]" />
+                  )}
+                </div>
+                <Input
+                  id="org-logo"
+                  type="url"
+                  value={logoUrl}
+                  onChange={(e) => setLogoUrl(e.target.value)}
+                  placeholder="https://…"
+                  className="flex-1"
+                />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-name">Nombre</Label>
               <Input
-                id="org-logo"
-                type="url"
-                value={logoUrl}
-                onChange={(e) => setLogoUrl(e.target.value)}
-                placeholder="https://…"
-                className="flex-1"
+                id="org-name"
+                defaultValue={org?.name ?? ''}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Nombre de la organización"
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="org-name">Nombre</Label>
-            <Input
-              id="org-name"
-              defaultValue={org?.name ?? ''}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nombre de la organización"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="org-slug">Slug</Label>
-            <Input
-              id="org-slug"
-              defaultValue={org?.slug ?? ''}
-              onChange={(e) => setSlug(e.target.value)}
-              placeholder="identificador-unico"
-            />
-          </div>
-          <Button type="submit" disabled={updateMutation.isPending}>
-            {updateMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
-    <AccountantSignatureCard />
+            <div className="space-y-2">
+              <Label htmlFor="org-slug">Slug</Label>
+              <Input
+                id="org-slug"
+                defaultValue={org?.slug ?? ''}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="identificador-unico"
+              />
+            </div>
+            <Button type="submit" disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+      <AccountantSignatureCard />
     </div>
   );
 }
@@ -609,8 +609,9 @@ function AccountantSignatureCard() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const upd = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [k]: e.target.value }));
+  const upd =
+    (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [k]: e.target.value }));
 
   return (
     <Card>
@@ -728,7 +729,12 @@ function ModulesTab() {
   const toggleMutation = useMutation({
     mutationFn: (data: { module: string; enabled: boolean }) =>
       setModuleEnabled({
-        data: { module: data.module as Parameters<typeof setModuleEnabled>[0]['data']['module'], enabled: data.enabled },
+        data: {
+          module: data.module as Parameters<
+            typeof setModuleEnabled
+          >[0]['data']['module'],
+          enabled: data.enabled,
+        },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin', 'modules'] });

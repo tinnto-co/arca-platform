@@ -58,6 +58,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
 import { OrdenDocumento } from '@/components/accounting/OrdenDocumento';
@@ -729,9 +730,8 @@ function AccountingPage() {
   });
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
+    <PageShell>
       <PageHeader
-        icon={Scale}
         title="Balances y Estados Contables"
         subtitle="Plan de cuentas, libro diario, mayor y Estados Contables"
         actions={
@@ -858,7 +858,7 @@ function AccountingPage() {
           </div>
         </ArcaCard>
       )}
-    </div>
+    </PageShell>
   );
 }
 
