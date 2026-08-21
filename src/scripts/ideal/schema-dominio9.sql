@@ -142,7 +142,11 @@ create table if not exists tarea_comentario (
   tarea_id uuid not null references tarea(id) on delete cascade,
   autor_id text not null references "user"(id) on delete cascade,
   contenido text not null,
-  created_at timestamp not null default now()
+  created_at timestamp not null default now(),
+
+  -- Un comentario editado tiene que poder decirlo: en una discusión sobre una
+  -- presentación, cambiar lo dicho sin dejar rastro es un problema.
+  updated_at timestamp
 );
 
 create index if not exists ix_tarea_comentario_tarea on tarea_comentario(tarea_id, created_at);

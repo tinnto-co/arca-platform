@@ -29,6 +29,7 @@ import {
   Calendar as CalendarIcon,
   Check,
   MoreHorizontal,
+  Pencil,
   Plus,
   Send,
   Trash2,
@@ -74,6 +75,8 @@ import {
   updateTarea,
   updateEstadoTarea,
   addTareaComment,
+  updateTareaComment,
+  deleteTareaComment,
   addTareaPaso,
   toggleTareaPaso,
   updateTareaPaso,
@@ -128,6 +131,64 @@ function fmtRelativo(d: Date | string | null | undefined) {
   return `${format(fecha, 'dd/MM')}, ${hora}`;
 }
 
+/**
+ * Comentario en edición. Textarea propia y no `TextoEditable` porque acá hacen
+ * falta botones explícitos: perder lo escrito por un blur accidental en un hilo
+ * de discusión es peor que un click de más.
+ */
+function ComentarioEnEdicion({
+  valor,
+  onGuardar,
+  onCancelar,
+}: {
+  valor: string;
+  onGuardar: (v: string) => void;
+  onCancelar: () => void;
+}) {
+  const [borrador, setBorrador] = useState(valor);
+
+  return (
+    <div className="mt-1 flex flex-col gap-1.5">
+      <textarea
+        autoFocus
+        rows={2}
+        value={borrador}
+        onChange={(e) => setBorrador(e.target.value)}
+        aria-label="Editar comentario"
+        className="w-full resize-none rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-[11px] py-2 text-[12.5px] leading-[1.55] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-600)]"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            const limpio = borrador.trim();
+            if (limpio) onGuardar(limpio);
+          }
+          if (e.key === 'Escape') {
+            e.stopPropagation();
+            onCancelar();
+          }
+        }}
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={!borrador.trim()}
+          onClick={() => onGuardar(borrador.trim())}
+          className="rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-[5px] text-[12px] font-medium text-white transition-colors duration-[120ms] hover:bg-black disabled:opacity-40"
+        >
+          Guardar
+        </button>
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 py-[5px] text-[12px] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)]"
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function TaskDetailDialog({
   tarea,
   open,
@@ -139,6 +200,9 @@ export function TaskDetailDialog({
   const [calendarioAbierto, setCalendarioAbierto] = useState(false);
   const [asignadoAbierto, setAsignadoAbierto] = useState(false);
   const [agregandoPaso, setAgregandoPaso] = useState(false);
+  const [editandoComentario, setEditandoComentario] = useState<string | null>(
+    null
+  );
   const [nuevoPaso, setNuevoPaso] = useState('');
   const guardado = useGuardado();
   const { data: sesion } = authClient.useSession();
@@ -265,6 +329,26 @@ export function TaskDetailDialog({
       .catch(() => undefined)
       .then(() => pasoAdd.mutateAsync(limpio));
   };
+
+  const refrescarComentarios = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ['tarea-comments', tarea.id],
+    });
+    void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false });
+  };
+
+  const editarComentario = useMutation({
+    mutationFn: (v: { id: string; contenido: string }) =>
+      updateTareaComment({ data: v }),
+    onSuccess: refrescarComentarios,
+    onError: () => toast.error('No se pudo editar el comentario'),
+  });
+
+  const borrarComentario = useMutation({
+    mutationFn: (v: { id: string }) => deleteTareaComment({ data: v }),
+    onSuccess: refrescarComentarios,
+    onError: () => toast.error('No se pudo eliminar el comentario'),
+  });
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteTarea({ data: { id: tarea.id } }),
@@ -897,24 +981,76 @@ export function TaskDetailDialog({
               </div>
 
               <ul className="flex flex-col gap-3">
-                {comments.map((c) => (
-                  <li key={c.id} className="flex gap-2.5">
-                    <Avatar nombre={c.autorNombre} size={26} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[12.5px] leading-[1.5] text-[var(--arca-ink-2)]">
-                        <span className="font-semibold text-[var(--arca-ink)]">
-                          {c.autorNombre ?? 'Usuario'}
-                        </span>{' '}
-                        <span className="text-[10.5px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
-                          {fmtRelativo(c.createdAt)}
-                        </span>
-                      </p>
-                      <p className="mt-0.5 text-[12.5px] leading-[1.55] whitespace-pre-wrap text-[var(--arca-ink-2)]">
-                        {c.contenido}
-                      </p>
-                    </div>
-                  </li>
-                ))}
+                {comments.map((c) => {
+                  const propio = c.autorId === sesion?.user.id;
+                  return (
+                    <li key={c.id} className="group flex gap-2.5">
+                      <Avatar nombre={c.autorNombre} size={26} />
+                      <div className="min-w-0 flex-1">
+                        <p className="flex flex-wrap items-baseline gap-x-1.5 text-[12.5px] leading-[1.5]">
+                          <span className="font-semibold text-[var(--arca-ink)]">
+                            {c.autorNombre ?? 'Usuario'}
+                          </span>
+                          <span className="text-[10.5px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
+                            {fmtRelativo(c.createdAt)}
+                          </span>
+                          {c.updatedAt && (
+                            <span
+                              title={`Editado ${fmtRelativo(c.updatedAt)}`}
+                              className="text-[10.5px] text-[var(--arca-ink-4)]"
+                            >
+                              · editado
+                            </span>
+                          )}
+
+                          {/* Editar y borrar sólo lo propio. Aparecen al pasar
+                              por encima para no cargar el hilo de íconos. */}
+                          {propio && (
+                            <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                              <button
+                                type="button"
+                                aria-label="Editar comentario"
+                                onClick={() => setEditandoComentario(c.id)}
+                                className="rounded-[4px] p-0.5 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-2)]"
+                              >
+                                <Pencil className="size-3" />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label="Eliminar comentario"
+                                onClick={() =>
+                                  borrarComentario.mutate({ id: c.id })
+                                }
+                                className="rounded-[4px] p-0.5 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)]"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </span>
+                          )}
+                        </p>
+
+                        {editandoComentario === c.id ? (
+                          <ComentarioEnEdicion
+                            valor={c.contenido}
+                            onGuardar={(v) => {
+                              setEditandoComentario(null);
+                              if (v !== c.contenido)
+                                editarComentario.mutate({
+                                  id: c.id,
+                                  contenido: v,
+                                });
+                            }}
+                            onCancelar={() => setEditandoComentario(null)}
+                          />
+                        ) : (
+                          <p className="mt-0.5 text-[12.5px] leading-[1.55] whitespace-pre-wrap text-[var(--arca-ink-2)]">
+                            {c.contenido}
+                          </p>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
 
                 {/* Evento de sistema. Es el único que el modelo registra hoy:
                     `estado_cambiado_at` / `estado_cambiado_por`. */}

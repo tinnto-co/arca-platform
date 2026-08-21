@@ -616,6 +616,7 @@ export const tareaComentario = pgTable("tarea_comentario", {
 	autorId: text("autor_id").notNull(),
 	contenido: text().notNull(),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
+	updatedAt: timestamp("updated_at"),
 }, (table) => [
 	index("ix_tarea_comentario_tarea").using("btree", table.tareaId.asc().nullsLast().op("timestamp_ops"), table.createdAt.asc().nullsLast().op("timestamp_ops")),
 	foreignKey({

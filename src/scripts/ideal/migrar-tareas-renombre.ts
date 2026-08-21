@@ -195,6 +195,11 @@ try {
     );
   }
 
+  // Marca de edición de un comentario.
+  if (!(await tieneColumna('tarea_comentario', 'updated_at'))) {
+    pasos.push(`alter table tarea_comentario add column updated_at timestamp`);
+  }
+
   // Color del punto de la columna del tablero.
   if (!(await tieneColumna('tarea_columna', 'color'))) {
     pasos.push(

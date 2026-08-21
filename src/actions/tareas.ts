@@ -221,6 +221,7 @@ export const listTareaComments = createServerFn({ method: 'GET' })
         id: tareaComentario.id,
         contenido: tareaComentario.contenido,
         createdAt: tareaComentario.createdAt,
+        updatedAt: tareaComentario.updatedAt,
         autorId: tareaComentario.autorId,
         autorNombre: user.name,
       })
@@ -532,6 +533,50 @@ export const addTareaComment = createServerFn({ method: 'POST' })
       .returning();
 
     return comment;
+  });
+
+/**
+ * Editar y borrar sólo lo propio: el rol de escritura alcanza para comentar,
+ * no para tocar lo que dijo otro. Un comentario es de quien lo escribió.
+ */
+async function comentarioPropio(id: string, orgId: string, userId: string) {
+  const [fila] = await db
+    .select({ id: tareaComentario.id, autorId: tareaComentario.autorId })
+    .from(tareaComentario)
+    .innerJoin(tarea, eq(tarea.id, tareaComentario.tareaId))
+    .where(and(eq(tareaComentario.id, id), eq(tarea.orgId, orgId)))
+    .limit(1);
+  if (!fila) throw new Error('Comentario no encontrado');
+  if (fila.autorId !== userId) throw new Error('No es tu comentario');
+  return fila;
+}
+
+export const updateTareaComment = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid(), contenido: z.string().min(1) }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await comentarioPropio(ctx.data.id, orgId, userId);
+
+    await db
+      .update(tareaComentario)
+      .set({ contenido: ctx.data.contenido.trim(), updatedAt: new Date() })
+      .where(eq(tareaComentario.id, ctx.data.id));
+
+    return { ok: true };
+  });
+
+export const deleteTareaComment = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await comentarioPropio(ctx.data.id, orgId, userId);
+
+    await db.delete(tareaComentario).where(eq(tareaComentario.id, ctx.data.id));
+    return { ok: true };
   });
 
 // ─── Columnas del kanban ──────────────────────────────────────────────────────
