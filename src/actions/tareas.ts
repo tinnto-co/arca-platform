@@ -37,6 +37,19 @@ export const TIPOS_TAREA = [
 ] as const;
 export const ESTADOS_TAREA = ['pendiente', 'presentada', 'verificada'] as const;
 
+/**
+ * Colores admitidos para el punto de una columna. Se guardan por nombre y no
+ * como hex: los valores concretos son del design system y cambian con él.
+ */
+export const COLORES_COLUMNA = [
+  'neutro',
+  'info',
+  'oro',
+  'positivo',
+  'alerta',
+  'negativo',
+] as const;
+
 export type TipoTarea = (typeof TIPOS_TAREA)[number];
 export type EstadoTarea = (typeof ESTADOS_TAREA)[number];
 
@@ -266,17 +279,18 @@ async function conListaBloqueada<T>(
 }
 
 /**
- * Devuelve una clave fraccional anterior a la primera tarea de la columna, o
- * sea: la posición para entrar arriba de todo. `excluirId` saca a la propia
- * tarea del cálculo cuando se la está moviendo.
+ * Clave fraccional para entrar arriba de todo (`inicio`) o al fondo (`fin`) de
+ * una columna. `excluirId` saca a la propia tarea del cálculo cuando se la está
+ * moviendo.
  */
-async function posicionAlPrincipio(
+async function posicionEnColumna(
   ejecutor: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0],
   orgId: string,
   columnaId: string | null,
+  extremo: 'inicio' | 'fin' = 'inicio',
   excluirId?: string
 ): Promise<string> {
-  const [primera] = await ejecutor
+  const [vecina] = await ejecutor
     .select({ posicion: tarea.posicion })
     .from(tarea)
     .where(
@@ -289,10 +303,16 @@ async function posicionAlPrincipio(
         ...(excluirId ? [ne(tarea.id, excluirId)] : [])
       )
     )
-    .orderBy(sql`${tarea.posicion} asc`)
+    .orderBy(
+      extremo === 'inicio'
+        ? sql`${tarea.posicion} asc`
+        : sql`${tarea.posicion} desc`
+    )
     .limit(1);
 
-  return generateKeyBetween(null, primera?.posicion ?? null);
+  return extremo === 'inicio'
+    ? generateKeyBetween(null, vecina?.posicion ?? null)
+    : generateKeyBetween(vecina?.posicion ?? null, null);
 }
 
 // ─── Creación ─────────────────────────────────────────────────────────────────
@@ -307,6 +327,15 @@ export const createTarea = createServerFn({ method: 'POST' })
       periodo: z.string().optional().nullable(),
       venceAt: z.string().optional().nullable(),
       columnaId: z.string().uuid().optional().nullable(),
+
+      /**
+       * Dónde entra en la columna. Por defecto arriba: creada desde cualquier
+       * lado, la tarea nueva tiene que quedar a la vista.
+       *
+       * El composer del tablero manda `fin` porque ahí se cargan varias
+       * seguidas y `inicio` invertiría el orden en que se tipearon.
+       */
+      extremo: z.enum(['inicio', 'fin']).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -314,13 +343,18 @@ export const createTarea = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    // La tarea nueva entra PRIMERA en su columna. Sin esto nacía con
-    // `posicion` en null y caía al fondo hasta que alguien la arrastrara.
+    // Sin esto la tarea nacía con `posicion` en null y caía al fondo hasta que
+    // alguien la arrastrara.
     const columnaId = ctx.data.columnaId ?? null;
     const task = await conListaBloqueada(
       `tarea:${orgId}:${columnaId ?? ''}`,
       async (tx) => {
-        const posicion = await posicionAlPrincipio(tx, orgId, columnaId);
+        const posicion = await posicionEnColumna(
+          tx,
+          orgId,
+          columnaId,
+          ctx.data.extremo ?? 'inicio'
+        );
         const [creada] = await tx
           .insert(tarea)
           .values({
@@ -514,7 +548,12 @@ export const listColumnas = createServerFn({ method: 'GET' }).handler(
 );
 
 export const createColumna = createServerFn({ method: 'POST' })
-  .validator(z.object({ nombre: z.string().min(1) }))
+  .validator(
+    z.object({
+      nombre: z.string().min(1),
+      color: z.enum(COLORES_COLUMNA).optional(),
+    })
+  )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
@@ -531,21 +570,37 @@ export const createColumna = createServerFn({ method: 'POST' })
 
     const [col] = await db
       .insert(tareaColumna)
-      .values({ orgId, nombre: ctx.data.nombre.trim(), orden: nextOrden })
+      .values({
+        orgId,
+        nombre: ctx.data.nombre.trim(),
+        color: ctx.data.color ?? 'neutro',
+        orden: nextOrden,
+      })
       .returning();
     return col;
   });
 
 export const updateColumna = createServerFn({ method: 'POST' })
-  .validator(z.object({ id: z.string().uuid(), nombre: z.string().min(1) }))
+  .validator(
+    z.object({
+      id: z.string().uuid(),
+      nombre: z.string().min(1).optional(),
+      color: z.enum(COLORES_COLUMNA).optional(),
+    })
+  )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
+    const set: Record<string, unknown> = {};
+    if (ctx.data.nombre !== undefined) set.nombre = ctx.data.nombre.trim();
+    if (ctx.data.color !== undefined) set.color = ctx.data.color;
+    if (Object.keys(set).length === 0) return { ok: true };
+
     await db
       .update(tareaColumna)
-      .set({ nombre: ctx.data.nombre.trim() })
+      .set(set)
       .where(
         and(eq(tareaColumna.id, ctx.data.id), eq(tareaColumna.orgId, orgId))
       );
@@ -619,10 +674,11 @@ export const moverTarea = createServerFn({ method: 'POST' })
       async (tx) => {
         const posicion =
           ctx.data.posicion ??
-          (await posicionAlPrincipio(
+          (await posicionEnColumna(
             tx,
             orgId,
             ctx.data.columnaId,
+            'inicio',
             ctx.data.id
           ));
 

@@ -102,3 +102,76 @@ export const TONO_PILL: Record<string, string> = {
   warn: 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
   neutro: 'border border-[var(--arca-border-strong)] text-[var(--arca-ink-3)]',
 };
+
+/**
+ * Punto de color que encabeza cada columna del tablero. La columna guarda el
+ * nombre; el valor concreto vive acá, en el design system.
+ */
+export const COLOR_COLUMNA: Record<string, string> = {
+  neutro: 'var(--arca-ink-4)',
+  info: 'var(--arca-accent-info)',
+  oro: 'var(--arca-chart-3)',
+  positivo: 'var(--arca-accent-pos)',
+  alerta: 'var(--arca-accent-warn)',
+  negativo: 'var(--arca-accent-neg)',
+};
+
+export const COLOR_COLUMNA_LABEL: Record<string, string> = {
+  neutro: 'Gris',
+  info: 'Azul',
+  oro: 'Oro',
+  positivo: 'Verde',
+  alerta: 'Ámbar',
+  negativo: 'Rojo',
+};
+
+/**
+ * Color del avatar de una persona. Determinístico a partir del id, así el
+ * mismo miembro se ve igual en toda la app y no cambia entre renders.
+ */
+const PALETA_AVATAR = [
+  'var(--arca-chart-1)',
+  'var(--arca-chart-2)',
+  'var(--arca-chart-3)',
+  'var(--arca-chart-4)',
+];
+
+export function colorAvatar(id: string | null | undefined) {
+  if (!id) return 'var(--arca-ink-4)';
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return PALETA_AVATAR[h % PALETA_AVATAR.length];
+}
+
+/** `28 ago` — el formato corto de la pill de vencimiento. */
+const MESES_CORTOS = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+];
+
+export function fechaCorta(d: Date | string) {
+  const f = new Date(d);
+  return `${f.getDate()} ${MESES_CORTOS[f.getMonth()]}`;
+}
+
+/**
+ * Qué empresa mostrar en la card. Una tarea puede alcanzar a varias; con más
+ * de una el nombre no entra y tampoco sirve, así que se dice cuántas son.
+ */
+export function empresaDeLaCard(
+  clientes: { clienteNombre: string | null }[]
+): string | null {
+  if (clientes.length === 0) return null;
+  if (clientes.length === 1) return clientes[0].clienteNombre;
+  return `${clientes.length} empresas`;
+}

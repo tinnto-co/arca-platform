@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm/relations";
-import { cliente, agentConversation, organization, user, clienteCredencial, credencialAfip, plantillaInformeAuditor, ajusteInflacion, ejercicio, asiento, ajusteInflacionLinea, cuenta, bienDeUso, cierreSueldos, cuentaBancaria, periodoContable, agentRun, recibo, empleado, obraSocial, situacionRevista, tarea, tareaPaso, tareaComentario, session, deuda, proyeccionImpuesto, convenioCategoria, escalaSalarial, vencimiento, actividad, condicionTrabajador, convenio, localidad, modalidadContratacion, nacionalidad, provincia, siniestrado, zona, ivaDeclaracion, notificacion, documento, accesoUsuarioCliente, agentMessage, anexoCmv, asientoLinea, reglaMapeo, alerta, job, account, agentAction, clienteCct, baseCalculo, clienteConcepto, conceptoAfip, concepto, cct, cctFuente, comprobante, contraparte, comprobanteTipo, comprobanteAlicuota, clienteEeccConfig, firmante, clienteCuenta, conciliacionComprobante, movimientoBancario, clienteEmpleadorConfig, liquidacionIibb, organizationModule, lsdPresentacion, member, reglaMapeoLinea, riesgoSnapshot, reciboConcepto, solicitud, notificacionAdjunto, jobLog, tareaColumna, eecc, convenioFuente, invitation, tareaCliente, evento, baseCalculoConcepto } from "./schema";
+import { cliente, agentConversation, organization, user, clienteCredencial, credencialAfip, plantillaInformeAuditor, ajusteInflacion, ejercicio, asiento, ajusteInflacionLinea, cuenta, bienDeUso, cierreSueldos, cuentaBancaria, periodoContable, agentRun, recibo, empleado, obraSocial, situacionRevista, tarea, tareaPaso, tareaComentario, session, deuda, proyeccionImpuesto, convenioCategoria, escalaSalarial, vencimiento, actividad, condicionTrabajador, convenio, localidad, modalidadContratacion, nacionalidad, provincia, siniestrado, zona, ivaDeclaracion, notificacion, documento, accesoUsuarioCliente, agentMessage, anexoCmv, asientoLinea, reglaMapeo, alerta, job, account, agentAction, clienteCct, baseCalculo, clienteConcepto, conceptoAfip, concepto, cct, cctFuente, comprobante, contraparte, comprobanteTipo, comprobanteAlicuota, clienteEeccConfig, firmante, clienteCuenta, conciliacionComprobante, movimientoBancario, clienteEmpleadorConfig, liquidacionIibb, organizationModule, lsdPresentacion, member, reglaMapeoLinea, riesgoSnapshot, reciboConcepto, solicitud, notificacionAdjunto, jobLog, eecc, tareaColumna, convenioFuente, invitation, tareaCliente, evento, baseCalculoConcepto } from "./schema";
 
 export const agentConversationRelations = relations(agentConversation, ({one, many}) => ({
 	cliente: one(cliente, {
@@ -95,12 +95,12 @@ export const organizationRelations = relations(organization, ({many}) => ({
 	reglaMapeos: many(reglaMapeo),
 	solicituds: many(solicitud),
 	cuentas: many(cuenta),
-	tareaColumnas: many(tareaColumna),
 	ejercicios: many(ejercicio),
 	eeccs: many(eecc),
 	tareas: many(tarea),
 	firmantes: many(firmante),
 	invitations: many(invitation),
+	tareaColumnas: many(tareaColumna),
 	eventos: many(evento),
 	jobs: many(job),
 }));
@@ -1218,14 +1218,6 @@ export const jobLogRelations = relations(jobLog, ({one}) => ({
 	}),
 }));
 
-export const tareaColumnaRelations = relations(tareaColumna, ({one, many}) => ({
-	organization: one(organization, {
-		fields: [tareaColumna.orgId],
-		references: [organization.id]
-	}),
-	tareas: many(tarea),
-}));
-
 export const eeccRelations = relations(eecc, ({one}) => ({
 	user_aprobadoPor: one(user, {
 		fields: [eecc.aprobadoPor],
@@ -1248,6 +1240,14 @@ export const eeccRelations = relations(eecc, ({one}) => ({
 		fields: [eecc.pdfGeneradoPor],
 		references: [user.id],
 		relationName: "eecc_pdfGeneradoPor_user_id"
+	}),
+}));
+
+export const tareaColumnaRelations = relations(tareaColumna, ({one, many}) => ({
+	tareas: many(tarea),
+	organization: one(organization, {
+		fields: [tareaColumna.orgId],
+		references: [organization.id]
 	}),
 }));
 

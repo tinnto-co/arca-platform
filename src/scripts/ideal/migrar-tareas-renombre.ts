@@ -195,6 +195,13 @@ try {
     );
   }
 
+  // Color del punto de la columna del tablero.
+  if (!(await tieneColumna('tarea_columna', 'color'))) {
+    pasos.push(
+      `alter table tarea_columna add column color text not null default 'neutro'`
+    );
+  }
+
   // El checklist de la tarea. La tabla la crea `schema-dominio9.sql`; acá sólo
   // se avisa si falta, porque el script no construye tablas nuevas.
   if (!(await existe('tarea_paso'))) {

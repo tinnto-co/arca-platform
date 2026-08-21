@@ -43,6 +43,12 @@ create table if not exists tarea_columna (
   org_id text not null references organization(id) on delete cascade,
   nombre text not null,
   orden integer not null default 0,
+
+  -- Nombre del color del punto que encabeza la columna, no un hex: los valores
+  -- concretos salen del design system y cambian con él. Ver COLORES_COLUMNA en
+  -- `src/components/tareas/utils.ts`.
+  color text not null default 'neutro',
+
   created_at timestamp not null default now()
 );
 

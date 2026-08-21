@@ -2426,22 +2426,6 @@ export const cuenta = pgTable("cuenta", {
 	check("cuenta_alcance_coherente", sql`((alcance = 'base'::cuenta_alcance) AND (cliente_id IS NULL)) OR ((alcance = 'propia'::cuenta_alcance) AND (cliente_id IS NOT NULL))`),
 ]);
 
-export const tareaColumna = pgTable("tarea_columna", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	orgId: text("org_id").notNull(),
-	nombre: text().notNull(),
-	orden: integer().default(0).notNull(),
-	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
-}, (table) => [
-	index("ix_tarea_columna_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.orgId],
-			foreignColumns: [organization.id],
-			name: "studio_task_column_organization_id_fkey"
-		}).onDelete("cascade"),
-	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))` }),
-]);
-
 export const ejercicio = pgTable("ejercicio", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	orgId: text("org_id").notNull(),
@@ -2739,6 +2723,23 @@ export const tareaCliente = pgTable("tarea_cliente", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
    FROM tarea t
   WHERE ((t.id = tarea_cliente.tarea_id) AND (t.org_id = current_setting('app.org_id'::text, true)))))` }),
+]);
+
+export const tareaColumna = pgTable("tarea_columna", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	nombre: text().notNull(),
+	orden: integer().default(0).notNull(),
+	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow().notNull(),
+	color: text().default('neutro').notNull(),
+}, (table) => [
+	index("ix_tarea_columna_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "studio_task_column_organization_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))` }),
 ]);
 
 export const evento = pgTable("evento", {
