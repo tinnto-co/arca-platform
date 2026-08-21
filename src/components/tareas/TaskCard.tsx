@@ -28,9 +28,23 @@ interface TaskCardProps {
 export function TaskCard({ tarea }: TaskCardProps) {
   const [open, setOpen] = useState(false);
 
-  const completados = tarea.clientes.filter((c) => c.completado).length;
-  const total = tarea.clientes.length;
-  const progreso = total > 0 ? (completados / total) * 100 : null;
+  // La barra sigue al checklist, que es el avance de la tarea. Si no tiene
+  // pasos cargados cae a las empresas alcanzadas, que es lo único que mide una
+  // tarea auto-generada desde vencimientos.
+  const pasosHechos = tarea.pasos.filter((p) => p.completado).length;
+  const empresasHechas = tarea.clientes.filter((c) => c.completado).length;
+
+  const avance =
+    tarea.pasos.length > 0
+      ? { hechos: pasosHechos, total: tarea.pasos.length, unidad: 'pasos' }
+      : tarea.clientes.length > 0
+        ? {
+            hechos: empresasHechas,
+            total: tarea.clientes.length,
+            unidad: 'empresas',
+          }
+        : null;
+
   const vence = vencimiento(tarea.venceAt);
 
   return (
@@ -82,27 +96,27 @@ export function TaskCard({ tarea }: TaskCardProps) {
           {tarea.titulo}
         </p>
 
-        {/* Progreso de empresas */}
-        {progreso !== null && (
+        {/* Avance */}
+        {avance && (
           <div className="flex flex-col gap-1">
             <div className="h-[5px] overflow-hidden rounded-[3px] bg-[var(--arca-border)]">
               <div
                 className="h-full rounded-[3px] bg-[var(--arca-chart-1)]"
-                style={{ width: `${progreso}%` }}
+                style={{ width: `${(avance.hechos / avance.total) * 100}%` }}
               />
             </div>
             <span className="text-[10.5px] text-[var(--arca-ink-3)] tabular-nums">
-              {completados} de {total} empresas
+              {avance.hechos} de {avance.total} {avance.unidad}
             </span>
           </div>
         )}
 
         {/* Footer: métricas + asignado */}
         <div className="flex items-center gap-3 text-[10.5px] text-[var(--arca-ink-3)]">
-          {total > 0 && (
+          {avance && (
             <span className="flex items-center gap-1 tabular-nums">
               <CheckSquare className="size-3" />
-              {completados}/{total}
+              {avance.hechos}/{avance.total}
             </span>
           )}
           {tarea.comentariosCount > 0 && (

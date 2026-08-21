@@ -19,7 +19,7 @@
  *    fiscal. Van como dos campos distintos.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -29,6 +29,7 @@ import {
   Calendar as CalendarIcon,
   Check,
   MoreHorizontal,
+  Plus,
   Send,
   Trash2,
   X,
@@ -73,6 +74,10 @@ import {
   updateTarea,
   updateEstadoTarea,
   addTareaComment,
+  addTareaPaso,
+  toggleTareaPaso,
+  updateTareaPaso,
+  deleteTareaPaso,
   deleteTarea,
   TIPOS_TAREA,
   ESTADOS_TAREA,
@@ -133,6 +138,8 @@ export function TaskDetailDialog({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [calendarioAbierto, setCalendarioAbierto] = useState(false);
   const [asignadoAbierto, setAsignadoAbierto] = useState(false);
+  const [agregandoPaso, setAgregandoPaso] = useState(false);
+  const [nuevoPaso, setNuevoPaso] = useState('');
   const guardado = useGuardado();
   const { data: sesion } = authClient.useSession();
 
@@ -213,6 +220,52 @@ export function TaskDetailDialog({
     onError: () => toast.error('No se pudo agregar el comentario'),
   });
 
+  /** Los pasos viven dentro de `listTareas`, así que alcanza con invalidarla. */
+  const refrescarTareas = () =>
+    void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false });
+
+  const pasoAdd = useMutation({
+    mutationFn: (titulo: string) =>
+      addTareaPaso({ data: { tareaId: tarea.id, titulo } }),
+    onSuccess: refrescarTareas,
+    onError: () => toast.error('No se pudo agregar el paso'),
+  });
+
+  const pasoToggle = useMutation({
+    mutationFn: (v: { id: string; completado: boolean }) =>
+      toggleTareaPaso({ data: v }),
+    onSuccess: refrescarTareas,
+    onError: () => toast.error('No se pudo actualizar el paso'),
+  });
+
+  const pasoRename = useMutation({
+    mutationFn: (v: { id: string; titulo: string }) =>
+      updateTareaPaso({ data: v }),
+    onSuccess: refrescarTareas,
+    onError: () => toast.error('No se pudo renombrar el paso'),
+  });
+
+  const pasoDelete = useMutation({
+    mutationFn: (v: { id: string }) => deleteTareaPaso({ data: v }),
+    onSuccess: refrescarTareas,
+    onError: () => toast.error('No se pudo eliminar el paso'),
+  });
+
+  // Las altas se encolan de a una. El lock del servidor evita que dos pasos
+  // compartan posición, pero no decide cuál va primero: cinco requests en
+  // paralelo agarran el lock en cualquier orden y el checklist sale mezclado.
+  // Acá se preserva el orden en que se tipearon.
+  const cola = useRef<Promise<unknown>>(Promise.resolve());
+
+  const confirmarPaso = () => {
+    const limpio = nuevoPaso.trim();
+    setNuevoPaso('');
+    if (!limpio) return;
+    cola.current = cola.current
+      .catch(() => undefined)
+      .then(() => pasoAdd.mutateAsync(limpio));
+  };
+
   const deleteMutation = useMutation({
     mutationFn: () => deleteTarea({ data: { id: tarea.id } }),
     onSuccess: () => {
@@ -230,6 +283,10 @@ export function TaskDetailDialog({
   const total = tarea.clientes.length;
   const progreso = total > 0 ? (completados / total) * 100 : 0;
 
+  const pasosHechos = tarea.pasos.filter((p) => p.completado).length;
+  const totalPasos = tarea.pasos.length;
+  const progresoPasos = totalPasos > 0 ? (pasosHechos / totalPasos) * 100 : 0;
+
   const columnaActual = columnas.find((c) => c.id === tarea.columnaId);
   const vence = vencimiento(tarea.venceAt);
 
@@ -239,6 +296,18 @@ export function TaskDetailDialog({
         <DialogContent
           showCloseButton={false}
           overlayClassName="bg-[rgba(18,19,26,0.38)]"
+          // Con un campo enfocado, Esc es del campo —revierte lo tipeado— y no
+          // del modal. Radix escucha la tecla en `document`, así que el
+          // `stopPropagation` del input no alcanza: hay que frenarlo acá.
+          onEscapeKeyDown={(e) => {
+            const foco = document.activeElement;
+            if (
+              foco instanceof HTMLInputElement ||
+              foco instanceof HTMLTextAreaElement
+            ) {
+              e.preventDefault();
+            }
+          }}
           className={[
             // El handoff pide 660px, sin escala al entrar: sólo opacidad y un
             // desplazamiento de 4px.
@@ -292,8 +361,18 @@ export function TaskDetailDialog({
                     </span>
                   </span>
 
-                  <span className="ml-auto text-[10.5px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
-                    {tarea.id.slice(0, 8)}
+                  {/* La marca de guardado vive acá y no flotando abajo: ahí
+                      tapaba el botón de enviar comentario. */}
+                  <span className="ml-auto flex items-center gap-2">
+                    {guardado.texto && (
+                      <span className="flex items-center gap-1 text-[11px] text-[var(--arca-ink-3)]">
+                        <Check className="size-3 text-[var(--arca-accent-pos)]" />
+                        {guardado.texto}
+                      </span>
+                    )}
+                    <span className="text-[10.5px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
+                      {tarea.id.slice(0, 8)}
+                    </span>
                   </span>
                 </div>
 
@@ -582,26 +661,151 @@ export function TaskDetailDialog({
               </span>
             </div>
 
-            {/* Empresas — la zona de checklist del handoff */}
+            {/* Checklist — los pasos de la tarea */}
             <div className="flex flex-col gap-3 border-b border-[var(--arca-border)] px-[22px] py-4">
               <div className="flex items-center gap-3">
-                <MicroLabel>Empresas</MicroLabel>
-                <span className="text-[11px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
-                  {completados}/{total}
-                </span>
-                <div className="h-[5px] flex-1 overflow-hidden rounded-[3px] bg-[var(--arca-border)]">
-                  <div
-                    className="h-full rounded-[3px] bg-[var(--arca-chart-1)] transition-[width] duration-[150ms] ease-[ease]"
-                    style={{ width: `${progreso}%` }}
-                  />
-                </div>
+                <MicroLabel>Checklist</MicroLabel>
+                {totalPasos > 0 && (
+                  <>
+                    <span className="text-[11px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
+                      {pasosHechos}/{totalPasos}
+                    </span>
+                    <div className="h-[5px] flex-1 overflow-hidden rounded-[3px] bg-[var(--arca-border)]">
+                      <div
+                        className="h-full rounded-[3px] bg-[var(--arca-chart-1)] transition-[width] duration-[150ms] ease-[ease]"
+                        style={{ width: `${progresoPasos}%` }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
 
-              {total === 0 ? (
-                <p className="rounded-[var(--arca-r-md)] border border-dashed border-[var(--arca-border-strong)] px-3 py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
-                  Sin empresas asociadas
-                </p>
-              ) : (
+              <ul className="flex flex-col gap-1">
+                {tarea.pasos.map((p) => (
+                  <li
+                    key={p.id}
+                    className="group flex items-center gap-2.5 rounded-[var(--arca-r-sm)] px-1 py-[5px] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)]"
+                  >
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={p.completado}
+                      aria-label={p.titulo}
+                      disabled={pasoToggle.isPending}
+                      onClick={() =>
+                        pasoToggle.mutate({
+                          id: p.id,
+                          completado: !p.completado,
+                        })
+                      }
+                      className={
+                        p.completado
+                          ? 'grid size-[15px] shrink-0 place-items-center rounded-[4px] bg-[var(--arca-accent-pos)]'
+                          : 'grid size-[15px] shrink-0 place-items-center rounded-[4px] border-[1.5px] border-[var(--arca-border-strong)] transition-colors hover:border-[var(--arca-ink-4)]'
+                      }
+                    >
+                      {p.completado && (
+                        <Check
+                          className="size-2.5 text-white"
+                          strokeWidth={3}
+                        />
+                      )}
+                    </button>
+
+                    <div
+                      className={`min-w-0 flex-1 text-[12.5px] ${
+                        p.completado
+                          ? 'text-[var(--arca-ink-3)] line-through'
+                          : 'text-[var(--arca-ink-2)]'
+                      }`}
+                    >
+                      <TextoEditable
+                        ariaLabel={`Paso: ${p.titulo}`}
+                        valor={p.titulo}
+                        onGuardar={(v) =>
+                          pasoRename.mutate({ id: p.id, titulo: v })
+                        }
+                      />
+                    </div>
+
+                    {p.completado && p.completadoAt && (
+                      <span className="shrink-0 text-[10.5px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
+                        {fmtRelativo(p.completadoAt)}
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      aria-label={`Eliminar paso ${p.titulo}`}
+                      onClick={() => pasoDelete.mutate({ id: p.id })}
+                      className="shrink-0 rounded-[4px] p-0.5 text-[var(--arca-ink-4)] opacity-0 transition-opacity group-hover:opacity-100 hover:text-[var(--arca-accent-neg-fg)] focus-visible:opacity-100"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </li>
+                ))}
+
+                {/* `key` fija: sin ella React lo remonta cada vez que crece la
+                    lista de arriba, y el input pierde el foco entre ítem e ítem. */}
+                <li key="composer">
+                  {agregandoPaso ? (
+                    <input
+                      autoFocus
+                      value={nuevoPaso}
+                      onChange={(e) => setNuevoPaso(e.target.value)}
+                      placeholder="Título del paso"
+                      aria-label="Nuevo paso"
+                      className="w-full rounded-[var(--arca-r-sm)] border-b border-dashed border-[var(--arca-border-strong)] bg-transparent px-1 py-[5px] text-[12.5px] text-[var(--arca-ink)] outline-none placeholder:text-[var(--arca-ink-4)]"
+                      onBlur={() => {
+                        confirmarPaso();
+                        setAgregandoPaso(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          // Se queda abierto: cargar un checklist es escribir
+                          // varias líneas seguidas.
+                          confirmarPaso();
+                        }
+                        if (e.key === 'Escape') {
+                          e.stopPropagation();
+                          setNuevoPaso('');
+                          setAgregandoPaso(false);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAgregandoPaso(true)}
+                      className="flex w-full items-center gap-1.5 rounded-[var(--arca-r-sm)] px-1 py-[5px] text-left text-[12px] text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)]"
+                    >
+                      <Plus className="size-3 text-[var(--arca-ink-4)]" />
+                      Añadir ítem
+                    </button>
+                  )}
+                </li>
+              </ul>
+            </div>
+
+            {/* Empresas. Sólo aparece cuando la tarea alcanza a alguna: la
+                llena el generador desde vencimientos, y una tarea manual no
+                tiene ninguna. */}
+            {total > 0 && (
+              <div className="flex flex-col gap-3 border-b border-[var(--arca-border)] px-[22px] py-4">
+                <div className="flex items-center gap-3">
+                  <MicroLabel>Empresas alcanzadas</MicroLabel>
+                  <span className="text-[11px] text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
+                    {completados}/{total}
+                  </span>
+                  <div className="h-[5px] flex-1 overflow-hidden rounded-[3px] bg-[var(--arca-border)]">
+                    <div
+                      className="h-full rounded-[3px] bg-[var(--arca-chart-3)] transition-[width] duration-[150ms] ease-[ease]"
+                      style={{ width: `${progreso}%` }}
+                    />
+                  </div>
+                </div>
+
                 <ul className="flex flex-col gap-1">
                   {tarea.clientes.map((c) => (
                     <li key={c.id}>
@@ -614,7 +818,7 @@ export function TaskDetailDialog({
                             completado: !c.completado,
                           })
                         }
-                        className="group flex w-full items-center gap-2.5 rounded-[var(--arca-r-sm)] px-1 py-[5px] text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-60"
+                        className="flex w-full items-center gap-2.5 rounded-[var(--arca-r-sm)] px-1 py-[5px] text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-60"
                       >
                         <span
                           className={
@@ -648,8 +852,8 @@ export function TaskDetailDialog({
                     </li>
                   ))}
                 </ul>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Comentarios y actividad */}
             <div className="flex flex-col gap-3 px-[22px] pt-4 pb-[18px]">
@@ -739,14 +943,6 @@ export function TaskDetailDialog({
               </ul>
             </div>
           </div>
-
-          {/* Marca de guardado — discreta, sobre el borde inferior. */}
-          {guardado.texto && (
-            <div className="pointer-events-none absolute right-[22px] bottom-3 flex items-center gap-1 rounded-[var(--arca-r-pill)] bg-[var(--arca-surface)] px-2 py-[2px] text-[11px] text-[var(--arca-ink-3)] shadow-[var(--arca-shadow-sm)]">
-              <Check className="size-3 text-[var(--arca-accent-pos)]" />
-              {guardado.texto}
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 

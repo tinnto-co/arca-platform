@@ -11,8 +11,6 @@ import { sql } from "drizzle-orm"
 import { user, organization } from "./auth"
 
 export const accesoRol = pgEnum("acceso_rol", ['cliente_lector'])
-export const tareaEstado = pgEnum("tarea_estado", ['pendiente', 'presentada', 'verificada'])
-export const tareaTipo = pgEnum("tarea_tipo", ['iva', 'iibb', 'ddjj', 'sueldos', 'convenios', 'otro'])
 export const actorTipo = pgEnum("actor_tipo", ['user', 'job', 'agent'])
 export const agentActionEstado = pgEnum("agent_action_estado", ['propuesta', 'aprobada', 'rechazada', 'ejecutada'])
 export const agentMessageRole = pgEnum("agent_message_role", ['user', 'assistant', 'system', 'tool'])
@@ -74,6 +72,8 @@ export const riesgoNivel = pgEnum("riesgo_nivel", ['bajo', 'medio', 'alto', 'cri
 export const sexo = pgEnum("sexo", ['masculino', 'femenino'])
 export const solicitudEstado = pgEnum("solicitud_estado", ['abierta', 'completada', 'cancelada'])
 export const solicitudTipo = pgEnum("solicitud_tipo", ['documentacion', 'informacion', 'pago', 'otra'])
+export const tareaEstado = pgEnum("tarea_estado", ['pendiente', 'presentada', 'verificada'])
+export const tareaTipo = pgEnum("tarea_tipo", ['iva', 'iibb', 'ddjj', 'sueldos', 'convenios', 'otro'])
 export const tipoJornada = pgEnum("tipo_jornada", ['full_time', 'part_time', 'reducida'])
 export const tipoPersona = pgEnum("tipo_persona", ['fisica', 'juridica'])
 
@@ -582,6 +582,55 @@ export const recibo = pgTable("recibo", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 	pgPolicy("portal", { as: "permissive", for: "all", to: ["arca_portal"] }),
 	check("recibo_ai_coherente", sql`(fuente = 'ai'::dato_fuente) = (ai_run_id IS NOT NULL)`),
+]);
+
+export const tareaPaso = pgTable("tarea_paso", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tareaId: uuid("tarea_id").notNull(),
+	titulo: text().notNull(),
+	completado: boolean().default(false).notNull(),
+	completadoAt: timestamp("completado_at"),
+	completadoPor: text("completado_por"),
+	posicion: text(),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+	index("ix_tarea_paso_tarea").using("btree", table.tareaId.asc().nullsLast().op("text_ops"), table.posicion.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.tareaId],
+			foreignColumns: [tarea.id],
+			name: "tarea_paso_tarea_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.completadoPor],
+			foreignColumns: [user.id],
+			name: "tarea_paso_completado_por_fkey"
+		}).onDelete("set null"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
+   FROM tarea t
+  WHERE ((t.id = tarea_paso.tarea_id) AND (t.org_id = current_setting('app.org_id'::text, true)))))` }),
+]);
+
+export const tareaComentario = pgTable("tarea_comentario", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	tareaId: uuid("tarea_id").notNull(),
+	autorId: text("autor_id").notNull(),
+	contenido: text().notNull(),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+	index("ix_tarea_comentario_tarea").using("btree", table.tareaId.asc().nullsLast().op("timestamp_ops"), table.createdAt.asc().nullsLast().op("timestamp_ops")),
+	foreignKey({
+			columns: [table.tareaId],
+			foreignColumns: [tarea.id],
+			name: "studio_task_comment_task_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.autorId],
+			foreignColumns: [user.id],
+			name: "studio_task_comment_user_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
+   FROM tarea t
+  WHERE ((t.id = tarea_comentario.tarea_id) AND (t.org_id = current_setting('app.org_id'::text, true)))))` }),
 ]);
 
 export const tipoEmpresa = pgTable("tipo_empresa", {
@@ -2279,27 +2328,20 @@ export const cuenta = pgTable("cuenta", {
 	check("cuenta_alcance_coherente", sql`((alcance = 'base'::cuenta_alcance) AND (cliente_id IS NULL)) OR ((alcance = 'propia'::cuenta_alcance) AND (cliente_id IS NOT NULL))`),
 ]);
 
-export const tareaComentario = pgTable("tarea_comentario", {
+export const tareaColumna = pgTable("tarea_columna", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
-	tareaId: uuid("tarea_id").notNull(),
-	autorId: text("autor_id").notNull(),
-	contenido: text().notNull(),
+	orgId: text("org_id").notNull(),
+	nombre: text().notNull(),
+	orden: integer().default(0).notNull(),
 	createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-	index("ix_studio_task_comment_task").using("btree", table.tareaId.asc().nullsLast().op("uuid_ops"), table.createdAt.asc().nullsLast().op("timestamp_ops")),
+	index("ix_tarea_columna_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
 	foreignKey({
-			columns: [table.tareaId],
-			foreignColumns: [tarea.id],
-			name: "studio_task_comment_task_id_fkey"
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "studio_task_column_organization_id_fkey"
 		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.autorId],
-			foreignColumns: [user.id],
-			name: "studio_task_comment_user_id_fkey"
-		}).onDelete("cascade"),
-	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
-   FROM tarea t
-  WHERE ((t.id = tarea_comentario.tarea_id) AND (t.org_id = current_setting('app.org_id'::text, true)))))` }),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))` }),
 ]);
 
 export const ejercicio = pgTable("ejercicio", {
@@ -2392,6 +2434,57 @@ export const eecc = pgTable("eecc", {
 		}).onDelete("set null"),
 	unique("eecc_cliente_id_ejercicio_id_key").on(table.clienteId, table.ejercicioId),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
+export const tarea = pgTable("tarea", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	titulo: text().notNull(),
+	descripcion: text(),
+	tipo: tareaTipo().default('otro').notNull(),
+	estado: tareaEstado().default('pendiente').notNull(),
+	columnaId: uuid("columna_id"),
+	asignadoA: text("asignado_a"),
+	periodo: text(),
+	venceAt: timestamp("vence_at"),
+	estadoCambiadoAt: timestamp("estado_cambiado_at"),
+	estadoCambiadoPor: text("estado_cambiado_por"),
+	creadoPor: text("creado_por"),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+	updatedAt: timestamp("updated_at").defaultNow().notNull(),
+	fuente: text().default('manual').notNull(),
+	posicion: text(),
+}, (table) => [
+	index("ix_tarea_columna_posicion").using("btree", table.columnaId.asc().nullsLast().op("text_ops"), table.posicion.asc().nullsLast().op("uuid_ops")),
+	index("ix_tarea_estado").using("btree", table.orgId.asc().nullsLast().op("enum_ops"), table.estado.asc().nullsLast().op("text_ops")),
+	index("ix_tarea_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
+	index("ix_tarea_vence").using("btree", table.venceAt.asc().nullsLast().op("timestamp_ops")),
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "studio_task_organization_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.columnaId],
+			foreignColumns: [tareaColumna.id],
+			name: "studio_task_columna_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.asignadoA],
+			foreignColumns: [user.id],
+			name: "studio_task_asignado_a_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.estadoCambiadoPor],
+			foreignColumns: [user.id],
+			name: "studio_task_estado_changed_by_user_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.creadoPor],
+			foreignColumns: [user.id],
+			name: "studio_task_created_by_user_id_fkey"
+		}).onDelete("set null"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))` }),
 ]);
 
 export const convenioFuente = pgTable("convenio_fuente", {
@@ -2488,72 +2581,6 @@ export const movimientoBancario = pgTable("movimiento_bancario", {
 	check("movimiento_bancario_importe_positivo", sql`importe > (0)::numeric`),
 ]);
 
-export const tareaColumna = pgTable("tarea_columna", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	orgId: text("org_id").notNull(),
-	nombre: text().notNull(),
-	orden: integer().default(0).notNull(),
-	createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-	index("idx_studio_task_column_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
-	foreignKey({
-			columns: [table.orgId],
-			foreignColumns: [organization.id],
-			name: "studio_task_column_organization_id_fkey"
-		}).onDelete("cascade"),
-	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))` }),
-]);
-
-export const tarea = pgTable("tarea", {
-	id: uuid().defaultRandom().primaryKey().notNull(),
-	orgId: text("org_id").notNull(),
-	titulo: text().notNull(),
-	descripcion: text(),
-	tipo: tareaTipo().default('otro').notNull(),
-	estado: tareaEstado().default('pendiente').notNull(),
-	columnaId: uuid("columna_id"),
-	asignadoA: text("asignado_a"),
-	periodo: text("periodo"),
-	venceAt: timestamp("vence_at"),
-	fuente: text("fuente").default('manual').notNull(),
-	estadoCambiadoAt: timestamp("estado_cambiado_at"),
-	estadoCambiadoPor: text("estado_cambiado_por"),
-	creadoPor: text("creado_por"),
-	posicion: text("posicion"),
-	createdAt: timestamp("created_at").defaultNow().notNull(),
-	updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (table) => [
-	index("ix_studio_task_estado").using("btree", table.orgId.asc().nullsLast().op("text_ops"), table.estado.asc().nullsLast().op("text_ops")),
-	index("ix_studio_task_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
-	index("ix_studio_task_vencimiento").using("btree", table.venceAt.asc().nullsLast().op("timestamp_ops")),
-	foreignKey({
-			columns: [table.orgId],
-			foreignColumns: [organization.id],
-			name: "studio_task_organization_id_fkey"
-		}).onDelete("cascade"),
-	foreignKey({
-			columns: [table.columnaId],
-			foreignColumns: [tareaColumna.id],
-			name: "studio_task_columna_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.asignadoA],
-			foreignColumns: [user.id],
-			name: "studio_task_asignado_a_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.estadoCambiadoPor],
-			foreignColumns: [user.id],
-			name: "studio_task_estado_changed_by_user_id_fkey"
-		}).onDelete("set null"),
-	foreignKey({
-			columns: [table.creadoPor],
-			foreignColumns: [user.id],
-			name: "studio_task_created_by_user_id_fkey"
-		}).onDelete("set null"),
-	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))` }),
-]);
-
 export const tareaCliente = pgTable("tarea_cliente", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tareaId: uuid("tarea_id").notNull(),
@@ -2563,8 +2590,8 @@ export const tareaCliente = pgTable("tarea_cliente", {
 	completadoPor: text("completado_por"),
 	vencimientoId: uuid("vencimiento_id"),
 }, (table) => [
-	index("ix_studio_task_client_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
-	uniqueIndex("uq_studio_task_client").using("btree", table.tareaId.asc().nullsLast().op("uuid_ops"), table.clienteId.asc().nullsLast().op("uuid_ops")),
+	index("ix_tarea_cliente_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("uq_tarea_cliente").using("btree", table.tareaId.asc().nullsLast().op("uuid_ops"), table.clienteId.asc().nullsLast().op("uuid_ops")),
 	uniqueIndex("uq_tarea_cliente_vencimiento").using("btree", table.vencimientoId.asc().nullsLast().op("uuid_ops")).where(sql`(vencimiento_id IS NOT NULL)`),
 	foreignKey({
 			columns: [table.tareaId],
@@ -2584,7 +2611,7 @@ export const tareaCliente = pgTable("tarea_cliente", {
 	foreignKey({
 			columns: [table.vencimientoId],
 			foreignColumns: [vencimiento.id],
-			name: "studio_task_client_vencimiento_id_fkey"
+			name: "tarea_cliente_vencimiento_id_fkey"
 		}).onDelete("set null"),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
    FROM tarea t

@@ -18,6 +18,7 @@ import {
   tareaCliente,
   tareaComentario,
   tareaColumna,
+  tareaPaso,
   cliente,
 } from '@/drizzle/schema';
 import { autoGenerarTareasParaOrg } from '@/lib/tareas-batch';
@@ -120,7 +121,7 @@ export const listTareas = createServerFn({ method: 'GET' })
 
     const taskIds = tareas.map((t) => t.id);
 
-    const [clientes, comments] = await Promise.all([
+    const [clientes, pasos, comments] = await Promise.all([
       db
         .select({
           tareaId: tareaCliente.tareaId,
@@ -135,6 +136,21 @@ export const listTareas = createServerFn({ method: 'GET' })
         .leftJoin(cliente, eq(tareaCliente.clienteId, cliente.id))
         .where(inArray(tareaCliente.tareaId, taskIds)),
       db
+        .select({
+          tareaId: tareaPaso.tareaId,
+          id: tareaPaso.id,
+          titulo: tareaPaso.titulo,
+          completado: tareaPaso.completado,
+          completadoAt: tareaPaso.completadoAt,
+          posicion: tareaPaso.posicion,
+        })
+        .from(tareaPaso)
+        .where(inArray(tareaPaso.tareaId, taskIds))
+        .orderBy(
+          sql`${tareaPaso.posicion} asc nulls last`,
+          tareaPaso.createdAt
+        ),
+      db
         .select({ tareaId: tareaComentario.tareaId, count: tareaComentario.id })
         .from(tareaComentario)
         .where(inArray(tareaComentario.tareaId, taskIds)),
@@ -144,6 +160,15 @@ export const listTareas = createServerFn({ method: 'GET' })
       (acc, c) => {
         if (!acc[c.tareaId]) acc[c.tareaId] = [];
         acc[c.tareaId].push(c);
+        return acc;
+      },
+      {}
+    );
+
+    const pasosByTarea = pasos.reduce<Record<string, typeof pasos>>(
+      (acc, p) => {
+        if (!acc[p.tareaId]) acc[p.tareaId] = [];
+        acc[p.tareaId].push(p);
         return acc;
       },
       {}
@@ -160,6 +185,7 @@ export const listTareas = createServerFn({ method: 'GET' })
     return tareas.map((t) => ({
       ...t,
       clientes: clientesByTarea[t.id] ?? [],
+      pasos: pasosByTarea[t.id] ?? [],
       comentariosCount: commentCountByTarea[t.id] ?? 0,
     }));
   });
@@ -219,16 +245,38 @@ export const listOrgRepresentatives = createServerFn({ method: 'GET' }).handler(
 // ─── Posicionamiento ─────────────────────────────────────────────────────────
 
 /**
+ * Serializa a quienes calculan una posición sobre la misma lista.
+ *
+ * Generar una clave fraccional es leer la vecina y escribir entre medio, y eso
+ * es una carrera: dos altas seguidas leen el mismo máximo y generan la misma
+ * clave. Se reproduce sin querer al cargar un checklist, porque el composer
+ * queda abierto y se tipean varios ítems en un segundo.
+ *
+ * El lock es de transacción: se libera solo al commitear, y sólo bloquea a
+ * quien toca la misma lista.
+ */
+async function conListaBloqueada<T>(
+  clave: string,
+  fn: (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => Promise<T>
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${clave}))`);
+    return fn(tx);
+  });
+}
+
+/**
  * Devuelve una clave fraccional anterior a la primera tarea de la columna, o
  * sea: la posición para entrar arriba de todo. `excluirId` saca a la propia
  * tarea del cálculo cuando se la está moviendo.
  */
 async function posicionAlPrincipio(
+  ejecutor: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0],
   orgId: string,
   columnaId: string | null,
   excluirId?: string
 ): Promise<string> {
-  const [primera] = await db
+  const [primera] = await ejecutor
     .select({ posicion: tarea.posicion })
     .from(tarea)
     .where(
@@ -269,25 +317,30 @@ export const createTarea = createServerFn({ method: 'POST' })
     // La tarea nueva entra PRIMERA en su columna. Sin esto nacía con
     // `posicion` en null y caía al fondo hasta que alguien la arrastrara.
     const columnaId = ctx.data.columnaId ?? null;
-    const posicion = await posicionAlPrincipio(orgId, columnaId);
-
-    const [task] = await db
-      .insert(tarea)
-      .values({
-        orgId,
-        posicion,
-        titulo: ctx.data.titulo.trim(),
-        descripcion: ctx.data.descripcion?.trim() || null,
-        tipo: ctx.data.tipo,
-        estado: 'pendiente',
-        columnaId,
-        asignadoA: ctx.data.asignadoA || null,
-        periodo: ctx.data.periodo || null,
-        venceAt: ctx.data.venceAt ? new Date(ctx.data.venceAt) : null,
-        fuente: 'manual',
-        creadoPor: userId,
-      })
-      .returning();
+    const task = await conListaBloqueada(
+      `tarea:${orgId}:${columnaId ?? ''}`,
+      async (tx) => {
+        const posicion = await posicionAlPrincipio(tx, orgId, columnaId);
+        const [creada] = await tx
+          .insert(tarea)
+          .values({
+            orgId,
+            posicion,
+            titulo: ctx.data.titulo.trim(),
+            descripcion: ctx.data.descripcion?.trim() || null,
+            tipo: ctx.data.tipo,
+            estado: 'pendiente',
+            columnaId,
+            asignadoA: ctx.data.asignadoA || null,
+            periodo: ctx.data.periodo || null,
+            venceAt: ctx.data.venceAt ? new Date(ctx.data.venceAt) : null,
+            fuente: 'manual',
+            creadoPor: userId,
+          })
+          .returning();
+        return creada;
+      }
+    );
 
     return task;
   });
@@ -561,14 +614,28 @@ export const moverTarea = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const posicion =
-      ctx.data.posicion ??
-      (await posicionAlPrincipio(orgId, ctx.data.columnaId, ctx.data.id));
+    await conListaBloqueada(
+      `tarea:${orgId}:${ctx.data.columnaId ?? ''}`,
+      async (tx) => {
+        const posicion =
+          ctx.data.posicion ??
+          (await posicionAlPrincipio(
+            tx,
+            orgId,
+            ctx.data.columnaId,
+            ctx.data.id
+          ));
 
-    await db
-      .update(tarea)
-      .set({ columnaId: ctx.data.columnaId, posicion, updatedAt: new Date() })
-      .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
+        await tx
+          .update(tarea)
+          .set({
+            columnaId: ctx.data.columnaId,
+            posicion,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
+      }
+    );
 
     return { ok: true };
   });
@@ -583,6 +650,123 @@ export const reorderTarea = createServerFn({ method: 'POST' })
       .update(tarea)
       .set({ posicion: ctx.data.posicion, updatedAt: new Date() })
       .where(and(eq(tarea.id, ctx.data.id), eq(tarea.orgId, orgId)));
+    return { ok: true };
+  });
+
+// ─── Checklist (pasos de la tarea) ───────────────────────────────────────────
+
+/**
+ * Los pasos son lo que hay que hacer DENTRO de una tarea. No confundir con
+ * `tarea_cliente`, que dice a qué empresas alcanza la obligación: esa la llena
+ * el generador desde vencimientos y puede estar vacía en una tarea manual.
+ */
+
+/** Verifica que la tarea sea de la org antes de tocarle un paso. */
+async function tareaDeLaOrg(tareaId: string, orgId: string) {
+  const [t] = await db
+    .select({ id: tarea.id })
+    .from(tarea)
+    .where(and(eq(tarea.id, tareaId), eq(tarea.orgId, orgId)))
+    .limit(1);
+  if (!t) throw new Error('Tarea no encontrada');
+  return t;
+}
+
+/** Resuelve la tarea de un paso, comprobando de paso que sea de la org. */
+async function tareaDelPaso(pasoId: string, orgId: string) {
+  const [fila] = await db
+    .select({ tareaId: tareaPaso.tareaId })
+    .from(tareaPaso)
+    .innerJoin(tarea, eq(tarea.id, tareaPaso.tareaId))
+    .where(and(eq(tareaPaso.id, pasoId), eq(tarea.orgId, orgId)))
+    .limit(1);
+  if (!fila) throw new Error('Paso no encontrado');
+  return fila.tareaId;
+}
+
+export const addTareaPaso = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ tareaId: z.string().uuid(), titulo: z.string().min(1) })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await tareaDeLaOrg(ctx.data.tareaId, orgId);
+
+    // Al final de la lista: un checklist se lee de arriba abajo y el paso
+    // nuevo es el próximo, no el primero. Al revés que las tarjetas.
+    return conListaBloqueada(`tarea_paso:${ctx.data.tareaId}`, async (tx) => {
+      const [ultimo] = await tx
+        .select({ posicion: tareaPaso.posicion })
+        .from(tareaPaso)
+        .where(
+          and(
+            eq(tareaPaso.tareaId, ctx.data.tareaId),
+            isNotNull(tareaPaso.posicion)
+          )
+        )
+        .orderBy(sql`${tareaPaso.posicion} desc`)
+        .limit(1);
+
+      const [paso] = await tx
+        .insert(tareaPaso)
+        .values({
+          tareaId: ctx.data.tareaId,
+          titulo: ctx.data.titulo.trim(),
+          posicion: generateKeyBetween(ultimo?.posicion ?? null, null),
+        })
+        .returning();
+
+      return paso;
+    });
+  });
+
+export const toggleTareaPaso = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid(), completado: z.boolean() }))
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await tareaDelPaso(ctx.data.id, orgId);
+
+    await db
+      .update(tareaPaso)
+      .set({
+        completado: ctx.data.completado,
+        completadoAt: ctx.data.completado ? new Date() : null,
+        completadoPor: ctx.data.completado ? userId : null,
+      })
+      .where(eq(tareaPaso.id, ctx.data.id));
+
+    return { ok: true };
+  });
+
+export const updateTareaPaso = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid(), titulo: z.string().min(1) }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await tareaDelPaso(ctx.data.id, orgId);
+
+    await db
+      .update(tareaPaso)
+      .set({ titulo: ctx.data.titulo.trim() })
+      .where(eq(tareaPaso.id, ctx.data.id));
+
+    return { ok: true };
+  });
+
+export const deleteTareaPaso = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await tareaDelPaso(ctx.data.id, orgId);
+
+    await db.delete(tareaPaso).where(eq(tareaPaso.id, ctx.data.id));
     return { ok: true };
   });
 

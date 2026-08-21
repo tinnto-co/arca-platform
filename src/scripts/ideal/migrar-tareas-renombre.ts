@@ -144,7 +144,12 @@ try {
   // `tipo` y `estado` como enum. `drizzle/schema.ts` ya los declara así
   // (`tareaTipo`, `tareaEstado`), pero los tipos nunca se crearon en la base:
   // los tipos de TypeScript afirmaban una garantía que Postgres no daba.
-  const ENUMS: { col: string; tipoPg: string; valores: string[]; porDefecto: string }[] = [
+  const ENUMS: {
+    col: string;
+    tipoPg: string;
+    valores: string[];
+    porDefecto: string;
+  }[] = [
     {
       col: 'tipo',
       tipoPg: 'tarea_tipo',
@@ -173,10 +178,37 @@ try {
     }
   }
 
+  // `vencimiento_id` en `tarea_cliente`: es la guarda de idempotencia del
+  // generador automático. Estaba declarada en `drizzle/schema.ts` pero no
+  // existía en ninguna base, así que el código compilaba y `autoGenerarTareas`
+  // fallaba al ejecutarse.
+  if (!(await tieneColumna('tarea_cliente', 'vencimiento_id'))) {
+    pasos.push(
+      `alter table tarea_cliente add column vencimiento_id uuid references vencimiento(id) on delete set null`
+    );
+  }
+  if (!(await existeIndice('uq_tarea_cliente_vencimiento'))) {
+    // Parcial: un vencimiento se convierte en tarea una sola vez, pero las
+    // filas cargadas a mano no tienen vencimiento y no deben chocar entre sí.
+    pasos.push(
+      `create unique index uq_tarea_cliente_vencimiento on tarea_cliente(vencimiento_id) where vencimiento_id is not null`
+    );
+  }
+
+  // El checklist de la tarea. La tabla la crea `schema-dominio9.sql`; acá sólo
+  // se avisa si falta, porque el script no construye tablas nuevas.
+  if (!(await existe('tarea_paso'))) {
+    console.log(
+      '⚠ falta `tarea_paso` — aplicá schema-dominio9.sql a esta base'
+    );
+  }
+
   // Índice que cubre la lectura del tablero: filtra por columna y ordena por
   // posición en el mismo recorrido.
   if (!(await existeIndice('ix_tarea_columna_posicion'))) {
-    pasos.push(`create index ix_tarea_columna_posicion on tarea(columna_id, posicion)`);
+    pasos.push(
+      `create index ix_tarea_columna_posicion on tarea(columna_id, posicion)`
+    );
   }
 
   // Los índices heredan el nombre viejo del `rename to`.

@@ -96,11 +96,40 @@ create table if not exists tarea_cliente (
   cliente_id uuid not null references cliente(id) on delete cascade,
   completado boolean not null default false,
   completado_at timestamp,
-  completado_por text references "user"(id) on delete set null
+  completado_por text references "user"(id) on delete set null,
+
+  -- De qué vencimiento salió esta fila. Es la guarda de idempotencia del
+  -- generador automático (`src/lib/tareas-batch.ts`): sin ella, cada corrida
+  -- del cron vuelve a crear las mismas tareas.
+  vencimiento_id uuid references vencimiento(id) on delete set null
 );
 
 create unique index if not exists uq_tarea_cliente on tarea_cliente(tarea_id, cliente_id);
 create index if not exists ix_tarea_cliente_cliente on tarea_cliente(cliente_id);
+-- Parcial: un vencimiento se convierte en tarea una sola vez, pero las filas
+-- creadas a mano no tienen vencimiento y no deben chocar entre sí.
+create unique index if not exists uq_tarea_cliente_vencimiento
+  on tarea_cliente(vencimiento_id) where vencimiento_id is not null;
+
+-- Pasos de una tarea: el checklist del modal de detalle. Es la lista de cosas
+-- que hay que hacer DENTRO de la tarea ("bajar el archivo", "controlar el
+-- crédito fiscal"), y no tiene nada que ver con `tarea_cliente`, que dice a qué
+-- empresas alcanza la obligación.
+--
+-- `posicion` es el mismo índice fraccional que en `tarea`, con la misma
+-- collation por bytes y por la misma razón.
+create table if not exists tarea_paso (
+  id uuid primary key default gen_random_uuid(),
+  tarea_id uuid not null references tarea(id) on delete cascade,
+  titulo text not null,
+  completado boolean not null default false,
+  completado_at timestamp,
+  completado_por text references "user"(id) on delete set null,
+  posicion text collate "C",
+  created_at timestamp not null default now()
+);
+
+create index if not exists ix_tarea_paso_tarea on tarea_paso(tarea_id, posicion);
 
 create table if not exists tarea_comentario (
   id uuid primary key default gen_random_uuid(),
@@ -114,11 +143,12 @@ create index if not exists ix_tarea_comentario_tarea on tarea_comentario(tarea_i
 
 -- ---------------------------------------------------------------------------
 -- RLS. `tarea` y `tarea_columna` filtran por su propia columna de organización;
--- las dos hijas de la tarea se alcanzan a través del padre.
+-- las tres hijas de la tarea se alcanzan a través del padre.
 -- ---------------------------------------------------------------------------
 alter table tarea_columna enable row level security;
 alter table tarea enable row level security;
 alter table tarea_cliente enable row level security;
+alter table tarea_paso enable row level security;
 alter table tarea_comentario enable row level security;
 
 drop policy if exists tenant on tarea_columna;
@@ -137,6 +167,14 @@ create policy tenant on tarea_cliente to arca_app, arca_agent
        and t.org_id = current_setting('app.org_id', true)
   ));
 
+drop policy if exists tenant on tarea_paso;
+create policy tenant on tarea_paso to arca_app, arca_agent
+  using (exists (
+    select 1 from tarea t
+     where t.id = tarea_paso.tarea_id
+       and t.org_id = current_setting('app.org_id', true)
+  ));
+
 drop policy if exists tenant on tarea_comentario;
 create policy tenant on tarea_comentario to arca_app, arca_agent
   using (exists (
@@ -146,8 +184,8 @@ create policy tenant on tarea_comentario to arca_app, arca_agent
   ));
 
 grant select, insert, update, delete
-  on tarea_columna, tarea, tarea_cliente, tarea_comentario
+  on tarea_columna, tarea, tarea_cliente, tarea_paso, tarea_comentario
   to arca_app;
 grant select
-  on tarea_columna, tarea, tarea_cliente, tarea_comentario
+  on tarea_columna, tarea, tarea_cliente, tarea_paso, tarea_comentario
   to arca_agent;
