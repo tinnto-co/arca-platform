@@ -135,6 +135,11 @@ export function NotificationsView({
   );
   const [clienteFilter, setClienteFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [severidadFilter, setSeveridadFilter] = useState<string>('all');
+  /** 'all' | 'si' | 'no'. Distinto de `onlyUnresolved`: leída ≠ resuelta. */
+  const [leidaFilter, setLeidaFilter] = useState<string>('all');
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
   const [onlyUnresolved, setOnlyUnresolved] = useState(false);
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
@@ -173,6 +178,10 @@ export function NotificationsView({
           credencialIdProp,
           effectiveClienteFilter,
           categoryFilter,
+          severidadFilter,
+          leidaFilter,
+          desde,
+          hasta,
           onlyUnresolved,
           searchTerm,
         ]
@@ -181,9 +190,11 @@ export function NotificationsView({
           orgKey,
           1,
           credencialFilter,
-          '',
-          '',
+          desde,
+          hasta,
           categoryFilter,
+          severidadFilter,
+          leidaFilter,
           onlyUnresolved,
           searchTerm,
         ],
@@ -199,6 +210,12 @@ export function NotificationsView({
           clienteId: effectiveClienteFilter,
           search: searchTerm || undefined,
           categoria: categoryFilter === 'all' ? undefined : categoryFilter,
+          severidad: severidadFilter === 'all' ? undefined : severidadFilter,
+          leida: leidaFilter === 'all' ? undefined : leidaFilter === 'si',
+          dateFrom: desde || undefined,
+          // El input date da el día a las 00:00; sin esto el "hasta" excluiría
+          // todo lo publicado ese mismo día.
+          dateTo: hasta ? `${hasta}T23:59:59` : undefined,
           onlyUnresolved: onlyUnresolved || undefined,
         },
       }),
@@ -538,6 +555,49 @@ export function NotificationsView({
               searchPlaceholder="Buscar categoría..."
               width="100%"
             />
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Toda importancia' },
+                { value: 'urgente', label: 'Urgente' },
+                { value: 'accion_requerida', label: 'Acción requerida' },
+                { value: 'informativa', label: 'Informativa' },
+                { value: 'sin_clasificar', label: 'Sin clasificar' },
+              ]}
+              value={severidadFilter}
+              onValueChange={setSeveridadFilter}
+              placeholder="Filtrar por importancia"
+              searchPlaceholder="Buscar importancia..."
+              width="100%"
+            />
+            <SearchableSelect
+              options={[
+                { value: 'all', label: 'Leídas y no leídas' },
+                { value: 'no', label: 'Sólo no leídas' },
+                { value: 'si', label: 'Sólo leídas' },
+              ]}
+              value={leidaFilter}
+              onValueChange={setLeidaFilter}
+              placeholder="Estado de lectura"
+              searchPlaceholder="Buscar..."
+              width="100%"
+            />
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                value={desde}
+                onChange={(e) => setDesde(e.target.value)}
+                className="h-9 text-[12.5px]"
+                aria-label="Publicadas desde"
+              />
+              <span className="text-[12.5px] text-[var(--arca-ink-4)]">a</span>
+              <Input
+                type="date"
+                value={hasta}
+                onChange={(e) => setHasta(e.target.value)}
+                className="h-9 text-[12.5px]"
+                aria-label="Publicadas hasta"
+              />
+            </div>
             <label className="flex items-center justify-between gap-2 px-3 py-[7px] rounded-[var(--arca-r-md)] text-[13px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] cursor-pointer">
               <span>Ocultar notificaciones resueltas</span>
               <Switch
@@ -821,7 +881,10 @@ export function NotificationsView({
                                   disabled={!adjunto.url}
                                   onClick={() =>
                                     adjunto.url &&
-                                    handleDownloadAttachment(adjunto.url, nombre)
+                                    handleDownloadAttachment(
+                                      adjunto.url,
+                                      nombre
+                                    )
                                   }
                                 >
                                   Descargar

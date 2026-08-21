@@ -40,6 +40,8 @@ export const getNotifications = createServerFn({
       search: z.string().optional(),
       leida: z.boolean().optional(),
       categoria: z.string().optional(),
+      /** Nivel de importancia. Enum `notificacion_severidad`. */
+      severidad: z.string().optional(),
       onlyUnresolved: z.boolean().optional(),
     })
   )
@@ -55,6 +57,7 @@ export const getNotifications = createServerFn({
       clienteId,
       leida,
       categoria,
+      severidad,
       onlyUnresolved,
     } = ctx.data;
     const offset = (page - 1) * limit;
@@ -78,6 +81,14 @@ export const getNotifications = createServerFn({
     }
     if (categoria && categoria !== 'all') {
       conditions.push(eq(notificacion.categoria, categoria));
+    }
+    if (severidad && severidad !== 'all') {
+      conditions.push(
+        eq(
+          notificacion.severidad,
+          severidad as (typeof notificacion.severidad.enumValues)[number]
+        )
+      );
     }
     if (onlyUnresolved) {
       conditions.push(isNull(notificacion.resueltaAt));
