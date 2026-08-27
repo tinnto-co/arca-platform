@@ -220,6 +220,7 @@ import {
   FIXED_ASSET_CATEGORY_LABELS,
   FIXED_ASSET_STATUS_LABELS,
   FIXED_ASSET_DISPOSAL_REASON_LABELS,
+  ACCOUNT_GROUP_LABELS,
   type AccountGroup,
   type JournalOrigin,
 } from '@/lib/accounting-labels';
@@ -3559,6 +3560,24 @@ interface PostableAccount {
   name: string;
   accountGroup: string | null;
 }
+
+function groupedPostable(accounts: PostableAccount[]) {
+  const groups: { label: string; items: PostableAccount[] }[] = [];
+  const idx = new Map<string, number>();
+  for (const a of accounts) {
+    const key = a.accountGroup ?? '__none__';
+    if (!idx.has(key)) {
+      idx.set(key, groups.length);
+      const label = a.accountGroup
+        ? (ACCOUNT_GROUP_LABELS[a.accountGroup as AccountGroup] ?? a.accountGroup)
+        : 'Sin rubro';
+      groups.push({ label, items: [] });
+    }
+    groups[idx.get(key)!].items.push(a);
+  }
+  return groups;
+}
+
 interface LineDraft {
   accountId: string;
   debit: string;
@@ -4108,10 +4127,15 @@ function AsientoEditor({
                     <SelectValue placeholder="— Elegí cuenta —" />
                   </SelectTrigger>
                   <SelectContent>
-                    {postable.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} · {a.name}
-                      </SelectItem>
+                    {groupedPostable(postable).map((g) => (
+                      <SelectGroup key={g.label}>
+                        <SelectLabel>{g.label}</SelectLabel>
+                        {g.items.map((a) => (
+                          <SelectItem key={a.id} value={a.id}>
+                            {a.code} · {a.name}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     ))}
                   </SelectContent>
                 </Select>
@@ -6228,10 +6252,15 @@ function RuleEditorDialog({
                   <SelectValue placeholder="— Cuenta —" />
                 </SelectTrigger>
                 <SelectContent>
-                  {postable.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} · {a.name}
-                    </SelectItem>
+                  {groupedPostable(postable).map((g) => (
+                    <SelectGroup key={g.label}>
+                      <SelectLabel>{g.label}</SelectLabel>
+                      {g.items.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.code} · {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
                 </SelectContent>
               </Select>
