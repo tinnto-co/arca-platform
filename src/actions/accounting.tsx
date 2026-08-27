@@ -31,6 +31,7 @@ import {
   ajusteInflacionLinea,
   indiceInflacion,
   plantillaInformeAuditor,
+  asientoTemplate,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
 import { nextEntryNumber } from '@/lib/accounting-posting-db';
@@ -8473,4 +8474,93 @@ export const getEFE = createServerFn({ method: 'GET' })
           ? priorFiguresAreHomogeneous(priorFy, pri.inflationApplied)
           : true,
     };
+  });
+
+/* ════════════════════ TIN-1428: Templates de asientos ════════════════════ */
+
+interface TemplateLine {
+  cuentaId: string;
+  lado: 'debe' | 'haber';
+  descripcion?: string;
+}
+
+export interface JournalTemplate {
+  id: string;
+  nombre: string;
+  lineas: TemplateLine[];
+  creadoEn: string;
+}
+
+export const listJournalTemplates = createServerFn({ method: 'GET' })
+  .validator(z.object({ clientId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const rows = await db
+      .select({
+        id: asientoTemplate.id,
+        nombre: asientoTemplate.nombre,
+        lineas: asientoTemplate.lineas,
+        creadoEn: asientoTemplate.creadoEn,
+      })
+      .from(asientoTemplate)
+      .where(
+        and(
+          eq(asientoTemplate.orgId, orgId),
+          eq(asientoTemplate.clienteId, data.clientId)
+        )
+      )
+      .orderBy(asc(asientoTemplate.nombre));
+    return rows.map((r) => ({
+      id: r.id,
+      nombre: r.nombre,
+      lineas: r.lineas as TemplateLine[],
+      creadoEn: r.creadoEn.toISOString(),
+    })) satisfies JournalTemplate[];
+  });
+
+export const saveJournalTemplate = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      nombre: z.string().min(1).max(100),
+      lineas: z
+        .array(
+          z.object({
+            cuentaId: z.string().uuid(),
+            lado: z.enum(['debe', 'haber']),
+            descripcion: z.string().optional(),
+          })
+        )
+        .min(2),
+    })
+  )
+  .handler(async ({ data }) => {
+    await assertCanWrite();
+    const { orgId } = await getSessionWithOrg();
+    const [row] = await db
+      .insert(asientoTemplate)
+      .values({
+        orgId,
+        clienteId: data.clientId,
+        nombre: data.nombre,
+        lineas: data.lineas,
+      })
+      .onConflictDoUpdate({
+        target: [asientoTemplate.clienteId, asientoTemplate.nombre],
+        set: { lineas: data.lineas },
+      })
+      .returning({ id: asientoTemplate.id });
+    return { id: row.id };
+  });
+
+export const deleteJournalTemplate = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    await assertCanWrite();
+    const { orgId } = await getSessionWithOrg();
+    await db
+      .delete(asientoTemplate)
+      .where(
+        and(eq(asientoTemplate.id, data.id), eq(asientoTemplate.orgId, orgId))
+      );
   });

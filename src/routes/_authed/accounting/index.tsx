@@ -62,6 +62,8 @@ import {
   CheckCircle2,
   XCircle,
   Check,
+  Bookmark,
+  BookmarkPlus,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -186,6 +188,10 @@ import {
   type AuditEventType,
   type AuditLogEntry,
   type JournalEntryListRow,
+  listJournalTemplates,
+  saveJournalTemplate,
+  deleteJournalTemplate,
+  type JournalTemplate,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -4068,11 +4074,62 @@ function AsientoEditor({
       : [emptyLine(), emptyLine()]
   );
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
+  const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState('');
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
 
   const { data: chart } = useQuery({
     queryKey: ['accounting', 'chart', clientId],
     queryFn: () => getChartOfAccounts({ data: { clientId } }),
   });
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['accounting', 'templates', clientId],
+    queryFn: () => listJournalTemplates({ data: { clientId } }),
+  });
+
+  const saveTemplateMut = useMutation({
+    mutationFn: (nombre: string) =>
+      saveJournalTemplate({
+        data: {
+          clientId,
+          nombre,
+          lineas: lines
+            .filter((l) => l.accountId && (num(l.debit) > 0 || num(l.credit) > 0))
+            .map((l) => ({
+              cuentaId: l.accountId,
+              lado: num(l.debit) > 0 ? ('debe' as const) : ('haber' as const),
+              descripcion: l.description || undefined,
+            })),
+        },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['accounting', 'templates', clientId] });
+      setSaveTemplateOpen(false);
+      setSaveTemplateName('');
+      toast.success('Template guardado');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteTemplateMut = useMutation({
+    mutationFn: (id: string) => deleteJournalTemplate({ data: { id } }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['accounting', 'templates', clientId] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  function applyTemplate(t: JournalTemplate) {
+    setLines(
+      t.lineas.map((l) => ({
+        accountId: l.cuentaId,
+        debit: l.lado === 'debe' ? '' : '0',
+        credit: l.lado === 'haber' ? '' : '0',
+        description: l.descripcion ?? '',
+      }))
+    );
+    setTemplatePopoverOpen(false);
+  }
 
   const title =
     state.mode === 'edit'
@@ -4205,6 +4262,88 @@ function AsientoEditor({
               />
             </div>
           </div>
+
+          {/* Template toolbar */}
+          <div className="flex items-center justify-between">
+            <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
+              <PopoverTrigger asChild>
+                <button className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors">
+                  <Bookmark className="w-3 h-3" strokeWidth={2} />
+                  Cargar template
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-1" sideOffset={4}>
+                {templates.length === 0 ? (
+                  <p className="text-[12px] text-[var(--arca-ink-3)] py-2 px-2">
+                    Sin templates guardados
+                  </p>
+                ) : (
+                  templates.map((t) => (
+                    <div key={t.id} className="flex items-center group">
+                      <button
+                        className="flex-1 text-left text-[12.5px] px-2 py-1.5 rounded-[6px] hover:bg-[var(--arca-surface-2)] truncate"
+                        onClick={() => applyTemplate(t)}
+                      >
+                        {t.nombre}
+                      </button>
+                      <button
+                        className="p-1 rounded-[6px] opacity-0 group-hover:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
+                        onClick={() => deleteTemplateMut.mutate(t.id)}
+                      >
+                        <Trash2 className="w-3 h-3" strokeWidth={1.8} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </PopoverContent>
+            </Popover>
+
+            {!saveTemplateOpen && (
+              <button
+                className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors"
+                onClick={() => setSaveTemplateOpen(true)}
+              >
+                <BookmarkPlus className="w-3 h-3" strokeWidth={2} />
+                Guardar como template
+              </button>
+            )}
+          </div>
+
+          {saveTemplateOpen && (
+            <div className="flex items-center gap-2">
+              <input
+                value={saveTemplateName}
+                onChange={(e) => setSaveTemplateName(e.target.value)}
+                placeholder="Nombre del template…"
+                className={`${INPUT_CLASS} flex-1 h-8`}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && saveTemplateName.trim())
+                    saveTemplateMut.mutate(saveTemplateName.trim());
+                  if (e.key === 'Escape') {
+                    setSaveTemplateOpen(false);
+                    setSaveTemplateName('');
+                  }
+                }}
+              />
+              <button
+                onClick={() => saveTemplateMut.mutate(saveTemplateName.trim())}
+                disabled={!saveTemplateName.trim() || saveTemplateMut.isPending}
+                className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+              >
+                {saveTemplateMut.isPending ? '…' : 'Guardar'}
+              </button>
+              <button
+                onClick={() => {
+                  setSaveTemplateOpen(false);
+                  setSaveTemplateName('');
+                }}
+                className="h-8 px-3 text-[12px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
 
           {/* Líneas */}
           <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">

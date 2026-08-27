@@ -1284,6 +1284,29 @@ export const asiento = pgTable("asiento", {
 	check("asiento_origen_coherente", sql`((origen_tipo = 'manual'::asiento_origen_tipo) AND (origen_id IS NULL)) OR ((origen_tipo <> 'manual'::asiento_origen_tipo) AND (origen_id IS NOT NULL))`),
 ]);
 
+export const asientoTemplate = pgTable("asiento_template", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	clienteId: uuid("cliente_id").notNull(),
+	nombre: text().notNull(),
+	lineas: jsonb().default([]).notNull(),
+	creadoEn: timestamp("creado_en", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_asiento_template_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "asiento_template_org_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.clienteId],
+			foreignColumns: [cliente.id],
+			name: "asiento_template_cliente_id_fkey"
+		}).onDelete("cascade"),
+	unique("asiento_template_cliente_id_nombre_key").on(table.clienteId, table.nombre),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
 export const alerta = pgTable("alerta", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	orgId: text("org_id").notNull(),
