@@ -302,8 +302,10 @@ export const BASE_CHART: BaseAccountSeed[] = [
   }),
   I('3.1.002', 'Ajuste de capital', 'capital', 'acreedor'),
 
-  G('3.2', 'Aportes irrevocables', 'aportes_irrevocables'),
-  I('3.2.001', 'Aportes irrevocables', 'aportes_irrevocables', 'acreedor'),
+  G('3.2', 'Aportes de socios', 'aportes_irrevocables'),
+  I('3.2.001', 'Aportes de socios', 'aportes_irrevocables', 'acreedor', {
+    cashFlowActivity: 'financing',
+  }),
 
   G('3.3', 'Primas de emisión', 'primas_emision'),
   I('3.3.001', 'Primas de emisión', 'primas_emision', 'acreedor'),

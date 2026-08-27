@@ -9594,7 +9594,7 @@ function EfeView({
             ))
           )}
           <EfeRow
-            label={`Flujo neto por ${a.label.toLowerCase()}`}
+            label={`Flujo neto de ${a.label.toLowerCase()}`}
             value={a}
             strong
             hasPrior={data.hasPrior}

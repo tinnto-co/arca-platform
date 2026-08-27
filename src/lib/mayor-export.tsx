@@ -2450,7 +2450,7 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
           <Text style={pk.subTitle}>{a.label}</Text>
           {a.lines.map((l) => row(l.name, l))}
           {row(
-            `Flujo neto por ${a.label.toLowerCase()}`,
+            `Flujo neto de ${a.label.toLowerCase()}`,
             a,
             pk.totalRow,
             false
