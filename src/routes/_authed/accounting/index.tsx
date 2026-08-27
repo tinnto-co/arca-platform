@@ -3959,6 +3959,29 @@ function AsientoEditor({
       prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l))
     );
 
+  // TIN-1443: detect when the entry date falls outside all fiscal years.
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+    enabled: state.mode !== 'edit',
+  });
+  const outOfRangeFy = useMemo(() => {
+    if (!entryDate || !fiscalYears.length || state.mode === 'edit') return null;
+    const inRange = fiscalYears.some(
+      (fy) => entryDate >= fy.fechaDesde && entryDate <= fy.fechaHasta
+    );
+    if (inRange) return null;
+    // Find the FY whose boundary is nearest to the entry date.
+    return fiscalYears.reduce((prev, curr) => {
+      const dist = (fy: (typeof fiscalYears)[0]) =>
+        Math.min(
+          Math.abs(new Date(entryDate).getTime() - new Date(fy.fechaDesde).getTime()),
+          Math.abs(new Date(entryDate).getTime() - new Date(fy.fechaHasta).getTime())
+        );
+      return dist(curr) < dist(prev) ? curr : prev;
+    });
+  }, [entryDate, fiscalYears, state.mode]);
+
   const mut = useMutation({
     mutationFn: async () => {
       const payloadLines = lines.map((l) => ({
@@ -3976,18 +3999,21 @@ function AsientoEditor({
             lines: payloadLines,
           },
         });
+        return null;
       } else {
-        await createJournalEntry({
+        return await createJournalEntry({
           data: {
             clientId,
             entryDate,
             description: description || undefined,
             lines: payloadLines,
+            fiscalYearId: outOfRangeFy?.id,
           },
         });
       }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (result?.warning) toast.warning(result.warning);
       toast.success(
         state.mode === 'edit' ? 'Asiento actualizado' : 'Asiento guardado'
       );
@@ -4006,6 +4032,17 @@ function AsientoEditor({
             La fecha define el período (no puede estar en un período cerrado).
           </DialogDescription>
         </DialogHeader>
+
+        {outOfRangeFy && (
+          <div className="flex items-start gap-2 rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" strokeWidth={2} />
+            <span>
+              La fecha está fuera del ejercicio vigente. El asiento se guardará
+              en el ejercicio N°{outOfRangeFy.numero} ({outOfRangeFy.fechaDesde} –{' '}
+              {outOfRangeFy.fechaHasta}).
+            </span>
+          </div>
+        )}
 
         <div className="space-y-3 py-1">
           <div className="flex gap-3">

@@ -1886,36 +1886,79 @@ async function loadJournalEntryForOrg(
 }
 
 /** Resuelve el ejercicio y período mensual al que cae una fecha (YYYY-MM-DD). */
-async function resolvePeriodForDate(clientId: string, dateStr: string) {
+async function resolvePeriodForDate(
+  clientId: string,
+  dateStr: string,
+  overrideFiscalYearId?: string
+) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error('Fecha inválida');
-  const [fy] = await db
-    .select()
-    .from(ejercicio)
-    .where(
-      and(
-        eq(ejercicio.clienteId, clientId),
-        lte(ejercicio.fechaDesde, dateStr),
-        gte(ejercicio.fechaHasta, dateStr)
+
+  let fy: typeof ejercicio.$inferSelect;
+  let warning: string | undefined;
+
+  if (overrideFiscalYearId) {
+    // Fiscal year provided explicitly — bypass date-range check (TIN-1443).
+    const [found] = await db
+      .select()
+      .from(ejercicio)
+      .where(
+        and(eq(ejercicio.id, overrideFiscalYearId), eq(ejercicio.clienteId, clientId))
       )
-    )
-    .limit(1);
-  if (!fy) {
-    throw new Error(
-      'No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero'
-    );
+      .limit(1);
+    if (!found)
+      throw new Error('El ejercicio indicado no existe o no pertenece a este cliente');
+    fy = found;
+    warning = `La fecha ${dateStr} está fuera del ejercicio N°${fy.numero} (${fy.fechaDesde} – ${fy.fechaHasta}). El asiento se registró de todas formas.`;
+  } else {
+    const [found] = await db
+      .select()
+      .from(ejercicio)
+      .where(
+        and(
+          eq(ejercicio.clienteId, clientId),
+          lte(ejercicio.fechaDesde, dateStr),
+          gte(ejercicio.fechaHasta, dateStr)
+        )
+      )
+      .limit(1);
+    if (!found) {
+      throw new Error(
+        'No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero'
+      );
+    }
+    fy = found;
   }
+
+  const monthStart = `${dateStr.slice(0, 7)}-01`;
   const [period] = await db
     .select()
     .from(periodoContable)
     .where(
       and(
         eq(periodoContable.ejercicioId, fy.id),
-        eq(periodoContable.periodo, `${dateStr.slice(0, 7)}-01`)
+        eq(periodoContable.periodo, monthStart)
       )
     )
     .limit(1);
-  if (!period) throw new Error('No existe el período para esa fecha');
-  return { fy, period, date: dateStr };
+
+  if (!period) {
+    // Fallback: use the most recent open period within the FY.
+    const allPeriods = await db
+      .select()
+      .from(periodoContable)
+      .where(eq(periodoContable.ejercicioId, fy.id))
+      .orderBy(desc(periodoContable.periodo));
+    const fallback = allPeriods.find((p) => p.estado !== 'cerrado') ?? allPeriods[0];
+    if (!fallback) throw new Error('No existe el período para esa fecha');
+    return {
+      fy,
+      period: fallback,
+      date: dateStr,
+      warning: warning ?? `La fecha no corresponde a ningún período del ejercicio. Se usó el período ${fallback.periodo.slice(0, 7)}.`,
+    };
+  }
+
+  return { fy, period, date: dateStr, warning };
 }
 
 /** Valida importes de líneas: cada línea Debe XOR Haber, y total Debe = total Haber. */
@@ -2034,6 +2077,8 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
       entryDate: z.string(),
       description: z.string().optional(),
       lines: z.array(journalLineSchema).min(2),
+      /** Override: use this fiscal year even if the date falls outside its range (TIN-1443). */
+      fiscalYearId: z.string().uuid().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -2043,9 +2088,10 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
 
     const { clientId } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
-    const { fy, period, date } = await resolvePeriodForDate(
+    const { fy, period, date, warning } = await resolvePeriodForDate(
       clientId,
-      ctx.data.entryDate
+      ctx.data.entryDate,
+      ctx.data.fiscalYearId
     );
     if (fy.estado === 'cerrado') {
       throw new Error(
@@ -2103,7 +2149,7 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
       return je;
     });
 
-    return entry;
+    return { entry, warning };
   });
 
 /** Edita un asiento (solo si su período está abierto). (US 1.3.2) */
