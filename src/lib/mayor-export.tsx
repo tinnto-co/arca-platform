@@ -1142,7 +1142,7 @@ async function anexoIWorkbookBuffer(
       const r = ws.addRow(['']);
       mergeRange(r.number, 8, NC);
       const cell = r.getCell(8);
-      cell.value = line as string;
+      cell.value = line;
       cell.alignment = { horizontal: 'center' };
       cell.font = { size: 9 };
     }
@@ -1877,7 +1877,7 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
         .filter(Boolean)
         .join(' '),
     ].filter(Boolean)) {
-      banner(l as string, { size: 9 });
+      banner(l, { size: 9 });
     }
   }
 
@@ -2501,7 +2501,7 @@ function Nota3Block({
       {rubros.map((r, i) => (
         <View key={r.group}>
           <Text style={pk.subTitle}>
-            3.{i + 1} — {r.label}
+            {numero ?? 3}.{i + 1} — {r.label}
           </Text>
           {r.accounts.map((a) => (
             <View key={a.accountId} style={pk.row}>
@@ -2750,7 +2750,7 @@ function NotesBlock({
         <Text style={pk.empty}>Sin notas cargadas.</Text>
       ) : (
         ordenadas.map((note, idx) => (
-          <View key={note.id} wrap={false}>
+          <View key={note.id}>
             <Text style={pk.noteTitle}>
               {numeroDe(note.id) ?? idx + 1}.{' '}
               {note.title || `Nota ${numeroDe(note.id) ?? idx + 1}`}

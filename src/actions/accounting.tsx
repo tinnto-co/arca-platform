@@ -6514,7 +6514,10 @@ async function computeExpenseBalances(orgId: string, fyId: string) {
         eq(cuenta.orgId, orgId),
         inArray(
           cuenta.rubro,
-          EXPENSE_ACCOUNT_GROUPS as unknown as AccountGroup[]
+          // costo_ventas (CMV) se expone en su propio Anexo CMV, no en Anexo II.
+          EXPENSE_ACCOUNT_GROUPS.filter(
+            (g) => g !== 'costo_ventas'
+          ) as unknown as AccountGroup[]
         ),
         sql`${asiento.origenTipo} NOT IN ('cierre','apertura')`
       )
@@ -6548,9 +6551,14 @@ export const getAnexoII = createServerFn({ method: 'GET' })
 
     const priorFy = await loadPriorFiscalYear(clientId, fy);
 
-    const curBal = await computeExpenseBalances(orgId, fy.id);
+    // RECPAM (5.4.004) se expone como línea propia en el ER, no en Anexo II.
+    const curBal = (await computeExpenseBalances(orgId, fy.id)).filter(
+      (r) => r.code !== RECPAM_ACCOUNT_CODE
+    );
     const priBal = priorFy
-      ? await computeExpenseBalances(orgId, priorFy.id)
+      ? (await computeExpenseBalances(orgId, priorFy.id)).filter(
+          (r) => r.code !== RECPAM_ACCOUNT_CODE
+        )
       : [];
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
@@ -6727,7 +6735,7 @@ export const saveCMV = createServerFn({ method: 'POST' })
         ...vals,
       })
       .onConflictDoUpdate({
-        target: anexoCmv.ejercicioId,
+        target: [anexoCmv.clienteId, anexoCmv.ejercicioId],
         set: vals,
       });
     return { ok: true };
