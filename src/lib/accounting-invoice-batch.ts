@@ -213,11 +213,13 @@ export async function runPendingInvoiceBatch(opts?: {
     .where(soloClienteId ? eq(cliente.id, soloClienteId) : undefined);
 
   for (const { clienteId, orgId } of clientes) {
+    // TIN-1427: usar leftJoin para no excluir facturas sin contraparte en el
+    // catálogo o sin letra de comprobante. innerJoin las silenciaba sin error.
     const pendientes = await db
       .select(COMPROBANTE_SELECT)
       .from(comprobante)
-      .innerJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
-      .innerJoin(contraparte, eq(comprobante.contraparteId, contraparte.id))
+      .leftJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
+      .leftJoin(contraparte, eq(comprobante.contraparteId, contraparte.id))
       .where(
         and(
           eq(comprobante.clienteId, clienteId),
