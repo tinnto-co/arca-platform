@@ -1,4 +1,9 @@
-import { createFileRoute, redirect, Link } from '@tanstack/react-router';
+import {
+  createFileRoute,
+  redirect,
+  Link,
+  useNavigate,
+} from '@tanstack/react-router';
 import { z } from 'zod';
 import { listOrgModules } from '@/actions/admin';
 import {
@@ -86,6 +91,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   listAccountingClients,
   getCurrentRole,
@@ -705,6 +711,7 @@ function AccountingPage() {
       ? (t as Tab)
       : SOLAPAS[0].id;
   });
+  const navigate = useNavigate();
   const [clientId, setClientId] = useState<string>(() =>
     String(search.clientId ?? '')
   );
@@ -721,12 +728,24 @@ function AccountingPage() {
 
   const effectiveClientId = clientId || clients[0]?.id || '';
 
+  // TIN-1425: persistir la selección en la URL para mantenerla entre módulos.
+  const handleClientChange = (v: string) => {
+    setClientId(v);
+    void navigate({ search: (prev) => ({ ...prev, clientId: v }) });
+  };
+
   const { data: pendingEntries = [] } = useQuery({
     queryKey: ['accounting', 'pending-review', effectiveClientId],
     queryFn: () =>
       getPendingReviewEntries({ data: { clientId: effectiveClientId } }),
     enabled: !!effectiveClientId,
   });
+
+  // TIN-1425: opciones para el buscador de clientes.
+  const clientOptions = clients.map((c) => ({
+    value: c.id,
+    label: `${c.name} · ${c.identityNumber}`,
+  }));
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
@@ -740,21 +759,15 @@ function AccountingPage() {
               className="w-4 h-4 text-[var(--arca-ink-3)]"
               strokeWidth={1.8}
             />
-            <Select
+            <SearchableSelect
+              options={clientOptions}
               value={effectiveClientId}
-              onValueChange={(v) => setClientId(v)}
-            >
-              <SelectTrigger size="sm" className="max-w-[260px] text-[12.5px]">
-                <SelectValue placeholder="Sin empresas" />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} · {c.identityNumber}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onValueChange={handleClientChange}
+              placeholder="Sin empresas"
+              searchPlaceholder="Buscar empresa…"
+              emptyMessage="No se encontraron empresas"
+              width={300}
+            />
           </div>
         }
       />

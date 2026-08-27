@@ -335,6 +335,7 @@ export const getCurrentRole = createServerFn({ method: 'GET' }).handler(
 export const listAccountingClients = createServerFn({ method: 'GET' }).handler(
   async () => {
     const { orgId } = await getSessionWithOrg();
+    // TIN-1425: solo empresas jurídicas propias del estudio (excluye personas físicas).
     return db
       .select({
         id: cliente.id,
@@ -342,7 +343,13 @@ export const listAccountingClients = createServerFn({ method: 'GET' }).handler(
         identityNumber: cliente.cuit,
       })
       .from(cliente)
-      .where(eq(cliente.orgId, orgId))
+      .where(
+        and(
+          eq(cliente.orgId, orgId),
+          eq(cliente.tipoPersona, 'juridica'),
+          eq(cliente.estado, 'activo')
+        )
+      )
       .orderBy(asc(cliente.razonSocial));
   }
 );
