@@ -21,6 +21,7 @@ import {
 import { ArcaCard } from '@/components/dashboard/shared';
 import {
   AUDIT_REPORT_DEFAULT,
+  AUDIT_REPORT_RT54,
   AUDIT_REPORT_VARS,
   fillAuditReport,
   missingVars,
@@ -161,9 +162,16 @@ export function InformeAuditor({
           <button
             onClick={() => aplicar(AUDIT_REPORT_DEFAULT)}
             className="text-[12px] px-2.5 h-7 rounded-[6px] border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)]"
-            title="Modelo RT 37 con opinión favorable"
+            title="Modelo RT 37 con opinión favorable — norma general"
           >
-            Modelo estándar (RT 37)
+            Modelo RT 37
+          </button>
+          <button
+            onClick={() => aplicar(AUDIT_REPORT_RT54)}
+            className="text-[12px] px-2.5 h-7 rounded-[6px] border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)]"
+            title="Modelo RT 54 (T.O. RT 59) — entes pequeños, con opinión favorable"
+          >
+            Modelo RT 54
           </button>
           <div className="flex-1" />
           <input

@@ -74,6 +74,9 @@ import {
   fechaLarga,
   rangoAnexos,
   rangoNotas,
+  fillAuditReport,
+  AUDIT_REPORT_VARS,
+  type AuditReportVars,
 } from '@/lib/accounting-audit-report';
 import { frameworkCite } from '@/lib/accounting-labels';
 import {
@@ -9026,6 +9029,31 @@ function EstadosContables({
                 approved={approved}
                 canEdit={isOwner}
                 onSaved={invalidateFs}
+                clientName={clientName}
+                vars={
+                  selectedFy
+                    ? {
+                        empresa: clientName,
+                        cuit: clientCuit,
+                        domicilio: membreteEecc?.domicilio ?? '',
+                        cierre: fechaLarga(new Date(selectedFy.fechaHasta)),
+                        ejercicio: String(selectedFy.numero),
+                        notas: rangoNotas(fs.notes.length),
+                        anexos: rangoAnexos(3),
+                        destinatario: 'Señores Socios',
+                        contador: membreteEecc?.accountant?.nombre ?? '',
+                        matricula: [
+                          membreteEecc?.accountant?.tomo &&
+                            `Tomo ${membreteEecc.accountant.tomo}`,
+                          membreteEecc?.accountant?.folio &&
+                            `Folio ${membreteEecc.accountant.folio}`,
+                          membreteEecc?.accountant?.consejo,
+                        ]
+                          .filter(Boolean)
+                          .join(' '),
+                      }
+                    : {}
+                }
               />
             ) : (
               <ArcaCard>
@@ -10777,6 +10805,8 @@ function NotesEditor({
   approved,
   canEdit,
   onSaved,
+  clientName,
+  vars = {},
 }: {
   clientId: string;
   fiscalYearId: string;
@@ -10786,6 +10816,10 @@ function NotesEditor({
   approved: boolean;
   canEdit: boolean;
   onSaved: () => void;
+  /** Nombre de empresa, para el archivo Word exportado. */
+  clientName?: string;
+  /** Variables de la empresa/ejercicio para autocompletar en las notas. */
+  vars?: Partial<AuditReportVars>;
 }) {
   const [notes, setNotes] = useState<FsNote[]>(initialNotes);
   // El orden vive aparte del contenido: incluye los bloques que genera el
@@ -10856,6 +10890,43 @@ function NotesEditor({
       return n;
     });
 
+  const exportWord = async () => {
+    const { Document, Paragraph, TextRun, HeadingLevel, Packer } = await import(
+      'docx'
+    );
+    const children: InstanceType<typeof Paragraph>[] = [];
+    for (const item of secuencia) {
+      if (item.isSystem) continue;
+      const note = notes.find((n) => `note:${n.id}` === item.entry);
+      if (!note) continue;
+      children.push(
+        new Paragraph({
+          text: `Nota ${item.number}. ${note.title}`,
+          heading: HeadingLevel.HEADING_2,
+        })
+      );
+      const filledContent = fillAuditReport(note.content, vars);
+      for (const line of filledContent.split('\n')) {
+        children.push(
+          new Paragraph({
+            children: [new TextRun({ text: line })],
+          })
+        );
+      }
+      children.push(new Paragraph({ text: '' }));
+    }
+    const doc = new Document({
+      sections: [{ properties: {}, children }],
+    });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `notas_${(clientName ?? 'balance').replace(/\s+/g, '_')}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <ArcaCard>
       <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-[var(--arca-border)]">
@@ -10866,6 +10937,15 @@ function NotesEditor({
           Formato Markdown
         </span>
         <div className="flex-1" />
+        {notes.length > 0 && (
+          <button
+            onClick={exportWord}
+            className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+            title="Exportar todas las notas como documento Word (.docx)"
+          >
+            Exportar Word
+          </button>
+        )}
         {editable && (
           <>
             <button
@@ -11007,7 +11087,7 @@ function NotesEditor({
                 <div className="px-4 py-3 text-[13px] text-[var(--arca-ink-2)] [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-[var(--arca-ink)] [&_em]:italic [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:my-2 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:my-2 [&_h3]:font-semibold [&_a]:text-blue-600 [&_a]:underline [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-[var(--arca-surface-2)] [&_code]:px-1 [&_code]:rounded [&_table]:w-full [&_th]:text-left [&_th]:border-b [&_th]:border-[var(--arca-border)] [&_td]:py-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--arca-border)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--arca-ink-3)]">
                   {note.content.trim() ? (
                     <Markdown remarkPlugins={[remarkGfm]}>
-                      {note.content}
+                      {fillAuditReport(note.content, vars)}
                     </Markdown>
                   ) : (
                     <span className="text-[var(--arca-ink-3)] italic">
@@ -11016,13 +11096,39 @@ function NotesEditor({
                   )}
                 </div>
               ) : (
-                <textarea
-                  value={note.content}
-                  onChange={(e) => update(note.id, { content: e.target.value })}
-                  placeholder="Escribí la nota en Markdown…"
-                  rows={6}
-                  className="w-full px-4 py-3 bg-transparent text-[13px] text-[var(--arca-ink)] outline-none resize-y font-mono"
-                />
+                <>
+                  <textarea
+                    value={note.content}
+                    onChange={(e) =>
+                      update(note.id, { content: e.target.value })
+                    }
+                    placeholder="Escribí la nota en Markdown…"
+                    rows={6}
+                    className="w-full px-4 py-3 bg-transparent text-[13px] text-[var(--arca-ink)] outline-none resize-y font-mono"
+                  />
+                  {editable && (
+                    <div className="px-4 pb-2 text-[11px] text-[var(--arca-ink-3)] border-t border-[var(--arca-border)] pt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                      <span className="font-medium text-[var(--arca-ink-4)]">
+                        Variables:
+                      </span>
+                      {AUDIT_REPORT_VARS.map((v) => (
+                        <button
+                          key={v.key}
+                          type="button"
+                          onClick={() =>
+                            update(note.id, {
+                              content: note.content + `{{${v.key}}}`,
+                            })
+                          }
+                          title={`${v.label} — ej: ${v.ejemplo}`}
+                          className="font-mono text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] hover:underline"
+                        >
+                          {`{{${v.key}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );
@@ -11443,6 +11549,19 @@ function ExportView({
             }
           : null,
         notes,
+        noteVars: {
+          empresa: clientName,
+          cuit: clientCuit,
+          domicilio: membrete?.domicilio ?? '',
+          contador: membrete?.accountant?.nombre ?? '',
+          matricula: [
+            membrete?.accountant?.tomo && `Tomo ${membrete.accountant.tomo}`,
+            membrete?.accountant?.folio && `Folio ${membrete.accountant.folio}`,
+            membrete?.accountant?.consejo,
+          ]
+            .filter(Boolean)
+            .join(' '),
+        },
       });
       if (isOwner) {
         const dataUrl = await blobToDataUrl(blob);

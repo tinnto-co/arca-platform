@@ -14,6 +14,10 @@ import {
 } from '@react-pdf/renderer';
 import { MONTH_NAMES, JOURNAL_ORIGIN_LABELS } from '@/lib/accounting-labels';
 import type { NumberedNote } from '@/lib/accounting-document';
+import {
+  fillAuditReport,
+  type AuditReportVars,
+} from '@/lib/accounting-audit-report';
 import type {
   EspResult,
   ErResult,
@@ -1962,6 +1966,8 @@ export interface EeccPackageData {
   actividadPrincipal?: string;
   fechaInscripcion?: string | null;
   numeroInscripcion?: string;
+  /** Variables para reemplazar `{{empresa}}` etc. en el contenido de las notas. */
+  noteVars?: Partial<AuditReportVars>;
 }
 
 /** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
@@ -2729,12 +2735,15 @@ function NotesBlock({
   notes,
   sequence,
   soloUna = false,
+  vars = {},
 }: {
   notes: FsNote[];
   /** Números resueltos por posición. Sin esto se numeran por orden de carga. */
   sequence?: NumberedNote[];
   /** Intercalada entre estados: se imprime sin el título del bloque. */
   soloUna?: boolean;
+  /** Variables para reemplazar `{{empresa}}` etc. en el contenido de cada nota. */
+  vars?: Partial<AuditReportVars>;
 }) {
   // La composición de rubros se imprime en su propio bloque: acá solo van las
   // notas de texto, pero con el número que les tocó en la secuencia completa.
@@ -2760,7 +2769,7 @@ function NotesBlock({
               {numeroDe(note.id) ?? idx + 1}.{' '}
               {note.title || `Nota ${numeroDe(note.id) ?? idx + 1}`}
             </Text>
-            {mdLines(note.content).map((l, i) =>
+            {mdLines(fillAuditReport(note.content, vars)).map((l, i) =>
               l.type === 'h' ? (
                 <Text key={i} style={pk.noteH}>
                   {l.text}
@@ -2967,6 +2976,7 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
                   notes={[note]}
                   sequence={data.noteSequence}
                   soloUna
+                  vars={data.noteVars}
                 />
               );
             }
