@@ -2818,6 +2818,7 @@ const DEFAULT_PACKAGE_SECTIONS: string[] = [
   'anexo_ii',
   'anexo_i',
   'anexo_cmv',
+  'inventario',
   'informe_auditor',
 ];
 
@@ -2919,6 +2920,15 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
               return <AnexoIBlock key={entry} anexoI={data.anexoI} />;
             case 'anexo_cmv':
               return <AnexoCMVBlock key={entry} cmv={data.cmv} />;
+            case 'inventario':
+              return (
+                <View key={entry}>
+                  <InventarioBlock esp={data.esp} />
+                  <View break>
+                    <InventarioPnBlock esp={data.esp} />
+                  </View>
+                </View>
+              );
             case 'informe_auditor':
               return (
                 <InformeAuditorBlock key={entry} informe={data.auditReport} />
