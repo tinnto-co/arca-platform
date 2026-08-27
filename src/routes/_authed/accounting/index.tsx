@@ -241,7 +241,6 @@ import {
   FIXED_ASSET_CATEGORY_LABELS,
   FIXED_ASSET_STATUS_LABELS,
   FIXED_ASSET_DISPOSAL_REASON_LABELS,
-  ACCOUNT_GROUP_LABELS,
   type AccountGroup,
   type JournalOrigin,
 } from '@/lib/accounting-labels';
