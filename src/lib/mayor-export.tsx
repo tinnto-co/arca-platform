@@ -1957,6 +1957,11 @@ export interface EeccPackageData {
    * Sin esto se usa el orden clásico.
    */
   sections?: string[];
+  /** Datos del membrete para la carátula del PDF. */
+  domicilio?: string;
+  actividadPrincipal?: string;
+  fechaInscripcion?: string | null;
+  numeroInscripcion?: string;
 }
 
 /** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
@@ -2867,7 +2872,26 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
           <Text style={pk.coverKicker}>ESTADOS CONTABLES</Text>
           <Text style={pk.coverEmpresa}>{data.empresaName}</Text>
           <Text style={pk.coverCuit}>CUIT {data.cuit}</Text>
-          <Text style={pk.coverTitle}>
+          {!!data.domicilio && (
+            <Text style={pk.coverMeta}>{data.domicilio}</Text>
+          )}
+          {!!data.actividadPrincipal && (
+            <Text style={pk.coverMeta}>
+              Actividad principal: {data.actividadPrincipal}
+            </Text>
+          )}
+          {!!(data.fechaInscripcion || data.numeroInscripcion) && (
+            <Text style={pk.coverMeta}>
+              {[
+                data.fechaInscripcion &&
+                  `Inscripción RPC: ${data.fechaInscripcion}`,
+                data.numeroInscripcion && `N° IGJ: ${data.numeroInscripcion}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
+          )}
+          <Text style={[pk.coverTitle, { marginTop: 24 }]}>
             Ejercicio Económico N°{data.fiscalYearNumber}
           </Text>
           <Text style={pk.coverMeta}>{data.periodLabel}</Text>

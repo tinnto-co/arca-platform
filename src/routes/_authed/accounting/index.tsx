@@ -192,6 +192,7 @@ import {
   saveJournalTemplate,
   deleteJournalTemplate,
   type JournalTemplate,
+  updateClientFiscalData,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -8568,6 +8569,7 @@ function EstadosContables({
     | 'informe'
     | 'orden'
     | 'export'
+    | 'datos'
   >('esp');
   /**
    * Los EECC se presentan ajustados por inflación (RT 6). "Histórico" excluye el
@@ -8730,6 +8732,7 @@ function EstadosContables({
     {
       grupo: 'Documento',
       items: [
+        { k: 'datos', label: 'Datos iniciales' },
         { k: 'informe', label: 'Informe del auditor' },
         { k: 'orden', label: 'Orden del documento' },
         { k: 'export', label: 'Exportar' },
@@ -8958,6 +8961,13 @@ function EstadosContables({
               selectedFy={selectedFy}
             />
           )}
+          {view === 'datos' && (
+            <DatosInicialesView
+              clientId={clientId}
+              canEdit={isOwner}
+            />
+          )}
+
           {view === 'informe' &&
             (fs && selectedFy ? (
               <InformeAuditor
@@ -11031,6 +11041,232 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+function DatosInicialesView({
+  clientId,
+  canEdit,
+}: {
+  clientId: string;
+  canEdit: boolean;
+}) {
+  const qc = useQueryClient();
+  const { data: membrete } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
+
+  const [form, setForm] = useState({
+    address: '',
+    actividadPrincipal: '',
+    fechaInscripcion: '',
+    numeroInscripcion: '',
+    accountingFramework: 'rt54' as 'rt54' | 'rt6',
+  });
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!membrete) return;
+    setForm({
+      address: membrete.domicilio ?? '',
+      actividadPrincipal: membrete.actividadPrincipal ?? '',
+      fechaInscripcion: membrete.fechaInscripcion ?? '',
+      numeroInscripcion: membrete.numeroInscripcion ?? '',
+      accountingFramework: membrete.accountingFramework ?? 'rt54',
+    });
+    setDirty(false);
+  }, [membrete]);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      updateClientFiscalData({
+        data: {
+          clientId,
+          address: form.address || undefined,
+          actividadPrincipal: form.actividadPrincipal || null,
+          fechaInscripcion: form.fechaInscripcion || null,
+          numeroInscripcion: form.numeroInscripcion || null,
+          accountingFramework: form.accountingFramework,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounting', 'membrete', clientId] });
+      setDirty(false);
+      toast.success('Datos iniciales guardados');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const set = (k: keyof typeof form, v: string) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setDirty(true);
+  };
+
+  return (
+    <ArcaCard>
+      <div className="px-5 py-4 space-y-5">
+        <div>
+          <div className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            Datos iniciales del balance
+          </div>
+          <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
+            Estos datos aparecen en la carátula del paquete EECC y pueden
+            usarse como base para las Notas 1 y 2.
+          </div>
+        </div>
+
+        {/* Empresa + CUIT — solo lectura */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <div className="text-[11px] font-medium text-[var(--arca-ink-3)] uppercase tracking-wide">
+              Razón social
+            </div>
+            <div className="text-[13px] text-[var(--arca-ink)]">
+              {membrete?.empresaName ?? '—'}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-[11px] font-medium text-[var(--arca-ink-3)] uppercase tracking-wide">
+              CUIT
+            </div>
+            <div className="text-[13px] text-[var(--arca-ink)]">
+              {membrete?.cuit ?? '—'}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-[var(--arca-border)]" />
+
+        {/* Campos editables */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            mut.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+              Domicilio
+            </label>
+            <input
+              value={form.address}
+              onChange={(e) => set('address', e.target.value)}
+              disabled={!canEdit}
+              placeholder="Av. Corrientes 1234, Buenos Aires"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+              Actividad principal
+            </label>
+            <input
+              value={form.actividadPrincipal}
+              onChange={(e) => set('actividadPrincipal', e.target.value)}
+              disabled={!canEdit}
+              placeholder="Venta al por menor de…"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+                Fecha inscripción RPC
+              </label>
+              <input
+                type="date"
+                value={form.fechaInscripcion}
+                onChange={(e) => set('fechaInscripcion', e.target.value)}
+                disabled={!canEdit}
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+                N° inscripción IGJ
+              </label>
+              <input
+                value={form.numeroInscripcion}
+                onChange={(e) => set('numeroInscripcion', e.target.value)}
+                disabled={!canEdit}
+                placeholder="12345"
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+              Norma contable aplicada
+            </label>
+            <Select
+              value={form.accountingFramework}
+              onValueChange={(v) => set('accountingFramework', v)}
+              disabled={!canEdit}
+            >
+              <SelectTrigger size="sm" className="w-64 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rt54">
+                  RT 54 (T.O. RT 59) — entes pequeños
+                </SelectItem>
+                <SelectItem value="rt6">RT 6 — norma general</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-[var(--arca-ink-3)]">
+              Define cómo se cita el ajuste por inflación en los EECC. El
+              cálculo es idéntico en ambas normas.
+            </p>
+          </div>
+
+          {canEdit && (
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={mut.isPending || !dirty}
+                className="px-4 h-8 rounded-[7px] bg-[var(--arca-ink)] text-white text-[12.5px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                {mut.isPending ? 'Guardando…' : 'Guardar cambios'}
+              </button>
+            </div>
+          )}
+        </form>
+
+        {/* Contador — solo lectura */}
+        {membrete?.accountant && (
+          <>
+            <div className="border-t border-[var(--arca-border)]" />
+            <div className="space-y-1">
+              <div className="text-[11px] font-medium text-[var(--arca-ink-3)] uppercase tracking-wide">
+                Contador firmante
+              </div>
+              <div className="text-[13px] text-[var(--arca-ink)]">
+                {membrete.accountant.nombre}
+              </div>
+              <div className="text-[12px] text-[var(--arca-ink-3)]">
+                {[
+                  membrete.accountant.tomo &&
+                    `Tomo ${membrete.accountant.tomo}`,
+                  membrete.accountant.folio &&
+                    `Folio ${membrete.accountant.folio}`,
+                  membrete.accountant.consejo,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </div>
+              <div className="text-[11px] text-[var(--arca-ink-4)] mt-1">
+                La firma se configura en «Firma digital» del módulo Sueldos.
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </ArcaCard>
+  );
+}
+
 function ExportView({
   clientId,
   clientName,
@@ -11169,6 +11405,10 @@ function ExportView({
         fiscalYearNumber: esp.fiscalYearNumber,
         periodLabel: esp.periodLabel,
         generatedLabel: new Date().toLocaleDateString('es-AR'),
+        domicilio: membrete?.domicilio ?? undefined,
+        actividadPrincipal: membrete?.actividadPrincipal ?? undefined,
+        fechaInscripcion: membrete?.fechaInscripcion ?? undefined,
+        numeroInscripcion: membrete?.numeroInscripcion ?? undefined,
         esp,
         er,
         eepn: eepn ?? null,
