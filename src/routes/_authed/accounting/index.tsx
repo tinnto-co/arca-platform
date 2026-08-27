@@ -61,6 +61,7 @@ import {
   Boxes,
   CheckCircle2,
   XCircle,
+  Check,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -92,6 +93,20 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
 import {
   listAccountingClients,
   getCurrentRole,
@@ -3578,6 +3593,87 @@ function groupedPostable(accounts: PostableAccount[]) {
   return groups;
 }
 
+function AccountCombobox({
+  value,
+  onChange,
+  postable,
+  onCreate,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  postable: PostableAccount[];
+  onCreate: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = postable.find((a) => a.id === value);
+  const groups = groupedPostable(postable);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            'flex h-8 flex-1 min-w-0 w-0 items-center justify-between gap-1 rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 text-[12.5px] hover:bg-[var(--arca-surface-2)] transition-colors',
+            selected ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-3)]'
+          )}
+        >
+          <span className="truncate min-w-0">
+            {selected
+              ? `${selected.code} · ${selected.name}`
+              : '— Elegí cuenta —'}
+          </span>
+          <ChevronsUpDown className="w-3 h-3 shrink-0 text-[var(--arca-ink-4)]" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start" sideOffset={4}>
+        <Command>
+          <CommandInput placeholder="Buscar cuenta..." className="text-[12.5px]" />
+          <CommandList className="max-h-60">
+            <CommandEmpty className="py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
+              Sin resultados
+            </CommandEmpty>
+            {groups.map((g) => (
+              <CommandGroup key={g.label} heading={g.label}>
+                {g.items.map((a) => (
+                  <CommandItem
+                    key={a.id}
+                    value={`${a.code} ${a.name}`}
+                    onSelect={() => {
+                      onChange(a.id);
+                      setOpen(false);
+                    }}
+                    className="text-[12.5px] gap-2"
+                  >
+                    <Check
+                      className={cn(
+                        'w-3 h-3 shrink-0',
+                        value === a.id ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {a.code} · {a.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+          <div className="border-t border-[var(--arca-border)] p-1">
+            <button
+              className="flex w-full items-center gap-1.5 rounded-[6px] px-2 py-1.5 text-[12px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors"
+              onClick={() => {
+                setOpen(false);
+                onCreate();
+              }}
+            >
+              <Plus className="w-3 h-3" strokeWidth={2.5} />
+              Nueva cuenta
+            </button>
+          </div>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 interface LineDraft {
   accountId: string;
   debit: string;
@@ -3962,6 +4058,7 @@ function AsientoEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const qc = useQueryClient();
   const init = state.initial;
   const [entryDate, setEntryDate] = useState(init?.entryDate ?? '');
   const [description, setDescription] = useState(init?.description ?? '');
@@ -3970,6 +4067,12 @@ function AsientoEditor({
       ? init.lines
       : [emptyLine(), emptyLine()]
   );
+  const [createAccountOpen, setCreateAccountOpen] = useState(false);
+
+  const { data: chart } = useQuery({
+    queryKey: ['accounting', 'chart', clientId],
+    queryFn: () => getChartOfAccounts({ data: { clientId } }),
+  });
 
   const title =
     state.mode === 'edit'
@@ -4055,6 +4158,7 @@ function AsientoEditor({
   });
 
   return (
+    <>
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[760px]">
         <DialogHeader>
@@ -4116,29 +4220,12 @@ function AsientoEditor({
                 key={i}
                 className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
               >
-                <Select
+                <AccountCombobox
                   value={l.accountId}
-                  onValueChange={(v) => updateLine(i, { accountId: v })}
-                >
-                  <SelectTrigger
-                    size="sm"
-                    className="flex-1 min-w-0 w-0 text-[12.5px]"
-                  >
-                    <SelectValue placeholder="— Elegí cuenta —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {groupedPostable(postable).map((g) => (
-                      <SelectGroup key={g.label}>
-                        <SelectLabel>{g.label}</SelectLabel>
-                        {g.items.map((a) => (
-                          <SelectItem key={a.id} value={a.id}>
-                            {a.code} · {a.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  onChange={(v) => updateLine(i, { accountId: v })}
+                  postable={postable}
+                  onCreate={() => setCreateAccountOpen(true)}
+                />
                 <input
                   value={l.description}
                   onChange={(e) =>
@@ -4230,6 +4317,25 @@ function AsientoEditor({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    {createAccountOpen && (
+      <AccountFormDialog
+        mode={{ kind: 'custom' }}
+        clientId={clientId}
+        accounts={chart?.accounts ?? []}
+        onClose={() => setCreateAccountOpen(false)}
+        onSaved={() => {
+          setCreateAccountOpen(false);
+          void qc.invalidateQueries({
+            queryKey: ['accounting', 'postable', clientId],
+          });
+          void qc.invalidateQueries({
+            queryKey: ['accounting', 'chart', clientId],
+          });
+        }}
+      />
+    )}
+  </>
   );
 }
 
