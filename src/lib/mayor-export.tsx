@@ -3572,15 +3572,98 @@ export async function exportEstadosExcel(
     });
   };
 
+  /**
+   * Inventario al cierre (TIN-1440). El criterio dice «PDF/Excel» y el Excel
+   * no tenía esta solapa: como el orden se filtra por las secciones conocidas,
+   * pedir Inventario en el documento no hacía nada acá.
+   *
+   * Las cuatro columnas de importe replican el escalonado del PDF —cuenta,
+   * rubro, total de sección, total de macro— porque así se lee un libro de
+   * inventarios: cada nivel de suma en su propia columna.
+   */
+  const hojaInventario = () => {
+    const macros = [
+      {
+        macro: 'activo' as const,
+        title: 'Activo',
+        total: data.esp.totals.activo,
+      },
+      {
+        macro: 'pasivo' as const,
+        title: 'Pasivo',
+        total: data.esp.totals.pasivo,
+      },
+      {
+        macro: 'pn' as const,
+        title: 'Patrimonio Neto',
+        total: data.esp.totals.pn,
+      },
+    ];
+    if (
+      macros.every(({ macro }) =>
+        data.esp.sections
+          .filter((s) => s.macro === macro)
+          .every((s) => s.rubros.length === 0)
+      )
+    )
+      return;
+
+    const ws = wb.addWorksheet('Inventario', {
+      views: [{ showGridLines: false }],
+    });
+    header(ws, 'Inventario al cierre del ejercicio', 5);
+    const hr = ws.addRow(['Conceptos', '$', '$', '$', '$']);
+    for (let c = 1; c <= 5; c++) hr.getCell(c).font = { bold: true };
+    if (ws.columns[0]) ws.columns[0].width = 52;
+
+    /** `col` es en cuál de las cuatro columnas de importe cae el número. */
+    const fila = (
+      label: string,
+      col: 0 | 1 | 2 | 3 | 4,
+      amount?: number,
+      opts: { indent?: number; bold?: boolean } = {}
+    ) => {
+      const celdas: (string | number)[] = [
+        '  '.repeat(opts.indent ?? 0) + label,
+        '',
+        '',
+        '',
+        '',
+      ];
+      if (col > 0 && amount !== undefined) celdas[col] = amount;
+      const row = ws.addRow(celdas);
+      if (opts.bold) row.getCell(1).font = { bold: true };
+      money(row, 2, 5, opts.bold);
+      return row;
+    };
+
+    for (const { macro, title, total } of macros) {
+      const secs = data.esp.sections.filter((s) => s.macro === macro);
+      if (secs.every((sec) => sec.rubros.length === 0)) continue;
+      fila(title, 0, undefined, { bold: true });
+      for (const sec of secs) {
+        if (sec.label !== title) fila(sec.label, 0, undefined, { indent: 1 });
+        for (const r of sec.rubros) {
+          fila(r.label, 2, r.current, { indent: 2 });
+          for (const a of r.accounts) fila(a.name, 1, a.current, { indent: 3 });
+        }
+        if (sec.rubros.length > 0 && sec.label !== title)
+          fila(`Total ${sec.label}`, 3, sec.current, { indent: 1 });
+      }
+      fila(`Total ${title}`, 4, total.current, { bold: true });
+    }
+  };
+
   // Las solapas salen en el orden del documento, igual que el PDF.
   const porSeccion: Record<string, () => void> = {
     eepn: hojaEepn,
     efe: hojaEfe,
     composicion: hojaComposicion,
+    inventario: hojaInventario,
   };
-  const orden = (data.sections ?? ['eepn', 'efe', 'composicion']).filter(
-    (k) => k in porSeccion
-  );
+  const orden = (
+    data.sections ?? ['eepn', 'efe', 'composicion', 'inventario']
+  ).filter((k) => k in porSeccion);
   for (const k of orden) porSeccion[k]();
 
   const buffer = await wb.xlsx.writeBuffer();
