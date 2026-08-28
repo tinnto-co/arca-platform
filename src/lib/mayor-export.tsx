@@ -882,7 +882,9 @@ export interface AnexoIMembrete {
   cuit: string;
   domicilio: string;
   actividadPrincipal: string;
-  /** Fecha de inscripción Registro Público, ya formateada (dd/mm/aaaa) o ''. */
+  /** Fechas ya formateadas (dd/mm/aaaa) o ''. Constitución e inscripción son
+   *  hechos distintos y la carátula y la Nota 1 piden los dos. */
+  fechaConstitucion: string;
   fechaInscripcion: string;
   numeroInscripcion: string;
   /** Fecha inicio del ejercicio, formateada. */
@@ -969,6 +971,8 @@ async function anexoIWorkbookBuffer(
   if (m?.domicilio) leftRow(m.domicilio);
   if (m?.actividadPrincipal)
     leftRow(`Actividad Principal: ${m.actividadPrincipal}`);
+  if (m?.fechaConstitucion)
+    leftRow(`Fecha de Constitución: ${m.fechaConstitucion}`);
   if (m?.fechaInscripcion)
     leftRow(
       `Fecha de Inscripción en el Registro Público de Comercio: ${m.fechaInscripcion}`
@@ -1324,6 +1328,11 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
             Actividad Principal: {m.actividadPrincipal}
           </Text>
         ) : null}
+        {m?.fechaConstitucion ? (
+          <Text style={ax.mbLine}>
+            Fecha de Constitución: {m.fechaConstitucion}
+          </Text>
+        ) : null}
         {m?.fechaInscripcion ? (
           <Text style={ax.mbLine}>
             Fecha de Inscripción en el Registro Público de Comercio:{' '}
@@ -1645,6 +1654,11 @@ function MembreteHeader({
           Actividad Principal: {m.actividadPrincipal}
         </Text>
       ) : null}
+      {m?.fechaConstitucion ? (
+        <Text style={ax.mbLine}>
+          Fecha de Constitución: {m.fechaConstitucion}
+        </Text>
+      ) : null}
       {m?.fechaInscripcion ? (
         <Text style={ax.mbLine}>
           Fecha de Inscripción en el Registro Público de Comercio:{' '}
@@ -1793,6 +1807,12 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
   if (m?.domicilio) banner(m.domicilio, { size: 10 }, false);
   if (m?.actividadPrincipal)
     banner(`Actividad Principal: ${m.actividadPrincipal}`, { size: 10 }, false);
+  if (m?.fechaConstitucion)
+    banner(
+      `Fecha de Constitución: ${m.fechaConstitucion}`,
+      { size: 10 },
+      false
+    );
   if (m?.fechaInscripcion)
     banner(
       `Fecha de Inscripción en el Registro Público de Comercio: ${m.fechaInscripcion}`,
@@ -1964,6 +1984,7 @@ export interface EeccPackageData {
   /** Datos del membrete para la carátula del PDF. */
   domicilio?: string;
   actividadPrincipal?: string;
+  fechaConstitucion?: string | null;
   fechaInscripcion?: string | null;
   numeroInscripcion?: string;
   /** Variables para reemplazar `{{empresa}}` etc. en el contenido de las notas. */
@@ -2002,7 +2023,15 @@ const pk = StyleSheet.create({
     fontFamily: 'Helvetica',
     color: '#1a1a1a',
   },
-  cover: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  // Arriba y no centrada verticalmente (TIN-1439). El centrado horizontal se
+  // mantiene: es lo habitual en una carátula y el ticket solo objeta que el
+  // contenido «flote» en el medio de la hoja.
+  cover: {
+    flexGrow: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 48,
+  },
   coverKicker: {
     fontSize: 9,
     color: '#888',
@@ -2460,12 +2489,7 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
         <View key={a.key}>
           <Text style={pk.subTitle}>{a.label}</Text>
           {a.lines.map((l) => row(l.name, l))}
-          {row(
-            `Flujo neto de ${a.label.toLowerCase()}`,
-            a,
-            pk.totalRow,
-            false
-          )}
+          {row(`Flujo neto de ${a.label.toLowerCase()}`, a, pk.totalRow, false)}
         </View>
       ))}
       {row(
@@ -2887,6 +2911,11 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
           {!!data.actividadPrincipal && (
             <Text style={pk.coverMeta}>
               Actividad principal: {data.actividadPrincipal}
+            </Text>
+          )}
+          {!!data.fechaConstitucion && (
+            <Text style={pk.coverMeta}>
+              Fecha de constitución: {data.fechaConstitucion}
             </Text>
           )}
           {!!(data.fechaInscripcion || data.numeroInscripcion) && (

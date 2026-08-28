@@ -4514,7 +4514,14 @@ export interface MembreteData {
   cuit: string;
   domicilio: string;
   actividadPrincipal: string;
-  /** Columna `date`: string `YYYY-MM-DD`. */
+  /**
+   * Columnas `date`: string `YYYY-MM-DD`.
+   *
+   * Son dos fechas distintas y la carátula pide las dos: una sociedad se
+   * constituye por acta y se inscribe en el registro después, a veces con
+   * meses de diferencia.
+   */
+  fechaConstitucion: string | null;
   fechaInscripcion: string | null;
   numeroInscripcion: string;
   /** Norma bajo la que se preparan los EECC: define cómo se cita el ajuste. */
@@ -4537,6 +4544,7 @@ export const getMembreteData = createServerFn({ method: 'GET' })
         identityNumber: cliente.cuit,
         address: cliente.domicilio,
         actividadPrincipal: clienteEeccConfig.actividadPrincipal,
+        fechaConstitucion: clienteEeccConfig.fechaConstitucion,
         fechaInscripcion: clienteEeccConfig.fechaInscripcionRpc,
         numeroInscripcion: clienteEeccConfig.numeroIgj,
         accountingFramework: cliente.marcoContable,
@@ -4553,6 +4561,7 @@ export const getMembreteData = createServerFn({ method: 'GET' })
       cuit: c?.identityNumber ?? '',
       domicilio: c?.address ?? '',
       actividadPrincipal: c?.actividadPrincipal ?? '',
+      fechaConstitucion: c?.fechaConstitucion ?? null,
       fechaInscripcion: c?.fechaInscripcion ?? null,
       numeroInscripcion: c?.numeroInscripcion ?? '',
       accountingFramework: c?.accountingFramework ?? 'rt54',
@@ -4673,6 +4682,7 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       address: z.string().max(300).optional(),
       actividadPrincipal: z.string().max(300).nullable().optional(),
+      fechaConstitucion: z.string().nullable().optional(), // YYYY-MM-DD
       fechaInscripcion: z.string().nullable().optional(), // YYYY-MM-DD
       numeroInscripcion: z.string().max(60).nullable().optional(),
       accountingFramework: z.enum(['rt54', 'rt6']).optional(),
@@ -4703,6 +4713,8 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
       eeccSet.actividadPrincipal = ctx.data.actividadPrincipal || null;
     if (ctx.data.numeroInscripcion !== undefined)
       eeccSet.numeroIgj = ctx.data.numeroInscripcion || null;
+    if (ctx.data.fechaConstitucion !== undefined)
+      eeccSet.fechaConstitucion = ctx.data.fechaConstitucion || null;
     if (ctx.data.fechaInscripcion !== undefined)
       eeccSet.fechaInscripcionRpc = ctx.data.fechaInscripcion || null;
 

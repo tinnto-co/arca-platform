@@ -33,6 +33,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
 
   const [form, setForm] = useState({
     actividadPrincipal: '',
+    fechaConstitucion: '',
     fechaInscripcion: '',
     numeroInscripcion: '',
     accountingFramework: 'rt54' as 'rt54' | 'rt6',
@@ -41,6 +42,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
     if (!membrete) return;
     setForm({
       actividadPrincipal: membrete.actividadPrincipal ?? '',
+      fechaConstitucion: membrete.fechaConstitucion ?? '',
       fechaInscripcion: membrete.fechaInscripcion ?? '',
       numeroInscripcion: membrete.numeroInscripcion ?? '',
       accountingFramework: membrete.accountingFramework ?? 'rt54',
@@ -53,6 +55,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
         data: {
           clientId,
           actividadPrincipal: form.actividadPrincipal || null,
+          fechaConstitucion: form.fechaConstitucion || null,
           fechaInscripcion: form.fechaInscripcion || null,
           numeroInscripcion: form.numeroInscripcion || null,
           accountingFramework: form.accountingFramework,
@@ -124,7 +127,22 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
               placeholder="Venta al por menor de…"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          {/* Tres columnas: los datos registrales van juntos y en orden
+              cronológico — primero se constituye, después se inscribe. */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="fd-constitucion" className="text-xs">
+                Fecha de constitución
+              </Label>
+              <Input
+                id="fd-constitucion"
+                type="date"
+                value={form.fechaConstitucion}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, fechaConstitucion: e.target.value }))
+                }
+              />
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="fd-fecha" className="text-xs">
                 Fecha de inscripción (RPC)

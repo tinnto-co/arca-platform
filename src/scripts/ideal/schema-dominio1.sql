@@ -258,6 +258,7 @@ comment on column cliente_empleador_config.orden_cln is 'Cómo se agrupan los re
 create table cliente_eecc_config (
   cliente_id uuid primary key references cliente(id) on delete cascade,
   actividad_principal text,
+  fecha_constitucion date,
   fecha_inscripcion_rpc date,
   numero_igj text,
   cierre_ejercicio_mes smallint,
@@ -269,6 +270,8 @@ create trigger trg_set_updated_at before update on cliente_eecc_config for each 
 
 comment on table cliente_eecc_config is
   'Membrete de Estados Contables (EECC) del cliente. Existe solo si el estudio le arma balances. firmante_id = contador que firma (tabla firmante, Dominio 4).';
+comment on column cliente_eecc_config.fecha_constitucion is
+  'Fecha del acta constitutiva. Distinta de fecha_inscripcion_rpc: una sociedad se constituye y se inscribe después, a veces con meses de diferencia, y la carátula y la Nota 1 piden las dos.';
 
 -- ============================================================================
 -- EVENTO (trail AI-first — se crea en D1 porque el discovery ya lo necesita)

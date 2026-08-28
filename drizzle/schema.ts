@@ -1713,6 +1713,7 @@ export const cliente = pgTable("cliente", {
 export const clienteEeccConfig = pgTable("cliente_eecc_config", {
 	clienteId: uuid("cliente_id").primaryKey().notNull(),
 	actividadPrincipal: text("actividad_principal"),
+	fechaConstitucion: date("fecha_constitucion"),
 	fechaInscripcionRpc: date("fecha_inscripcion_rpc"),
 	numeroIgj: text("numero_igj"),
 	cierreEjercicioMes: smallint("cierre_ejercicio_mes"),

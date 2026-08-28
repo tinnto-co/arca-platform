@@ -8428,6 +8428,9 @@ function AnexoIView({
           cuit: membrete.cuit,
           domicilio: membrete.domicilio,
           actividadPrincipal: membrete.actividadPrincipal,
+          fechaConstitucion: membrete.fechaConstitucion
+            ? fmtFecha(membrete.fechaConstitucion)
+            : '',
           fechaInscripcion: membrete.fechaInscripcion
             ? fmtFecha(membrete.fechaInscripcion)
             : '',
@@ -10826,6 +10829,9 @@ function AnexoCMVView({
             cuit: membrete.cuit,
             domicilio: membrete.domicilio,
             actividadPrincipal: membrete.actividadPrincipal,
+            fechaConstitucion: membrete.fechaConstitucion
+              ? fmtFecha(membrete.fechaConstitucion)
+              : '',
             fechaInscripcion: membrete.fechaInscripcion
               ? fmtFecha(membrete.fechaInscripcion)
               : '',
@@ -11463,6 +11469,7 @@ function DatosInicialesView({
   const [form, setForm] = useState({
     address: '',
     actividadPrincipal: '',
+    fechaConstitucion: '',
     fechaInscripcion: '',
     numeroInscripcion: '',
     accountingFramework: 'rt54' as 'rt54' | 'rt6',
@@ -11474,6 +11481,7 @@ function DatosInicialesView({
     setForm({
       address: membrete.domicilio ?? '',
       actividadPrincipal: membrete.actividadPrincipal ?? '',
+      fechaConstitucion: membrete.fechaConstitucion ?? '',
       fechaInscripcion: membrete.fechaInscripcion ?? '',
       numeroInscripcion: membrete.numeroInscripcion ?? '',
       accountingFramework: membrete.accountingFramework ?? 'rt54',
@@ -11488,6 +11496,7 @@ function DatosInicialesView({
           clientId,
           address: form.address || undefined,
           actividadPrincipal: form.actividadPrincipal || null,
+          fechaConstitucion: form.fechaConstitucion || null,
           fechaInscripcion: form.fechaInscripcion || null,
           numeroInscripcion: form.numeroInscripcion || null,
           accountingFramework: form.accountingFramework,
@@ -11575,7 +11584,21 @@ function DatosInicialesView({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Tres columnas: los datos registrales juntos y en orden
+              cronológico — primero se constituye, después se inscribe. */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+                Fecha constitución
+              </label>
+              <input
+                type="date"
+                value={form.fechaConstitucion}
+                onChange={(e) => set('fechaConstitucion', e.target.value)}
+                disabled={!canEdit}
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              />
+            </div>
             <div className="space-y-1.5">
               <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
                 Fecha inscripción RPC
