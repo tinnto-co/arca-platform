@@ -108,7 +108,11 @@ import {
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { variablesDelBalance } from '@/lib/accounting-audit-report';
-import { leerNotasDeWord, type NotaImportada } from '@/lib/notas-word';
+import {
+  leerNotasDeWord,
+  plantillaNotasWord,
+  type NotaImportada,
+} from '@/lib/notas-word';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import {
   listAccountingClients,
@@ -11327,6 +11331,16 @@ function NotesEditor({
     }
   };
 
+  const bajarPlantilla = async () => {
+    const blob = await plantillaNotasWord();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'formato_notas.docx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   /** Las importadas se agregan al final; no reemplazan lo que ya hay. */
   const confirmarImportacion = () => {
     if (!importadas) return;
@@ -11421,6 +11435,13 @@ function NotesEditor({
               {importando ? 'Leyendo…' : 'Importar Word'}
             </button>
             <button
+              onClick={() => void bajarPlantilla()}
+              className="text-[11.5px] text-[var(--arca-ink-3)] underline underline-offset-2 hover:text-[var(--arca-ink)]"
+              title="Descargar un .docx de ejemplo con el formato que espera la importación"
+            >
+              ver formato
+            </button>
+            <button
               onClick={addNote}
               className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
             >
@@ -11457,6 +11478,18 @@ function NotesEditor({
               Se agregan al final de las notas que ya tenés; no reemplazan
               ninguna. Después podés reordenarlas, editarlas o borrarlas, y los
               cambios recién quedan cuando apretás Guardar.
+              {importadas?.length === 1 &&
+                importadas[0].titulo === 'Nota importada' && (
+                  <>
+                    {' '}
+                    <strong>
+                      El documento no tenía títulos con estilo de encabezado
+                    </strong>
+                    , así que entró todo como una sola nota. Si esperabas
+                    varias, marcá cada título como Título 1, 2 o 3 en Word y
+                    volvé a importar — «ver formato» baja un ejemplo.
+                  </>
+                )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="max-h-64 overflow-y-auto rounded-[8px] border border-[var(--arca-border)] divide-y divide-[var(--arca-border)]">

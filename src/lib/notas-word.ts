@@ -115,3 +115,95 @@ export async function leerNotasDeWord(
   const { value } = await mammoth.convertToHtml({ arrayBuffer });
   return parsearNotasDeHtml(value);
 }
+
+/* ── Plantilla de ejemplo ─────────────────────────────────────────────────── */
+
+/** Un párrafo de la plantilla: encabezado, texto o viñeta. */
+type BloquePlantilla =
+  | { tipo: 'titulo'; texto: string }
+  | { tipo: 'parrafo'; texto: string }
+  | { tipo: 'vineta'; texto: string };
+
+const PLANTILLA: BloquePlantilla[] = [
+  {
+    tipo: 'parrafo',
+    texto:
+      'Este documento muestra el formato que espera el sistema. Podés borrar ' +
+      'todo y escribir tus notas encima, o usarlo como referencia.',
+  },
+  {
+    tipo: 'parrafo',
+    texto:
+      'Lo único que importa: cada título de nota tiene que estar con estilo ' +
+      'de encabezado (Título 1, 2 o 3 en Word y en Google Docs). No alcanza ' +
+      'con ponerlo en negrita — el sistema corta el documento por los ' +
+      'encabezados, y sin ellos todo entra como una sola nota.',
+  },
+  {
+    tipo: 'parrafo',
+    texto:
+      'La numeración del título se descarta: el sistema numera las notas por ' +
+      'su posición, así que si reordenás no te queda «Nota 2. Nota 5.».',
+  },
+  { tipo: 'titulo', texto: 'Nota 1. Criterios de valuación' },
+  {
+    tipo: 'parrafo',
+    texto:
+      'El texto de la nota va en párrafos normales debajo del título. Podés ' +
+      'usar varios; se conservan como líneas separadas.',
+  },
+  {
+    tipo: 'parrafo',
+    texto:
+      'La negrita y la cursiva no se importan: entra el texto solo. Las ' +
+      'imágenes y las tablas tampoco.',
+  },
+  { tipo: 'titulo', texto: 'Nota 2. Bienes de cambio' },
+  { tipo: 'parrafo', texto: 'Las viñetas entran como una línea cada una:' },
+  { tipo: 'vineta', texto: 'Existencia inicial a costo histórico reexpresado' },
+  { tipo: 'vineta', texto: 'Compras a valores de la fecha de cada operación' },
+  { tipo: 'vineta', texto: 'Existencia final a costo de reposición' },
+  { tipo: 'titulo', texto: 'Nota 3. Datos que se completan solos' },
+  {
+    tipo: 'parrafo',
+    texto:
+      'Si escribís una variable entre llaves dobles, el sistema la reemplaza ' +
+      'por el dato del ejercicio al generar el documento final. Por ejemplo:',
+  },
+  {
+    tipo: 'parrafo',
+    texto:
+      'El capital social asciende a {{capitalSocial}} y la sociedad fue ' +
+      'constituida el {{constitucion}}, inscripta en la IGJ bajo el N° {{igj}}.',
+  },
+  {
+    tipo: 'parrafo',
+    texto:
+      'La lista completa de variables disponibles está en el editor de Notas ' +
+      'del sistema.',
+  },
+];
+
+/**
+ * Un `.docx` de ejemplo con el formato que espera la importación.
+ *
+ * Se genera en el momento en vez de guardar un archivo: así la plantilla no
+ * puede quedar desactualizada respecto de lo que el parser realmente entiende.
+ */
+export async function plantillaNotasWord(): Promise<Blob> {
+  const { Document, Paragraph, TextRun, HeadingLevel, Packer } = await import(
+    'docx'
+  );
+  const children = PLANTILLA.map((b) => {
+    if (b.tipo === 'titulo') {
+      return new Paragraph({ text: b.texto, heading: HeadingLevel.HEADING_2 });
+    }
+    if (b.tipo === 'vineta') {
+      return new Paragraph({ text: b.texto, bullet: { level: 0 } });
+    }
+    return new Paragraph({ children: [new TextRun({ text: b.texto })] });
+  });
+  return Packer.toBlob(
+    new Document({ sections: [{ properties: {}, children }] })
+  );
+}
