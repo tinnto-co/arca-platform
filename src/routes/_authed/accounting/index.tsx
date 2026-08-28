@@ -3593,7 +3593,8 @@ function groupedPostable(accounts: PostableAccount[]) {
     if (!idx.has(key)) {
       idx.set(key, groups.length);
       const label = a.accountGroup
-        ? (ACCOUNT_GROUP_LABELS[a.accountGroup as AccountGroup] ?? a.accountGroup)
+        ? (ACCOUNT_GROUP_LABELS[a.accountGroup as AccountGroup] ??
+          a.accountGroup)
         : 'Sin rubro';
       groups.push({ label, items: [] });
     }
@@ -3618,7 +3619,12 @@ function AccountCombobox({
   const groups = groupedPostable(postable);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal`: el selector vive dentro del diálogo del asiento, y el popover se
+    // portalea al body — o sea, fuera del diálogo. El bloqueo de scroll que el
+    // diálogo pone sobre todo lo que está afuera se comía la rueda del mouse y
+    // la lista de cuentas no scrolleaba. En modal el popover trae su propio
+    // manejo y se exceptúa a sí mismo.
+    <Popover modal open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           className={cn(
@@ -3636,7 +3642,10 @@ function AccountCombobox({
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="start" sideOffset={4}>
         <Command>
-          <CommandInput placeholder="Buscar cuenta..." className="text-[12.5px]" />
+          <CommandInput
+            placeholder="Buscar cuenta..."
+            className="text-[12.5px]"
+          />
           <CommandList className="max-h-60">
             <CommandEmpty className="py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
               Sin resultados
@@ -4098,7 +4107,9 @@ function AsientoEditor({
           clientId,
           nombre,
           lineas: lines
-            .filter((l) => l.accountId && (num(l.debit) > 0 || num(l.credit) > 0))
+            .filter(
+              (l) => l.accountId && (num(l.debit) > 0 || num(l.credit) > 0)
+            )
             .map((l) => ({
               cuentaId: l.accountId,
               lado: num(l.debit) > 0 ? ('debe' as const) : ('haber' as const),
@@ -4107,7 +4118,9 @@ function AsientoEditor({
         },
       }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['accounting', 'templates', clientId] });
+      void qc.invalidateQueries({
+        queryKey: ['accounting', 'templates', clientId],
+      });
       setSaveTemplateOpen(false);
       setSaveTemplateName('');
       toast.success('Template guardado');
@@ -4170,8 +4183,12 @@ function AsientoEditor({
     return fiscalYears.reduce((prev, curr) => {
       const dist = (fy: (typeof fiscalYears)[0]) =>
         Math.min(
-          Math.abs(new Date(entryDate).getTime() - new Date(fy.fechaDesde).getTime()),
-          Math.abs(new Date(entryDate).getTime() - new Date(fy.fechaHasta).getTime())
+          Math.abs(
+            new Date(entryDate).getTime() - new Date(fy.fechaDesde).getTime()
+          ),
+          Math.abs(
+            new Date(entryDate).getTime() - new Date(fy.fechaHasta).getTime()
+          )
         );
       return dist(curr) < dist(prev) ? curr : prev;
     });
@@ -4219,265 +4236,290 @@ function AsientoEditor({
 
   return (
     <>
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[760px]">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            Debe = Haber para poder guardar. Solo cuentas imputables y activas.
-            La fecha define el período (no puede estar en un período cerrado).
-          </DialogDescription>
-        </DialogHeader>
+      // Con el diálogo de nueva cuenta abierto, el asiento ignora su propio //
+      cierre: son dos diálogos hermanos, los dos `open`, así que un Esc o un //
+      click afuera los cerraba a los dos y se perdía el asiento a medio cargar.
+      <Dialog
+        open
+        onOpenChange={(o) => {
+          if (!o && !createAccountOpen) onClose();
+        }}
+      >
+        <DialogContent className="sm:max-w-[760px]">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>
+              Debe = Haber para poder guardar. Solo cuentas imputables y
+              activas. La fecha define el período (no puede estar en un período
+              cerrado).
+            </DialogDescription>
+          </DialogHeader>
 
-        {outOfRangeFy && (
-          <div className="flex items-start gap-2 rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
-            <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" strokeWidth={2} />
-            <span>
-              La fecha está fuera del ejercicio vigente. El asiento se guardará
-              en el ejercicio N°{outOfRangeFy.numero} ({outOfRangeFy.fechaDesde} –{' '}
-              {outOfRangeFy.fechaHasta}).
-            </span>
-          </div>
-        )}
-
-        <div className="space-y-3 py-1">
-          <div className="flex gap-3">
-            <div className="flex flex-col gap-1 w-44">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Fecha *
-              </label>
-              <input
-                type="date"
-                value={entryDate}
-                onChange={(e) => setEntryDate(e.target.value)}
-                className={`${INPUT_CLASS} w-full h-9`}
+          {outOfRangeFy && (
+            <div className="flex items-start gap-2 rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+              <AlertTriangle
+                className="w-3.5 h-3.5 mt-0.5 shrink-0"
+                strokeWidth={2}
               />
-            </div>
-            <div className="flex flex-col gap-1 flex-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Descripción
-              </label>
-              <input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Ej: Cobro factura A-0001 cliente X"
-                className={`${INPUT_CLASS} w-full h-9`}
-              />
-            </div>
-          </div>
-
-          {/* Template toolbar */}
-          <div className="flex items-center justify-between">
-            <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
-              <PopoverTrigger asChild>
-                <button className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors">
-                  <Bookmark className="w-3 h-3" strokeWidth={2} />
-                  Cargar template
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-64 p-1" sideOffset={4}>
-                {templates.length === 0 ? (
-                  <p className="text-[12px] text-[var(--arca-ink-3)] py-2 px-2">
-                    Sin templates guardados
-                  </p>
-                ) : (
-                  templates.map((t) => (
-                    <div key={t.id} className="flex items-center group">
-                      <button
-                        className="flex-1 text-left text-[12.5px] px-2 py-1.5 rounded-[6px] hover:bg-[var(--arca-surface-2)] truncate"
-                        onClick={() => applyTemplate(t)}
-                      >
-                        {t.nombre}
-                      </button>
-                      <button
-                        className="p-1 rounded-[6px] opacity-0 group-hover:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
-                        onClick={() => deleteTemplateMut.mutate(t.id)}
-                      >
-                        <Trash2 className="w-3 h-3" strokeWidth={1.8} />
-                      </button>
-                    </div>
-                  ))
-                )}
-              </PopoverContent>
-            </Popover>
-
-            {!saveTemplateOpen && (
-              <button
-                className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors"
-                onClick={() => setSaveTemplateOpen(true)}
-              >
-                <BookmarkPlus className="w-3 h-3" strokeWidth={2} />
-                Guardar como template
-              </button>
-            )}
-          </div>
-
-          {saveTemplateOpen && (
-            <div className="flex items-center gap-2">
-              <input
-                value={saveTemplateName}
-                onChange={(e) => setSaveTemplateName(e.target.value)}
-                placeholder="Nombre del template…"
-                className={`${INPUT_CLASS} flex-1 h-8`}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && saveTemplateName.trim())
-                    saveTemplateMut.mutate(saveTemplateName.trim());
-                  if (e.key === 'Escape') {
-                    setSaveTemplateOpen(false);
-                    setSaveTemplateName('');
-                  }
-                }}
-              />
-              <button
-                onClick={() => saveTemplateMut.mutate(saveTemplateName.trim())}
-                disabled={!saveTemplateName.trim() || saveTemplateMut.isPending}
-                className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
-              >
-                {saveTemplateMut.isPending ? '…' : 'Guardar'}
-              </button>
-              <button
-                onClick={() => {
-                  setSaveTemplateOpen(false);
-                  setSaveTemplateName('');
-                }}
-                className="h-8 px-3 text-[12px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
-              >
-                Cancelar
-              </button>
+              <span>
+                La fecha está fuera del ejercicio vigente. El asiento se
+                guardará en el ejercicio N°{outOfRangeFy.numero} (
+                {outOfRangeFy.fechaDesde} – {outOfRangeFy.fechaHasta}).
+              </span>
             </div>
           )}
 
-          {/* Líneas */}
-          <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              <div className="flex-1">Cuenta</div>
-              <div className="w-40">Detalle</div>
-              <div className="w-24 text-right">Debe</div>
-              <div className="w-24 text-right">Haber</div>
-              <div className="w-6" />
+          <div className="space-y-3 py-1">
+            <div className="flex gap-3">
+              <div className="flex flex-col gap-1 w-44">
+                <label className="text-[11px] text-[var(--arca-ink-3)]">
+                  Fecha *
+                </label>
+                <input
+                  type="date"
+                  value={entryDate}
+                  onChange={(e) => setEntryDate(e.target.value)}
+                  className={`${INPUT_CLASS} w-full h-9`}
+                />
+              </div>
+              <div className="flex flex-col gap-1 flex-1">
+                <label className="text-[11px] text-[var(--arca-ink-3)]">
+                  Descripción
+                </label>
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Ej: Cobro factura A-0001 cliente X"
+                  className={`${INPUT_CLASS} w-full h-9`}
+                />
+              </div>
             </div>
-            {lines.map((l, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
+
+            {/* Template toolbar */}
+            <div className="flex items-center justify-between">
+              {/* `modal` por lo mismo que el selector de cuentas: portaleado
+                fuera del diálogo, sin esto no scrollea. */}
+              <Popover
+                modal
+                open={templatePopoverOpen}
+                onOpenChange={setTemplatePopoverOpen}
               >
-                <AccountCombobox
-                  value={l.accountId}
-                  onChange={(v) => updateLine(i, { accountId: v })}
-                  postable={postable}
-                  onCreate={() => setCreateAccountOpen(true)}
-                />
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors">
+                    <Bookmark className="w-3 h-3" strokeWidth={2} />
+                    Cargar template
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-64 max-h-72 overflow-y-auto p-1"
+                  sideOffset={4}
+                >
+                  {templates.length === 0 ? (
+                    <p className="text-[12px] text-[var(--arca-ink-3)] py-2 px-2">
+                      Sin templates guardados
+                    </p>
+                  ) : (
+                    templates.map((t) => (
+                      <div key={t.id} className="flex items-center group">
+                        <button
+                          className="flex-1 text-left text-[12.5px] px-2 py-1.5 rounded-[6px] hover:bg-[var(--arca-surface-2)] truncate"
+                          onClick={() => applyTemplate(t)}
+                        >
+                          {t.nombre}
+                        </button>
+                        <button
+                          className="p-1 rounded-[6px] opacity-0 group-hover:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
+                          onClick={() => deleteTemplateMut.mutate(t.id)}
+                        >
+                          <Trash2 className="w-3 h-3" strokeWidth={1.8} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </PopoverContent>
+              </Popover>
+
+              {!saveTemplateOpen && (
+                <button
+                  className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors"
+                  onClick={() => setSaveTemplateOpen(true)}
+                >
+                  <BookmarkPlus className="w-3 h-3" strokeWidth={2} />
+                  Guardar como template
+                </button>
+              )}
+            </div>
+
+            {saveTemplateOpen && (
+              <div className="flex items-center gap-2">
                 <input
-                  value={l.description}
-                  onChange={(e) =>
-                    updateLine(i, { description: e.target.value })
-                  }
-                  placeholder="opcional"
-                  className={`${INPUT_CLASS} w-40 h-8`}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={l.debit}
-                  onChange={(e) =>
-                    updateLine(i, { debit: e.target.value, credit: '' })
-                  }
-                  className={`${INPUT_CLASS} w-24 h-8 text-right`}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={l.credit}
-                  onChange={(e) =>
-                    updateLine(i, { credit: e.target.value, debit: '' })
-                  }
-                  className={`${INPUT_CLASS} w-24 h-8 text-right`}
+                  value={saveTemplateName}
+                  onChange={(e) => setSaveTemplateName(e.target.value)}
+                  placeholder="Nombre del template…"
+                  className={`${INPUT_CLASS} flex-1 h-8`}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && saveTemplateName.trim())
+                      saveTemplateMut.mutate(saveTemplateName.trim());
+                    if (e.key === 'Escape') {
+                      setSaveTemplateOpen(false);
+                      setSaveTemplateName('');
+                    }
+                  }}
                 />
                 <button
                   onClick={() =>
-                    setLines((prev) => prev.filter((_, idx) => idx !== i))
+                    saveTemplateMut.mutate(saveTemplateName.trim())
                   }
-                  disabled={lines.length <= 2}
-                  className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
-                  title="Eliminar línea"
+                  disabled={
+                    !saveTemplateName.trim() || saveTemplateMut.isPending
+                  }
+                  className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
                 >
-                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  {saveTemplateMut.isPending ? '…' : 'Guardar'}
+                </button>
+                <button
+                  onClick={() => {
+                    setSaveTemplateOpen(false);
+                    setSaveTemplateName('');
+                  }}
+                  className="h-8 px-3 text-[12px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+                >
+                  Cancelar
                 </button>
               </div>
-            ))}
-            {/* Totales */}
-            <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12px] font-semibold">
-              <button
-                onClick={() => setLines((prev) => [...prev, emptyLine()])}
-                className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-              >
-                <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
-              </button>
-              <div className="flex-1" />
-              <div className="w-40" />
-              <div className="w-24 text-right text-[var(--arca-ink)]">
-                $ {fmtMoney(totalDebit)}
+            )}
+
+            {/* Líneas */}
+            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+                <div className="flex-1">Cuenta</div>
+                <div className="w-40">Detalle</div>
+                <div className="w-24 text-right">Debe</div>
+                <div className="w-24 text-right">Haber</div>
+                <div className="w-6" />
               </div>
-              <div className="w-24 text-right text-[var(--arca-ink)]">
-                $ {fmtMoney(totalCredit)}
+              {lines.map((l, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
+                >
+                  <AccountCombobox
+                    value={l.accountId}
+                    onChange={(v) => updateLine(i, { accountId: v })}
+                    postable={postable}
+                    onCreate={() => setCreateAccountOpen(true)}
+                  />
+                  <input
+                    value={l.description}
+                    onChange={(e) =>
+                      updateLine(i, { description: e.target.value })
+                    }
+                    placeholder="opcional"
+                    className={`${INPUT_CLASS} w-40 h-8`}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={l.debit}
+                    onChange={(e) =>
+                      updateLine(i, { debit: e.target.value, credit: '' })
+                    }
+                    className={`${INPUT_CLASS} w-24 h-8 text-right`}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={l.credit}
+                    onChange={(e) =>
+                      updateLine(i, { credit: e.target.value, debit: '' })
+                    }
+                    className={`${INPUT_CLASS} w-24 h-8 text-right`}
+                  />
+                  <button
+                    onClick={() =>
+                      setLines((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                    disabled={lines.length <= 2}
+                    className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
+                    title="Eliminar línea"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  </button>
+                </div>
+              ))}
+              {/* Totales */}
+              <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12px] font-semibold">
+                <button
+                  onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                  className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+                >
+                  <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
+                </button>
+                <div className="flex-1" />
+                <div className="w-40" />
+                <div className="w-24 text-right text-[var(--arca-ink)]">
+                  $ {fmtMoney(totalDebit)}
+                </div>
+                <div className="w-24 text-right text-[var(--arca-ink)]">
+                  $ {fmtMoney(totalCredit)}
+                </div>
+                <div className="w-6" />
               </div>
-              <div className="w-6" />
+            </div>
+
+            <div className="flex items-center justify-end text-[12px]">
+              {balanced ? (
+                <span className="text-[oklch(0.40_0.14_145)]">
+                  ✓ Asiento balanceado
+                </span>
+              ) : (
+                <span className="text-[oklch(0.55_0.18_25)]">
+                  Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} —
+                  Debe debe ser igual a Haber
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center justify-end text-[12px]">
-            {balanced ? (
-              <span className="text-[oklch(0.40_0.14_145)]">
-                ✓ Asiento balanceado
-              </span>
-            ) : (
-              <span className="text-[oklch(0.55_0.18_25)]">
-                Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} —
-                Debe debe ser igual a Haber
-              </span>
-            )}
-          </div>
-        </div>
-
-        <DialogFooter>
-          <button
-            onClick={onClose}
-            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => mut.mutate()}
-            disabled={!canSave || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
-          >
-            {mut.isPending ? 'Guardando…' : 'Guardar asiento'}
-          </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    {createAccountOpen && (
-      <AccountFormDialog
-        mode={{ kind: 'custom' }}
-        clientId={clientId}
-        accounts={chart?.accounts ?? []}
-        onClose={() => setCreateAccountOpen(false)}
-        onSaved={() => {
-          setCreateAccountOpen(false);
-          void qc.invalidateQueries({
-            queryKey: ['accounting', 'postable', clientId],
-          });
-          void qc.invalidateQueries({
-            queryKey: ['accounting', 'chart', clientId],
-          });
-        }}
-      />
-    )}
-  </>
+          <DialogFooter>
+            <button
+              onClick={onClose}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => mut.mutate()}
+              disabled={!canSave || mut.isPending}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            >
+              {mut.isPending ? 'Guardando…' : 'Guardar asiento'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {createAccountOpen && (
+        <AccountFormDialog
+          mode={{ kind: 'custom' }}
+          clientId={clientId}
+          accounts={chart?.accounts ?? []}
+          onClose={() => setCreateAccountOpen(false)}
+          onSaved={() => {
+            setCreateAccountOpen(false);
+            void qc.invalidateQueries({
+              queryKey: ['accounting', 'postable', clientId],
+            });
+            void qc.invalidateQueries({
+              queryKey: ['accounting', 'chart', clientId],
+            });
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -8965,10 +9007,7 @@ function EstadosContables({
             />
           )}
           {view === 'datos' && (
-            <DatosInicialesView
-              clientId={clientId}
-              canEdit={isOwner}
-            />
+            <DatosInicialesView clientId={clientId} canEdit={isOwner} />
           )}
 
           {view === 'informe' &&
@@ -10891,9 +10930,8 @@ function NotesEditor({
     });
 
   const exportWord = async () => {
-    const { Document, Paragraph, TextRun, HeadingLevel, Packer } = await import(
-      'docx'
-    );
+    const { Document, Paragraph, TextRun, HeadingLevel, Packer } =
+      await import('docx');
     const children: InstanceType<typeof Paragraph>[] = [];
     for (const item of secuencia) {
       if (item.isSystem) continue;
@@ -11214,8 +11252,8 @@ function DatosInicialesView({
             Datos iniciales del balance
           </div>
           <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
-            Estos datos aparecen en la carátula del paquete EECC y pueden
-            usarse como base para las Notas 1 y 2.
+            Estos datos aparecen en la carátula del paquete EECC y pueden usarse
+            como base para las Notas 1 y 2.
           </div>
         </div>
 
