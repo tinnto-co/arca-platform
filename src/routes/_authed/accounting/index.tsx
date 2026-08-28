@@ -108,6 +108,7 @@ import {
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
 import { variablesDelBalance } from '@/lib/accounting-audit-report';
+import { leerNotasDeWord, type NotaImportada } from '@/lib/notas-word';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import {
   listAccountingClients,
@@ -11299,6 +11300,54 @@ function NotesEditor({
       return n;
     });
 
+  /** Notas leídas de un .docx, esperando confirmación. */
+  const [importadas, setImportadas] = useState<NotaImportada[] | null>(null);
+  const [importando, setImportando] = useState(false);
+  const inputWord = useRef<HTMLInputElement>(null);
+
+  const elegirArchivo = async (file: File | undefined) => {
+    if (!file) return;
+    setImportando(true);
+    try {
+      const notas = await leerNotasDeWord(file);
+      if (notas.length === 0) {
+        toast.error('No se encontró texto en el documento.');
+        return;
+      }
+      // No se aplica de una: importar agrega notas al balance y el usuario
+      // tiene que ver cuántas y cuáles antes.
+      setImportadas(notas);
+    } catch {
+      toast.error(
+        'No se pudo leer el documento. Tiene que ser un .docx de Word.'
+      );
+    } finally {
+      setImportando(false);
+      if (inputWord.current) inputWord.current.value = '';
+    }
+  };
+
+  /** Las importadas se agregan al final; no reemplazan lo que ya hay. */
+  const confirmarImportacion = () => {
+    if (!importadas) return;
+    const nuevas = importadas.map((n) => ({
+      id: newId(),
+      title: n.titulo.slice(0, 200),
+      content: n.contenido.slice(0, 20000),
+    }));
+    setNotes((prev) => [...prev, ...nuevas]);
+    setLayout((prev) => [
+      ...prev,
+      ...nuevas.map((n): LayoutEntry => `note:${n.id}`),
+    ]);
+    setImportadas(null);
+    toast.success(
+      nuevas.length === 1
+        ? 'Se agregó 1 nota. Revisala y guardá.'
+        : `Se agregaron ${nuevas.length} notas. Revisalas y guardá.`
+    );
+  };
+
   const exportWord = async () => {
     const { Document, Paragraph, TextRun, HeadingLevel, Packer } =
       await import('docx');
@@ -11356,6 +11405,21 @@ function NotesEditor({
         )}
         {editable && (
           <>
+            <input
+              ref={inputWord}
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(e) => void elegirArchivo(e.target.files?.[0])}
+            />
+            <button
+              onClick={() => inputWord.current?.click()}
+              disabled={importando}
+              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
+              title="Importar notas desde un documento Word (.docx)"
+            >
+              {importando ? 'Leyendo…' : 'Importar Word'}
+            </button>
             <button
               onClick={addNote}
               className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
@@ -11372,6 +11436,49 @@ function NotesEditor({
           </>
         )}
       </div>
+
+      {/* Qué se va a importar, antes de tocar las notas del balance. Un .docx
+          puede traer diez notas y el usuario tiene que poder mirarlas —y ver
+          si el parser partió bien los títulos— sin haber modificado nada. */}
+      <AlertDialog
+        open={importadas !== null}
+        onOpenChange={(o) => {
+          if (!o) setImportadas(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {importadas?.length === 1
+                ? 'Se encontró 1 nota en el documento'
+                : `Se encontraron ${importadas?.length ?? 0} notas en el documento`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se agregan al final de las notas que ya tenés; no reemplazan
+              ninguna. Después podés reordenarlas, editarlas o borrarlas, y los
+              cambios recién quedan cuando apretás Guardar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-64 overflow-y-auto rounded-[8px] border border-[var(--arca-border)] divide-y divide-[var(--arca-border)]">
+            {importadas?.map((n, i) => (
+              <div key={i} className="px-3 py-2">
+                <p className="text-[12.5px] font-medium text-[var(--arca-ink)]">
+                  {n.titulo || <span className="italic">Sin título</span>}
+                </p>
+                <p className="text-[11.5px] text-[var(--arca-ink-3)] line-clamp-2">
+                  {n.contenido || 'Sin contenido'}
+                </p>
+              </div>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmarImportacion}>
+              Agregar {importadas?.length === 1 ? 'la nota' : 'las notas'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {approved && (
         <div className="px-5 py-2 text-[11.5px] text-emerald-700 bg-emerald-50 border-b border-[var(--arca-border)]">
