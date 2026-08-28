@@ -111,6 +111,7 @@ import { variablesDelBalance } from '@/lib/accounting-audit-report';
 import {
   leerNotasDeWord,
   plantillaNotasWord,
+  PLANTILLA,
   type NotaImportada,
 } from '@/lib/notas-word';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
@@ -11331,6 +11332,8 @@ function NotesEditor({
     }
   };
 
+  const [formatoAbierto, setFormatoAbierto] = useState(false);
+
   const bajarPlantilla = async () => {
     const blob = await plantillaNotasWord();
     const url = URL.createObjectURL(blob);
@@ -11435,11 +11438,11 @@ function NotesEditor({
               {importando ? 'Leyendo…' : 'Importar Word'}
             </button>
             <button
-              onClick={() => void bajarPlantilla()}
-              className="text-[11.5px] text-[var(--arca-ink-3)] underline underline-offset-2 hover:text-[var(--arca-ink)]"
-              title="Descargar un .docx de ejemplo con el formato que espera la importación"
+              onClick={() => setFormatoAbierto(true)}
+              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+              title="Ver el formato que espera la importación"
             >
-              ver formato
+              Ver formato
             </button>
             <button
               onClick={addNote}
@@ -11457,6 +11460,71 @@ function NotesEditor({
           </>
         )}
       </div>
+
+      {/* Vista previa del formato. Renderiza la misma plantilla que se
+          descarga, así lo que se ve y lo que se baja no pueden divergir. */}
+      <Dialog open={formatoAbierto} onOpenChange={setFormatoAbierto}>
+        <DialogContent className="max-w-[min(96vw,1000px)] max-h-[92vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-[var(--arca-border)]">
+            <DialogTitle>Formato del Word para importar</DialogTitle>
+            <DialogDescription>
+              Así tiene que verse el documento. Lo único que importa es que cada
+              título de nota esté con estilo de encabezado —Título 1, 2 o 3 en
+              Word y en Google Docs—, no en negrita: el sistema corta el
+              documento por los encabezados.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--arca-surface-2)] px-6 py-6">
+            <div className="mx-auto max-w-[780px] bg-white rounded-[8px] border border-[var(--arca-border)] px-12 py-10 shadow-sm">
+              {PLANTILLA.map((b, i) =>
+                b.tipo === 'titulo' ? (
+                  <div
+                    key={i}
+                    className="mt-6 first:mt-0 flex items-baseline gap-3"
+                  >
+                    <h3 className="text-[17px] font-semibold text-[var(--arca-ink)]">
+                      {b.texto}
+                    </h3>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--arca-ink-4)] border border-[var(--arca-border)] rounded-[4px] px-1.5 py-0.5">
+                      Título 2
+                    </span>
+                  </div>
+                ) : b.tipo === 'vineta' ? (
+                  <p
+                    key={i}
+                    className="mt-1 pl-8 text-[13.5px] leading-relaxed text-[var(--arca-ink-2)] before:content-['•'] before:-ml-4 before:mr-2 before:text-[var(--arca-ink-4)]"
+                  >
+                    {b.texto}
+                  </p>
+                ) : (
+                  <p
+                    key={i}
+                    className="mt-3 text-[13.5px] leading-relaxed text-[var(--arca-ink-2)]"
+                  >
+                    {b.texto}
+                  </p>
+                )
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="px-6 py-4 border-t border-[var(--arca-border)]">
+            <button
+              onClick={() => setFormatoAbierto(false)}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+            >
+              Cerrar
+            </button>
+            <button
+              onClick={() => void bajarPlantilla()}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+            >
+              Descargar .docx de ejemplo
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Qué se va a importar, antes de tocar las notas del balance. Un .docx
           puede traer diez notas y el usuario tiene que poder mirarlas —y ver

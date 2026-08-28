@@ -119,12 +119,20 @@ export async function leerNotasDeWord(
 /* ── Plantilla de ejemplo ─────────────────────────────────────────────────── */
 
 /** Un párrafo de la plantilla: encabezado, texto o viñeta. */
-type BloquePlantilla =
+export type BloquePlantilla =
   | { tipo: 'titulo'; texto: string }
   | { tipo: 'parrafo'; texto: string }
   | { tipo: 'vineta'; texto: string };
 
-const PLANTILLA: BloquePlantilla[] = [
+/**
+ * El contenido de la plantilla, como datos.
+ *
+ * Se exporta para que la vista previa de la pantalla y el `.docx` que se
+ * descarga salgan de la misma fuente: si fueran dos textos separados, uno se
+ * desactualizaría y le enseñaría al usuario un formato que el parser ya no
+ * entiende.
+ */
+export const PLANTILLA: BloquePlantilla[] = [
   {
     tipo: 'parrafo',
     texto:
