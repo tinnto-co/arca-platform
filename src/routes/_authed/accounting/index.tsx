@@ -3697,6 +3697,17 @@ interface LineDraft {
   debit: string;
   credit: string;
   description: string;
+  /**
+   * El lado que traía el template, cuando la línea vino de uno.
+   *
+   * Hace falta porque un template no guarda importes: al cargarlo las dos
+   * columnas quedan en cero y el lado deja de poder deducirse de ellas. Sin
+   * esto, cargar un template y volver a guardarlo era imposible — no quedaba
+   * ninguna línea con importe y el guardado las descartaba todas.
+   *
+   * Es solo el valor de arranque: si el usuario escribe un importe, ese manda.
+   */
+  lado?: 'debe' | 'haber';
 }
 
 /** parseFloat seguro: NaN/'' → 0. */
@@ -4127,10 +4138,16 @@ function AsientoEditor({
    * y con menos de dos, el asiento no existe. Se explica acá y no después del
    * error del servidor, porque la regla no es adivinable.
    */
+  function ladoDeLinea(l: LineDraft): 'debe' | 'haber' | null {
+    if (num(l.debit) > 0) return 'debe';
+    if (num(l.credit) > 0) return 'haber';
+    return l.lado ?? null;
+  }
+
   function lineasParaTemplate() {
-    return lines.filter(
-      (l) => l.accountId && (num(l.debit) > 0 || num(l.credit) > 0)
-    );
+    return lines
+      .map((l) => ({ linea: l, lado: ladoDeLinea(l) }))
+      .filter((x) => x.linea.accountId && x.lado !== null);
   }
 
   const saveTemplateMut = useMutation({
@@ -4139,15 +4156,14 @@ function AsientoEditor({
         data: {
           clientId,
           nombre,
-          lineas: lines
-            .filter(
-              (l) => l.accountId && (num(l.debit) > 0 || num(l.credit) > 0)
-            )
-            .map((l) => ({
-              cuentaId: l.accountId,
-              lado: num(l.debit) > 0 ? ('debe' as const) : ('haber' as const),
-              descripcion: l.description || undefined,
-            })),
+          // Una sola fuente: la misma función que valida antes de mandar.
+          // Cuando esto estaba duplicado, la guarda y el payload podían no
+          // coincidir y el error salía recién del servidor.
+          lineas: lineasParaTemplate().map(({ linea, lado }) => ({
+            cuentaId: linea.accountId,
+            lado: lado as 'debe' | 'haber',
+            descripcion: linea.description || undefined,
+          })),
         },
       }),
     onSuccess: () => {
@@ -4177,8 +4193,9 @@ function AsientoEditor({
     const utiles = lineasParaTemplate();
     if (utiles.length < 2) {
       toast.error(
-        'Un template necesita al menos dos líneas con cuenta e importe. ' +
-          'El importe no se guarda: solo define si la línea va al debe o al haber.'
+        'Un template necesita al menos dos líneas con una cuenta elegida y un ' +
+          'importe en el debe o en el haber. El importe no se guarda: solo ' +
+          'define de qué lado va la línea.'
       );
       return;
     }
@@ -4192,6 +4209,7 @@ function AsientoEditor({
         debit: l.lado === 'debe' ? '' : '0',
         credit: l.lado === 'haber' ? '' : '0',
         description: l.descripcion ?? '',
+        lado: l.lado,
       }))
     );
     setTemplateCargado(t.nombre);
