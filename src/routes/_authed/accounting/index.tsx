@@ -11271,8 +11271,21 @@ function NotesEditor({
       toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   });
 
-  const newId = () =>
-    `n-${notes.reduce((m, n) => Math.max(m, Number(n.id.split('-')[1]) || 0), 0) + 1}`;
+  /**
+   * `cantidad` ids nuevos, correlativos.
+   *
+   * Devuelve varios de una y no uno por llamada porque el id sale del máximo
+   * del estado actual: llamarlo N veces seguidas dentro de un `map` daba N
+   * veces el mismo id, y las notas se pisaban entre sí.
+   */
+  const nuevosIds = (cantidad: number) => {
+    const desde = notes.reduce(
+      (m, n) => Math.max(m, Number(n.id.split('-')[1]) || 0),
+      0
+    );
+    return Array.from({ length: cantidad }, (_, i) => `n-${desde + 1 + i}`);
+  };
+  const newId = () => nuevosIds(1)[0];
 
   const addNote = () => {
     const id = newId();
@@ -11347,8 +11360,9 @@ function NotesEditor({
   /** Las importadas se agregan al final; no reemplazan lo que ya hay. */
   const confirmarImportacion = () => {
     if (!importadas) return;
-    const nuevas = importadas.map((n) => ({
-      id: newId(),
+    const ids = nuevosIds(importadas.length);
+    const nuevas = importadas.map((n, i) => ({
+      id: ids[i],
       title: n.titulo.slice(0, 200),
       content: n.contenido.slice(0, 20000),
     }));
