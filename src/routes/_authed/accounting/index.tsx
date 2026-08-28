@@ -4359,31 +4359,64 @@ function AsientoEditor({
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  className="w-64 max-h-72 overflow-y-auto p-1"
+                  className="w-72 p-0"
                   sideOffset={4}
                 >
-                  {templates.length === 0 ? (
-                    <p className="text-[12px] text-[var(--arca-ink-3)] py-2 px-2">
-                      Sin templates guardados
-                    </p>
-                  ) : (
-                    templates.map((t) => (
-                      <div key={t.id} className="flex items-center group">
-                        <button
-                          className="flex-1 text-left text-[12.5px] px-2 py-1.5 rounded-[6px] hover:bg-[var(--arca-surface-2)] truncate"
-                          onClick={() => applyTemplate(t)}
-                        >
-                          {t.nombre}
-                        </button>
-                        <button
-                          className="p-1 rounded-[6px] opacity-0 group-hover:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
-                          onClick={() => deleteTemplateMut.mutate(t.id)}
-                        >
-                          <Trash2 className="w-3 h-3" strokeWidth={1.8} />
-                        </button>
-                      </div>
-                    ))
-                  )}
+                  {/* Mismo combobox que el selector de cuentas: buscador
+                      arriba y lista filtrable. Un estudio con muchos modelos
+                      no los encuentra scrolleando. */}
+                  <Command>
+                    <CommandInput
+                      placeholder="Buscar template..."
+                      className="text-[12.5px]"
+                    />
+                    <CommandList className="max-h-60">
+                      <CommandEmpty className="py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
+                        {templates.length === 0
+                          ? 'Todavía no guardaste ningún template'
+                          : 'Sin resultados'}
+                      </CommandEmpty>
+                      {templates.length > 0 && (
+                        <CommandGroup heading="Templates">
+                          {templates.map((t) => (
+                            <CommandItem
+                              key={t.id}
+                              value={t.nombre}
+                              onSelect={() => applyTemplate(t)}
+                              className="group text-[12.5px] gap-2"
+                            >
+                              <Bookmark
+                                className="w-3 h-3 shrink-0 text-[var(--arca-ink-4)]"
+                                strokeWidth={2}
+                              />
+                              <span className="flex-1 truncate">
+                                {t.nombre}
+                              </span>
+                              <span
+                                role="button"
+                                tabIndex={-1}
+                                aria-label={`Borrar ${t.nombre}`}
+                                className="shrink-0 p-1 -m-1 rounded-[6px] opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
+                                onPointerDown={(e) => {
+                                  // Solo cortar la propagación: cmdk dispara
+                                  // onSelect desde el click del ítem, y un
+                                  // preventDefault acá se comería el nuestro.
+                                  e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  deleteTemplateMut.mutate(t.id);
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" strokeWidth={1.8} />
+                              </span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+                    </CommandList>
+                  </Command>
                 </PopoverContent>
               </Popover>
 
