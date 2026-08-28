@@ -10,6 +10,12 @@ const RESULTADO = {
   name: 'Resultado del ejercicio',
 };
 
+const RNA = {
+  id: '3.5.001',
+  code: '3.5.001',
+  name: 'Resultados no asignados',
+};
+
 /** Saldo en signo contable: positivo deudor, negativo acreedor. */
 const cta = (
   accountId: string,
@@ -158,5 +164,71 @@ describe('arrastre de saldos al ejercicio siguiente', () => {
     const { apertura: ap } = buildClosingEntries(conNuevo, RESULTADO);
     const l = ap.lines.find((x) => x.accountId === '1.2.03.001')!;
     expect(l.debit).toBe(500_000);
+  });
+});
+
+describe('el resultado del ejercicio pasa a Resultados no asignados', () => {
+  const conRna = () => buildClosingEntries(BALANCE, RESULTADO, RNA);
+  const ap = (accountId: string) => {
+    const l = conRna().apertura.lines.find((x) => x.accountId === accountId);
+    return l ? l.debit - l.credit : 0;
+  };
+
+  it('«Resultado del ejercicio» arranca el año nuevo en cero', () => {
+    // Es una cuenta del año: si reabriera con saldo, la refundición del
+    // ejercicio siguiente acumularía encima y quedarían dos años mezclados.
+    expect(ap(RESULTADO.id)).toBe(0);
+    expect(
+      conRna().apertura.lines.some((l) => l.accountId === RESULTADO.id)
+    ).toBe(false);
+  });
+
+  it('el saldo se suma al que ya tenía Resultados no asignados', () => {
+    // 1.000.000 propios + 2.000.000 de resultado, en una sola línea.
+    expect(ap(RNA.id)).toBe(-3_000_000);
+    expect(
+      conRna().apertura.lines.filter((l) => l.accountId === RNA.id)
+    ).toHaveLength(1);
+  });
+
+  it('el patrimonio neto total no cambia', () => {
+    // Es una reclasificación dentro del PN, no un cambio de valor.
+    expect(-(ap('3.1.001') + ap(RNA.id))).toBe(13_000_000);
+  });
+
+  it('el cierre sigue cancelando las dos cuentas por separado', () => {
+    // La apertura deja de ser espejo del cierre, pero el cierre tiene que
+    // llevar a cero cada cuenta con su saldo real.
+    const { cierre } = conRna();
+    expect(cierre.lines.find((l) => l.accountId === RESULTADO.id)!.debit).toBe(
+      2_000_000
+    );
+    expect(cierre.lines.find((l) => l.accountId === RNA.id)!.debit).toBe(
+      1_000_000
+    );
+    expect(cierre.balanced).toBe(true);
+  });
+
+  it('la apertura sigue balanceada', () => {
+    const { apertura: a } = conRna();
+    expect(a.balanced).toBe(true);
+    expect(a.lines.reduce((s, l) => s + l.debit - l.credit, 0)).toBe(0);
+  });
+
+  it('una pérdida resta de Resultados no asignados', () => {
+    const conPerdida = BALANCE.map((b) =>
+      b.accountId === '4.1.001' ? { ...b, saldo: -3_000_000 } : b
+    );
+    const { apertura: a } = buildClosingEntries(conPerdida, RESULTADO, RNA);
+    const l = a.lines.find((x) => x.accountId === RNA.id)!;
+    // 1.000.000 acreedor − 4.000.000 de pérdida = 3.000.000 deudor.
+    expect(l.debit - l.credit).toBe(3_000_000);
+  });
+
+  it('sin cuenta de Resultados no asignados, arrastra como antes', () => {
+    // Un plan sin esa cuenta no debe perder el saldo en silencio.
+    const { apertura: a } = buildClosingEntries(BALANCE, RESULTADO, null);
+    const l = a.lines.find((x) => x.accountId === RESULTADO.id)!;
+    expect(l.debit - l.credit).toBe(-2_000_000);
   });
 });

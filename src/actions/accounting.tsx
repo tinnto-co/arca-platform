@@ -5314,6 +5314,32 @@ async function loadResultadoAccount(orgId: string): Promise<ResultadoAccount> {
   return acc;
 }
 
+/**
+ * Cuenta de Resultados no asignados, adonde la apertura manda el resultado del
+ * ejercicio que cerró.
+ *
+ * A diferencia de «Resultado del ejercicio», acá no se lanza si falta: un plan
+ * sin esta cuenta sigue abriendo como antes en vez de quedarse sin poder
+ * cerrar el ejercicio.
+ */
+async function loadResultadosNoAsignadosAccount(
+  orgId: string
+): Promise<ResultadoAccount | null> {
+  const [acc] = await db
+    .select({ id: cuenta.id, code: cuenta.codigo, name: cuenta.nombre })
+    .from(cuenta)
+    .where(
+      and(
+        eq(cuenta.orgId, orgId),
+        eq(cuenta.alcance, 'base'),
+        eq(cuenta.rubro, 'resultados_no_asignados'),
+        eq(cuenta.tipo, 'imputable')
+      )
+    )
+    .limit(1);
+  return acc ?? null;
+}
+
 /** Fechas del ejercicio siguiente. Todo en strings `YYYY-MM-DD` (columnas `date`). */
 const nextFyDates = (end: string): { start: string; end: string } => {
   const startD = new Date(new Date(`${end}T00:00:00Z`).getTime() + 86400000);
@@ -5397,6 +5423,7 @@ export const getClosingWizard = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
     const resultado = await loadResultadoAccount(orgId);
+    const rna = await loadResultadosNoAsignadosAccount(orgId);
 
     // Asientos de cierre ya posteados (refundición = el de menor número, cierre = el siguiente).
     const closingEntries = await db
@@ -5446,7 +5473,7 @@ export const getClosingWizard = createServerFn({ method: 'GET' })
     }
 
     const balances = await computeFyBalances(orgId, fy.id);
-    const built = buildClosingEntries(balances, resultado);
+    const built = buildClosingEntries(balances, resultado, rna);
 
     // Resultado del ejercicio (ganancia/pérdida) para mostrar.
     const resultadoBal = balances.find((b) => b.accountId === resultado.id);

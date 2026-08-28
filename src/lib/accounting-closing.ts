@@ -54,7 +54,26 @@ export interface ResultadoAccount {
 /** Construye los asientos de refundición y cierre patrimonial a partir de los saldos. */
 export function buildClosingEntries(
   balances: FyAccountBalance[],
-  resultado: ResultadoAccount
+  resultado: ResultadoAccount,
+  /**
+   * Cuenta de Resultados no asignados, a la que la apertura manda el resultado
+   * del ejercicio que cerró.
+   *
+   * «Resultado del ejercicio» es una cuenta del año: tiene que arrancar en
+   * cero para que la refundición del ejercicio nuevo acumule ahí. El resultado
+   * del año anterior pasa a Resultados no asignados hasta que la asamblea
+   * decida qué hacer con él.
+   *
+   * Sin esto pasaban dos cosas. El ESP calcula «Resultado del ejercicio» desde
+   * el estado de resultados del año en curso, así que el saldo reabierto no lo
+   * veía nadie y el activo no igualaba a pasivo más patrimonio neto. Y al
+   * refundir el ejercicio siguiente, el resultado nuevo se sumaba arriba del
+   * viejo en la misma cuenta, mezclando dos años.
+   *
+   * Opcional: si el plan del cliente no la tiene, se mantiene el
+   * comportamiento anterior en vez de perder el saldo.
+   */
+  resultadosNoAsignados?: ResultadoAccount | null
 ): {
   refundicion: ClosingEntryPreview;
   cierre: ClosingEntryPreview;
@@ -119,41 +138,55 @@ export function buildClosingEntries(
   }
 
   const cierreLines: ClosingLine[] = [];
-  const aperturaLines: ClosingLine[] = [];
+
+  /**
+   * Saldos con los que reabre cada cuenta, acumulados por cuenta destino.
+   *
+   * Se arma aparte del cierre y no en el mismo `push` porque las dos entradas
+   * dejaron de ser espejo: el cierre cancela «Resultado del ejercicio» con su
+   * saldo real, y la apertura lo reabre bajo Resultados no asignados. Si esa
+   * cuenta ya trae saldo propio, los dos terminan en una sola línea — son el
+   * mismo concepto y separarlos sería exponer dos veces lo mismo.
+   */
+  const saldoApertura = new Map<
+    string,
+    { cta: ResultadoAccount; saldo: number }
+  >();
+  const acumular = (cta: ResultadoAccount, saldo: number) => {
+    const prev = saldoApertura.get(cta.id);
+    saldoApertura.set(cta.id, {
+      cta,
+      saldo: r2((prev?.saldo ?? 0) + saldo),
+    });
+  };
+
   for (const b of cierreBalances) {
     if (Math.abs(b.saldo) < 0.005) continue;
-    if (b.saldo > 0) {
-      // deudor (activo) → cierre lo lleva al Haber; apertura lo reabre al Debe
-      cierreLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: 0,
-        credit: b.saldo,
-      });
-      aperturaLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: b.saldo,
-        credit: 0,
-      });
-    } else {
-      cierreLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: -b.saldo,
-        credit: 0,
-      });
-      aperturaLines.push({
-        accountId: b.accountId,
-        code: b.code,
-        name: b.name,
-        debit: 0,
-        credit: -b.saldo,
-      });
-    }
+    // El cierre siempre cancela la cuenta que tiene el saldo.
+    cierreLines.push({
+      accountId: b.accountId,
+      code: b.code,
+      name: b.name,
+      debit: b.saldo > 0 ? 0 : -b.saldo,
+      credit: b.saldo > 0 ? b.saldo : 0,
+    });
+    const destino =
+      b.accountId === resultado.id && resultadosNoAsignados
+        ? resultadosNoAsignados
+        : { id: b.accountId, code: b.code, name: b.name };
+    acumular(destino, b.saldo);
+  }
+
+  const aperturaLines: ClosingLine[] = [];
+  for (const { cta, saldo } of saldoApertura.values()) {
+    if (Math.abs(saldo) < 0.005) continue;
+    aperturaLines.push({
+      accountId: cta.id,
+      code: cta.code,
+      name: cta.name,
+      debit: saldo > 0 ? saldo : 0,
+      credit: saldo > 0 ? 0 : -saldo,
+    });
   }
 
   const summarize = (lines: ClosingLine[]): ClosingEntryPreview => {
