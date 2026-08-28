@@ -4424,7 +4424,8 @@ function AsientoEditor({
               <span>
                 La fecha está fuera del ejercicio vigente. El asiento se
                 guardará en el ejercicio N°{outOfRangeFy.numero} (
-                {outOfRangeFy.fechaDesde} – {outOfRangeFy.fechaHasta}).
+                {fmtFecha(outOfRangeFy.fechaDesde)} –{' '}
+                {fmtFecha(outOfRangeFy.fechaHasta)}).
               </span>
             </div>
           )}
@@ -4777,12 +4778,13 @@ function AsientoEditor({
               La fecha está fuera del ejercicio vigente
             </AlertDialogTitle>
             <AlertDialogDescription>
-              El asiento del {entryDate} se va a guardar en el ejercicio N°
-              {outOfRangeFy?.numero} ({outOfRangeFy?.fechaDesde} –{' '}
-              {outOfRangeFy?.fechaHasta}), que es el más cercano a esa fecha.
-              Revisá que sea el ejercicio correcto antes de continuar: el
-              asiento va a numerarse dentro de ese ejercicio y va a impactar en
-              sus estados contables.
+              El asiento del {entryDate ? fmtFecha(entryDate) : ''} se va a
+              guardar en el ejercicio N°{outOfRangeFy?.numero} (
+              {outOfRangeFy ? fmtFecha(outOfRangeFy.fechaDesde) : ''} –{' '}
+              {outOfRangeFy ? fmtFecha(outOfRangeFy.fechaHasta) : ''}), que es
+              el más cercano a esa fecha. Revisá que sea el ejercicio correcto
+              antes de continuar: el asiento va a numerarse dentro de ese
+              ejercicio y va a impactar en sus estados contables.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
