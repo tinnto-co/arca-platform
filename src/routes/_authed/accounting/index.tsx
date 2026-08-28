@@ -4123,6 +4123,13 @@ function AsientoEditor({
     id: string;
     nombre: string;
   } | null>(null);
+  /**
+   * Template elegido que todavía no se aplicó, porque el asiento ya tenía
+   * líneas. Aplicar reemplaza todo y no hay deshacer, así que pisar en
+   * silencio lo que el usuario tipeó no es una opción.
+   */
+  const [templateAConfirmar, setTemplateAConfirmar] =
+    useState<JournalTemplate | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
 
   const { data: chart } = useQuery({
@@ -4141,6 +4148,23 @@ function AsientoEditor({
    * y con menos de dos, el asiento no existe. Se explica acá y no después del
    * error del servidor, porque la regla no es adivinable.
    */
+  /** Algo más que las dos líneas vacías con las que arranca el editor. */
+  const hayContenido = lines.some(
+    (l) =>
+      l.accountId ||
+      num(l.debit) > 0 ||
+      num(l.credit) > 0 ||
+      l.description.trim()
+  );
+
+  function elegirTemplate(t: JournalTemplate) {
+    if (hayContenido) {
+      setTemplateAConfirmar(t);
+      return;
+    }
+    applyTemplate(t);
+  }
+
   function ladoDeLinea(l: LineDraft): 'debe' | 'haber' | null {
     if (num(l.debit) > 0) return 'debe';
     if (num(l.credit) > 0) return 'haber';
@@ -4414,7 +4438,10 @@ function AsientoEditor({
               <Popover
                 modal
                 open={templatePopoverOpen}
-                onOpenChange={setTemplatePopoverOpen}
+                onOpenChange={(o) => {
+                  setTemplatePopoverOpen(o);
+                  if (!o) setTemplateAConfirmar(null);
+                }}
               >
                 <PopoverTrigger asChild>
                   <button className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors">
@@ -4427,61 +4454,96 @@ function AsientoEditor({
                   className="w-72 p-0"
                   sideOffset={4}
                 >
-                  {/* Mismo combobox que el selector de cuentas: buscador
-                      arriba y lista filtrable. Un estudio con muchos modelos
-                      no los encuentra scrolleando. */}
-                  <Command>
-                    <CommandInput
-                      placeholder="Buscar template..."
-                      className="text-[12.5px]"
-                    />
-                    <CommandList className="max-h-60">
-                      <CommandEmpty className="py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
-                        {templates.length === 0
-                          ? 'Todavía no guardaste ningún template'
-                          : 'Sin resultados'}
-                      </CommandEmpty>
-                      {templates.length > 0 && (
-                        <CommandGroup heading="Templates">
-                          {templates.map((t) => (
-                            <CommandItem
-                              key={t.id}
-                              value={t.nombre}
-                              onSelect={() => applyTemplate(t)}
-                              className="group text-[12.5px] gap-2"
-                            >
-                              <Bookmark
-                                className="w-3 h-3 shrink-0 text-[var(--arca-ink-4)]"
-                                strokeWidth={2}
-                              />
-                              <span className="flex-1 truncate">
-                                {t.nombre}
-                              </span>
-                              <span
-                                role="button"
-                                tabIndex={-1}
-                                aria-label={`Borrar ${t.nombre}`}
-                                className="shrink-0 p-1 -m-1 rounded-[6px] opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
-                                onPointerDown={(e) => {
-                                  // Solo cortar la propagación: cmdk dispara
-                                  // onSelect desde el click del ítem, y un
-                                  // preventDefault acá se comería el nuestro.
-                                  e.stopPropagation();
-                                }}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  deleteTemplateMut.mutate(t.id);
-                                }}
+                  {templateAConfirmar ? (
+                    /* La confirmación va acá y no en otro diálogo: apilar
+                       diálogos sobre el del asiento ya trajo cierres en
+                       cascada. */
+                    <div className="flex flex-col gap-2 p-3">
+                      <p className="text-[12.5px] text-[var(--arca-ink)]">
+                        Este asiento ya tiene líneas cargadas.
+                      </p>
+                      <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+                        Cargar «{templateAConfirmar.nombre}» las reemplaza por
+                        las del template. No se puede deshacer.
+                      </p>
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => {
+                            applyTemplate(templateAConfirmar);
+                            setTemplateAConfirmar(null);
+                          }}
+                          className="h-8 rounded-[8px] bg-[var(--arca-navy-900)] px-3 text-[12px] font-medium text-white"
+                        >
+                          Reemplazar
+                        </button>
+                        <button
+                          onClick={() => setTemplateAConfirmar(null)}
+                          className="h-8 rounded-[8px] border border-[var(--arca-border)] px-3 text-[12px] text-[var(--arca-ink-3)]"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Mismo combobox que el selector de cuentas: buscador
+                       arriba y lista filtrable. Un estudio con muchos modelos
+                       no los encuentra scrolleando. */
+                    <Command>
+                      <CommandInput
+                        placeholder="Buscar template..."
+                        className="text-[12.5px]"
+                      />
+                      <CommandList className="max-h-60">
+                        <CommandEmpty className="py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
+                          {templates.length === 0
+                            ? 'Todavía no guardaste ningún template'
+                            : 'Sin resultados'}
+                        </CommandEmpty>
+                        {templates.length > 0 && (
+                          <CommandGroup heading="Templates">
+                            {templates.map((t) => (
+                              <CommandItem
+                                key={t.id}
+                                value={t.nombre}
+                                onSelect={() => elegirTemplate(t)}
+                                className="group text-[12.5px] gap-2"
                               >
-                                <Trash2 className="w-3 h-3" strokeWidth={1.8} />
-                              </span>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      )}
-                    </CommandList>
-                  </Command>
+                                <Bookmark
+                                  className="w-3 h-3 shrink-0 text-[var(--arca-ink-4)]"
+                                  strokeWidth={2}
+                                />
+                                <span className="flex-1 truncate">
+                                  {t.nombre}
+                                </span>
+                                <span
+                                  role="button"
+                                  tabIndex={-1}
+                                  aria-label={`Borrar ${t.nombre}`}
+                                  className="shrink-0 p-1 -m-1 rounded-[6px] opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
+                                  onPointerDown={(e) => {
+                                    // Solo cortar la propagación: cmdk dispara
+                                    // onSelect desde el click del ítem, y un
+                                    // preventDefault acá se comería el nuestro.
+                                    e.stopPropagation();
+                                  }}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    deleteTemplateMut.mutate(t.id);
+                                  }}
+                                >
+                                  <Trash2
+                                    className="w-3 h-3"
+                                    strokeWidth={1.8}
+                                  />
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        )}
+                      </CommandList>
+                    </Command>
+                  )}
                 </PopoverContent>
               </Popover>
 
