@@ -47,13 +47,14 @@ grant select on all tables in schema public to arca_agent;
 -- Políticas
 -- ============================================================================
 
--- ---------- Nivel 1: la fila tiene org_id propio (34 tablas) ----------
+-- ---------- Nivel 1: la fila tiene org_id propio (35 tablas) ----------
 do $do$
 declare t text;
 begin
   foreach t in array array[
     'agent_action','agent_conversation','agent_run','ajuste_inflacion','alerta',
-    'anexo_cmv','asiento','bien_de_uso','cierre_sueldos','cliente','cliente_cct',
+    'anexo_cmv','asiento','asiento_template','bien_de_uso','cierre_sueldos',
+    'cliente','cliente_cct',
     'cliente_concepto','comprobante','convenio','credencial_afip','cuenta',
     'cuenta_bancaria','deuda','documento','eecc','ejercicio','empleado','evento',
     'firmante','job','liquidacion_iibb','lsd_presentacion','notificacion',
