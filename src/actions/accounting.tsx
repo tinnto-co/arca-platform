@@ -60,6 +60,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   or,
   sql,
 } from 'drizzle-orm';
@@ -8530,6 +8531,13 @@ export const saveJournalTemplate = createServerFn({ method: 'POST' })
   .validator(
     z.object({
       clientId: z.string().uuid(),
+      /**
+       * Cuál template actualizar. Con `id` se edita ese —y se puede cambiarle
+       * el nombre—; sin `id` se crea, o se pisa el que ya tenga ese nombre.
+       * Sin esto, renombrar era imposible: cambiar el nombre creaba un
+       * duplicado y dejaba el viejo.
+       */
+      id: z.string().uuid().optional(),
       nombre: z.string().min(1).max(100),
       lineas: z
         .array(
@@ -8545,6 +8553,43 @@ export const saveJournalTemplate = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     assertCanWrite(await getMemberRole());
     const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(data.clientId, orgId);
+
+    if (data.id) {
+      // El nombre nuevo puede chocar con otro template del mismo cliente; el
+      // índice único lo rechazaría con un error de Postgres, que no le sirve a
+      // nadie. Se avisa antes y en castellano.
+      const [choca] = await db
+        .select({ id: asientoTemplate.id })
+        .from(asientoTemplate)
+        .where(
+          and(
+            eq(asientoTemplate.clienteId, data.clientId),
+            eq(asientoTemplate.nombre, data.nombre),
+            ne(asientoTemplate.id, data.id)
+          )
+        );
+      if (choca) {
+        throw new Error(
+          `Ya existe otro template llamado «${data.nombre}» en esta empresa.`
+        );
+      }
+
+      const [row] = await db
+        .update(asientoTemplate)
+        .set({ nombre: data.nombre, lineas: data.lineas })
+        .where(
+          and(
+            eq(asientoTemplate.id, data.id),
+            eq(asientoTemplate.orgId, orgId),
+            eq(asientoTemplate.clienteId, data.clientId)
+          )
+        )
+        .returning({ id: asientoTemplate.id });
+      if (!row) throw new Error('No se encontró el template a actualizar.');
+      return { id: row.id };
+    }
+
     const [row] = await db
       .insert(asientoTemplate)
       .values({

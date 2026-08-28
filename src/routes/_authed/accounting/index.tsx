@@ -4119,7 +4119,10 @@ function AsientoEditor({
    * usuario tiene que reescribirlo de memoria y una letra de más crea un
    * duplicado en vez de editar.
    */
-  const [templateCargado, setTemplateCargado] = useState<string | null>(null);
+  const [templateCargado, setTemplateCargado] = useState<{
+    id: string;
+    nombre: string;
+  } | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
 
   const { data: chart } = useQuery({
@@ -4151,11 +4154,12 @@ function AsientoEditor({
   }
 
   const saveTemplateMut = useMutation({
-    mutationFn: (nombre: string) =>
+    mutationFn: (args: { nombre: string; id?: string }) =>
       saveJournalTemplate({
         data: {
           clientId,
-          nombre,
+          nombre: args.nombre,
+          id: args.id,
           // Una sola fuente: la misma función que valida antes de mandar.
           // Cuando esto estaba duplicado, la guarda y el payload podían no
           // coincidir y el error salía recién del servidor.
@@ -4166,14 +4170,22 @@ function AsientoEditor({
           })),
         },
       }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       void qc.invalidateQueries({
         queryKey: ['accounting', 'templates', clientId],
       });
+      // Queda apuntando al template guardado, así el siguiente cambio lo
+      // vuelve a editar en vez de crear otro.
+      setTemplateCargado({ id: res.id, nombre: nombreTipeado });
       setSaveTemplateOpen(false);
-      setTemplateCargado(saveTemplateName.trim() || templateCargado);
       setSaveTemplateName('');
-      toast.success(pisaExistente ? 'Template actualizado' : 'Template creado');
+      toast.success(
+        accionGuardar === 'renombrar'
+          ? `Template renombrado a «${nombreTipeado}»`
+          : accionGuardar === 'crear'
+            ? 'Template creado'
+            : 'Template actualizado'
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -4185,11 +4197,28 @@ function AsientoEditor({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const pisaExistente = templates.some(
-    (t) => t.nombre.toLowerCase() === saveTemplateName.trim().toLowerCase()
+  /**
+   * Qué va a pasar al guardar. Son tres cosas distintas y antes las tres se
+   * veían igual, que es como renombrar terminaba creando un duplicado.
+   */
+  const nombreTipeado = saveTemplateName.trim();
+  const otroConEseNombre = templates.find(
+    (t) =>
+      t.nombre.toLowerCase() === nombreTipeado.toLowerCase() &&
+      t.id !== templateCargado?.id
   );
+  const accionGuardar: 'crear' | 'actualizar' | 'renombrar' | 'pisar' =
+    templateCargado
+      ? nombreTipeado.toLowerCase() === templateCargado.nombre.toLowerCase()
+        ? 'actualizar'
+        : otroConEseNombre
+          ? 'pisar'
+          : 'renombrar'
+      : otroConEseNombre
+        ? 'pisar'
+        : 'crear';
 
-  function guardarTemplate() {
+  function guardarTemplate(comoCopia = false) {
     const utiles = lineasParaTemplate();
     if (utiles.length < 2) {
       toast.error(
@@ -4199,7 +4228,12 @@ function AsientoEditor({
       );
       return;
     }
-    saveTemplateMut.mutate(saveTemplateName.trim());
+    saveTemplateMut.mutate({
+      nombre: nombreTipeado,
+      // Sin id se crea (o se pisa el que tenga ese nombre); con id se edita
+      // ese template, que es lo que permite renombrarlo.
+      id: comoCopia ? undefined : templateCargado?.id,
+    });
   }
 
   function applyTemplate(t: JournalTemplate) {
@@ -4212,7 +4246,7 @@ function AsientoEditor({
         lado: l.lado,
       }))
     );
-    setTemplateCargado(t.nombre);
+    setTemplateCargado({ id: t.id, nombre: t.nombre });
     setTemplatePopoverOpen(false);
   }
 
@@ -4455,7 +4489,7 @@ function AsientoEditor({
                 <button
                   className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors"
                   onClick={() => {
-                    setSaveTemplateName(templateCargado ?? '');
+                    setSaveTemplateName(templateCargado?.nombre ?? '');
                     setSaveTemplateOpen(true);
                   }}
                 >
@@ -4494,9 +4528,11 @@ function AsientoEditor({
                   >
                     {saveTemplateMut.isPending
                       ? '…'
-                      : pisaExistente
-                        ? 'Actualizar'
-                        : 'Crear'}
+                      : accionGuardar === 'renombrar'
+                        ? 'Renombrar'
+                        : accionGuardar === 'crear'
+                          ? 'Crear'
+                          : 'Actualizar'}
                   </button>
                   <button
                     onClick={() => {
@@ -4508,13 +4544,33 @@ function AsientoEditor({
                     Cancelar
                   </button>
                 </div>
-                {/* Decir de antemano si el nombre pisa uno que ya existe:
-                    el guardado es un upsert y en silencio no se distingue
-                    editar de crear. */}
-                {pisaExistente && (
+
+                {/* Decir de antemano qué va a pasar. Los cuatro casos se veían
+                    igual, y así es como renombrar terminaba duplicando. */}
+                {accionGuardar === 'renombrar' && (
                   <p className="text-[11px] text-[var(--arca-ink-3)] pl-0.5">
-                    Se va a reemplazar el template «{saveTemplateName.trim()}»
+                    Se va a renombrar «{templateCargado?.nombre}» a «
+                    {nombreTipeado}» y guardar las líneas actuales.{' '}
+                    <button
+                      type="button"
+                      onClick={() => guardarTemplate(true)}
+                      className="underline underline-offset-2 hover:text-[var(--arca-ink)]"
+                    >
+                      Guardar como copia
+                    </button>{' '}
+                    si preferís conservar los dos.
+                  </p>
+                )}
+                {accionGuardar === 'pisar' && (
+                  <p className="text-[11px] text-[oklch(0.55_0.14_60)] pl-0.5">
+                    Ya existe un template «{nombreTipeado}»: se va a reemplazar
                     con las líneas que tenés ahora.
+                  </p>
+                )}
+                {accionGuardar === 'actualizar' && (
+                  <p className="text-[11px] text-[var(--arca-ink-3)] pl-0.5">
+                    Se va a actualizar «{nombreTipeado}» con las líneas que
+                    tenés ahora.
                   </p>
                 )}
               </div>
