@@ -4086,6 +4086,20 @@ function AsientoEditor({
       : [emptyLine(), emptyLine()]
   );
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
+  // Un ref y no el estado: el cierre del hijo y el evento que lo disparó no
+  // siempre caen en el mismo tick, y para cuando el diálogo de abajo mira el
+  // estado ya volvió a false. El ref se libera un tick después del desmonte.
+  const hayDialogoEncima = useRef(false);
+  const abrirNuevaCuenta = () => {
+    hayDialogoEncima.current = true;
+    setCreateAccountOpen(true);
+  };
+  const cerrarNuevaCuenta = () => {
+    setCreateAccountOpen(false);
+    setTimeout(() => {
+      hayDialogoEncima.current = false;
+    }, 0);
+  };
   const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState('');
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -4236,16 +4250,25 @@ function AsientoEditor({
 
   return (
     <>
-      // Con el diálogo de nueva cuenta abierto, el asiento ignora su propio //
-      cierre: son dos diálogos hermanos, los dos `open`, así que un Esc o un //
-      click afuera los cerraba a los dos y se perdía el asiento a medio cargar.
+      {/* El asiento ignora su propio cierre mientras haya un diálogo encima:
+          son dos diálogos hermanos y los dos montados con `open`, así que el
+          Esc o el click que cerraba el de nueva cuenta cerraba también este y
+          se perdía el asiento a medio cargar. */}
       <Dialog
         open
         onOpenChange={(o) => {
-          if (!o && !createAccountOpen) onClose();
+          if (!o && !hayDialogoEncima.current) onClose();
         }}
       >
-        <DialogContent className="sm:max-w-[760px]">
+        <DialogContent
+          className="sm:max-w-[760px]"
+          onEscapeKeyDown={(e) => {
+            if (hayDialogoEncima.current) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (hayDialogoEncima.current) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>
@@ -4409,7 +4432,7 @@ function AsientoEditor({
                     value={l.accountId}
                     onChange={(v) => updateLine(i, { accountId: v })}
                     postable={postable}
-                    onCreate={() => setCreateAccountOpen(true)}
+                    onCreate={abrirNuevaCuenta}
                   />
                   <input
                     value={l.description}
@@ -4507,9 +4530,9 @@ function AsientoEditor({
           mode={{ kind: 'custom' }}
           clientId={clientId}
           accounts={chart?.accounts ?? []}
-          onClose={() => setCreateAccountOpen(false)}
+          onClose={cerrarNuevaCuenta}
           onSaved={() => {
-            setCreateAccountOpen(false);
+            cerrarNuevaCuenta();
             void qc.invalidateQueries({
               queryKey: ['accounting', 'postable', clientId],
             });
