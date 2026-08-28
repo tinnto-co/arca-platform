@@ -84,6 +84,7 @@ import {
   CASH_FLOW_ACTIVITY_LABELS,
   CASH_FLOW_ACTIVITY_ORDER,
   defaultCashFlowActivity,
+  presentacionEfe,
   isCashGroup,
   type CashFlowActivity,
 } from '@/lib/accounting-cashflow';
@@ -8398,8 +8399,14 @@ export const getEFE = createServerFn({ method: 'GET' })
       for (const accountId of ids) {
         const acc = accById.get(accountId);
         if (!acc) continue;
+        // El override por cuenta manda; después el mapa del EFE, que además
+        // saca «Accionistas» de operativas; y al final el default del rubro.
+        const efe = presentacionEfe(acc.name);
         const activity =
-          acc.activity ?? defaultCashFlowActivity(acc.group) ?? 'operating';
+          acc.activity ??
+          efe?.actividad ??
+          defaultCashFlowActivity(acc.group) ??
+          'operating';
         if (activity !== key) continue;
         const c = r2(cur.byAccount.get(accountId) ?? 0);
         const p = pv(pri?.byAccount.get(accountId) ?? 0);
@@ -8407,7 +8414,9 @@ export const getEFE = createServerFn({ method: 'GET' })
         rows.push({
           accountId,
           code: acc.code,
-          name: acc.name,
+          // En el EFE importa qué pasó con la plata, no cómo se llama la
+          // cuenta que la movió.
+          name: efe?.etiqueta ?? acc.name,
           current: c,
           prior: p,
         });
