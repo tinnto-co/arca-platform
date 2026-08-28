@@ -4314,6 +4314,16 @@ function AsientoEditor({
     queryFn: () => getFiscalYears({ data: { clientId } }),
     enabled: state.mode !== 'edit',
   });
+  /**
+   * Confirmación pendiente por fecha fuera del ejercicio (TIN-1443).
+   *
+   * El criterio pide un cartel «que el usuario debe confirmar para continuar»,
+   * con el caso de prueba «cancelar la advertencia: el asiento no debe
+   * guardarse». Un banner informativo no lo cumple: se puede guardar sin
+   * haberlo leído, y no hay nada que cancelar.
+   */
+  const [confirmarFueraDeRango, setConfirmarFueraDeRango] = useState(false);
+
   const outOfRangeFy = useMemo(() => {
     if (!entryDate || !fiscalYears.length || state.mode === 'edit') return null;
     const inRange = fiscalYears.some(
@@ -4716,7 +4726,14 @@ function AsientoEditor({
               Cancelar
             </button>
             <button
-              onClick={() => mut.mutate()}
+              onClick={() => {
+                if (outOfRangeFy) {
+                  marcarDialogoEncima(true);
+                  setConfirmarFueraDeRango(true);
+                  return;
+                }
+                mut.mutate();
+              }}
               disabled={!canSave || mut.isPending}
               className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
             >
@@ -4742,6 +4759,46 @@ function AsientoEditor({
           }}
         />
       )}
+
+      {/* Fecha fuera del ejercicio: el criterio de TIN-1443 pide confirmar
+          para continuar, y que cancelar NO guarde el asiento. */}
+      <AlertDialog
+        open={confirmarFueraDeRango}
+        onOpenChange={(o) => {
+          if (!o) {
+            setConfirmarFueraDeRango(false);
+            marcarDialogoEncima(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              La fecha está fuera del ejercicio vigente
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              El asiento del {entryDate} se va a guardar en el ejercicio N°
+              {outOfRangeFy?.numero} ({outOfRangeFy?.fechaDesde} –{' '}
+              {outOfRangeFy?.fechaHasta}), que es el más cercano a esa fecha.
+              Revisá que sea el ejercicio correcto antes de continuar: el
+              asiento va a numerarse dentro de ese ejercicio y va a impactar en
+              sus estados contables.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmarFueraDeRango(false);
+                marcarDialogoEncima(false);
+                mut.mutate();
+              }}
+            >
+              Guardar igual
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Reemplazar las líneas cargadas no se puede deshacer, así que va en un
           diálogo y no en un cartel dentro del popover: ahí es fácil apretar de
