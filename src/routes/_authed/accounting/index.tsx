@@ -4102,6 +4102,13 @@ function AsientoEditor({
   };
   const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState('');
+  /**
+   * Qué template se cargó en el editor, para poder actualizarlo después.
+   * El guardado pisa por (cliente, nombre), así que sin recordar el nombre el
+   * usuario tiene que reescribirlo de memoria y una letra de más crea un
+   * duplicado en vez de editar.
+   */
+  const [templateCargado, setTemplateCargado] = useState<string | null>(null);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
 
   const { data: chart } = useQuery({
@@ -4148,8 +4155,9 @@ function AsientoEditor({
         queryKey: ['accounting', 'templates', clientId],
       });
       setSaveTemplateOpen(false);
+      setTemplateCargado(saveTemplateName.trim() || templateCargado);
       setSaveTemplateName('');
-      toast.success('Template guardado');
+      toast.success(pisaExistente ? 'Template actualizado' : 'Template creado');
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -4160,6 +4168,10 @@ function AsientoEditor({
       qc.invalidateQueries({ queryKey: ['accounting', 'templates', clientId] }),
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const pisaExistente = templates.some(
+    (t) => t.nombre.toLowerCase() === saveTemplateName.trim().toLowerCase()
+  );
 
   function guardarTemplate() {
     const utiles = lineasParaTemplate();
@@ -4182,6 +4194,7 @@ function AsientoEditor({
         description: l.descripcion ?? '',
       }))
     );
+    setTemplateCargado(t.nombre);
     setTemplatePopoverOpen(false);
   }
 
@@ -4423,49 +4436,69 @@ function AsientoEditor({
               {!saveTemplateOpen && (
                 <button
                   className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors"
-                  onClick={() => setSaveTemplateOpen(true)}
+                  onClick={() => {
+                    setSaveTemplateName(templateCargado ?? '');
+                    setSaveTemplateOpen(true);
+                  }}
                 >
                   <BookmarkPlus className="w-3 h-3" strokeWidth={2} />
-                  Guardar como template
+                  {templateCargado
+                    ? 'Guardar cambios'
+                    : 'Guardar como template'}
                 </button>
               )}
             </div>
 
             {saveTemplateOpen && (
-              <div className="flex items-center gap-2">
-                <input
-                  value={saveTemplateName}
-                  onChange={(e) => setSaveTemplateName(e.target.value)}
-                  placeholder="Nombre del template…"
-                  className={`${INPUT_CLASS} flex-1 h-8`}
-                  autoFocus
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && saveTemplateName.trim())
-                      guardarTemplate();
-                    if (e.key === 'Escape') {
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={saveTemplateName}
+                    onChange={(e) => setSaveTemplateName(e.target.value)}
+                    placeholder="Nombre del template…"
+                    className={`${INPUT_CLASS} flex-1 h-8`}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && saveTemplateName.trim())
+                        guardarTemplate();
+                      if (e.key === 'Escape') {
+                        setSaveTemplateOpen(false);
+                        setSaveTemplateName('');
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => guardarTemplate()}
+                    disabled={
+                      !saveTemplateName.trim() || saveTemplateMut.isPending
+                    }
+                    className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+                  >
+                    {saveTemplateMut.isPending
+                      ? '…'
+                      : pisaExistente
+                        ? 'Actualizar'
+                        : 'Crear'}
+                  </button>
+                  <button
+                    onClick={() => {
                       setSaveTemplateOpen(false);
                       setSaveTemplateName('');
-                    }
-                  }}
-                />
-                <button
-                  onClick={() => guardarTemplate()}
-                  disabled={
-                    !saveTemplateName.trim() || saveTemplateMut.isPending
-                  }
-                  className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
-                >
-                  {saveTemplateMut.isPending ? '…' : 'Guardar'}
-                </button>
-                <button
-                  onClick={() => {
-                    setSaveTemplateOpen(false);
-                    setSaveTemplateName('');
-                  }}
-                  className="h-8 px-3 text-[12px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
-                >
-                  Cancelar
-                </button>
+                    }}
+                    className="h-8 px-3 text-[12px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                {/* Decir de antemano si el nombre pisa uno que ya existe:
+                    el guardado es un upsert y en silencio no se distingue
+                    editar de crear. */}
+                {pisaExistente && (
+                  <p className="text-[11px] text-[var(--arca-ink-3)] pl-0.5">
+                    Se va a reemplazar el template «{saveTemplateName.trim()}»
+                    con las líneas que tenés ahora.
+                  </p>
+                )}
               </div>
             )}
 
