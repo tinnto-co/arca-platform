@@ -4114,6 +4114,18 @@ function AsientoEditor({
     queryFn: () => listJournalTemplates({ data: { clientId } }),
   });
 
+  /**
+   * Un template guarda cuentas y lados, no importes. El lado sale de en qué
+   * columna hay un número, así que una línea sin importe no se puede guardar —
+   * y con menos de dos, el asiento no existe. Se explica acá y no después del
+   * error del servidor, porque la regla no es adivinable.
+   */
+  function lineasParaTemplate() {
+    return lines.filter(
+      (l) => l.accountId && (num(l.debit) > 0 || num(l.credit) > 0)
+    );
+  }
+
   const saveTemplateMut = useMutation({
     mutationFn: (nombre: string) =>
       saveJournalTemplate({
@@ -4148,6 +4160,18 @@ function AsientoEditor({
       qc.invalidateQueries({ queryKey: ['accounting', 'templates', clientId] }),
     onError: (e: Error) => toast.error(e.message),
   });
+
+  function guardarTemplate() {
+    const utiles = lineasParaTemplate();
+    if (utiles.length < 2) {
+      toast.error(
+        'Un template necesita al menos dos líneas con cuenta e importe. ' +
+          'El importe no se guarda: solo define si la línea va al debe o al haber.'
+      );
+      return;
+    }
+    saveTemplateMut.mutate(saveTemplateName.trim());
+  }
 
   function applyTemplate(t: JournalTemplate) {
     setLines(
@@ -4384,7 +4408,7 @@ function AsientoEditor({
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && saveTemplateName.trim())
-                      saveTemplateMut.mutate(saveTemplateName.trim());
+                      guardarTemplate();
                     if (e.key === 'Escape') {
                       setSaveTemplateOpen(false);
                       setSaveTemplateName('');
@@ -4392,9 +4416,7 @@ function AsientoEditor({
                   }}
                 />
                 <button
-                  onClick={() =>
-                    saveTemplateMut.mutate(saveTemplateName.trim())
-                  }
+                  onClick={() => guardarTemplate()}
                   disabled={
                     !saveTemplateName.trim() || saveTemplateMut.isPending
                   }
