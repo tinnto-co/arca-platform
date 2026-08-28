@@ -1910,11 +1910,16 @@ async function resolvePeriodForDate(
       .select()
       .from(ejercicio)
       .where(
-        and(eq(ejercicio.id, overrideFiscalYearId), eq(ejercicio.clienteId, clientId))
+        and(
+          eq(ejercicio.id, overrideFiscalYearId),
+          eq(ejercicio.clienteId, clientId)
+        )
       )
       .limit(1);
     if (!found)
-      throw new Error('El ejercicio indicado no existe o no pertenece a este cliente');
+      throw new Error(
+        'El ejercicio indicado no existe o no pertenece a este cliente'
+      );
     fy = found;
     warning = `La fecha ${dateStr} está fuera del ejercicio N°${fy.numero} (${fy.fechaDesde} – ${fy.fechaHasta}). El asiento se registró de todas formas.`;
   } else {
@@ -1956,13 +1961,16 @@ async function resolvePeriodForDate(
       .from(periodoContable)
       .where(eq(periodoContable.ejercicioId, fy.id))
       .orderBy(desc(periodoContable.periodo));
-    const fallback = allPeriods.find((p) => p.estado !== 'cerrado') ?? allPeriods[0];
+    const fallback =
+      allPeriods.find((p) => p.estado !== 'cerrado') ?? allPeriods[0];
     if (!fallback) throw new Error('No existe el período para esa fecha');
     return {
       fy,
       period: fallback,
       date: dateStr,
-      warning: warning ?? `La fecha no corresponde a ningún período del ejercicio. Se usó el período ${fallback.periodo.slice(0, 7)}.`,
+      warning:
+        warning ??
+        `La fecha no corresponde a ningún período del ejercicio. Se usó el período ${fallback.periodo.slice(0, 7)}.`,
     };
   }
 
@@ -8535,7 +8543,7 @@ export const saveJournalTemplate = createServerFn({ method: 'POST' })
     })
   )
   .handler(async ({ data }) => {
-    await assertCanWrite();
+    assertCanWrite(await getMemberRole());
     const { orgId } = await getSessionWithOrg();
     const [row] = await db
       .insert(asientoTemplate)
@@ -8556,7 +8564,7 @@ export const saveJournalTemplate = createServerFn({ method: 'POST' })
 export const deleteJournalTemplate = createServerFn({ method: 'POST' })
   .validator(z.object({ id: z.string().uuid() }))
   .handler(async ({ data }) => {
-    await assertCanWrite();
+    assertCanWrite(await getMemberRole());
     const { orgId } = await getSessionWithOrg();
     await db
       .delete(asientoTemplate)
