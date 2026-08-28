@@ -11464,7 +11464,12 @@ function NotesEditor({
       {/* Vista previa del formato. Renderiza la misma plantilla que se
           descarga, así lo que se ve y lo que se baja no pueden divergir. */}
       <Dialog open={formatoAbierto} onOpenChange={setFormatoAbierto}>
-        <DialogContent className="max-w-[min(96vw,1000px)] max-h-[92vh] flex flex-col gap-0 p-0">
+        <DialogContent
+          /* `sm:` es necesario: DialogContent trae `sm:max-w-lg`, que sin
+             el prefijo le gana a este por breakpoint y deja el diálogo en
+             512px. */
+          className="sm:max-w-[min(95vw,1400px)] max-h-[92vh] flex flex-col gap-0 p-0"
+        >
           <DialogHeader className="px-6 pt-6 pb-4 border-b border-[var(--arca-border)]">
             <DialogTitle>Formato del Word para importar</DialogTitle>
             <DialogDescription>
@@ -11476,7 +11481,7 @@ function NotesEditor({
           </DialogHeader>
 
           <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--arca-surface-2)] px-6 py-6">
-            <div className="mx-auto max-w-[780px] bg-white rounded-[8px] border border-[var(--arca-border)] px-12 py-10 shadow-sm">
+            <div className="mx-auto max-w-[1000px] bg-white rounded-[8px] border border-[var(--arca-border)] px-12 py-10 shadow-sm">
               {PLANTILLA.map((b, i) =>
                 b.tipo === 'titulo' ? (
                   <div
