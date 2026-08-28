@@ -12086,7 +12086,7 @@ function ExportView({
     {
       key: 'estados-excel',
       title: 'Estados nuevos en Excel',
-      desc: 'EEPN, Flujo de Efectivo y Nota 3, una hoja por estado. Sigue la valuación elegida arriba.',
+      desc: 'EEPN, Flujo de Efectivo, Nota 3 e Inventario, una hoja por estado y en el orden del documento. Sigue la valuación elegida arriba.',
       onClick: onEstadosExcel,
       extra: 'Para cruzar contra el papel de trabajo.',
       format: 'Excel',
