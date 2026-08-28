@@ -107,7 +107,10 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
-import { variablesDelBalance } from '@/lib/accounting-audit-report';
+import {
+  variablesDelBalance,
+  missingVars,
+} from '@/lib/accounting-audit-report';
 import {
   leerNotasDeWord,
   plantillaNotasWord,
@@ -12150,11 +12153,64 @@ function ExportView({
     }
   };
 
+  /**
+   * Las variables con las que se rellenan las notas del paquete.
+   *
+   * Una sola función para el PDF y para el chequeo previo: si fueran dos, el
+   * aviso podría decir que falta algo que sí se rellena, o al revés.
+   */
+  const noteVarsDelPaquete = (): Partial<AuditReportVars> => ({
+    empresa: clientName,
+    cuit: clientCuit,
+    domicilio: membrete?.domicilio ?? '',
+    inicio: selectedFy ? fechaLarga(new Date(selectedFy.fechaDesde)) : '',
+    constitucion: membrete?.fechaConstitucion
+      ? fechaLarga(new Date(membrete.fechaConstitucion))
+      : '',
+    igj: membrete?.numeroInscripcion ?? '',
+    ...variablesDelBalance(esp),
+    contador: membrete?.accountant?.nombre ?? '',
+    matricula: [
+      membrete?.accountant?.tomo && `Tomo ${membrete.accountant.tomo}`,
+      membrete?.accountant?.folio && `Folio ${membrete.accountant.folio}`,
+      membrete?.accountant?.consejo,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  });
+
+  /**
+   * Variables escritas en las notas que no tienen dato cargado.
+   *
+   * `fillAuditReport` deja la llave a la vista cuando falta el valor —borrarla
+   * escondería el hueco justo en el documento que se firma—, pero eso se
+   * descubre recién abriendo el PDF. Conviene avisar antes.
+   */
+  const variablesFaltantes = () => {
+    const vars = noteVarsDelPaquete();
+    const faltan = new Set<string>();
+    for (const n of notes)
+      for (const k of missingVars(n.content, vars)) faltan.add(k);
+    return [...faltan];
+  };
+
+  const [faltantesPdf, setFaltantesPdf] = useState<string[] | null>(null);
+
   const onPackage = async () => {
     if (!esp || !er || !anexoII || !selectedFy) {
       toast.error('Los datos del paquete aún se están cargando');
       return;
     }
+    const faltan = variablesFaltantes();
+    if (faltan.length > 0) {
+      setFaltantesPdf(faltan);
+      return;
+    }
+    await generarPaquete();
+  };
+
+  const generarPaquete = async () => {
+    if (!esp || !er || !anexoII || !selectedFy) return;
     setBusy('package');
     try {
       const blob = await exportEeccPackagePdf({
@@ -12201,25 +12257,7 @@ function ExportView({
             }
           : null,
         notes,
-        noteVars: {
-          empresa: clientName,
-          cuit: clientCuit,
-          domicilio: membrete?.domicilio ?? '',
-          inicio: fechaLarga(new Date(selectedFy.fechaDesde)),
-          constitucion: membrete?.fechaConstitucion
-            ? fechaLarga(new Date(membrete.fechaConstitucion))
-            : '',
-          igj: membrete?.numeroInscripcion ?? '',
-          ...variablesDelBalance(esp),
-          contador: membrete?.accountant?.nombre ?? '',
-          matricula: [
-            membrete?.accountant?.tomo && `Tomo ${membrete.accountant.tomo}`,
-            membrete?.accountant?.folio && `Folio ${membrete.accountant.folio}`,
-            membrete?.accountant?.consejo,
-          ]
-            .filter(Boolean)
-            .join(' '),
-        },
+        noteVars: noteVarsDelPaquete(),
       });
       if (isOwner) {
         const dataUrl = await blobToDataUrl(blob);
@@ -12340,49 +12378,96 @@ function ExportView({
   ];
 
   return (
-    <ArcaCard>
-      <div className="px-5 py-3 border-b border-[var(--arca-border)]">
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          Exportes
-        </span>
-        {pdfGeneratedAt && (
-          <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5">
-            Último paquete guardado:{' '}
-            {new Date(pdfGeneratedAt).toLocaleString('es-AR')}
-            {pdfGeneratedByName ? ` · ${pdfGeneratedByName}` : ''}
-          </div>
-        )}
-      </div>
-      <div className="divide-y divide-[var(--arca-border)]">
-        {items.map((it) => (
-          <div key={it.key} className="flex items-center gap-4 px-5 py-4">
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-medium text-[var(--arca-ink)]">
-                {it.title}
-              </div>
-              <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
-                {it.desc}
-              </div>
-              {it.extra && (
-                <div className="text-[10.5px] text-[var(--arca-ink-3)] mt-0.5 italic">
-                  {it.extra}
-                </div>
-              )}
+    <>
+      <ArcaCard>
+        <div className="px-5 py-3 border-b border-[var(--arca-border)]">
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            Exportes
+          </span>
+          {pdfGeneratedAt && (
+            <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5">
+              Último paquete guardado:{' '}
+              {new Date(pdfGeneratedAt).toLocaleString('es-AR')}
+              {pdfGeneratedByName ? ` · ${pdfGeneratedByName}` : ''}
             </div>
-            <button
-              onClick={() => void it.onClick()}
-              disabled={!ready || busy !== null}
-              className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              {busy === it.key
-                ? 'Generando…'
-                : `Descargar ${it.format ?? 'PDF'}`}
-            </button>
+          )}
+        </div>
+        <div className="divide-y divide-[var(--arca-border)]">
+          {items.map((it) => (
+            <div key={it.key} className="flex items-center gap-4 px-5 py-4">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-[var(--arca-ink)]">
+                  {it.title}
+                </div>
+                <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
+                  {it.desc}
+                </div>
+                {it.extra && (
+                  <div className="text-[10.5px] text-[var(--arca-ink-3)] mt-0.5 italic">
+                    {it.extra}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => void it.onClick()}
+                disabled={!ready || busy !== null}
+                className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {busy === it.key
+                  ? 'Generando…'
+                  : `Descargar ${it.format ?? 'PDF'}`}
+              </button>
+            </div>
+          ))}
+        </div>
+      </ArcaCard>
+      {/* Avisar antes de exportar, no después de abrir el PDF: una variable
+          sin dato queda impresa como «{{igj}}» en un documento que se firma. */}
+      <AlertDialog
+        open={faltantesPdf !== null}
+        onOpenChange={(o) => {
+          if (!o) setFaltantesPdf(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {faltantesPdf?.length === 1
+                ? 'Hay una variable sin dato cargado'
+                : `Hay ${faltantesPdf?.length ?? 0} variables sin dato cargado`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Las notas las mencionan pero el ejercicio no tiene esos datos, así
+              que en el PDF van a salir impresas tal cual, entre llaves. Podés
+              completarlas en «Datos iniciales» y volver a exportar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-wrap gap-1.5">
+            {faltantesPdf?.map((k) => (
+              <span
+                key={k}
+                className="rounded-[6px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-1 font-mono text-[11.5px] text-[var(--arca-ink-2)]"
+              >
+                {AUDIT_REPORT_VARS.find((v) => v.key === k)?.label ??
+                  `{{${k}}}`}
+              </span>
+            ))}
           </div>
-        ))}
-      </div>
-    </ArcaCard>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setFaltantesPdf(null);
+                void generarPaquete();
+              }}
+            >
+              Exportar igual
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
