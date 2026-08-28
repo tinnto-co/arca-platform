@@ -261,7 +261,7 @@ function writeTitle(ws: XLWorksheet, data: MayorExportData) {
 
 function setWidths(ws: XLWorksheet) {
   [13, 11, 42, 16, 15, 15, 16].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 }
 
@@ -334,7 +334,7 @@ function writeFlatMayor(ws: XLWorksheet, data: MayorExportData) {
     to: { row: lastRow, column: FNCOLS },
   };
   [16, 34, 13, 11, 40, 16, 15, 15, 16].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 }
 
@@ -594,7 +594,7 @@ export async function exportBalanceExcel(
   }
 
   [12, 40, 16, 16, 16, 16].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -1157,7 +1157,7 @@ async function anexoIWorkbookBuffer(
   }
 
   [30, 14, 13, 13, 14, 14, 13, 8, 14, 14, 14].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 
   return await wb.xlsx.writeBuffer();
@@ -1906,7 +1906,7 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
   }
 
   [58, 22].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -3422,10 +3422,13 @@ export async function exportEstadosExcel(
     const d = ws.addRow([disclaimer]);
     d.getCell(1).font = { size: 9, italic: true };
     ws.addRow([]);
-    if (ws.columns[0]) ws.columns[0].width = 46;
-    for (let i = 1; i < cols; i++) {
-      if (ws.columns[i]) ws.columns[i].width = 20;
-    }
+    // `getColumn` y no `columns[i]`: acá la hoja todavía tiene una sola
+    // columna —las filas del encabezado son de una celda— así que
+    // `columns[i]` es undefined para el resto y los anchos no se aplicaban.
+    // Las columnas de importe quedaban en el ancho por defecto y los números
+    // de siete cifras se veían cortados.
+    ws.getColumn(1).width = 46;
+    for (let i = 2; i <= cols; i++) ws.getColumn(i).width = 20;
   };
 
   const money = (row: XLRow, from: number, to: number, bold = false) => {
@@ -3557,8 +3560,8 @@ export async function exportEstadosExcel(
         : 'Anterior',
     ]);
     for (let c = 1; c <= 4; c++) hr.getCell(c).font = { bold: true };
-    if (ws.columns[0]) ws.columns[0].width = 8;
-    if (ws.columns[1]) ws.columns[1].width = 46;
+    ws.getColumn(1).width = 8;
+    ws.getColumn(2).width = 46;
 
     rubros.forEach((r, i) => {
       const t = ws.addRow([`${n ?? 3}.${i + 1}`, r.label]);
@@ -3614,7 +3617,7 @@ export async function exportEstadosExcel(
     header(ws, 'Inventario al cierre del ejercicio', 5);
     const hr = ws.addRow(['Conceptos', '$', '$', '$', '$']);
     for (let c = 1; c <= 5; c++) hr.getCell(c).font = { bold: true };
-    if (ws.columns[0]) ws.columns[0].width = 52;
+    ws.getColumn(1).width = 52;
 
     /** `col` es en cuál de las cuatro columnas de importe cae el número. */
     const fila = (
