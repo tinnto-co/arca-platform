@@ -1,9 +1,4 @@
-import {
-  createFileRoute,
-  redirect,
-  Link,
-  useNavigate,
-} from '@tanstack/react-router';
+import { createFileRoute, redirect, Link } from '@tanstack/react-router';
 import { z } from 'zod';
 import { listOrgModules } from '@/actions/admin';
 import {
@@ -112,6 +107,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import {
   listAccountingClients,
   getCurrentRole,
@@ -298,6 +294,7 @@ const accountingSearchSchema = z.object({
   clientId: z.string().uuid().optional(),
   tab: z.enum(TAB_IDS).optional(),
 });
+type AccountingSearch = z.infer<typeof accountingSearchSchema>;
 
 /**
  * Ejercicio que se muestra cuando el usuario todavía no eligió ninguno.
@@ -736,7 +733,13 @@ function AccountingPage() {
       ? (t as Tab)
       : SOLAPAS[0].id;
   });
-  const navigate = useNavigate();
+  // `Route.useNavigate()` y no `useNavigate()`: el primero conoce el schema de
+  // search de esta ruta, así que el updater `(prev) => ({...prev, clientId})`
+  // tipa. Con el genérico, TypeScript no puede inferirlo y se queja.
+  const navigate = Route.useNavigate();
+  const [recordado, recordarCliente] = useClienteSeleccionado();
+  // La URL manda si la trae: un link compartido tiene que abrir en la empresa
+  // del link, no en la última que miró quien lo abre. Si no, el recordado.
   const [clientId, setClientId] = useState<string>(() =>
     String(search.clientId ?? '')
   );
@@ -751,12 +754,39 @@ function AccountingPage() {
   });
   const isOwner = roleData?.role === 'owner';
 
-  const effectiveClientId = clientId || clients[0]?.id || '';
+  /**
+   * El recordado solo vale si sigue en la lista: un cliente dado de baja, o
+   * uno de otra organización tras cambiar de cuenta, no debe resucitar. Es el
+   * caso de borde que pide el ticket («un cliente que se da de baja mientras
+   * estaba seleccionado no debe romper la sesión activa»).
+   */
+  const recordadoValido =
+    recordado && clients.some((c) => c.id === recordado) ? recordado : '';
 
-  // TIN-1425: persistir la selección en la URL para mantenerla entre módulos.
+  const effectiveClientId = clientId || recordadoValido || clients[0]?.id || '';
+
+  // Si se entró sin `clientId` en la URL, dejarlo puesto una vez resuelto:
+  // así la solapa que se abra después comparte la misma empresa y el link
+  // sigue siendo compartible.
+  useEffect(() => {
+    if (!effectiveClientId) return;
+    if (search.clientId === effectiveClientId) return;
+    void navigate({
+      search: (prev: AccountingSearch) => ({
+        ...prev,
+        clientId: effectiveClientId,
+      }),
+      replace: true,
+    });
+  }, [effectiveClientId, search.clientId, navigate]);
+
+  // TIN-1425: la selección se recuerda entre módulos, no solo entre solapas.
   const handleClientChange = (v: string) => {
     setClientId(v);
-    void navigate({ search: (prev) => ({ ...prev, clientId: v }) });
+    recordarCliente(v);
+    void navigate({
+      search: (prev: AccountingSearch) => ({ ...prev, clientId: v }),
+    });
   };
 
   const { data: pendingEntries = [] } = useQuery({
