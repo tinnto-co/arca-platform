@@ -38,6 +38,30 @@ export interface AuditReportVars {
    */
   lugar: string;
   fecha: string;
+
+  /* ── Datos del balance (TIN-1442) ──────────────────────────────────────
+   * Los de arriba son de la empresa y casi no cambian. Estos salen del
+   * ejercicio y cambian todos los años: son los que el estudio venía
+   * tipeando a mano en las Notas 1 y 2, con el riesgo de que el texto diga
+   * un número y el estado contable diga otro.
+   */
+
+  /** Fecha de inicio del ejercicio, en largo. */
+  inicio: string;
+  /** Fecha del acta constitutiva. */
+  constitucion: string;
+  /** N° de inscripción en la IGJ. */
+  igj: string;
+  /** Capital social suscripto, formateado. */
+  capitalSocial: string;
+  /** Saldo de las cuentas de caja. */
+  caja: string;
+  /** Saldo de las cuentas bancarias. */
+  bancos: string;
+  /** Caja + bancos: lo que la Nota de efectivo llama total. */
+  efectivo: string;
+  /** Inflación del ejercicio, en porcentaje. */
+  inflacion: string;
 }
 
 /** Las variables que se pueden usar, con un ejemplo para mostrar en la UI. */
@@ -62,7 +86,114 @@ export const AUDIT_REPORT_VARS: {
   { key: 'matricula', label: 'Matrícula', ejemplo: 'Tomo 193 Folio 084' },
   { key: 'lugar', label: 'Lugar', ejemplo: 'Ciudad Autónoma de Buenos Aires' },
   { key: 'fecha', label: 'Fecha del informe', ejemplo: '03 de mayo de 2026' },
+  { key: 'inicio', label: 'Inicio del ejercicio', ejemplo: '1 de enero de 2025' },
+  {
+    key: 'constitucion',
+    label: 'Fecha de constitución',
+    ejemplo: '15 de marzo de 2018',
+  },
+  { key: 'igj', label: 'N° de inscripción IGJ', ejemplo: '12345' },
+  { key: 'capitalSocial', label: 'Capital social', ejemplo: '38.793.000,00' },
+  { key: 'caja', label: 'Caja', ejemplo: '613.606,83' },
+  { key: 'bancos', label: 'Bancos', ejemplo: '537.277,25' },
+  { key: 'efectivo', label: 'Total efectivo', ejemplo: '1.150.884,08' },
+  { key: 'inflacion', label: 'Inflación del ejercicio', ejemplo: '117,80 %' },
 ];
+
+/* ── Cálculo de las variables que salen del balance ──────────────────────── */
+
+interface CuentaEsp {
+  name: string;
+  current: number;
+}
+interface RubroEsp {
+  group: string;
+  accounts: CuentaEsp[];
+  current: number;
+}
+interface SeccionEsp {
+  rubros: RubroEsp[];
+}
+export interface EspParaVariables {
+  sections: SeccionEsp[];
+  priorCoefficient: number | null;
+}
+
+const money = (n: number) =>
+  n.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+/** Suma los saldos de los rubros indicados, en valor absoluto. */
+function totalDeRubros(esp: EspParaVariables, grupos: string[]): number {
+  return Math.abs(
+    esp.sections
+      .flatMap((s) => s.rubros)
+      .filter((r) => grupos.includes(r.group))
+      .reduce((t, r) => t + r.current, 0)
+  );
+}
+
+/** Suma las cuentas de un rubro cuyo nombre coincide con el patrón. */
+function totalDeCuentas(
+  esp: EspParaVariables,
+  grupo: string,
+  patron: RegExp
+): number {
+  return Math.abs(
+    esp.sections
+      .flatMap((s) => s.rubros)
+      .filter((r) => r.group === grupo)
+      .flatMap((r) => r.accounts)
+      .filter((a) => patron.test(a.name))
+      .reduce((t, a) => t + a.current, 0)
+  );
+}
+
+/**
+ * Las variables que salen del balance, ya formateadas.
+ *
+ * Caja y bancos se separan por el nombre de la cuenta porque comparten el
+ * rubro `caja_bancos`: el plan no distingue entre una y otra, pero la Nota de
+ * efectivo sí las expone separadas.
+ *
+ * La inflación sale del coeficiente con el que se reexpresó la columna
+ * anterior, que es la variación del índice entre los dos cierres — o sea, la
+ * inflación del ejercicio. Si el balance no tiene columna comparativa, queda
+ * vacía en vez de inventar un número.
+ */
+export function variablesDelBalance(
+  esp: EspParaVariables | null | undefined
+): Pick<
+  AuditReportVars,
+  'capitalSocial' | 'caja' | 'bancos' | 'efectivo' | 'inflacion'
+> {
+  if (!esp) {
+    return {
+      capitalSocial: '',
+      caja: '',
+      bancos: '',
+      efectivo: '',
+      inflacion: '',
+    };
+  }
+  const caja = totalDeCuentas(esp, 'caja_bancos', /caja|fondo fijo/i);
+  const bancos = totalDeCuentas(esp, 'caja_bancos', /banco/i);
+  return {
+    capitalSocial: money(totalDeRubros(esp, ['capital'])),
+    caja: money(caja),
+    bancos: money(bancos),
+    efectivo: money(totalDeRubros(esp, ['caja_bancos'])),
+    inflacion:
+      esp.priorCoefficient != null
+        ? `${((esp.priorCoefficient - 1) * 100).toLocaleString('es-AR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} %`
+        : '',
+  };
+}
 
 /** `{{empresa}}`, tolerando espacios adentro de las llaves. */
 const PLACEHOLDER = /\{\{\s*([a-zA-Z]+)\s*\}\}/g;

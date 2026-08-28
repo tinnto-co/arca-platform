@@ -107,6 +107,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
+import { variablesDelBalance } from '@/lib/accounting-audit-report';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import {
   listAccountingClients,
@@ -9382,6 +9383,12 @@ function EstadosContables({
                   notas: rangoNotas(fs.notes.length),
                   anexos: rangoAnexos(3),
                   destinatario: 'Señores Socios',
+                  inicio: fechaLarga(new Date(selectedFy.fechaDesde)),
+                  constitucion: membreteEecc?.fechaConstitucion
+                    ? fechaLarga(new Date(membreteEecc.fechaConstitucion))
+                    : '',
+                  igj: membreteEecc?.numeroInscripcion ?? '',
+                  ...variablesDelBalance(espParaRefs),
                   contador: membreteEecc?.accountant?.nombre ?? '',
                   matricula: [
                     membreteEecc?.accountant?.tomo &&
@@ -9434,6 +9441,12 @@ function EstadosContables({
                         notas: rangoNotas(fs.notes.length),
                         anexos: rangoAnexos(3),
                         destinatario: 'Señores Socios',
+                        inicio: fechaLarga(new Date(selectedFy.fechaDesde)),
+                        constitucion: membreteEecc?.fechaConstitucion
+                          ? fechaLarga(new Date(membreteEecc.fechaConstitucion))
+                          : '',
+                        igj: membreteEecc?.numeroInscripcion ?? '',
+                        ...variablesDelBalance(espParaRefs),
                         contador: membreteEecc?.accountant?.nombre ?? '',
                         matricula: [
                           membreteEecc?.accountant?.tomo &&
@@ -11965,6 +11978,12 @@ function ExportView({
           empresa: clientName,
           cuit: clientCuit,
           domicilio: membrete?.domicilio ?? '',
+          inicio: fechaLarga(new Date(selectedFy.fechaDesde)),
+          constitucion: membrete?.fechaConstitucion
+            ? fechaLarga(new Date(membrete.fechaConstitucion))
+            : '',
+          igj: membrete?.numeroInscripcion ?? '',
+          ...variablesDelBalance(esp),
           contador: membrete?.accountant?.nombre ?? '',
           matricula: [
             membrete?.accountant?.tomo && `Tomo ${membrete.accountant.tomo}`,
