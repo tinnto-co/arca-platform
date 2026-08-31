@@ -12224,7 +12224,14 @@ function ExportView({
       generatedLabel: new Date().toLocaleDateString('es-AR'),
       domicilio: membrete?.domicilio ?? undefined,
       actividadPrincipal: membrete?.actividadPrincipal ?? undefined,
-      fechaInscripcion: membrete?.fechaInscripcion ?? undefined,
+      // Formateadas acá: la columna `date` viaja como YYYY-MM-DD y la
+      // carátula la imprime tal cual le llegue.
+      fechaConstitucion: membrete?.fechaConstitucion
+        ? fmtFecha(membrete.fechaConstitucion)
+        : undefined,
+      fechaInscripcion: membrete?.fechaInscripcion
+        ? fmtFecha(membrete.fechaInscripcion)
+        : undefined,
       numeroInscripcion: membrete?.numeroInscripcion ?? undefined,
       esp,
       er,
