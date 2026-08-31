@@ -3033,13 +3033,17 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
 
 /** Genera el PDF del paquete EECC, lo descarga y devuelve el Blob (para persistir). */
 export async function exportEeccPackagePdf(
-  data: EeccPackageData
+  data: EeccPackageData,
+  /** `descargar: false` genera el blob sin bajar el archivo (vista previa). */
+  opts: { descargar?: boolean } = {}
 ): Promise<Blob> {
   const blob = await pdf(<EeccPackageDoc data={data} />).toBlob();
-  triggerDownload(
-    blob,
-    `eecc_${data.empresaName.replace(/\s+/g, '_')}_ej${data.fiscalYearNumber}.pdf`
-  );
+  if (opts.descargar !== false) {
+    triggerDownload(
+      blob,
+      `eecc_${data.empresaName.replace(/\s+/g, '_')}_ej${data.fiscalYearNumber}.pdf`
+    );
+  }
   return blob;
 }
 

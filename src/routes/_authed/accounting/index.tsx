@@ -59,6 +59,7 @@ import {
   Check,
   Bookmark,
   BookmarkPlus,
+  Eye,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -12209,56 +12210,66 @@ function ExportView({
     await generarPaquete();
   };
 
+  /**
+   * Los datos del paquete, armados una sola vez: los usan la descarga y la
+   * vista previa, así lo que se previsualiza es exactamente lo que se baja.
+   */
+  const armarDatosPaquete = () => {
+    if (!esp || !er || !anexoII || !selectedFy) return null;
+    return {
+      empresaName: clientName,
+      cuit: clientCuit,
+      fiscalYearNumber: esp.fiscalYearNumber,
+      periodLabel: esp.periodLabel,
+      generatedLabel: new Date().toLocaleDateString('es-AR'),
+      domicilio: membrete?.domicilio ?? undefined,
+      actividadPrincipal: membrete?.actividadPrincipal ?? undefined,
+      fechaInscripcion: membrete?.fechaInscripcion ?? undefined,
+      numeroInscripcion: membrete?.numeroInscripcion ?? undefined,
+      esp,
+      er,
+      eepn: eepn ?? null,
+      efe: efe ?? null,
+      valuation,
+      norma,
+      accountant: membrete?.accountant ?? null,
+      auditReport,
+      auditoriaFecha: auditReport?.fecha ?? null,
+      // El número de cada nota sale de su posición, no del orden de carga.
+      noteSequence: numberNotes(layout, notes, sectionLabels),
+      references,
+      sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
+        (x) => x.entry
+      ),
+      anexoII,
+      anexoI: anexoI
+        ? {
+            categories: anexoI.categories,
+            grandTotals: anexoI.grandTotals,
+            prior: anexoIMuestraComparativo(sectionLabels)
+              ? anexoI.prior
+              : null,
+          }
+        : null,
+      cmv: cmv?.hasData
+        ? {
+            existenciaInicial: cmv.existenciaInicial,
+            comprasGastos: cmv.comprasGastos,
+            existenciaFinal: cmv.existenciaFinal,
+            total: cmv.total,
+          }
+        : null,
+      notes,
+      noteVars: noteVarsDelPaquete(),
+    };
+  };
+
   const generarPaquete = async () => {
-    if (!esp || !er || !anexoII || !selectedFy) return;
+    const datos = armarDatosPaquete();
+    if (!datos || !selectedFy) return;
     setBusy('package');
     try {
-      const blob = await exportEeccPackagePdf({
-        empresaName: clientName,
-        cuit: clientCuit,
-        fiscalYearNumber: esp.fiscalYearNumber,
-        periodLabel: esp.periodLabel,
-        generatedLabel: new Date().toLocaleDateString('es-AR'),
-        domicilio: membrete?.domicilio ?? undefined,
-        actividadPrincipal: membrete?.actividadPrincipal ?? undefined,
-        fechaInscripcion: membrete?.fechaInscripcion ?? undefined,
-        numeroInscripcion: membrete?.numeroInscripcion ?? undefined,
-        esp,
-        er,
-        eepn: eepn ?? null,
-        efe: efe ?? null,
-        valuation,
-        norma,
-        accountant: membrete?.accountant ?? null,
-        auditReport,
-        auditoriaFecha: auditReport?.fecha ?? null,
-        // El número de cada nota sale de su posición, no del orden de carga.
-        noteSequence: numberNotes(layout, notes, sectionLabels),
-        references,
-        sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
-          (x) => x.entry
-        ),
-        anexoII,
-        anexoI: anexoI
-          ? {
-              categories: anexoI.categories,
-              grandTotals: anexoI.grandTotals,
-              prior: anexoIMuestraComparativo(sectionLabels)
-                ? anexoI.prior
-                : null,
-            }
-          : null,
-        cmv: cmv?.hasData
-          ? {
-              existenciaInicial: cmv.existenciaInicial,
-              comprasGastos: cmv.comprasGastos,
-              existenciaFinal: cmv.existenciaFinal,
-              total: cmv.total,
-            }
-          : null,
-        notes,
-        noteVars: noteVarsDelPaquete(),
-      });
+      const blob = await exportEeccPackagePdf(datos);
       if (isOwner) {
         const dataUrl = await blobToDataUrl(blob);
         await saveFinancialStatementPdf({
@@ -12274,6 +12285,31 @@ function ExportView({
       } else {
         toast.success('PDF del paquete generado');
       }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al generar el PDF');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** URL de objeto del PDF en vista previa; null = cerrada. */
+  const [previewPdf, setPreviewPdf] = useState<string | null>(null);
+  const cerrarPreview = () => {
+    if (previewPdf) URL.revokeObjectURL(previewPdf);
+    setPreviewPdf(null);
+  };
+
+  const previsualizarPaquete = async () => {
+    const datos = armarDatosPaquete();
+    if (!datos) {
+      toast.error('Los datos del paquete aún se están cargando');
+      return;
+    }
+    setBusy('package-preview');
+    try {
+      // Sin descarga y sin guardar en R2: mirar no es publicar.
+      const blob = await exportEeccPackagePdf(datos, { descargar: false });
+      setPreviewPdf(URL.createObjectURL(blob));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Error al generar el PDF');
     } finally {
@@ -12345,12 +12381,15 @@ function ExportView({
     extra?: string;
     /** Etiqueta del botón; por defecto PDF. */
     format?: 'PDF' | 'Excel';
+    /** Vista previa sin descargar ni guardar. */
+    onPreview?: () => Promise<void>;
   }[] = [
     {
       key: 'package',
       title: 'Paquete contable completo (EECC)',
       desc: 'Carátula, ESP, ER, EEPN, Flujo de Efectivo, Nota 3, Anexo I, Anexo II, notas y espacios de firma. Sigue la valuación elegida arriba.',
       onClick: onPackage,
+      onPreview: previsualizarPaquete,
       extra: isOwner
         ? 'Se guarda asociado al ejercicio.'
         : 'Solo el Owner puede guardarlo.',
@@ -12408,6 +12447,16 @@ function ExportView({
                   </div>
                 )}
               </div>
+              {it.onPreview && (
+                <button
+                  onClick={() => void it.onPreview!()}
+                  disabled={!ready || busy !== null}
+                  className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 flex items-center gap-1.5"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  {busy === `${it.key}-preview` ? 'Generando…' : 'Vista previa'}
+                </button>
+              )}
               <button
                 onClick={() => void it.onClick()}
                 disabled={!ready || busy !== null}
@@ -12422,6 +12471,48 @@ function ExportView({
           ))}
         </div>
       </ArcaCard>
+      {/* Vista previa del paquete: el mismo armado que la descarga, en un
+          visor. Sin `sandbox` en el iframe — rompe el visor de PDF de Chrome. */}
+      <Dialog
+        open={previewPdf !== null}
+        onOpenChange={(o) => {
+          if (!o) cerrarPreview();
+        }}
+      >
+        <DialogContent className="sm:max-w-[min(95vw,1100px)] h-[92vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b border-[var(--arca-border)]">
+            <DialogTitle>Vista previa del paquete</DialogTitle>
+            <DialogDescription>
+              Es exactamente lo que baja «Descargar PDF», sin guardar nada.
+            </DialogDescription>
+          </DialogHeader>
+          {previewPdf && (
+            <iframe
+              src={previewPdf}
+              title="Vista previa del paquete contable"
+              className="flex-1 min-h-0 w-full"
+            />
+          )}
+          <DialogFooter className="px-6 py-3 border-t border-[var(--arca-border)]">
+            <button
+              onClick={cerrarPreview}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+            >
+              Cerrar
+            </button>
+            <button
+              onClick={() => {
+                cerrarPreview();
+                void onPackage();
+              }}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+            >
+              Descargar PDF
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Avisar antes de exportar, no después de abrir el PDF: una variable
           sin dato queda impresa como «{{igj}}» en un documento que se firma. */}
       <AlertDialog
