@@ -1710,6 +1710,28 @@ export const cliente = pgTable("cliente", {
 	pgPolicy("portal", { as: "permissive", for: "all", to: ["arca_portal"] }),
 ]);
 
+export const clienteMonotributo = pgTable("cliente_monotributo", {
+	clienteId: uuid("cliente_id").primaryKey().notNull(),
+	categoria: text().notNull(),
+	cuotaMensual: numeric("cuota_mensual", { precision: 15, scale:  2 }),
+	actualizadoAt: timestamp("actualizado_at", { withTimezone: true }),
+	fuente: text(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.clienteId],
+			foreignColumns: [cliente.id],
+			name: "cliente_monotributo_cliente_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
+   FROM cliente c
+  WHERE ((c.id = cliente_monotributo.cliente_id) AND (c.org_id = current_setting('app.org_id'::text, true)))))`, withCheck: sql`(EXISTS ( SELECT 1
+   FROM cliente c
+  WHERE ((c.id = cliente_monotributo.cliente_id) AND (c.org_id = current_setting('app.org_id'::text, true)))))`  }),
+	check("cliente_monotributo_categoria_valida", sql`categoria ~ '^[A-K]$'::text`),
+]);
+
 export const clienteEeccConfig = pgTable("cliente_eecc_config", {
 	clienteId: uuid("cliente_id").primaryKey().notNull(),
 	actividadPrincipal: text("actividad_principal"),

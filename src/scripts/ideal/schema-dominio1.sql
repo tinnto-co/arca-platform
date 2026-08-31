@@ -255,6 +255,28 @@ comment on column cliente_empleador_config.liquida_sueldos is
 comment on column cliente_empleador_config.firma_empleador_key is 'Key del archivo de firma en R2 (nunca base64 en BD).';
 comment on column cliente_empleador_config.orden_cln is 'Cómo se agrupan los recibos al imprimir: C = por CUIL, L = por legajo.';
 
+create table cliente_monotributo (
+  cliente_id uuid primary key references cliente(id) on delete cascade,
+  categoria text not null,
+  cuota_mensual numeric(15, 2),
+  actualizado_at timestamptz,
+  fuente text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint cliente_monotributo_categoria_valida
+    check (categoria ~ '^[A-K]$')
+);
+create trigger trg_set_updated_at before update on cliente_monotributo for each row execute function set_updated_at();
+
+comment on table cliente_monotributo is
+  'Categoría de monotributo del cliente y su cuota, como las informa AFIP. Es un hecho scrapeado de la constancia, no un cálculo: el estudio necesita saber en qué categoría ESTÁ inscripto, que puede no ser la que le corresponde por facturación — esa diferencia es justamente lo que se vigila.';
+comment on column cliente_monotributo.categoria is
+  'Letra de la A a la K. El check evita que un scrapeo mal parseado meta "Categoría D" o un número.';
+comment on column cliente_monotributo.actualizado_at is
+  'Cuándo se leyó de AFIP. Una categoría vieja no es un error pero sí un dato a mirar con reservas: la recategorización es semestral.';
+comment on column cliente_monotributo.fuente is
+  '"AFIP" o "MANUAL". Misma trazabilidad que el resto de los datos que no cargó una persona.';
+
 create table cliente_eecc_config (
   cliente_id uuid primary key references cliente(id) on delete cascade,
   actividad_principal text,

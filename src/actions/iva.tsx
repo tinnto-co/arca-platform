@@ -6,6 +6,7 @@ import {
   ivaDeclaracion,
   comprobante,
   comprobanteAlicuota,
+  clienteMonotributo,
   comprobanteTipo,
   condicionIva,
 } from '@/drizzle/schema';
@@ -239,6 +240,11 @@ export const getMonotributistasFacturacion = createServerFn({
       cuit: cliente.cuit,
       credenciales: credencialesSql,
       condicionIva: cliente.condicionIva,
+      // Vienen de AFIP por el scrapper: la categoría en la que el cliente
+      // ESTÁ inscripto, que puede no ser la que le corresponde por lo que
+      // facturó. Ver esa diferencia es el punto de la solapa.
+      categoria: clienteMonotributo.categoria,
+      cuotaMensual: clienteMonotributo.cuotaMensual,
       comprobanteCount: sql<number>`count(${comprobante.id})::int`,
       ultimoComprobante: sql<
         string | null
@@ -255,6 +261,10 @@ export const getMonotributistasFacturacion = createServerFn({
       )
     )
     .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+    .leftJoin(
+      clienteMonotributo,
+      eq(clienteMonotributo.clienteId, cliente.id)
+    )
     .where(
       and(
         eq(cliente.orgId, orgId),
@@ -266,7 +276,9 @@ export const getMonotributistasFacturacion = createServerFn({
       cliente.id,
       cliente.razonSocial,
       cliente.cuit,
-      cliente.condicionIva
+      cliente.condicionIva,
+      clienteMonotributo.categoria,
+      clienteMonotributo.cuotaMensual
     )
     .orderBy(desc(facturado));
 });

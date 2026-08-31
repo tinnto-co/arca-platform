@@ -460,7 +460,7 @@ function IvaResumenRI({ search }: { search: string }) {
                 }}
               >
                 <SortableTh
-                  label="Empresa"
+                  label="Cliente"
                   colKey="empresa"
                   sort={sort}
                   onSort={onSort}
@@ -471,7 +471,6 @@ function IvaResumenRI({ search }: { search: string }) {
                   sort={sort}
                   onSort={onSort}
                 />
-                <th className={cn(thCls, 'text-left')}>Condición</th>
                 <SortableTh
                   label="Débito fiscal"
                   colKey="debito"
@@ -551,12 +550,6 @@ function IvaResumenRI({ search }: { search: string }) {
                     style={monoStyle}
                   >
                     {r.cuit}
-                  </td>
-                  <td className="px-3 py-2">
-                    <FiscalConditionSelect
-                      clienteId={r.clienteId}
-                      value={r.condicionIva}
-                    />
                   </td>
                   <td
                     className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
@@ -687,6 +680,8 @@ function MonotributistasTab({ search }: { search: string }) {
     representante: (r) => r.credenciales,
     comprobantes: (r) => r.comprobanteCount,
     ultimaFactura: (r) => r.ultimoComprobante,
+    categoria: (r) => r.categoria,
+    cuota: (r) => (r.cuotaMensual ? Number(r.cuotaMensual) : null),
     facturacion: (r) => Number(r.facturacion12m),
   };
   const sortedRows = useMemo(
@@ -733,7 +728,7 @@ function MonotributistasTab({ search }: { search: string }) {
                 }}
               >
                 <SortableTh
-                  label="Empresa"
+                  label="Cliente"
                   colKey="empresa"
                   sort={sort}
                   onSort={onSort}
@@ -750,7 +745,6 @@ function MonotributistasTab({ search }: { search: string }) {
                   sort={sort}
                   onSort={onSort}
                 />
-                <th className={cn(thCls, 'text-left')}>Condición</th>
                 <SortableTh
                   label="Comprobantes (12m)"
                   colKey="comprobantes"
@@ -765,7 +759,20 @@ function MonotributistasTab({ search }: { search: string }) {
                   onSort={onSort}
                 />
                 <SortableTh
-                  label="Facturación 12 meses"
+                  label="Categoría"
+                  colKey="categoria"
+                  sort={sort}
+                  onSort={onSort}
+                />
+                <SortableTh
+                  label="Cuota mensual"
+                  colKey="cuota"
+                  sort={sort}
+                  onSort={onSort}
+                  align="right"
+                />
+                <SortableTh
+                  label="Monto facturación anual"
                   colKey="facturacion"
                   sort={sort}
                   onSort={onSort}
@@ -794,12 +801,6 @@ function MonotributistasTab({ search }: { search: string }) {
                   <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
                     {r.credenciales ?? '—'}
                   </td>
-                  <td className="px-3 py-2">
-                    <FiscalConditionSelect
-                      clienteId={r.clienteId}
-                      value={r.condicionIva}
-                    />
-                  </td>
                   <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
                     {r.comprobanteCount}
                   </td>
@@ -807,6 +808,27 @@ function MonotributistasTab({ search }: { search: string }) {
                     {r.ultimoComprobante
                       ? r.ultimoComprobante.slice(0, 10)
                       : '—'}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {r.categoria ? (
+                      <span
+                        className="inline-flex h-5 min-w-5 items-center justify-center rounded-[5px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-1.5 text-[11.5px] font-medium text-[var(--arca-ink)]"
+                        style={monoStyle}
+                      >
+                        {r.categoria}
+                      </span>
+                    ) : (
+                      // Sin dato: lo trae el scrapper de la constancia de AFIP,
+                      // así que un guion acá significa «todavía no se leyó»,
+                      // no «no tiene categoría».
+                      <span className="text-[var(--arca-ink-4)]">—</span>
+                    )}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-right text-[var(--arca-ink-2)] tabular-nums"
+                    style={monoStyle}
+                  >
+                    {r.cuotaMensual ? formatARS(r.cuotaMensual) : '—'}
                   </td>
                   <td
                     className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
@@ -867,7 +889,7 @@ function SinClasificarBlock({ search }: { search: string }) {
                 background: 'var(--arca-surface-2)',
               }}
             >
-              <th className={cn(thCls, 'text-left')}>Empresa</th>
+              <th className={cn(thCls, 'text-left')}>Cliente</th>
               <th className={cn(thCls, 'text-left')}>CUIT</th>
               <th className={cn(thCls, 'text-left')}>Login AFIP</th>
               <th className={cn(thCls, 'text-left')}>Condición</th>

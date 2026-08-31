@@ -70,14 +70,14 @@ begin
 end
 $do$;
 
--- ---------- Nivel 2: la org se resuelve por el cliente (9 tablas) ----------
+-- ---------- Nivel 2: la org se resuelve por el cliente (10 tablas) ----------
 do $do$
 declare t text;
 begin
   foreach t in array array[
     'acceso_usuario_cliente','cliente_credencial','cliente_cuenta','cliente_eecc_config',
-    'cliente_empleador_config','iva_declaracion','periodo_contable','proyeccion_impuesto',
-    'riesgo_snapshot'
+    'cliente_empleador_config','cliente_monotributo','iva_declaracion','periodo_contable',
+    'proyeccion_impuesto','riesgo_snapshot'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format(
@@ -160,7 +160,7 @@ create policy tenant on escala_salarial to arca_app, arca_agent
 --   de sesión (en el login todavía no sabemos la org). El aislamiento acá lo
 --   hace Better Auth, no Postgres.
 --
--- Total: 52 tablas con política, 29 sin.
+-- Total: 53 tablas con política, 29 sin.
 
 comment on schema public is
   'BD_IDEAL. Aislamiento multi-tenant por RLS: toda conexión de app/agente debe abrir transacción y hacer `set local app.org_id = ''<org>''` antes de consultar; sin eso se ven cero filas. Ver schema-rls.sql. Los catálogos globales y las tablas de auth están exentas a propósito.';
