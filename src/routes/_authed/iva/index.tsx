@@ -343,14 +343,38 @@ function IvaResumenRI({ search }: { search: string }) {
   const onSort = (key: string) => setSort((prev) => toggleSort(prev, key));
 
   const num = (v: string | null) => (v == null ? null : Number(v));
+  /**
+   * Saldo final del período, con la misma fórmula que el cuadro F2051:
+   * saldo técnico menos el saldo a favor del período anterior, el saldo de
+   * libre disponibilidad y las retenciones y percepciones. Positivo es a pagar.
+   *
+   * El saldo técnico sale de los comprobantes cargados y los otros tres de la
+   * declaración de AFIP, igual que las columnas de las que se derivan: si la
+   * declaración todavía no se scrapeó, esos términos son cero y el saldo final
+   * queda igual al técnico.
+   */
+  const saldoFinalDe = (r: RiRow) => {
+    // `num` devuelve null cuando la declaración no está scrapeada; acá un dato
+    // ausente vale cero, que es distinto de no poder calcular el saldo.
+    const cero = (v: string | null) => Number(v ?? 0);
+    return (
+      r.calcSaldoTecnico -
+      cero(r.saldoTecnicoFavor) -
+      cero(r.saldoLibreDisponibilidadFavor) -
+      cero(r.retencionesPercepcionesPeriodo)
+    );
+  };
+
   const riGetters: SortGetters<RiRow> = {
     empresa: (r) => r.razonSocial,
     cuit: (r) => r.cuit,
     debito: (r) => r.calcDebitoFiscal,
     credito: (r) => r.calcCreditoFiscal,
+    saldoFavorAnt: (r) => num(r.saldoTecnicoFavor),
     saldoTecnico: (r) => r.calcSaldoTecnico,
     saldoLibre: (r) => num(r.saldoLibreDisponibilidadFavor),
     retPerc: (r) => num(r.retencionesPercepcionesPeriodo),
+    saldoFinal: saldoFinalDe,
     // `presentadaAt` ya viene como 'YYYY-MM-DD': ordena cronológicamente tal cual.
     presentacion: (r) => r.presentadaAt,
     estado: (r) => (r.declaracionId ? 1 : 0),
@@ -370,11 +394,21 @@ function IvaResumenRI({ search }: { search: string }) {
     (acc, r) => ({
       debito: acc.debito + r.calcDebitoFiscal,
       credito: acc.credito + r.calcCreditoFiscal,
+      saldoFavorAnt: acc.saldoFavorAnt + Number(r.saldoTecnicoFavor ?? 0),
       saldoTecnico: acc.saldoTecnico + r.calcSaldoTecnico,
       saldoLibre: acc.saldoLibre + Number(r.saldoLibreDisponibilidadFavor ?? 0),
       retPerc: acc.retPerc + Number(r.retencionesPercepcionesPeriodo ?? 0),
+      saldoFinal: acc.saldoFinal + saldoFinalDe(r),
     }),
-    { debito: 0, credito: 0, saldoTecnico: 0, saldoLibre: 0, retPerc: 0 }
+    {
+      debito: 0,
+      credito: 0,
+      saldoFavorAnt: 0,
+      saldoTecnico: 0,
+      saldoLibre: 0,
+      retPerc: 0,
+      saldoFinal: 0,
+    }
   );
 
   return (
@@ -486,6 +520,13 @@ function IvaResumenRI({ search }: { search: string }) {
                   align="right"
                 />
                 <SortableTh
+                  label="Saldo a favor per. ant."
+                  colKey="saldoFavorAnt"
+                  sort={sort}
+                  onSort={onSort}
+                  align="right"
+                />
+                <SortableTh
                   label="Saldo técnico"
                   colKey="saldoTecnico"
                   sort={sort}
@@ -500,8 +541,15 @@ function IvaResumenRI({ search }: { search: string }) {
                   align="right"
                 />
                 <SortableTh
-                  label="Ret./Perc. período"
+                  label="Total Ret y Perc"
                   colKey="retPerc"
+                  sort={sort}
+                  onSort={onSort}
+                  align="right"
+                />
+                <SortableTh
+                  label="Saldo final"
+                  colKey="saldoFinal"
                   sort={sort}
                   onSort={onSort}
                   align="right"
@@ -564,6 +612,12 @@ function IvaResumenRI({ search }: { search: string }) {
                     {formatARS(r.calcCreditoFiscal)}
                   </td>
                   <td
+                    className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
+                    style={monoStyle}
+                  >
+                    {formatARS(r.saldoTecnicoFavor)}
+                  </td>
+                  <td
                     className="px-3 py-2 text-right font-medium tabular-nums"
                     style={{
                       ...monoStyle,
@@ -595,6 +649,27 @@ function IvaResumenRI({ search }: { search: string }) {
                     style={monoStyle}
                   >
                     {formatARS(r.retencionesPercepcionesPeriodo)}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-right font-semibold tabular-nums"
+                    style={{
+                      ...monoStyle,
+                      color:
+                        saldoFinalDe(r) > 0
+                          ? 'var(--arca-accent-neg-fg, #b91c1c)'
+                          : saldoFinalDe(r) < 0
+                            ? 'var(--arca-green, #16a34a)'
+                            : 'var(--arca-ink)',
+                    }}
+                    title={
+                      saldoFinalDe(r) > 0
+                        ? 'A pagar'
+                        : saldoFinalDe(r) < 0
+                          ? 'A favor del contribuyente'
+                          : undefined
+                    }
+                  >
+                    {formatARS(String(saldoFinalDe(r)))}
                   </td>
                   <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
                     {formatFechaISO(r.presentadaAt)}
@@ -630,6 +705,12 @@ function IvaResumenRI({ search }: { search: string }) {
                   {formatARS(totals.credito)}
                 </td>
                 <td
+                  className="px-3 py-2 text-right tabular-nums"
+                  style={monoStyle}
+                >
+                  {formatARS(String(totals.saldoFavorAnt))}
+                </td>
+                <td
                   className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={monoStyle}
                 >
@@ -646,6 +727,12 @@ function IvaResumenRI({ search }: { search: string }) {
                   style={monoStyle}
                 >
                   {formatARS(totals.retPerc)}
+                </td>
+                <td
+                  className="px-3 py-2 text-right font-semibold tabular-nums"
+                  style={monoStyle}
+                >
+                  {formatARS(String(totals.saldoFinal))}
                 </td>
                 <td className="px-3 py-2" colSpan={2} />
               </tr>
