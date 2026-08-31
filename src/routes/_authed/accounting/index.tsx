@@ -8451,7 +8451,7 @@ function AnexoIView({
   const [selectedFyId, setSelectedFyId] = useState('');
   const [editor, setEditor] = useState<EditorState | null>(null);
 
-  const { data: fiscalYears = [] } = useQuery({
+  const { data: fiscalYears = [], isLoading: cargandoEjercicios } = useQuery({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
@@ -8479,6 +8479,19 @@ function AnexoIView({
     queryKey: ['accounting', 'membrete', clientId],
     queryFn: () => getMembreteData({ data: { clientId } }),
   });
+
+  // Distinguir «todavía no llegó la lista» de «no hay ejercicios»: contra una
+  // base remota la consulta tarda, y afirmar que no existe ninguno mientras
+  // carga manda al usuario a crear un ejercicio que ya existe.
+  if (cargandoEjercicios) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Cargando ejercicios…
+        </div>
+      </ArcaCard>
+    );
+  }
 
   if (fiscalYears.length === 0) {
     return (
@@ -8990,7 +9003,7 @@ function EstadosContables({
   );
   const [selectedFyId, setSelectedFyId] = useState('');
 
-  const { data: fiscalYears = [] } = useQuery({
+  const { data: fiscalYears = [], isLoading: cargandoEjercicios } = useQuery({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
@@ -9085,6 +9098,19 @@ function EstadosContables({
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : 'Error al reabrir'),
   });
+
+  // Distinguir «todavía no llegó la lista» de «no hay ejercicios»: contra una
+  // base remota la consulta tarda, y afirmar que no existe ninguno mientras
+  // carga manda al usuario a crear un ejercicio que ya existe.
+  if (cargandoEjercicios) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Cargando ejercicios…
+        </div>
+      </ArcaCard>
+    );
+  }
 
   if (fiscalYears.length === 0) {
     return (
