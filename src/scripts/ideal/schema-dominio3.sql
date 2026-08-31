@@ -495,6 +495,46 @@ comment on column cct_fuente.ultimo_error is
   'Error de la última corrida fallida, en texto. Se limpia cuando una corrida vuelve a salir bien.';
 -- Las filas las siembra etl-dominio3.ts: acá todavía no existe el catálogo `cct` al que apuntan.
 
+create table cct_categoria (
+  id uuid primary key default gen_random_uuid(),
+  cct_codigo text not null references cct(codigo) on delete cascade,
+  codigo text not null,
+  nombre text not null,
+  orden integer,
+  es_valor_hora boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (cct_codigo, codigo)
+);
+create index idx_cct_categoria_cct on cct_categoria(cct_codigo);
+create trigger trg_set_updated_at before update on cct_categoria for each row execute function set_updated_at();
+
+comment on table cct_categoria is
+  'Grilla oficial de categorías de un CCT (Maestranza A, Administrativo B…). Global, como el CCT: la publica la cámara, no la arma cada empleador. Es lo que faltaba para que el scrapeo de escalas tenga dónde escribir sin depender de que algún cliente ya se haya adherido.';
+
+create table cct_escala (
+  id uuid primary key default gen_random_uuid(),
+  cct_categoria_id uuid not null references cct_categoria(id) on delete cascade,
+  vigencia_desde date not null,
+  vigencia_hasta date,
+  monto_basico numeric(15, 2) not null,
+  monto_no_remunerativo numeric(15, 2) not null default 0,
+  periodo_label text,
+  fuente text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (cct_categoria_id, vigencia_desde)
+);
+create index idx_cct_escala_categoria on cct_escala(cct_categoria_id);
+create trigger trg_set_updated_at before update on cct_escala for each row execute function set_updated_at();
+
+comment on table cct_escala is
+  'Escala publicada del convenio, por categoría y vigencia. Es el dato nacional: el básico de Maestranza A de agosto vale lo mismo para todos los empleadores. Acá escribe el job "escalas" del scrapper — en una sola fila por categoría, no una copia por cliente.';
+comment on column cct_escala.fuente is
+  'URL de donde salió, o "MANUAL". La misma trazabilidad que escala_salarial.';
+comment on column cct_escala.vigencia_hasta is
+  'Null = vigente hasta que aparezca una escala posterior.';
+
 create table convenio (
   id uuid primary key default gen_random_uuid(),
   org_id text not null references organization(id) on delete cascade,
@@ -522,6 +562,7 @@ create table convenio_categoria (
   nombre text not null,
   orden integer,
   es_valor_hora boolean not null default false,
+  cct_categoria_id uuid references cct_categoria(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (convenio_id, codigo)
@@ -529,6 +570,8 @@ create table convenio_categoria (
 create index idx_convenio_categoria_convenio on convenio_categoria(convenio_id);
 create trigger trg_set_updated_at before update on convenio_categoria for each row execute function set_updated_at();
 
+comment on column convenio_categoria.cct_categoria_id is
+  'A qué categoría oficial del CCT corresponde esta. Con el vínculo, la liquidación toma el básico publicado sin que nadie lo cargue; sin él (categoría propia del empleador, o fuera de convenio) hay que cargar la escala a mano en escala_salarial.';
 comment on column convenio_categoria.es_valor_hora is
   'true = la escala publica un valor hora, no un básico mensual. Cambia cómo se liquida el sueldo de esa categoría.';
 
@@ -549,7 +592,7 @@ create index idx_escala_categoria on escala_salarial(categoria_id);
 create trigger trg_set_updated_at before update on escala_salarial for each row execute function set_updated_at();
 
 comment on table escala_salarial is
-  'Básico de convenio por categoría y vigencia. Se actualiza sola: el job "escalas" del scrapper lee las páginas de cct_fuente todas las semanas y pisa el básico y el no remunerativo.';
+  'Escala PROPIA del empleador para una de sus categorías: la excepción, no la regla. La escala publicada del convenio vive en cct_escala, que es global y la escribe el job "escalas" del scrapper. Acá va lo que este empleador paga distinto — por encima del convenio, o una categoría que no existe en la grilla oficial. Si hay fila acá, manda sobre cct_escala.';
 comment on column escala_salarial.fuente is 'URL de donde salió la escala, o "MANUAL". Es la trazabilidad de un dato que no cargó una persona.';
 comment on column escala_salarial.vigencia_hasta is 'Null = vigente hasta que aparezca una escala posterior.';
 

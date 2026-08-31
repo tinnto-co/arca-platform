@@ -1892,6 +1892,46 @@ export const contraparte = pgTable("contraparte", {
 	unique("contraparte_doc_tipo_doc_nro_key").on(table.docTipo, table.docNro),
 ]);
 
+export const cctCategoria = pgTable("cct_categoria", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	cctCodigo: text("cct_codigo").notNull(),
+	codigo: text().notNull(),
+	nombre: text().notNull(),
+	orden: integer(),
+	esValorHora: boolean("es_valor_hora").default(false).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_cct_categoria_cct").using("btree", table.cctCodigo.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.cctCodigo],
+			foreignColumns: [cct.codigo],
+			name: "cct_categoria_cct_codigo_fkey"
+		}).onDelete("cascade"),
+	unique("cct_categoria_cct_codigo_codigo_key").on(table.cctCodigo, table.codigo),
+]);
+
+export const cctEscala = pgTable("cct_escala", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	cctCategoriaId: uuid("cct_categoria_id").notNull(),
+	vigenciaDesde: date("vigencia_desde").notNull(),
+	vigenciaHasta: date("vigencia_hasta"),
+	montoBasico: numeric("monto_basico", { precision: 15, scale:  2 }).notNull(),
+	montoNoRemunerativo: numeric("monto_no_remunerativo", { precision: 15, scale:  2 }).default('0').notNull(),
+	periodoLabel: text("periodo_label"),
+	fuente: text(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_cct_escala_categoria").using("btree", table.cctCategoriaId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.cctCategoriaId],
+			foreignColumns: [cctCategoria.id],
+			name: "cct_escala_cct_categoria_id_fkey"
+		}).onDelete("cascade"),
+	unique("cct_escala_cct_categoria_id_vigencia_desde_key").on(table.cctCategoriaId, table.vigenciaDesde),
+]);
+
 export const convenioCategoria = pgTable("convenio_categoria", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	convenioId: uuid("convenio_id").notNull(),
@@ -1899,6 +1939,7 @@ export const convenioCategoria = pgTable("convenio_categoria", {
 	nombre: text().notNull(),
 	orden: integer(),
 	esValorHora: boolean("es_valor_hora").default(false).notNull(),
+	cctCategoriaId: uuid("cct_categoria_id"),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -1908,6 +1949,11 @@ export const convenioCategoria = pgTable("convenio_categoria", {
 			foreignColumns: [convenio.id],
 			name: "convenio_categoria_convenio_id_fkey"
 		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.cctCategoriaId],
+			foreignColumns: [cctCategoria.id],
+			name: "convenio_categoria_cct_categoria_id_fkey"
+		}).onDelete("set null"),
 	unique("convenio_categoria_convenio_id_codigo_key").on(table.convenioId, table.codigo),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(EXISTS ( SELECT 1
    FROM convenio p
