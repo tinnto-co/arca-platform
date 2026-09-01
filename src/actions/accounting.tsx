@@ -31,6 +31,7 @@ import {
   ajusteInflacionLinea,
   indiceInflacion,
   plantillaInformeAuditor,
+  asientoTemplate,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
 import { nextEntryNumber } from '@/lib/accounting-posting-db';
@@ -59,6 +60,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   or,
   sql,
 } from 'drizzle-orm';
@@ -82,6 +84,7 @@ import {
   CASH_FLOW_ACTIVITY_LABELS,
   CASH_FLOW_ACTIVITY_ORDER,
   defaultCashFlowActivity,
+  presentacionEfe,
   isCashGroup,
   type CashFlowActivity,
 } from '@/lib/accounting-cashflow';
@@ -335,6 +338,7 @@ export const getCurrentRole = createServerFn({ method: 'GET' }).handler(
 export const listAccountingClients = createServerFn({ method: 'GET' }).handler(
   async () => {
     const { orgId } = await getSessionWithOrg();
+    // TIN-1425: solo empresas jurídicas propias del estudio (excluye personas físicas).
     return db
       .select({
         id: cliente.id,
@@ -342,7 +346,13 @@ export const listAccountingClients = createServerFn({ method: 'GET' }).handler(
         identityNumber: cliente.cuit,
       })
       .from(cliente)
-      .where(eq(cliente.orgId, orgId))
+      .where(
+        and(
+          eq(cliente.orgId, orgId),
+          eq(cliente.tipoPersona, 'juridica'),
+          eq(cliente.estado, 'activo')
+        )
+      )
       .orderBy(asc(cliente.razonSocial));
   }
 );
@@ -1886,36 +1896,87 @@ async function loadJournalEntryForOrg(
 }
 
 /** Resuelve el ejercicio y período mensual al que cae una fecha (YYYY-MM-DD). */
-async function resolvePeriodForDate(clientId: string, dateStr: string) {
+async function resolvePeriodForDate(
+  clientId: string,
+  dateStr: string,
+  overrideFiscalYearId?: string
+) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) throw new Error('Fecha inválida');
-  const [fy] = await db
-    .select()
-    .from(ejercicio)
-    .where(
-      and(
-        eq(ejercicio.clienteId, clientId),
-        lte(ejercicio.fechaDesde, dateStr),
-        gte(ejercicio.fechaHasta, dateStr)
+
+  let fy: typeof ejercicio.$inferSelect;
+  let warning: string | undefined;
+
+  if (overrideFiscalYearId) {
+    // Fiscal year provided explicitly — bypass date-range check (TIN-1443).
+    const [found] = await db
+      .select()
+      .from(ejercicio)
+      .where(
+        and(
+          eq(ejercicio.id, overrideFiscalYearId),
+          eq(ejercicio.clienteId, clientId)
+        )
       )
-    )
-    .limit(1);
-  if (!fy) {
-    throw new Error(
-      'No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero'
-    );
+      .limit(1);
+    if (!found)
+      throw new Error(
+        'El ejercicio indicado no existe o no pertenece a este cliente'
+      );
+    fy = found;
+    warning = `La fecha ${dateStr} está fuera del ejercicio N°${fy.numero} (${fy.fechaDesde} – ${fy.fechaHasta}). El asiento se registró de todas formas.`;
+  } else {
+    const [found] = await db
+      .select()
+      .from(ejercicio)
+      .where(
+        and(
+          eq(ejercicio.clienteId, clientId),
+          lte(ejercicio.fechaDesde, dateStr),
+          gte(ejercicio.fechaHasta, dateStr)
+        )
+      )
+      .limit(1);
+    if (!found) {
+      throw new Error(
+        'No hay un ejercicio que cubra esa fecha. Creá el ejercicio primero'
+      );
+    }
+    fy = found;
   }
+
+  const monthStart = `${dateStr.slice(0, 7)}-01`;
   const [period] = await db
     .select()
     .from(periodoContable)
     .where(
       and(
         eq(periodoContable.ejercicioId, fy.id),
-        eq(periodoContable.periodo, `${dateStr.slice(0, 7)}-01`)
+        eq(periodoContable.periodo, monthStart)
       )
     )
     .limit(1);
-  if (!period) throw new Error('No existe el período para esa fecha');
-  return { fy, period, date: dateStr };
+
+  if (!period) {
+    // Fallback: use the most recent open period within the FY.
+    const allPeriods = await db
+      .select()
+      .from(periodoContable)
+      .where(eq(periodoContable.ejercicioId, fy.id))
+      .orderBy(desc(periodoContable.periodo));
+    const fallback =
+      allPeriods.find((p) => p.estado !== 'cerrado') ?? allPeriods[0];
+    if (!fallback) throw new Error('No existe el período para esa fecha');
+    return {
+      fy,
+      period: fallback,
+      date: dateStr,
+      warning:
+        warning ??
+        `La fecha no corresponde a ningún período del ejercicio. Se usó el período ${fallback.periodo.slice(0, 7)}.`,
+    };
+  }
+
+  return { fy, period, date: dateStr, warning };
 }
 
 /** Valida importes de líneas: cada línea Debe XOR Haber, y total Debe = total Haber. */
@@ -2034,6 +2095,8 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
       entryDate: z.string(),
       description: z.string().optional(),
       lines: z.array(journalLineSchema).min(2),
+      /** Override: use this fiscal year even if the date falls outside its range (TIN-1443). */
+      fiscalYearId: z.string().uuid().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -2043,9 +2106,10 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
 
     const { clientId } = ctx.data;
     await ensureClientBelongsToOrg(clientId, orgId);
-    const { fy, period, date } = await resolvePeriodForDate(
+    const { fy, period, date, warning } = await resolvePeriodForDate(
       clientId,
-      ctx.data.entryDate
+      ctx.data.entryDate,
+      ctx.data.fiscalYearId
     );
     if (fy.estado === 'cerrado') {
       throw new Error(
@@ -2103,7 +2167,7 @@ export const createJournalEntry = createServerFn({ method: 'POST' })
       return je;
     });
 
-    return entry;
+    return { entry, warning };
   });
 
 /** Edita un asiento (solo si su período está abierto). (US 1.3.2) */
@@ -2342,26 +2406,28 @@ export const listJournalEntries = createServerFn({ method: 'GET' })
       conditions.push(inArray(asiento.id, ids));
     }
 
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(asiento)
-      .where(and(...conditions));
-
     const orderCol = d.sortBy === 'date' ? asiento.fecha : asiento.numero;
-    const rows = await db
-      .select({
-        id: asiento.id,
-        number: asiento.numero,
-        entryDate: asiento.fecha,
-        description: asiento.descripcion,
-        origin: asiento.origenTipo,
-        isVoided: asiento.anulado,
-      })
-      .from(asiento)
-      .where(and(...conditions))
-      .orderBy(d.sortDir === 'asc' ? asc(orderCol) : desc(orderCol))
-      .limit(d.pageSize)
-      .offset((d.page - 1) * d.pageSize);
+    // El total y la página usan los mismos filtros y no dependen entre sí.
+    const [[{ count }], rows] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(asiento)
+        .where(and(...conditions)),
+      db
+        .select({
+          id: asiento.id,
+          number: asiento.numero,
+          entryDate: asiento.fecha,
+          description: asiento.descripcion,
+          origin: asiento.origenTipo,
+          isVoided: asiento.anulado,
+        })
+        .from(asiento)
+        .where(and(...conditions))
+        .orderBy(d.sortDir === 'asc' ? asc(orderCol) : desc(orderCol))
+        .limit(d.pageSize)
+        .offset((d.page - 1) * d.pageSize),
+    ]);
 
     // Totales y cantidad de líneas por asiento (query agregado aparte).
     const pageIds = rows.map((r) => r.id);
@@ -2718,8 +2784,11 @@ export const getLedgerConsolidated = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const d = ctx.data;
-    await ensureClientBelongsToOrg(d.clientId, orgId);
-    const fy = await resolveFiscalYear(d.clientId, orgId, d.fiscalYearId);
+    // Autorización y ejercicio no dependen entre sí: en paralelo.
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(d.clientId, orgId),
+      resolveFiscalYear(d.clientId, orgId, d.fiscalYearId),
+    ]);
     if (!fy) {
       return {
         ejercicio: null,
@@ -2903,8 +2972,11 @@ export const getTrialBalance = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const d = ctx.data;
-    await ensureClientBelongsToOrg(d.clientId, orgId);
-    const fy = await resolveFiscalYear(d.clientId, orgId, d.fiscalYearId);
+    // Autorización y ejercicio no dependen entre sí: en paralelo.
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(d.clientId, orgId),
+      resolveFiscalYear(d.clientId, orgId, d.fiscalYearId),
+    ]);
     if (!fy) return null;
 
     const corte = d.asOf ? d.asOf : fy.fechaHasta;
@@ -4451,7 +4523,14 @@ export interface MembreteData {
   cuit: string;
   domicilio: string;
   actividadPrincipal: string;
-  /** Columna `date`: string `YYYY-MM-DD`. */
+  /**
+   * Columnas `date`: string `YYYY-MM-DD`.
+   *
+   * Son dos fechas distintas y la carátula pide las dos: una sociedad se
+   * constituye por acta y se inscribe en el registro después, a veces con
+   * meses de diferencia.
+   */
+  fechaConstitucion: string | null;
   fechaInscripcion: string | null;
   numeroInscripcion: string;
   /** Norma bajo la que se preparan los EECC: define cómo se cita el ajuste. */
@@ -4464,32 +4543,38 @@ export const getMembreteData = createServerFn({ method: 'GET' })
   .validator(z.object({ clientId: z.string().uuid() }))
   .handler(async (ctx): Promise<MembreteData> => {
     const { orgId } = await getSessionWithOrg();
-    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
-
     // Los datos de inscripción viven en `cliente_eecc_config`, no en `cliente`:
-    // son configuración del módulo de balances, no identidad fiscal.
-    const [c] = await db
-      .select({
-        name: cliente.razonSocial,
-        identityNumber: cliente.cuit,
-        address: cliente.domicilio,
-        actividadPrincipal: clienteEeccConfig.actividadPrincipal,
-        fechaInscripcion: clienteEeccConfig.fechaInscripcionRpc,
-        numeroInscripcion: clienteEeccConfig.numeroIgj,
-        accountingFramework: cliente.marcoContable,
-      })
-      .from(cliente)
-      .leftJoin(clienteEeccConfig, eq(clienteEeccConfig.clienteId, cliente.id))
-      .where(eq(cliente.id, ctx.data.clientId))
-      .limit(1);
-
-    const sig = await loadFirmante(orgId);
+    // son configuración del módulo de balances, no identidad fiscal. Ni la
+    // autorización, ni el membrete, ni el firmante dependen entre sí.
+    const [, [c], sig] = await Promise.all([
+      ensureClientBelongsToOrg(ctx.data.clientId, orgId),
+      db
+        .select({
+          name: cliente.razonSocial,
+          identityNumber: cliente.cuit,
+          address: cliente.domicilio,
+          actividadPrincipal: clienteEeccConfig.actividadPrincipal,
+          fechaConstitucion: clienteEeccConfig.fechaConstitucion,
+          fechaInscripcion: clienteEeccConfig.fechaInscripcionRpc,
+          numeroInscripcion: clienteEeccConfig.numeroIgj,
+          accountingFramework: cliente.marcoContable,
+        })
+        .from(cliente)
+        .leftJoin(
+          clienteEeccConfig,
+          eq(clienteEeccConfig.clienteId, cliente.id)
+        )
+        .where(eq(cliente.id, ctx.data.clientId))
+        .limit(1),
+      loadFirmante(orgId),
+    ]);
 
     return {
       empresaName: c?.name ?? '',
       cuit: c?.identityNumber ?? '',
       domicilio: c?.address ?? '',
       actividadPrincipal: c?.actividadPrincipal ?? '',
+      fechaConstitucion: c?.fechaConstitucion ?? null,
       fechaInscripcion: c?.fechaInscripcion ?? null,
       numeroInscripcion: c?.numeroInscripcion ?? '',
       accountingFramework: c?.accountingFramework ?? 'rt54',
@@ -4610,6 +4695,7 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
       clientId: z.string().uuid(),
       address: z.string().max(300).optional(),
       actividadPrincipal: z.string().max(300).nullable().optional(),
+      fechaConstitucion: z.string().nullable().optional(), // YYYY-MM-DD
       fechaInscripcion: z.string().nullable().optional(), // YYYY-MM-DD
       numeroInscripcion: z.string().max(60).nullable().optional(),
       accountingFramework: z.enum(['rt54', 'rt6']).optional(),
@@ -4640,6 +4726,8 @@ export const updateClientFiscalData = createServerFn({ method: 'POST' })
       eeccSet.actividadPrincipal = ctx.data.actividadPrincipal || null;
     if (ctx.data.numeroInscripcion !== undefined)
       eeccSet.numeroIgj = ctx.data.numeroInscripcion || null;
+    if (ctx.data.fechaConstitucion !== undefined)
+      eeccSet.fechaConstitucion = ctx.data.fechaConstitucion || null;
     if (ctx.data.fechaInscripcion !== undefined)
       eeccSet.fechaInscripcionRpc = ctx.data.fechaInscripcion || null;
 
@@ -4875,8 +4963,11 @@ export const getAnexoI = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    // Autorización y ejercicio no dependen entre sí: en paralelo.
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId),
+    ]);
 
     const rows = await computeAnexoIRows(clientId, fy);
     const { categories, grandTotals } = groupAnexoI(rows);
@@ -5238,6 +5329,32 @@ async function loadResultadoAccount(orgId: string): Promise<ResultadoAccount> {
   return acc;
 }
 
+/**
+ * Cuenta de Resultados no asignados, adonde la apertura manda el resultado del
+ * ejercicio que cerró.
+ *
+ * A diferencia de «Resultado del ejercicio», acá no se lanza si falta: un plan
+ * sin esta cuenta sigue abriendo como antes en vez de quedarse sin poder
+ * cerrar el ejercicio.
+ */
+async function loadResultadosNoAsignadosAccount(
+  orgId: string
+): Promise<ResultadoAccount | null> {
+  const [acc] = await db
+    .select({ id: cuenta.id, code: cuenta.codigo, name: cuenta.nombre })
+    .from(cuenta)
+    .where(
+      and(
+        eq(cuenta.orgId, orgId),
+        eq(cuenta.alcance, 'base'),
+        eq(cuenta.rubro, 'resultados_no_asignados'),
+        eq(cuenta.tipo, 'imputable')
+      )
+    )
+    .limit(1);
+  return acc ?? null;
+}
+
 /** Fechas del ejercicio siguiente. Todo en strings `YYYY-MM-DD` (columnas `date`). */
 const nextFyDates = (end: string): { start: string; end: string } => {
   const startD = new Date(new Date(`${end}T00:00:00Z`).getTime() + 86400000);
@@ -5321,6 +5438,7 @@ export const getClosingWizard = createServerFn({ method: 'GET' })
     await ensureClientBelongsToOrg(clientId, orgId);
     const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
     const resultado = await loadResultadoAccount(orgId);
+    const rna = await loadResultadosNoAsignadosAccount(orgId);
 
     // Asientos de cierre ya posteados (refundición = el de menor número, cierre = el siguiente).
     const closingEntries = await db
@@ -5370,7 +5488,7 @@ export const getClosingWizard = createServerFn({ method: 'GET' })
     }
 
     const balances = await computeFyBalances(orgId, fy.id);
-    const built = buildClosingEntries(balances, resultado);
+    const built = buildClosingEntries(balances, resultado, rna);
 
     // Resultado del ejercicio (ganancia/pérdida) para mostrar.
     const resultadoBal = balances.find((b) => b.accountId === resultado.id);
@@ -6000,28 +6118,34 @@ export const getESP = createServerFn({ method: 'GET' })
   .handler(async (ctx): Promise<EspResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
-
+    // Contra una base remota cada consulta paga la latencia entera: lo que no
+    // depende entre sí va en una misma tanda. Autorización y ejercicio solo
+    // necesitan los ids (tanda 1); el anterior necesita el ejercicio (tanda 2);
+    // el resto depende solo de fy/priorFy (tanda 3).
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId),
+    ]);
     const priorFy = await loadPriorFiscalYear(clientId, fy);
 
-    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
-    let priBal = priorFy
-      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
-      : [];
-
-    // El comparativo se reexpresa a la moneda de cierre actual (ver
-    // priorColumnCoefficient). En la vista histórica se deja como está.
-    let priorCoefficient: number | null = null;
-    if (priorFy && ctx.data.view === 'ajustado') {
-      priorCoefficient = await priorColumnCoefficient(
-        fy.fechaHasta,
-        priorFy.fechaHasta
-      );
-      if (priorCoefficient !== null) {
-        const k = priorCoefficient;
-        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
-      }
+    const [curBal, priBalCrudo, coef, infCur, infPri] = await Promise.all([
+      computeEspBalances(orgId, fy.id, ctx.data.view),
+      priorFy
+        ? computeEspBalances(orgId, priorFy.id, ctx.data.view)
+        : Promise.resolve([]),
+      // El comparativo se reexpresa a la moneda de cierre actual (ver
+      // priorColumnCoefficient). En la vista histórica se deja como está.
+      priorFy && ctx.data.view === 'ajustado'
+        ? priorColumnCoefficient(fy.fechaHasta, priorFy.fechaHasta)
+        : Promise.resolve(null),
+      loadInflationStatus(fy.id),
+      priorFy ? loadInflationStatus(priorFy.id) : Promise.resolve(null),
+    ]);
+    const priorCoefficient: number | null = coef;
+    let priBal = priBalCrudo;
+    if (priorCoefficient !== null) {
+      const k = priorCoefficient;
+      priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
     }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
@@ -6138,13 +6262,11 @@ export const getESP = createServerFn({ method: 'GET' })
         : true,
       hasPrior: !!priorFy,
       priorCoefficient,
-      inflationApplied: (await loadInflationStatus(fy.id)).applied,
-      priorInflationApplied: priorFy
-        ? priorFiguresAreHomogeneous(
-            priorFy,
-            (await loadInflationStatus(priorFy.id)).applied
-          )
-        : true,
+      inflationApplied: infCur.applied,
+      priorInflationApplied:
+        priorFy && infPri
+          ? priorFiguresAreHomogeneous(priorFy, infPri.applied)
+          : true,
     };
   });
 
@@ -6234,28 +6356,31 @@ export const getER = createServerFn({ method: 'GET' })
   .handler(async (ctx): Promise<ErResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
-
+    // Mismas tandas que getESP: ver el comentario ahí.
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId),
+    ]);
     const priorFy = await loadPriorFiscalYear(clientId, fy);
 
-    const curBal = await computeEspBalances(orgId, fy.id, ctx.data.view);
-    let priBal = priorFy
-      ? await computeEspBalances(orgId, priorFy.id, ctx.data.view)
-      : [];
-
-    // El comparativo se reexpresa a la moneda de cierre actual (ver
-    // priorColumnCoefficient). En la vista histórica se deja como está.
-    let priorCoefficient: number | null = null;
-    if (priorFy && ctx.data.view === 'ajustado') {
-      priorCoefficient = await priorColumnCoefficient(
-        fy.fechaHasta,
-        priorFy.fechaHasta
-      );
-      if (priorCoefficient !== null) {
-        const k = priorCoefficient;
-        priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
-      }
+    const [curBal, priBalCrudo, coef, infCur, infPri] = await Promise.all([
+      computeEspBalances(orgId, fy.id, ctx.data.view),
+      priorFy
+        ? computeEspBalances(orgId, priorFy.id, ctx.data.view)
+        : Promise.resolve([]),
+      // El comparativo se reexpresa a la moneda de cierre actual (ver
+      // priorColumnCoefficient). En la vista histórica se deja como está.
+      priorFy && ctx.data.view === 'ajustado'
+        ? priorColumnCoefficient(fy.fechaHasta, priorFy.fechaHasta)
+        : Promise.resolve(null),
+      loadInflationStatus(fy.id),
+      priorFy ? loadInflationStatus(priorFy.id) : Promise.resolve(null),
+    ]);
+    const priorCoefficient: number | null = coef;
+    let priBal = priBalCrudo;
+    if (priorCoefficient !== null) {
+      const k = priorCoefficient;
+      priBal = priBal.map((b) => ({ ...b, saldo: r2(b.saldo * k) }));
     }
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
@@ -6433,13 +6558,11 @@ export const getER = createServerFn({ method: 'GET' })
         : true,
       hasPrior: !!priorFy,
       priorCoefficient,
-      inflationApplied: (await loadInflationStatus(fy.id)).applied,
-      priorInflationApplied: priorFy
-        ? priorFiguresAreHomogeneous(
-            priorFy,
-            (await loadInflationStatus(priorFy.id)).applied
-          )
-        : true,
+      inflationApplied: infCur.applied,
+      priorInflationApplied:
+        priorFy && infPri
+          ? priorFiguresAreHomogeneous(priorFy, infPri.applied)
+          : true,
     };
   });
 
@@ -6514,7 +6637,10 @@ async function computeExpenseBalances(orgId: string, fyId: string) {
         eq(cuenta.orgId, orgId),
         inArray(
           cuenta.rubro,
-          EXPENSE_ACCOUNT_GROUPS as unknown as AccountGroup[]
+          // costo_ventas (CMV) se expone en su propio Anexo CMV, no en Anexo II.
+          EXPENSE_ACCOUNT_GROUPS.filter(
+            (g) => g !== 'costo_ventas'
+          ) as unknown as AccountGroup[]
         ),
         sql`${asiento.origenTipo} NOT IN ('cierre','apertura')`
       )
@@ -6543,15 +6669,20 @@ export const getAnexoII = createServerFn({ method: 'GET' })
   .handler(async (ctx): Promise<AnexoIIResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
-
+    // Autorización y ejercicio no dependen entre sí: en paralelo.
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId),
+    ]);
     const priorFy = await loadPriorFiscalYear(clientId, fy);
 
-    const curBal = await computeExpenseBalances(orgId, fy.id);
-    const priBal = priorFy
-      ? await computeExpenseBalances(orgId, priorFy.id)
-      : [];
+    // RECPAM (5.4.004) se expone como línea propia en el ER, no en Anexo II.
+    const [curBalCrudo, priBalCrudo] = await Promise.all([
+      computeExpenseBalances(orgId, fy.id),
+      priorFy ? computeExpenseBalances(orgId, priorFy.id) : Promise.resolve([]),
+    ]);
+    const curBal = curBalCrudo.filter((r) => r.code !== RECPAM_ACCOUNT_CODE);
+    const priBal = priBalCrudo.filter((r) => r.code !== RECPAM_ACCOUNT_CODE);
     const curMap = new Map(curBal.map((b) => [b.accountId, b]));
     const priMap = new Map(priBal.map((b) => [b.accountId, b]));
 
@@ -6649,14 +6780,20 @@ export const getCMV = createServerFn({ method: 'GET' })
   .handler(async (ctx): Promise<CmvResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
+    // Autorización y ejercicio no dependen entre sí: en paralelo.
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId),
+    ]);
 
-    const [row] = await db
-      .select()
-      .from(anexoCmv)
-      .where(eq(anexoCmv.ejercicioId, fy.id))
-      .limit(1);
+    const [[row], priorFy] = await Promise.all([
+      db
+        .select()
+        .from(anexoCmv)
+        .where(eq(anexoCmv.ejercicioId, fy.id))
+        .limit(1),
+      loadPriorFiscalYear(clientId, fy),
+    ]);
 
     const ini = row ? parseFloat(row.existenciaInicial) : 0;
     const compras = row ? parseFloat(row.comprasGastos) : 0;
@@ -6665,7 +6802,6 @@ export const getCMV = createServerFn({ method: 'GET' })
     // Comparativo con el ejercicio anterior (número − 1), si tiene CMV cargado.
     let priorFiscalYearNumber: number | null = null;
     let priorTotal: number | null = null;
-    const priorFy = await loadPriorFiscalYear(clientId, fy);
     if (priorFy) {
       priorFiscalYearNumber = priorFy.numero;
       const [pr] = await db
@@ -6727,7 +6863,7 @@ export const saveCMV = createServerFn({ method: 'POST' })
         ...vals,
       })
       .onConflictDoUpdate({
-        target: anexoCmv.ejercicioId,
+        target: [anexoCmv.clienteId, anexoCmv.ejercicioId],
         set: vals,
       });
     return { ok: true };
@@ -6772,8 +6908,11 @@ export const getFinancialStatement = createServerFn({ method: 'GET' })
   .handler(async (ctx): Promise<FinancialStatementResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId, fiscalYearId } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    await loadFiscalYearForOrg(fiscalYearId, orgId);
+    // Autorización y ejercicio no dependen entre sí: en paralelo.
+    await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(fiscalYearId, orgId),
+    ]);
 
     const pdfUser = alias(user, 'fs_pdf_user');
     const [row] = await db
@@ -7614,53 +7753,107 @@ export const getEEPN = createServerFn({ method: 'GET' })
   .handler(async (ctx): Promise<EepnResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId, view } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
-
+    // Tandas como en getESP: contra una base remota cada consulta paga la
+    // latencia entera, así que lo que no depende entre sí sale junto.
+    const [, fy] = await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId),
+    ]);
     const priorFy = await loadPriorFiscalYear(clientId, fy);
 
-    // Cuentas de PN visibles para la empresa.
-    const pnAccounts = await db
-      .select({
-        id: cuenta.id,
-        code: cuenta.codigo,
-        name: cuenta.nombre,
-        group: cuenta.rubro,
-        inflationTargetId: cuenta.cuentaAjusteId,
-      })
-      .from(cuenta)
-      .where(
-        and(
-          eq(cuenta.orgId, orgId),
-          eq(cuenta.tipo, 'imputable'),
-          inArray(cuenta.rubro, PN_GROUPS as unknown as AccountGroup[]),
-          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+    // Tanda 3: todo lo que depende solo de fy/priorFy. Los del comparativo van
+    // condicionados, igual que estaban en su bloque; el procesamiento de cada
+    // resultado sigue más abajo, en el mismo orden de siempre.
+    const [
+      pnAccounts,
+      openingRows,
+      [adjustment],
+      balances,
+      priorBalancesPre,
+      priorOpeningRowsPre,
+      priorCoefPre,
+      infPriPre,
+    ] = await Promise.all([
+      // Cuentas de PN visibles para la empresa.
+      db
+        .select({
+          id: cuenta.id,
+          code: cuenta.codigo,
+          name: cuenta.nombre,
+          group: cuenta.rubro,
+          inflationTargetId: cuenta.cuentaAjusteId,
+        })
+        .from(cuenta)
+        .where(
+          and(
+            eq(cuenta.orgId, orgId),
+            eq(cuenta.tipo, 'imputable'),
+            inArray(cuenta.rubro, PN_GROUPS as unknown as AccountGroup[]),
+            sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+          )
         )
-      )
-      .orderBy(asc(cuenta.codigo));
+        .orderBy(asc(cuenta.codigo)),
+      // Saldos de apertura (histórico), del asiento de apertura del ejercicio.
+      db
+        .select({
+          accountId: asientoLinea.cuentaId,
+          debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+          credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+        })
+        .from(asientoLinea)
+        .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+        .where(
+          and(
+            eq(asiento.ejercicioId, fy.id),
+            eq(asiento.anulado, false),
+            eq(asiento.origenTipo, 'apertura')
+          )
+        )
+        .groupBy(asientoLinea.cuentaId),
+      // Reexpresión del patrimonio inicial aplicada, si existe.
+      db
+        .select()
+        .from(ajusteInflacion)
+        .where(
+          and(
+            eq(ajusteInflacion.ejercicioId, fy.id),
+            eq(ajusteInflacion.estado, 'aplicado')
+          )
+        )
+        .limit(1),
+      computeEspBalances(orgId, fy.id, view),
+      priorFy
+        ? computeEspBalances(orgId, priorFy.id, view)
+        : Promise.resolve(null),
+      priorFy
+        ? db
+            .select({
+              accountId: asientoLinea.cuentaId,
+              debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
+              credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
+            })
+            .from(asientoLinea)
+            .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
+            .where(
+              and(
+                eq(asiento.ejercicioId, priorFy.id),
+                eq(asiento.anulado, false),
+                eq(asiento.origenTipo, 'apertura')
+              )
+            )
+            .groupBy(asientoLinea.cuentaId)
+        : Promise.resolve(null),
+      priorFy && view === 'ajustado'
+        ? priorColumnCoefficient(fy.fechaHasta, priorFy.fechaHasta)
+        : Promise.resolve(null),
+      priorFy ? loadInflationStatus(priorFy.id) : Promise.resolve(null),
+    ]);
     const pnIds = new Set(pnAccounts.map((a) => a.id));
 
     /** Signo de exposición: el PN es acreedor, así que se invierte. */
     const expose = (saldo: number) => r2(-saldo);
 
-    // 1. Saldos de apertura (histórico), del asiento de apertura del ejercicio.
-    const openingRows = await db
-      .select({
-        accountId: asientoLinea.cuentaId,
-        debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
-        credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
-      })
-      .from(asientoLinea)
-      .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
-      .where(
-        and(
-          eq(asiento.ejercicioId, fy.id),
-          eq(asiento.anulado, false),
-          eq(asiento.origenTipo, 'apertura')
-        )
-      )
-      .groupBy(asientoLinea.cuentaId);
-
+    // 1. Saldos de apertura.
     const inicio: Record<string, number> = {};
     for (const r of openingRows) {
       if (!pnIds.has(r.accountId)) continue;
@@ -7669,17 +7862,6 @@ export const getEEPN = createServerFn({ method: 'GET' })
 
     // 2. Reexpresión del patrimonio inicial → se incorpora a la fila de inicio,
     //    imputada a la cuenta destino (Capital social → Ajuste de capital).
-    const [adjustment] = await db
-      .select()
-      .from(ajusteInflacion)
-      .where(
-        and(
-          eq(ajusteInflacion.ejercicioId, fy.id),
-          eq(ajusteInflacion.estado, 'aplicado')
-        )
-      )
-      .limit(1);
-
     const reexpresionMovimientos: Record<string, number> = {};
     if (adjustment && view === 'ajustado') {
       const adjLines = await db
@@ -7761,7 +7943,6 @@ export const getEEPN = createServerFn({ method: 'GET' })
     }
 
     // 4. Resultado del ejercicio: sale del ER ya ajustado.
-    const balances = await computeEspBalances(orgId, fy.id, view);
     const resultado = r2(
       balances
         .filter(
@@ -7904,7 +8085,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
       null;
     let priorCoefficient: number | null = null;
     if (priorFy) {
-      const priorBalances = await computeEspBalances(orgId, priorFy.id, view);
+      const priorBalances = priorBalancesPre!;
       const sumGroups = (groups: readonly string[]) =>
         r2(
           priorBalances
@@ -7916,22 +8097,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
 
       // El patrimonio al inicio de aquel ejercicio sale de su asiento de
       // apertura; si no lo tiene (primer ejercicio), se deduce por diferencia.
-      const priorOpeningRows = await db
-        .select({
-          accountId: asientoLinea.cuentaId,
-          debit: sql<string>`coalesce(sum(${asientoLinea.debe}),0)`,
-          credit: sql<string>`coalesce(sum(${asientoLinea.haber}),0)`,
-        })
-        .from(asientoLinea)
-        .innerJoin(asiento, eq(asiento.id, asientoLinea.asientoId))
-        .where(
-          and(
-            eq(asiento.ejercicioId, priorFy.id),
-            eq(asiento.anulado, false),
-            eq(asiento.origenTipo, 'apertura')
-          )
-        )
-        .groupBy(asientoLinea.cuentaId);
+      const priorOpeningRows = priorOpeningRowsPre!;
       const priorInicio = r2(
         priorOpeningRows
           .filter((r) => pnIds.has(r.accountId))
@@ -7942,10 +8108,7 @@ export const getEEPN = createServerFn({ method: 'GET' })
       );
 
       if (view === 'ajustado') {
-        priorCoefficient = await priorColumnCoefficient(
-          fy.fechaHasta,
-          priorFy.fechaHasta
-        );
+        priorCoefficient = priorCoefPre;
       }
       const k = priorCoefficient ?? 1;
       prior = {
@@ -7982,12 +8145,10 @@ export const getEEPN = createServerFn({ method: 'GET' })
       espTotal,
       matchesEsp: Math.abs(cierreTotal - espTotal) < 0.05,
       inflationApplied: !!adjustment,
-      priorInflationApplied: priorFy
-        ? priorFiguresAreHomogeneous(
-            priorFy,
-            (await loadInflationStatus(priorFy.id)).applied
-          )
-        : true,
+      priorInflationApplied:
+        priorFy && infPriPre
+          ? priorFiguresAreHomogeneous(priorFy, infPriPre.applied)
+          : true,
     };
   });
 
@@ -8251,28 +8412,30 @@ export const getEFE = createServerFn({ method: 'GET' })
   .handler(async (ctx): Promise<EfeResult> => {
     const { orgId } = await getSessionWithOrg();
     const { clientId, view } = ctx.data;
-    await ensureClientBelongsToOrg(clientId, orgId);
-    const fy = await loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId);
     const ajustado = view === 'ajustado';
-
+    // Tandas como en getESP. El plan de cuentas solo necesita los ids, así que
+    // sale junto con la autorización y el ejercicio.
+    const [, fy, accounts] = await Promise.all([
+      ensureClientBelongsToOrg(clientId, orgId),
+      loadFiscalYearForOrg(ctx.data.fiscalYearId, orgId),
+      db
+        .select({
+          id: cuenta.id,
+          code: cuenta.codigo,
+          name: cuenta.nombre,
+          group: cuenta.rubro,
+          activity: cuenta.flujoEfectivo,
+        })
+        .from(cuenta)
+        .where(
+          and(
+            eq(cuenta.orgId, orgId),
+            eq(cuenta.tipo, 'imputable'),
+            sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
+          )
+        ),
+    ]);
     const priorFy = await loadPriorFiscalYear(clientId, fy);
-
-    const accounts = await db
-      .select({
-        id: cuenta.id,
-        code: cuenta.codigo,
-        name: cuenta.nombre,
-        group: cuenta.rubro,
-        activity: cuenta.flujoEfectivo,
-      })
-      .from(cuenta)
-      .where(
-        and(
-          eq(cuenta.orgId, orgId),
-          eq(cuenta.tipo, 'imputable'),
-          sql`(${cuenta.alcance} = 'base' OR ${cuenta.clienteId} = ${clientId})`
-        )
-      );
     // El enum de la base habla castellano; el módulo puro, inglés (D27).
     const accById = new Map<string, AccountLike>(
       accounts.map((a) => [
@@ -8290,19 +8453,17 @@ export const getEFE = createServerFn({ method: 'GET' })
       accounts.filter((a) => isCashGroup(a.group)).map((a) => a.id)
     );
 
-    const cur = await computeEfe(orgId, fy, view, accById, cashIds);
-    const pri = priorFy
-      ? await computeEfe(orgId, priorFy, view, accById, cashIds)
-      : null;
-
-    // El comparativo va a moneda de cierre actual, igual que en el ESP y el ER.
-    let priorCoefficient: number | null = null;
-    if (priorFy && ajustado) {
-      priorCoefficient = await priorColumnCoefficient(
-        fy.fechaHasta,
-        priorFy.fechaHasta
-      );
-    }
+    const [cur, pri, coefPre] = await Promise.all([
+      computeEfe(orgId, fy, view, accById, cashIds),
+      priorFy
+        ? computeEfe(orgId, priorFy, view, accById, cashIds)
+        : Promise.resolve(null),
+      // El comparativo va a moneda de cierre actual, igual que en el ESP y el ER.
+      priorFy && ajustado
+        ? priorColumnCoefficient(fy.fechaHasta, priorFy.fechaHasta)
+        : Promise.resolve(null),
+    ]);
+    const priorCoefficient: number | null = coefPre;
     const k = priorCoefficient ?? 1;
     const pv = (n: number) => (pri ? r2(n * k) : 0);
 
@@ -8315,8 +8476,14 @@ export const getEFE = createServerFn({ method: 'GET' })
       for (const accountId of ids) {
         const acc = accById.get(accountId);
         if (!acc) continue;
+        // El override por cuenta manda; después el mapa del EFE, que además
+        // saca «Accionistas» de operativas; y al final el default del rubro.
+        const efe = presentacionEfe(acc.name);
         const activity =
-          acc.activity ?? defaultCashFlowActivity(acc.group) ?? 'operating';
+          acc.activity ??
+          efe?.actividad ??
+          defaultCashFlowActivity(acc.group) ??
+          'operating';
         if (activity !== key) continue;
         const c = r2(cur.byAccount.get(accountId) ?? 0);
         const p = pv(pri?.byAccount.get(accountId) ?? 0);
@@ -8324,7 +8491,9 @@ export const getEFE = createServerFn({ method: 'GET' })
         rows.push({
           accountId,
           code: acc.code,
-          name: acc.name,
+          // En el EFE importa qué pasó con la plata, no cómo se llama la
+          // cuenta que la movió.
+          name: efe?.etiqueta ?? acc.name,
           current: c,
           prior: p,
         });
@@ -8412,4 +8581,137 @@ export const getEFE = createServerFn({ method: 'GET' })
           ? priorFiguresAreHomogeneous(priorFy, pri.inflationApplied)
           : true,
     };
+  });
+
+/* ════════════════════ TIN-1428: Templates de asientos ════════════════════ */
+
+interface TemplateLine {
+  cuentaId: string;
+  lado: 'debe' | 'haber';
+  descripcion?: string;
+}
+
+export interface JournalTemplate {
+  id: string;
+  nombre: string;
+  lineas: TemplateLine[];
+  creadoEn: string;
+}
+
+export const listJournalTemplates = createServerFn({ method: 'GET' })
+  .validator(z.object({ clientId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const rows = await db
+      .select({
+        id: asientoTemplate.id,
+        nombre: asientoTemplate.nombre,
+        lineas: asientoTemplate.lineas,
+        creadoEn: asientoTemplate.creadoEn,
+      })
+      .from(asientoTemplate)
+      .where(
+        and(
+          eq(asientoTemplate.orgId, orgId),
+          eq(asientoTemplate.clienteId, data.clientId)
+        )
+      )
+      .orderBy(asc(asientoTemplate.nombre));
+    return rows.map((r) => ({
+      id: r.id,
+      nombre: r.nombre,
+      lineas: r.lineas as TemplateLine[],
+      creadoEn: r.creadoEn.toISOString(),
+    })) satisfies JournalTemplate[];
+  });
+
+export const saveJournalTemplate = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      /**
+       * Cuál template actualizar. Con `id` se edita ese —y se puede cambiarle
+       * el nombre—; sin `id` se crea, o se pisa el que ya tenga ese nombre.
+       * Sin esto, renombrar era imposible: cambiar el nombre creaba un
+       * duplicado y dejaba el viejo.
+       */
+      id: z.string().uuid().optional(),
+      nombre: z.string().min(1).max(100),
+      lineas: z
+        .array(
+          z.object({
+            cuentaId: z.string().uuid(),
+            lado: z.enum(['debe', 'haber']),
+            descripcion: z.string().optional(),
+          })
+        )
+        .min(2),
+    })
+  )
+  .handler(async ({ data }) => {
+    assertCanWrite(await getMemberRole());
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(data.clientId, orgId);
+
+    if (data.id) {
+      // El nombre nuevo puede chocar con otro template del mismo cliente; el
+      // índice único lo rechazaría con un error de Postgres, que no le sirve a
+      // nadie. Se avisa antes y en castellano.
+      const [choca] = await db
+        .select({ id: asientoTemplate.id })
+        .from(asientoTemplate)
+        .where(
+          and(
+            eq(asientoTemplate.clienteId, data.clientId),
+            eq(asientoTemplate.nombre, data.nombre),
+            ne(asientoTemplate.id, data.id)
+          )
+        );
+      if (choca) {
+        throw new Error(
+          `Ya existe otro template llamado «${data.nombre}» en esta empresa.`
+        );
+      }
+
+      const [row] = await db
+        .update(asientoTemplate)
+        .set({ nombre: data.nombre, lineas: data.lineas })
+        .where(
+          and(
+            eq(asientoTemplate.id, data.id),
+            eq(asientoTemplate.orgId, orgId),
+            eq(asientoTemplate.clienteId, data.clientId)
+          )
+        )
+        .returning({ id: asientoTemplate.id });
+      if (!row) throw new Error('No se encontró el template a actualizar.');
+      return { id: row.id };
+    }
+
+    const [row] = await db
+      .insert(asientoTemplate)
+      .values({
+        orgId,
+        clienteId: data.clientId,
+        nombre: data.nombre,
+        lineas: data.lineas,
+      })
+      .onConflictDoUpdate({
+        target: [asientoTemplate.clienteId, asientoTemplate.nombre],
+        set: { lineas: data.lineas },
+      })
+      .returning({ id: asientoTemplate.id });
+    return { id: row.id };
+  });
+
+export const deleteJournalTemplate = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    assertCanWrite(await getMemberRole());
+    const { orgId } = await getSessionWithOrg();
+    await db
+      .delete(asientoTemplate)
+      .where(
+        and(eq(asientoTemplate.id, data.id), eq(asientoTemplate.orgId, orgId))
+      );
   });

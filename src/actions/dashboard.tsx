@@ -19,7 +19,7 @@ import {
   notificacion,
   alerta,
   job,
-  studioTask,
+  tarea,
 } from '@/drizzle/schema';
 import { eq, and, gte, lte, sql, isNull, desc, ne, isNotNull } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
@@ -692,29 +692,29 @@ export const getHomeKpis = createServerFn({ method: 'GET' }).handler(async () =>
   const [pendientes, vencidas, semana] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)` })
-      .from(studioTask)
-      .where(and(eq(studioTask.organizationId, orgId), eq(studioTask.estado, 'pendiente'))),
+      .from(tarea)
+      .where(and(eq(tarea.orgId, orgId), eq(tarea.estado, 'pendiente'))),
     db
       .select({ count: sql<number>`count(*)` })
-      .from(studioTask)
+      .from(tarea)
       .where(
         and(
-          eq(studioTask.organizationId, orgId),
-          isNotNull(studioTask.fechaVencimiento),
-          lte(studioTask.fechaVencimiento, today),
-          ne(studioTask.estado, 'verificada')
+          eq(tarea.orgId, orgId),
+          isNotNull(tarea.venceAt),
+          lte(tarea.venceAt, today),
+          ne(tarea.estado, 'verificada')
         )
       ),
     db
       .select({ count: sql<number>`count(*)` })
-      .from(studioTask)
+      .from(tarea)
       .where(
         and(
-          eq(studioTask.organizationId, orgId),
-          isNotNull(studioTask.fechaVencimiento),
-          gte(studioTask.fechaVencimiento, today),
-          lte(studioTask.fechaVencimiento, endOfWeek),
-          ne(studioTask.estado, 'verificada')
+          eq(tarea.orgId, orgId),
+          isNotNull(tarea.venceAt),
+          gte(tarea.venceAt, today),
+          lte(tarea.venceAt, endOfWeek),
+          ne(tarea.estado, 'verificada')
         )
       ),
   ]);

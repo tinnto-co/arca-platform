@@ -27,6 +27,7 @@ export type SystemSectionKey =
   | 'anexo_i'
   | 'anexo_ii'
   | 'anexo_cmv'
+  | 'inventario'
   | 'informe_auditor';
 
 /** Una entrada del documento: una sección del sistema o una nota del contador. */
@@ -41,6 +42,7 @@ export const SYSTEM_SECTION_ORDER: SystemSectionKey[] = [
   'anexo_i',
   'anexo_ii',
   'anexo_cmv',
+  'inventario',
   'informe_auditor',
 ];
 
@@ -57,6 +59,7 @@ export const DEFAULT_SECTION_LABELS: Record<SystemSectionKey, string> = {
   anexo_i: 'Anexo I · Bienes de uso',
   anexo_ii: 'Anexo II · Gastos por función',
   anexo_cmv: 'Anexo CMV · Costo de la mercadería vendida',
+  inventario: 'Inventario al cierre del ejercicio',
   informe_auditor: 'Informe del auditor independiente',
 };
 
@@ -255,6 +258,7 @@ export function defaultDocumentLayout(notes: NoteLike[]): LayoutEntry[] {
     'anexo_i',
     'anexo_ii',
     'anexo_cmv',
+    'inventario',
     // El informe cierra el documento: no es un estado, opina sobre ellos.
     'informe_auditor',
   ];

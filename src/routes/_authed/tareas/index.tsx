@@ -1,668 +1,727 @@
-import { useState, useMemo, useRef } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
+import { generateKeyBetween } from 'fractional-indexing';
+import { useMemo, useState } from 'react';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { z } from 'zod';
 import { toast } from 'sonner';
 import {
-  Plus,
-  Zap,
-  Loader2,
-  Pencil,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  X,
-  Kanban,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
+  DndContext,
+  DragOverlay,
+  closestCorners,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Plus } from 'lucide-react';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { TaskCard } from '@/components/tareas/TaskCard';
-import { NuevaTareaDialog } from '@/components/tareas/NuevaTareaDialog';
+import { TaskDetailDialog } from '@/components/tareas/TaskDetailDialog';
+import { BoardColumn } from '@/components/tareas/BoardColumn';
+import { BoardHeader } from '@/components/tareas/BoardHeader';
+import { BuscarTareas } from '@/components/tareas/BuscarTareas';
+import { PageShell } from '@/components/shared/page-shell';
 import {
   listTareas,
   listOrgMembers,
   listOrgRepresentatives,
-  autoGenerarTareas,
   listColumnas,
   createColumna,
   updateColumna,
   deleteColumna,
-  reorderColumnas,
   moverTarea,
+  reorderTarea,
+  autoGenerarTareas,
+  COLORES_COLUMNA,
+  TIPOS_TAREA,
+  CLAVE_ARCHIVADAS,
 } from '@/actions/tareas';
-import { TIPO_LABELS } from '@/components/tareas/utils';
+import type { TareaConDetalle, TipoTarea } from '@/components/tareas/utils';
 import { cn } from '@/lib/utils';
 
+/**
+ * Los filtros son la única forma de recortar el tablero, así que la fuente de
+ * verdad es la URL: un recorte se comparte pegando el link y sobrevive al
+ * refresh. `tarea` abre el modal de detalle, también por link.
+ */
+interface Busqueda {
+  periodo?: string;
+  tipo?: TipoTarea;
+  asignado?: string;
+  empresa?: string;
+  vence_hasta?: string;
+  tarea?: string;
+  archivadas?: boolean;
+}
+
+// Cada campo lleva su `.catch`: un parámetro basura en la URL no puede tumbar
+// la pantalla, simplemente no filtra.
+const esquemaBusqueda = z.object({
+  periodo: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/)
+    .optional()
+    .catch(undefined),
+  tipo: z.enum(TIPOS_TAREA).optional().catch(undefined),
+  asignado: z.string().optional().catch(undefined),
+  empresa: z.string().optional().catch(undefined),
+  vence_hasta: z.string().optional().catch(undefined),
+  tarea: z.string().uuid().optional().catch(undefined),
+  archivadas: z.boolean().optional().catch(undefined),
+});
+
 export const Route = createFileRoute('/_authed/tareas/')({
+  // Tipo de retorno explícito, como el resto de las rutas del proyecto: pasar
+  // el schema de zod pelado deja el `useSearch()` en `any`.
+  validateSearch: (s: Record<string, unknown>): Busqueda =>
+    esquemaBusqueda.parse(s),
   component: TareasPage,
 });
 
-const now = new Date();
-const ANOS = Array.from({ length: 6 }, (_, i) => String(now.getFullYear() - i));
-const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, '0'),
-  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
-}));
+const SIN_COLUMNA = '__sin_columna__';
 
-function TareasPage() {
-  const queryClient = useQueryClient();
-  const [nuevaOpen, setNuevaOpen] = useState(false);
-
-  const [filtroAno, setFiltroAno] = useState('');
-  const [filtroMes, setFiltroMes] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('');
-  const [filtroAsignado, setFiltroAsignado] = useState('');
-  const [filtroCliente, setFiltroCliente] = useState('');
-  const [filtroVencimientoHasta, setFiltroVencimientoHasta] = useState('');
-
-  // Column management state
-  const [dragOverColId, setDragOverColId] = useState<string | null>(null);
-  const [editingColId, setEditingColId] = useState<string | null>(null);
-  const [editingColNombre, setEditingColNombre] = useState('');
-  const [creandoColumna, setCreandoColumna] = useState(false);
-  const [nuevaColNombre, setNuevaColNombre] = useState('');
-
-  const filtroPeriodo = filtroAno && filtroMes ? `${filtroAno}-${filtroMes}` : '';
-
-  const { data: members = [] } = useQuery({
-    queryKey: ['org-members'],
-    queryFn: () => listOrgMembers(),
+/** «2026-09» → «septiembre», para los mensajes de la autogeneración. */
+const nombreMes = (periodo: string) =>
+  new Date(periodo + '-15T12:00:00Z').toLocaleDateString('es-AR', {
+    month: 'long',
+    timeZone: 'UTC',
   });
 
-  const { data: representatives = [] } = useQuery({
-    queryKey: ['org-representatives'],
-    queryFn: () => listOrgRepresentatives(),
-  });
+/** Un filtro vacío no viaja en la URL: `''` significa "sin filtrar". */
+const oQuitar = (v: string) => (v === '' ? undefined : v);
 
-  const { data: columnas = [], isLoading: isColsLoading } = useQuery({
-    queryKey: ['tareas-columnas'],
-    queryFn: () => listColumnas(),
-  });
+// ─── Card arrastrable ────────────────────────────────────────────────────────
 
-  const { data: tareas = [], isLoading: isTareasLoading } = useQuery({
-    queryKey: ['tareas', filtroPeriodo, filtroTipo, filtroAsignado, filtroCliente, filtroVencimientoHasta],
-    queryFn: () =>
-      listTareas({
-        data: {
-          periodoMes: filtroPeriodo || undefined,
-          tipo: filtroTipo || undefined,
-          asignadoAUserId: filtroAsignado || undefined,
-          representativeId: filtroCliente || undefined,
-          vencimientoHasta: filtroVencimientoHasta || undefined,
-        },
-      }),
-  });
-
-  const isLoading = isColsLoading || isTareasLoading;
-
-  // Group tasks by columnaId; nulls go into __sin_columna__
-  const tareasPorColumna = useMemo(() => {
-    const map: Record<string, typeof tareas> = { __sin_columna__: [] };
-    for (const col of columnas) map[col.id] = [];
-    for (const t of tareas) {
-      const key = t.columnaId ?? '__sin_columna__';
-      if (map[key] !== undefined) map[key].push(t);
-      else map['__sin_columna__'].push(t);
-    }
-    return map;
-  }, [tareas, columnas]);
-
-  const sinColumna = tareasPorColumna['__sin_columna__'] ?? [];
-
-  // ─── Mutations ────────────────────────────────────────────────────────────
-
-  const autoGenMutation = useMutation({
-    mutationFn: (periodoMes: string) => autoGenerarTareas({ data: { periodoMes } }),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['tareas'] });
-      if (result.creadas === 0) {
-        toast.info(
-          result.omitidas > 0
-            ? `Todas las tareas de este período ya existen (${result.omitidas} omitidas)`
-            : 'No se encontraron vencimientos para este período'
-        );
-      } else {
-        toast.success(
-          `${result.creadas} tarea${result.creadas !== 1 ? 's' : ''} generada${result.creadas !== 1 ? 's' : ''}${result.omitidas > 0 ? ` (${result.omitidas} ya existían)` : ''}`
-        );
-      }
-    },
-    onError: () => toast.error('Error al generar tareas'),
-  });
-
-  const moveMutation = useMutation({
-    mutationFn: ({ id, columnaId }: { id: string; columnaId: string | null }) =>
-      moverTarea({ data: { id, columnaId } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false }),
-    onError: () => toast.error('Error al mover la tarea'),
-  });
-
-  const createColMutation = useMutation({
-    mutationFn: (nombre: string) => createColumna({ data: { nombre } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
-      setCreandoColumna(false);
-      setNuevaColNombre('');
-      toast.success('Columna creada');
-    },
-    onError: () => toast.error('Error al crear la columna'),
-  });
-
-  const updateColMutation = useMutation({
-    mutationFn: ({ id, nombre }: { id: string; nombre: string }) =>
-      updateColumna({ data: { id, nombre } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
-      setEditingColId(null);
-    },
-    onError: () => toast.error('Error al renombrar la columna'),
-  });
-
-  const deleteColMutation = useMutation({
-    mutationFn: (id: string) => deleteColumna({ data: { id } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
-      queryClient.invalidateQueries({ queryKey: ['tareas'] });
-      toast.success('Columna eliminada');
-    },
-    onError: () => toast.error('Error al eliminar la columna'),
-  });
-
-  const reorderMutation = useMutation({
-    mutationFn: (ids: string[]) => reorderColumnas({ data: { ids } }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] }),
-    onError: () => toast.error('Error al reordenar columnas'),
-  });
-
-  // ─── Handlers ─────────────────────────────────────────────────────────────
-
-  const handleDrop = (e: React.DragEvent, columnaId: string | null) => {
-    e.preventDefault();
-    setDragOverColId(null);
-    const id = e.dataTransfer.getData('tareaId');
-    if (!id) return;
-    const tarea = tareas.find((t) => t.id === id);
-    if (!tarea || tarea.columnaId === columnaId) return;
-    moveMutation.mutate({ id, columnaId });
-  };
-
-  const handleDragOver = (e: React.DragEvent, colId: string | null) => {
-    e.preventDefault();
-    setDragOverColId(colId);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setDragOverColId(null);
-    }
-  };
-
-  const moveColumn = (colId: string, direction: 'left' | 'right') => {
-    const idx = columnas.findIndex((c) => c.id === colId);
-    if (idx === -1) return;
-    const ids = columnas.map((c) => c.id) as string[];
-    const swapIdx = direction === 'left' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= ids.length) return;
-    [ids[idx], ids[swapIdx]] = [ids[swapIdx]!, ids[idx]!];
-    reorderMutation.mutate(ids);
-  };
-
-  const startEditCol = (id: string, nombre: string) => {
-    setEditingColId(id);
-    setEditingColNombre(nombre);
-  };
-
-  const saveEditCol = () => {
-    if (!editingColId || !editingColNombre.trim()) return;
-    updateColMutation.mutate({ id: editingColId, nombre: editingColNombre });
-  };
-
-  const periodoParaGenerar = filtroPeriodo || format(now, 'yyyy-MM');
-  const hayFiltros = !!(filtroAno || filtroMes || filtroTipo || filtroAsignado || filtroCliente || filtroVencimientoHasta);
+function CardArrastrable({
+  tarea,
+  seleccionada,
+  onAbrir,
+}: {
+  tarea: TareaConDetalle;
+  seleccionada: boolean;
+  onAbrir: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tarea.id });
 
   return (
-    <div className="min-h-screen bg-[#F7F6F2]">
-      {/* Header */}
-      <div className="bg-white border-b px-8 py-4">
-        <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-xl font-semibold">Tareas</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {tareas.length} tarea{tareas.length !== 1 ? 's' : ''}
-              {filtroMes && ` · ${MESES.find((m) => m.value === filtroMes)?.label ?? filtroMes}`}
-              {filtroAno && ` ${filtroAno}`}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => autoGenMutation.mutate(periodoParaGenerar)}
-              disabled={autoGenMutation.isPending}
-            >
-              {autoGenMutation.isPending ? (
-                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-              ) : (
-                <Zap className="h-4 w-4 mr-1.5" />
-              )}
-              Generar tareas del mes
-            </Button>
-            <Button size="sm" onClick={() => setNuevaOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Nueva tarea
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <div className="bg-white border-b px-8 py-2.5">
-        <div className="max-w-[1400px] mx-auto flex items-center gap-2 flex-wrap">
-          <Select value={filtroAno} onValueChange={setFiltroAno}>
-            <SelectTrigger className="h-8 w-24 text-xs">
-              <SelectValue placeholder="Año" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Año</SelectItem>
-              {ANOS.map((a) => (
-                <SelectItem key={a} value={a}>{a}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroMes} onValueChange={setFiltroMes}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="Mes" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Mes</SelectItem>
-              {MESES.map((m) => (
-                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-            <SelectTrigger className="h-8 w-40 text-xs">
-              <SelectValue placeholder="Todos los tipos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Todos los tipos</SelectItem>
-              {Object.entries(TIPO_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroAsignado} onValueChange={setFiltroAsignado}>
-            <SelectTrigger className="h-8 w-44 text-xs">
-              <SelectValue placeholder="Todos los asignados" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Todos los asignados</SelectItem>
-              <SelectItem value="sin_asignar">Sin asignar</SelectItem>
-              {members.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroCliente} onValueChange={setFiltroCliente}>
-            <SelectTrigger className="h-8 w-52 text-xs">
-              <SelectValue placeholder="Todas las empresas" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Todas las empresas</SelectItem>
-              {representatives.map((r) => (
-                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Vence hasta</span>
-            <Input
-              type="date"
-              value={filtroVencimientoHasta}
-              onChange={(e) => setFiltroVencimientoHasta(e.target.value)}
-              className="h-8 w-36 text-xs"
-            />
-          </div>
-
-          {hayFiltros && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-muted-foreground"
-              onClick={() => {
-                setFiltroAno('');
-                setFiltroMes('');
-                setFiltroTipo('');
-                setFiltroAsignado('');
-                setFiltroCliente('');
-                setFiltroVencimientoHasta('');
-              }}
-            >
-              Limpiar filtros
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Kanban */}
-      <div className="px-8 py-6 overflow-x-auto">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="flex gap-4 items-start min-w-fit">
-            {/* Sin columna — solo visible si hay tareas sin asignar */}
-            {sinColumna.length > 0 && (
-              <KanbanColumn
-                id={null}
-                nombre="Sin columna"
-                tasks={sinColumna}
-                isDragOver={dragOverColId === '__sin_columna__'}
-                isFirst={true}
-                isLast={true}
-                readOnly
-                onDrop={(e) => handleDrop(e, null)}
-                onDragOver={(e) => handleDragOver(e, '__sin_columna__')}
-                onDragLeave={handleDragLeave}
-              />
-            )}
-
-            {/* Columnas dinámicas */}
-            {columnas.map((col, idx) => {
-              const tasks = tareasPorColumna[col.id] ?? [];
-              const isDragOver = dragOverColId === col.id;
-              const isEditing = editingColId === col.id;
-
-              return (
-                <KanbanColumn
-                  key={col.id}
-                  id={col.id}
-                  nombre={col.nombre}
-                  tasks={tasks}
-                  isDragOver={isDragOver}
-                  isFirst={idx === 0}
-                  isLast={idx === columnas.length - 1}
-                  isEditing={isEditing}
-                  editingNombre={editingColNombre}
-                  onDrop={(e) => handleDrop(e, col.id)}
-                  onDragOver={(e) => handleDragOver(e, col.id)}
-                  onDragLeave={handleDragLeave}
-                  onEditStart={() => startEditCol(col.id, col.nombre)}
-                  onEditChange={setEditingColNombre}
-                  onEditSave={saveEditCol}
-                  onEditCancel={() => setEditingColId(null)}
-                  onDelete={() => {
-                    if (confirm(`¿Eliminar la columna "${col.nombre}"? Las tareas quedarán sin columna.`)) {
-                      deleteColMutation.mutate(col.id);
-                    }
-                  }}
-                  onMoveLeft={() => moveColumn(col.id, 'left')}
-                  onMoveRight={() => moveColumn(col.id, 'right')}
-                />
-              );
-            })}
-
-            {/* Crear columna */}
-            {creandoColumna ? (
-              <div className="w-72 shrink-0">
-                <div className="bg-white border border-border rounded-lg p-3 shadow-sm">
-                  <Input
-                    autoFocus
-                    value={nuevaColNombre}
-                    onChange={(e) => setNuevaColNombre(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && nuevaColNombre.trim()) {
-                        createColMutation.mutate(nuevaColNombre);
-                      }
-                      if (e.key === 'Escape') {
-                        setCreandoColumna(false);
-                        setNuevaColNombre('');
-                      }
-                    }}
-                    placeholder="Nombre de la columna..."
-                    className="mb-2 h-8 text-sm"
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        if (nuevaColNombre.trim()) createColMutation.mutate(nuevaColNombre);
-                      }}
-                      disabled={!nuevaColNombre.trim() || createColMutation.isPending}
-                    >
-                      {createColMutation.isPending ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        'Crear'
-                      )}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        setCreandoColumna(false);
-                        setNuevaColNombre('');
-                      }}
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setCreandoColumna(true)}
-                className="w-72 shrink-0 flex items-center justify-center gap-2 h-11 rounded-lg border-2 border-dashed border-border text-sm text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
-              >
-                <Plus className="h-4 w-4" />
-                Crear columna
-              </button>
-            )}
-
-            {/* Estado vacío — sin columnas ni tareas */}
-            {columnas.length === 0 && sinColumna.length === 0 && !creandoColumna && (
-              <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
-                <Kanban className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                <p className="text-sm font-medium text-muted-foreground">No hay columnas todavía</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Creá una columna para empezar a organizar tus tareas
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <NuevaTareaDialog open={nuevaOpen} onOpenChange={setNuevaOpen} columnas={columnas} />
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...attributes}
+      {...listeners}
+      // Mientras se arrastra queda el hueco de destino: la card viaja en el
+      // DragOverlay, no acá.
+      className={cn(
+        'touch-none',
+        isDragging &&
+          'rounded-[var(--arca-r-md)] border border-dashed border-[var(--arca-border-strong)] bg-[rgba(30,52,96,0.03)] opacity-100 [&>*]:invisible'
+      )}
+    >
+      <TaskCard tarea={tarea} seleccionada={seleccionada} onAbrir={onAbrir} />
     </div>
   );
 }
 
-// ─── KanbanColumn ─────────────────────────────────────────────────────────────
+/**
+ * Clave fraccional para insertar en `insertIdx` dentro de una lista ya ordenada
+ * (sin la tarjeta que se está moviendo).
+ *
+ * `generateKeyBetween` exige que los dos bordes sean claves válidas o `null`,
+ * así que se busca la vecina más cercana que TENGA posición en cada dirección:
+ * una tarea vieja sin backfillear no puede servir de borde. Devuelve `null` si
+ * la clave no se puede generar, para no escribir una posición inválida.
+ */
+function posicionEntre(
+  lista: TareaConDetalle[],
+  insertIdx: number
+): string | null {
+  let antes: string | null = null;
+  for (let i = insertIdx - 1; i >= 0; i--) {
+    const pos = lista[i]?.posicion;
+    if (pos != null) {
+      antes = pos;
+      break;
+    }
+  }
+  let despues: string | null = null;
+  for (let i = insertIdx; i < lista.length; i++) {
+    const pos = lista[i]?.posicion;
+    if (pos != null) {
+      despues = pos;
+      break;
+    }
+  }
 
-type Tarea = Awaited<ReturnType<typeof listTareas>>[number];
-
-interface KanbanColumnProps {
-  id: string | null;
-  nombre: string;
-  tasks: Tarea[];
-  isDragOver: boolean;
-  isFirst: boolean;
-  isLast: boolean;
-  readOnly?: boolean;
-  isEditing?: boolean;
-  editingNombre?: string;
-  onDrop: (e: React.DragEvent) => void;
-  onDragOver: (e: React.DragEvent) => void;
-  onDragLeave: (e: React.DragEvent) => void;
-  onEditStart?: () => void;
-  onEditChange?: (v: string) => void;
-  onEditSave?: () => void;
-  onEditCancel?: () => void;
-  onDelete?: () => void;
-  onMoveLeft?: () => void;
-  onMoveRight?: () => void;
+  try {
+    return generateKeyBetween(antes, despues);
+  } catch {
+    // Bordes incoherentes (antes >= despues). Pasa sólo si el cliente quedó con
+    // datos viejos; el refetch posterior lo acomoda.
+    return null;
+  }
 }
 
-function KanbanColumn({
-  nombre,
-  tasks,
-  isDragOver,
-  isFirst,
-  isLast,
-  readOnly,
-  isEditing,
-  editingNombre,
-  onDrop,
-  onDragOver,
-  onDragLeave,
-  onEditStart,
-  onEditChange,
-  onEditSave,
-  onEditCancel,
-  onDelete,
-  onMoveLeft,
-  onMoveRight,
-}: KanbanColumnProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+// ─── Página ──────────────────────────────────────────────────────────────────
+
+function TareasPage() {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate({ from: Route.fullPath });
+  // Anotado a mano: el `useSearch()` generado por el router queda en `any`
+  // hasta que se regenera el routeTree, y ese `any` se propaga a todos los
+  // filtros sin que tsc diga nada.
+  const search: Busqueda = Route.useSearch();
+
+  const viendoArchivadas = search.archivadas === true;
+
+  const [composerEn, setComposerEn] = useState<string | null>(null);
+  const [buscando, setBuscando] = useState(false);
+  const [arrastrando, setArrastrando] = useState<string | null>(null);
+  const [nuevaColumna, setNuevaColumna] = useState(false);
+  const [nombreNuevo, setNombreNuevo] = useState('');
+  const [aEliminar, setAEliminar] = useState<{
+    id: string;
+    nombre: string;
+    tareas: number;
+  } | null>(null);
+
+  const filtros = {
+    periodo: search.periodo ?? '',
+    tipo: search.tipo ?? ('' as const),
+    asignado: search.asignado ?? '',
+    cliente: search.empresa ?? '',
+    venceHasta: search.vence_hasta ?? '',
+  };
+
+  /** Escribe los filtros en la URL. `''` saca el parámetro. */
+  const setFiltros = (p: Partial<typeof filtros>) => {
+    void navigate({
+      search: (prev: Busqueda) => ({
+        ...prev,
+        ...(p.periodo !== undefined && { periodo: oQuitar(p.periodo) }),
+        ...(p.tipo !== undefined && { tipo: oQuitar(p.tipo) as TipoTarea }),
+        ...(p.asignado !== undefined && { asignado: oQuitar(p.asignado) }),
+        ...(p.cliente !== undefined && { empresa: oQuitar(p.cliente) }),
+        ...(p.venceHasta !== undefined && {
+          vence_hasta: oQuitar(p.venceHasta),
+        }),
+      }),
+      replace: true,
+    });
+  };
+
+  const abrirTarea = (id: string | undefined) =>
+    void navigate({
+      search: (prev: Busqueda) => ({ ...prev, tarea: id }),
+      replace: true,
+    });
+
+  // ─── Datos ────────────────────────────────────────────────────────────────
+
+  const { data: columnas = [], isLoading: cargandoCols } = useQuery({
+    queryKey: ['tareas-columnas'],
+    queryFn: () => listColumnas(),
+  });
+
+  const { data: miembros = [] } = useQuery({
+    queryKey: ['tareas-miembros'],
+    queryFn: () => listOrgMembers(),
+  });
+
+  const { data: empresas = [] } = useQuery({
+    queryKey: ['tareas-empresas'],
+    queryFn: () => listOrgRepresentatives(),
+  });
+
+  const { data: tareas = [], isLoading: cargandoTareas } = useQuery({
+    queryKey: [
+      'tareas',
+      filtros.periodo,
+      filtros.tipo,
+      filtros.asignado,
+      filtros.cliente,
+      filtros.venceHasta,
+      viendoArchivadas,
+    ],
+    queryFn: () =>
+      listTareas({
+        data: {
+          periodo: oQuitar(filtros.periodo),
+          tipo: oQuitar(filtros.tipo) as TipoTarea | undefined,
+          asignadoA: oQuitar(filtros.asignado),
+          clienteId: oQuitar(filtros.cliente),
+          vencimientoHasta: oQuitar(filtros.venceHasta),
+          archivadas: viendoArchivadas || undefined,
+        },
+      }),
+  });
+
+  const cargando = cargandoCols || cargandoTareas;
+
+  // El tablero muestra las columnas del estudio; el archivo, sólo Archivadas.
+  // Es una columna real —la tienen todas las organizaciones— pero la maneja la
+  // aplicación, así que nunca se ven las dos cosas juntas.
+  const columnasVisibles = useMemo(
+    () =>
+      columnas.filter((c) =>
+        viendoArchivadas
+          ? c.clave === CLAVE_ARCHIVADAS
+          : c.clave !== CLAVE_ARCHIVADAS
+      ),
+    [columnas, viendoArchivadas]
+  );
+
+  // Agrupa por columna. NO reordena: `listTareas` ya devuelve las tareas por
+  // `posicion` con `collate "C"`, y ordenarlas de nuevo acá con parseFloat las
+  // rompía — las claves fraccionales son texto ("a0", "Zz"), no números.
+  const porColumna = useMemo(() => {
+    const map: Record<string, TareaConDetalle[]> = { [SIN_COLUMNA]: [] };
+    for (const col of columnas) map[col.id] = [];
+    for (const t of tareas) {
+      const key = t.columnaId ?? SIN_COLUMNA;
+      if (map[key] !== undefined) map[key].push(t);
+      else map[SIN_COLUMNA].push(t);
+    }
+    return map;
+  }, [tareas, columnas]);
+
+  const resumen = useMemo(() => {
+    const finSemana = new Date();
+    finSemana.setDate(finSemana.getDate() + 7);
+    const empresasUnicas = new Set<string>();
+    let venceSemana = 0;
+    for (const t of tareas) {
+      for (const c of t.clientes) empresasUnicas.add(c.clienteId);
+      if (t.venceAt && new Date(t.venceAt) <= finSemana) venceSemana++;
+    }
+    return {
+      tareas: tareas.length,
+      empresas: empresasUnicas.size,
+      venceSemana,
+    };
+  }, [tareas]);
+
+  const tareaAbierta = tareas.find((t) => t.id === search.tarea) ?? null;
+
+  // ─── Mutaciones ───────────────────────────────────────────────────────────
+
+  const refrescar = () =>
+    void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false });
+  const refrescarCols = () =>
+    void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
+
+  const autogenerar = useMutation({
+    // Sin parámetros: genera todo lo vigente (mes actual en adelante), sin
+    // depender de qué esté filtrando el tablero.
+    mutationFn: () => autoGenerarTareas(),
+    onSuccess: (r) => {
+      refrescar();
+      // Los tres ceros distintos del ticket TIN-1411, cada uno con su mensaje:
+      // que «no hay nada» y «está roto» no se vean iguales es el punto.
+      if (r.creadas > 0) {
+        const meses = Object.entries(r.porPeriodo)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([p, n]) => `${n} de ${nombreMes(p)}`)
+          .join(', ');
+        toast.success(
+          `${r.creadas} ${r.creadas === 1 ? 'tarea creada' : 'tareas creadas'}` +
+            (Object.keys(r.porPeriodo).length > 1 ? `: ${meses}` : '') +
+            (r.sinCliente > 0
+              ? ` — ${r.sinCliente} vencimientos sin cliente asociado`
+              : '')
+        );
+      } else if (r.sinCliente > 0) {
+        toast.warning(
+          `Se encontraron vencimientos pero ${r.sinCliente} no se pudieron asociar a ningún cliente`
+        );
+      } else if (r.omitidas > 0) {
+        toast.info('Todos los vencimientos vigentes ya tienen su tarea');
+      } else {
+        toast.info('No hay vencimientos vigentes (del mes actual en adelante)');
+      }
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al autogenerar'),
+  });
+
+  const mover = useMutation({
+    mutationFn: (v: {
+      id: string;
+      columnaId: string | null;
+      posicion?: string;
+    }) => moverTarea({ data: v }),
+    onSuccess: refrescar,
+    onError: () => toast.error('No se pudo mover la tarea'),
+  });
+
+  const reordenar = useMutation({
+    mutationFn: (v: { id: string; posicion: string }) =>
+      reorderTarea({ data: v }),
+    onSuccess: refrescar,
+    onError: () => toast.error('No se pudo reordenar'),
+  });
+
+  const crearCol = useMutation({
+    mutationFn: (nombre: string) => createColumna({ data: { nombre } }),
+    onSuccess: () => {
+      refrescarCols();
+      setNuevaColumna(false);
+      setNombreNuevo('');
+    },
+    onError: () => toast.error('No se pudo crear la columna'),
+  });
+
+  const editarCol = useMutation({
+    mutationFn: (v: {
+      id: string;
+      nombre?: string;
+      color?: (typeof COLORES_COLUMNA)[number];
+    }) => updateColumna({ data: v }),
+    onSuccess: refrescarCols,
+    onError: () => toast.error('No se pudo actualizar la columna'),
+  });
+
+  const borrarCol = useMutation({
+    mutationFn: (id: string) => deleteColumna({ data: { id } }),
+    onSuccess: () => {
+      refrescarCols();
+      refrescar();
+      setAEliminar(null);
+      toast.success('Columna eliminada');
+    },
+    onError: () => toast.error('No se pudo eliminar la columna'),
+  });
+
+  // ─── Drag & drop ──────────────────────────────────────────────────────────
+
+  const sensors = useSensors(
+    // Un umbral de 6px: sin esto un click sobre la card empieza un arrastre y
+    // el modal no abre nunca.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    setArrastrando(null);
+    if (!over || active.id === over.id) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const activa = tareas.find((t) => t.id === activeId);
+    if (!activa) return;
+
+    const origen = activa.columnaId ?? SIN_COLUMNA;
+
+    // `overId` es otra tarjeta, o el id de la columna cuando se suelta en el vacío.
+    const sobreTarea = tareas.find((t) => t.id === overId);
+    const destino = sobreTarea ? (sobreTarea.columnaId ?? SIN_COLUMNA) : overId;
+    if (porColumna[destino] === undefined) return;
+
+    const columnaId = destino === SIN_COLUMNA ? null : destino;
+    const lista = (porColumna[destino] ?? []).filter((t) => t.id !== activeId);
+
+    let insertIdx: number;
+    if (!sobreTarea) {
+      insertIdx = lista.length;
+    } else {
+      const idx = lista.findIndex((t) => t.id === overId);
+      if (idx === -1) return;
+      if (origen === destino) {
+        // En la misma columna, arrastrar hacia abajo inserta DESPUÉS de la
+        // tarjeta de destino; hacia arriba, antes.
+        const actual = porColumna[origen] ?? [];
+        const bajando =
+          actual.findIndex((t) => t.id === activeId) <
+          actual.findIndex((t) => t.id === overId);
+        insertIdx = bajando ? idx + 1 : idx;
+      } else {
+        insertIdx = idx;
+      }
+    }
+
+    const posicion = posicionEntre(lista, insertIdx);
+    if (posicion === null) return;
+
+    if (origen !== destino) mover.mutate({ id: activeId, columnaId, posicion });
+    else reordenar.mutate({ id: activeId, posicion });
+  };
+
+  const enArrastre = tareas.find((t) => t.id === arrastrando) ?? null;
+
+  const defaultsComposer = {
+    tipo: oQuitar(filtros.tipo) as TipoTarea | undefined,
+    periodo: oQuitar(filtros.periodo),
+  };
+
+  const sinColumna = porColumna[SIN_COLUMNA] ?? [];
+  const hayFiltros = Object.values(filtros).some(Boolean);
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div
-      className="w-72 shrink-0 flex flex-col gap-3"
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      {/* Column header */}
-      <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg border bg-white shadow-sm group/header">
-        {isEditing ? (
-          <div className="flex items-center gap-1 flex-1 min-w-0">
-            <input
-              ref={inputRef}
-              autoFocus
-              value={editingNombre}
-              onChange={(e) => onEditChange?.(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onEditSave?.();
-                if (e.key === 'Escape') onEditCancel?.();
-              }}
-              className="flex-1 min-w-0 text-sm font-semibold bg-transparent border-b border-primary outline-none"
-            />
-            <button onClick={onEditSave} className="text-green-600 hover:text-green-700 p-0.5">
-              <Check className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={onEditCancel} className="text-muted-foreground hover:text-foreground p-0.5">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <>
-            <span
-              className="text-sm font-semibold flex-1 truncate"
-              onDoubleClick={!readOnly ? onEditStart : undefined}
-              title={readOnly ? nombre : 'Doble clic para editar'}
-            >
-              {nombre}
-            </span>
-            <Badge variant="secondary" className="text-xs h-5 shrink-0">
-              {tasks.length}
-            </Badge>
-            {!readOnly && (
-              <div className="flex items-center gap-0.5 opacity-0 group-hover/header:opacity-100 transition-opacity">
-                <button
-                  onClick={onMoveLeft}
-                  disabled={isFirst}
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Mover izquierda"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={onMoveRight}
-                  disabled={isLast}
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Mover derecha"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={onEditStart}
-                  className="p-0.5 text-muted-foreground hover:text-foreground"
-                  title="Renombrar"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={onDelete}
-                  className="p-0.5 text-muted-foreground hover:text-destructive"
-                  title="Eliminar columna"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
+    <PageShell variant="panel">
+      <BoardHeader
+        filtros={filtros}
+        onFiltro={setFiltros}
+        onLimpiar={() =>
+          setFiltros({
+            periodo: '',
+            tipo: '',
+            asignado: '',
+            cliente: '',
+            venceHasta: '',
+          })
+        }
+        miembros={miembros}
+        empresas={empresas}
+        resumen={resumen}
+        onBuscar={() => setBuscando(true)}
+        onAutogenerar={() => autogenerar.mutate()}
+        autogenerando={autogenerar.isPending}
+        viendoArchivadas={viendoArchivadas}
+        onVerArchivadas={(v) =>
+          void navigate({
+            search: (prev: Busqueda) => ({
+              ...prev,
+              archivadas: v || undefined,
+            }),
+            replace: true,
+          })
+        }
+      />
 
-      {/* Cards drop zone */}
-      <div
-        className={cn(
-          'flex flex-col gap-2.5 min-h-[60px] rounded-lg p-1 transition-colors',
-          isDragOver && 'bg-primary/5 ring-2 ring-primary/20 ring-offset-1'
-        )}
-      >
-        {tasks.length === 0 ? (
-          <div
-            className={cn(
-              'text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg bg-white/50',
-              isDragOver && 'border-primary/40 text-primary/60'
-            )}
-          >
-            {isDragOver ? 'Soltar aquí' : 'Sin tareas'}
+      {cargando ? (
+        <div className="flex flex-1 gap-[14px] overflow-x-auto px-7 pt-[18px] pb-[22px]">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="flex w-[264px] min-w-[264px] flex-col gap-[9px] self-start rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] p-[10px]"
+            >
+              <div className="h-4 w-24 animate-pulse rounded bg-[var(--arca-border)]" />
+              {[0, 1, 2].map((j) => (
+                <div
+                  key={j}
+                  className="h-[78px] animate-pulse rounded-[var(--arca-r-md)] bg-[var(--arca-surface)]"
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : columnas.length === 0 && tareas.length === 0 && hayFiltros ? (
+        <div className="px-7 pt-[18px]">
+          <div className="grid place-items-center gap-3 rounded-[var(--arca-r-lg)] border border-dashed border-[var(--arca-border-strong)] py-14">
+            <p className="text-[12.5px] text-[var(--arca-ink-3)]">
+              No hay tareas con estos filtros
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                setFiltros({
+                  periodo: '',
+                  tipo: '',
+                  asignado: '',
+                  cliente: '',
+                  venceHasta: '',
+                })
+              }
+              className="text-[11.5px] font-medium text-[var(--arca-navy-700)] hover:underline"
+            >
+              Limpiar filtros
+            </button>
           </div>
-        ) : (
-          <>
-            {tasks.map((tarea) => (
-              <div
-                key={tarea.id}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('tareaId', tarea.id);
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                onDragEnd={() => {}}
-                className="cursor-grab active:cursor-grabbing"
-              >
-                <TaskCard tarea={tarea} />
-              </div>
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={(e: DragStartEvent) =>
+            setArrastrando(String(e.active.id))
+          }
+          onDragCancel={() => setArrastrando(null)}
+          onDragEnd={onDragEnd}
+        >
+          <div className="flex min-h-0 flex-1 snap-x snap-proximity gap-[14px] overflow-x-auto pt-[18px] pb-[22px]">
+            {/* Sin columna: sólo si hay tareas ahí. No es una columna del
+                estudio, es dónde caen las que perdieron la suya. */}
+            {!viendoArchivadas && sinColumna.length > 0 && (
+              <BoardColumn
+                id={SIN_COLUMNA}
+                columnaId={null}
+                nombre="Sin columna"
+                color="neutro"
+                tareas={sinColumna}
+                tareaAbierta={search.tarea ?? null}
+                composerAbierto={composerEn === SIN_COLUMNA}
+                filtrosDefault={defaultsComposer}
+                editable={false}
+                soloLectura={viendoArchivadas}
+                onAbrirComposer={() => setComposerEn(SIN_COLUMNA)}
+                onCerrarComposer={() => setComposerEn(null)}
+                renderCard={(t) => (
+                  <CardArrastrable
+                    key={t.id}
+                    tarea={t}
+                    seleccionada={t.id === search.tarea}
+                    onAbrir={() => abrirTarea(t.id)}
+                  />
+                )}
+              />
+            )}
+
+            {columnasVisibles.map((col) => (
+              <BoardColumn
+                key={col.id}
+                id={col.id}
+                columnaId={col.id}
+                nombre={col.nombre}
+                color={col.color}
+                tareas={porColumna[col.id] ?? []}
+                tareaAbierta={search.tarea ?? null}
+                composerAbierto={composerEn === col.id}
+                filtrosDefault={defaultsComposer}
+                editable={col.clave === null}
+                soloLectura={viendoArchivadas}
+                onAbrirComposer={() => setComposerEn(col.id)}
+                onCerrarComposer={() => setComposerEn(null)}
+                onRenombrar={(nombre) =>
+                  editarCol.mutate({ id: col.id, nombre })
+                }
+                onColor={(color) => editarCol.mutate({ id: col.id, color })}
+                onEliminar={() =>
+                  setAEliminar({
+                    id: col.id,
+                    nombre: col.nombre,
+                    tareas: (porColumna[col.id] ?? []).length,
+                  })
+                }
+                renderCard={(t) => (
+                  <CardArrastrable
+                    key={t.id}
+                    tarea={t}
+                    seleccionada={t.id === search.tarea}
+                    onAbrir={() => abrirTarea(t.id)}
+                  />
+                )}
+              />
             ))}
-            {isDragOver && (
-              <div className="text-center py-3 text-xs text-primary/60 border border-dashed border-primary/30 rounded-lg">
-                Soltar aquí
+
+            {/* Columna virtual */}
+            {!viendoArchivadas && (
+              <div className="w-[180px] min-w-[180px] self-start rounded-[var(--arca-r-lg)] border border-dashed border-[var(--arca-border-strong)] p-[11px]">
+                {nuevaColumna ? (
+                  <input
+                    autoFocus
+                    value={nombreNuevo}
+                    onChange={(e) => setNombreNuevo(e.target.value)}
+                    placeholder="Nombre"
+                    aria-label="Nombre de la columna nueva"
+                    className="w-full border-b border-dashed border-[var(--arca-border-strong)] bg-transparent pb-1 text-[12.5px] outline-none placeholder:text-[var(--arca-ink-4)]"
+                    onBlur={() => {
+                      const v = nombreNuevo.trim();
+                      if (v) crearCol.mutate(v);
+                      else setNuevaColumna(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') {
+                        setNombreNuevo('');
+                        setNuevaColumna(false);
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setNuevaColumna(true)}
+                    className="flex w-full items-center gap-1.5 text-left text-[12.5px] font-medium text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:text-[var(--arca-ink)]"
+                  >
+                    <Plus className="size-3.5" />
+                    Crear columna
+                  </button>
+                )}
               </div>
             )}
-          </>
-        )}
-      </div>
-    </div>
+          </div>
+
+          {/* La card viaja acá para poder inclinarse sin deformar el hueco. */}
+          <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
+            {enArrastre && (
+              <div className="w-[244px] rotate-[1.2deg] shadow-[var(--arca-shadow-md)]">
+                <TaskCard tarea={enArrastre} />
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
+      )}
+
+      <BuscarTareas
+        tareas={tareas}
+        abierto={buscando}
+        onAbrirChange={setBuscando}
+        onElegir={abrirTarea}
+      />
+
+      {tareaAbierta && (
+        <TaskDetailDialog
+          tarea={tareaAbierta}
+          open
+          onOpenChange={(v) => !v && abrirTarea(undefined)}
+        />
+      )}
+
+      <AlertDialog
+        open={aEliminar !== null}
+        onOpenChange={(v) => !v && setAEliminar(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar la columna?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se elimina «{aEliminar?.nombre}»{' '}
+              {aEliminar && aEliminar.tareas > 0 ? (
+                <>
+                  y sus{' '}
+                  <strong>
+                    {aEliminar.tareas}{' '}
+                    {aEliminar.tareas === 1 ? 'tarea' : 'tareas'}
+                  </strong>
+                  , con sus pasos y comentarios
+                </>
+              ) : (
+                <>, que está vacía</>
+              )}
+              . Es la única forma de borrar tareas de a muchas y no se puede
+              deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => aEliminar && borrarCol.mutate(aEliminar.id)}
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </PageShell>
   );
 }

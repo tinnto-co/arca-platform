@@ -38,6 +38,30 @@ export interface AuditReportVars {
    */
   lugar: string;
   fecha: string;
+
+  /* ── Datos del balance (TIN-1442) ──────────────────────────────────────
+   * Los de arriba son de la empresa y casi no cambian. Estos salen del
+   * ejercicio y cambian todos los años: son los que el estudio venía
+   * tipeando a mano en las Notas 1 y 2, con el riesgo de que el texto diga
+   * un número y el estado contable diga otro.
+   */
+
+  /** Fecha de inicio del ejercicio, en largo. */
+  inicio: string;
+  /** Fecha del acta constitutiva. */
+  constitucion: string;
+  /** N° de inscripción en la IGJ. */
+  igj: string;
+  /** Capital social suscripto, formateado. */
+  capitalSocial: string;
+  /** Saldo de las cuentas de caja. */
+  caja: string;
+  /** Saldo de las cuentas bancarias. */
+  bancos: string;
+  /** Caja + bancos: lo que la Nota de efectivo llama total. */
+  efectivo: string;
+  /** Inflación del ejercicio, en porcentaje. */
+  inflacion: string;
 }
 
 /** Las variables que se pueden usar, con un ejemplo para mostrar en la UI. */
@@ -62,7 +86,114 @@ export const AUDIT_REPORT_VARS: {
   { key: 'matricula', label: 'Matrícula', ejemplo: 'Tomo 193 Folio 084' },
   { key: 'lugar', label: 'Lugar', ejemplo: 'Ciudad Autónoma de Buenos Aires' },
   { key: 'fecha', label: 'Fecha del informe', ejemplo: '03 de mayo de 2026' },
+  { key: 'inicio', label: 'Inicio del ejercicio', ejemplo: '1 de enero de 2025' },
+  {
+    key: 'constitucion',
+    label: 'Fecha de constitución',
+    ejemplo: '15 de marzo de 2018',
+  },
+  { key: 'igj', label: 'N° de inscripción IGJ', ejemplo: '12345' },
+  { key: 'capitalSocial', label: 'Capital social', ejemplo: '38.793.000,00' },
+  { key: 'caja', label: 'Caja', ejemplo: '613.606,83' },
+  { key: 'bancos', label: 'Bancos', ejemplo: '537.277,25' },
+  { key: 'efectivo', label: 'Total efectivo', ejemplo: '1.150.884,08' },
+  { key: 'inflacion', label: 'Inflación del ejercicio', ejemplo: '117,80 %' },
 ];
+
+/* ── Cálculo de las variables que salen del balance ──────────────────────── */
+
+interface CuentaEsp {
+  name: string;
+  current: number;
+}
+interface RubroEsp {
+  group: string;
+  accounts: CuentaEsp[];
+  current: number;
+}
+interface SeccionEsp {
+  rubros: RubroEsp[];
+}
+export interface EspParaVariables {
+  sections: SeccionEsp[];
+  priorCoefficient: number | null;
+}
+
+const money = (n: number) =>
+  n.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+/** Suma los saldos de los rubros indicados, en valor absoluto. */
+function totalDeRubros(esp: EspParaVariables, grupos: string[]): number {
+  return Math.abs(
+    esp.sections
+      .flatMap((s) => s.rubros)
+      .filter((r) => grupos.includes(r.group))
+      .reduce((t, r) => t + r.current, 0)
+  );
+}
+
+/** Suma las cuentas de un rubro cuyo nombre coincide con el patrón. */
+function totalDeCuentas(
+  esp: EspParaVariables,
+  grupo: string,
+  patron: RegExp
+): number {
+  return Math.abs(
+    esp.sections
+      .flatMap((s) => s.rubros)
+      .filter((r) => r.group === grupo)
+      .flatMap((r) => r.accounts)
+      .filter((a) => patron.test(a.name))
+      .reduce((t, a) => t + a.current, 0)
+  );
+}
+
+/**
+ * Las variables que salen del balance, ya formateadas.
+ *
+ * Caja y bancos se separan por el nombre de la cuenta porque comparten el
+ * rubro `caja_bancos`: el plan no distingue entre una y otra, pero la Nota de
+ * efectivo sí las expone separadas.
+ *
+ * La inflación sale del coeficiente con el que se reexpresó la columna
+ * anterior, que es la variación del índice entre los dos cierres — o sea, la
+ * inflación del ejercicio. Si el balance no tiene columna comparativa, queda
+ * vacía en vez de inventar un número.
+ */
+export function variablesDelBalance(
+  esp: EspParaVariables | null | undefined
+): Pick<
+  AuditReportVars,
+  'capitalSocial' | 'caja' | 'bancos' | 'efectivo' | 'inflacion'
+> {
+  if (!esp) {
+    return {
+      capitalSocial: '',
+      caja: '',
+      bancos: '',
+      efectivo: '',
+      inflacion: '',
+    };
+  }
+  const caja = totalDeCuentas(esp, 'caja_bancos', /caja|fondo fijo/i);
+  const bancos = totalDeCuentas(esp, 'caja_bancos', /banco/i);
+  return {
+    capitalSocial: money(totalDeRubros(esp, ['capital'])),
+    caja: money(caja),
+    bancos: money(bancos),
+    efectivo: money(totalDeRubros(esp, ['caja_bancos'])),
+    inflacion:
+      esp.priorCoefficient != null
+        ? `${((esp.priorCoefficient - 1) * 100).toLocaleString('es-AR', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })} %`
+        : '',
+  };
+}
 
 /** `{{empresa}}`, tolerando espacios adentro de las llaves. */
 const PLACEHOLDER = /\{\{\s*([a-zA-Z]+)\s*\}\}/g;
@@ -133,9 +264,8 @@ export function rangoAnexos(cantidad: number): string {
 }
 
 /**
- * Plantilla por defecto, calcada del informe que presenta el estudio. Se ofrece
- * al crear la primera: es más rápido corregir un texto que escribir cuatro
- * páginas de norma.
+ * Plantilla por defecto — RT 37, con opinión favorable.
+ * Calcada del informe que presenta el estudio: más rápido corregir que reescribir.
  */
 export const AUDIT_REPORT_DEFAULT = `# INFORME DEL AUDITOR INDEPENDIENTE
 
@@ -161,6 +291,58 @@ Soy independiente de {{empresa}} y he cumplido las demás responsabilidades de �
 ### Responsabilidad de la dirección en relación con los estados contables
 
 La dirección de {{empresa}} es responsable de la preparación y presentación razonable de los estados contables adjuntos de conformidad con las normas contables profesionales argentinas, y del control interno que la dirección considere necesario para permitir la preparación de estados contables libres de incorrecciones significativas.
+
+En la preparación de los estados contables la dirección es responsable de la evaluación de la capacidad de {{empresa}} para continuar como empresa en funcionamiento y utilizando el principio contable de empresa en funcionamiento, excepto que la dirección tuviera la intención de liquidar la Sociedad o cesar sus operaciones, o bien no existiera otra alternativa realista.
+
+### Responsabilidad del auditor en relación con la auditoría de los estados contables
+
+Mis objetivos son obtener una seguridad razonable de que los estados contables en su conjunto están libres de incorrección significativa y emitir un informe de auditoría que contenga mi opinión. Seguridad razonable es un alto grado de seguridad, pero no garantiza que una auditoría realizada de conformidad con la RT N° 37 siempre detecte una incorrección significativa cuando exista.
+
+Como parte de una auditoría de conformidad con la RT N° 37, aplico mi juicio profesional y mantengo una actitud de escepticismo profesional durante toda la auditoría. También:
+
+- Identifico y evalúo los riesgos de incorrección significativa en los estados contables, diseño y aplico procedimientos de auditoría para responder a dichos riesgos y obtengo elementos de juicio suficientes y adecuados para proporcionar una base para mi opinión.
+- Obtengo conocimiento del control interno relevante para la auditoría con el fin de diseñar procedimientos de auditoría que sean apropiados en función de las circunstancias y no con la finalidad de expresar una opinión sobre la eficacia del control interno de la sociedad.
+- Evalúo si las políticas contables aplicadas son adecuadas, así como la razonabilidad de las estimaciones contables y la correspondiente información revelada por la dirección de {{empresa}}.
+- Concluyo sobre lo adecuado de la utilización por la dirección de {{empresa}} del principio contable de empresa en funcionamiento y, basándome en los elementos de juicio obtenidos, concluyo sobre si existe o no una incertidumbre significativa relacionada con hechos o con condiciones que pueden generar dudas importantes sobre la capacidad de {{empresa}} para continuar como empresa en funcionamiento.
+- Evalúo la presentación general, la estructura y el contenido de los estados contables, incluida la información revelada, y si los estados contables representan las transacciones y hechos subyacentes de un modo que logren una presentación razonable.
+- Me comunico con la dirección de {{empresa}} en relación con, entre otras cuestiones, la estrategia general de la auditoría y los hallazgos significativos de la auditoría, así como cualquier deficiencia significativa del control interno identificada en el transcurso de la auditoría.
+
+## Informe sobre otros requerimientos legales y reglamentarios
+
+- Con base en mi examen descripto, informo que los estados contables citados surgen de registros contables llevados en sus aspectos formales de acuerdo con las normas legales.
+- Según surge de los registros contables de la entidad, no existen pasivos devengados al {{cierre}} a favor del Sistema Integrado Previsional Argentino en concepto de aportes y contribuciones previsionales exigibles a la citada fecha.
+- La presente Certificación no tiene validez sin la autenticación de la firma por parte del Consejo Profesional.
+`;
+
+/**
+ * Plantilla RT 54 (T.O. RT 59) — para entes pequeños, con opinión favorable.
+ * La diferencia con RT 37 es el marco contable citado en la opinión y en el
+ * fundamento: "RT 54" reemplaza a "RT 6" como norma contable aplicable.
+ */
+export const AUDIT_REPORT_RT54 = `# INFORME DEL AUDITOR INDEPENDIENTE
+
+{{destinatario}} de
+{{empresa}}
+CUIT N°: {{cuit}}
+Domicilio legal: {{domicilio}}
+
+## Informe sobre la auditoría de los estados contables
+
+### Opinión
+
+He auditado los estados contables adjuntos de {{empresa}}, que comprenden el estado de situación patrimonial al {{cierre}}, el estado de resultados, el estado de evolución del patrimonio neto y el estado de flujo de efectivo correspondientes al ejercicio económico N°{{ejercicio}} terminado en dicha fecha, así como un resumen de las políticas contables significativas y otra información explicativa incluidas en las notas a los Estados Contables {{notas}} y anexos {{anexos}}.
+
+En mi opinión, los estados contables adjuntos presentan razonablemente, en todos los aspectos significativos, la situación patrimonial de {{empresa}} al {{cierre}}, así como sus resultados, la evolución de su patrimonio neto y el flujo de su efectivo correspondientes al ejercicio finalizado en esa fecha, de conformidad con las Normas Contables Profesionales de la FACPCE, en particular la Resolución Técnica N° 54 (T.O. RT 59) — Norma contable para entes pequeños, adoptada por la Resolución C.D. del CPCECABA.
+
+### Fundamento de la opinión
+
+He llevado a cabo mi auditoría de conformidad con las normas de auditoría establecidas en la RT N° 37 de la FACPCE adoptada por la Resolución C.D.: 46/2021 del CPCECABA. Mis responsabilidades de acuerdo con dichas normas se describen más adelante en la sección Responsabilidades del auditor en la auditoría de los estados contables.
+
+Soy independiente de {{empresa}} y he cumplido las demás responsabilidades de ética de conformidad con los requerimientos del Código de Ética del CPCECABA y de la RT N° 37 de la FACPCE adoptada por la Resolución C.D.: N° 46/2021 del CPCECABA. Considero que los elementos de juicio que he obtenido proporcionan una base suficiente y adecuada para mi opinión.
+
+### Responsabilidad de la dirección en relación con los estados contables
+
+La dirección de {{empresa}} es responsable de la preparación y presentación razonable de los estados contables adjuntos de conformidad con la RT N° 54 (T.O. RT 59) de la FACPCE, y del control interno que la dirección considere necesario para permitir la preparación de estados contables libres de incorrecciones significativas.
 
 En la preparación de los estados contables la dirección es responsable de la evaluación de la capacidad de {{empresa}} para continuar como empresa en funcionamiento y utilizando el principio contable de empresa en funcionamiento, excepto que la dirección tuviera la intención de liquidar la Sociedad o cesar sus operaciones, o bien no existiera otra alternativa realista.
 

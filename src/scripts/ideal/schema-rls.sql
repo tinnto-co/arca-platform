@@ -47,13 +47,14 @@ grant select on all tables in schema public to arca_agent;
 -- Políticas
 -- ============================================================================
 
--- ---------- Nivel 1: la fila tiene org_id propio (34 tablas) ----------
+-- ---------- Nivel 1: la fila tiene org_id propio (35 tablas) ----------
 do $do$
 declare t text;
 begin
   foreach t in array array[
     'agent_action','agent_conversation','agent_run','ajuste_inflacion','alerta',
-    'anexo_cmv','asiento','bien_de_uso','cierre_sueldos','cliente','cliente_cct',
+    'anexo_cmv','asiento','asiento_template','bien_de_uso','cierre_sueldos',
+    'cliente','cliente_cct',
     'cliente_concepto','comprobante','convenio','credencial_afip','cuenta',
     'cuenta_bancaria','deuda','documento','eecc','ejercicio','empleado','evento',
     'firmante','job','liquidacion_iibb','lsd_presentacion','notificacion',
@@ -69,14 +70,14 @@ begin
 end
 $do$;
 
--- ---------- Nivel 2: la org se resuelve por el cliente (9 tablas) ----------
+-- ---------- Nivel 2: la org se resuelve por el cliente (10 tablas) ----------
 do $do$
 declare t text;
 begin
   foreach t in array array[
     'acceso_usuario_cliente','cliente_credencial','cliente_cuenta','cliente_eecc_config',
-    'cliente_empleador_config','iva_declaracion','periodo_contable','proyeccion_impuesto',
-    'riesgo_snapshot'
+    'cliente_empleador_config','cliente_monotributo','iva_declaracion','periodo_contable',
+    'proyeccion_impuesto','riesgo_snapshot'
   ] loop
     execute format('alter table %I enable row level security', t);
     execute format(
@@ -141,12 +142,15 @@ create policy tenant on escala_salarial to arca_app, arca_agent
 -- ============================================================================
 -- Sin política, A PROPÓSITO
 -- ============================================================================
--- Catálogos globales (21): actividad, base_calculo, base_calculo_concepto,
---   cct, cct_fuente, comprobante_tipo, concepto, concepto_afip,
---   condicion_trabajador, contraparte, indice_inflacion, localidad,
---   modalidad_contratacion, nacionalidad, obra_social, parametro_periodo,
---   provincia, siniestrado, situacion_revista, tipo_empresa, zona.
+-- Catálogos globales (23): actividad, base_calculo, base_calculo_concepto,
+--   cct, cct_categoria, cct_escala, cct_fuente, comprobante_tipo, concepto,
+--   concepto_afip, condicion_trabajador, contraparte, indice_inflacion,
+--   localidad, modalidad_contratacion, nacionalidad, obra_social,
+--   parametro_periodo, provincia, siniestrado, situacion_revista,
+--   tipo_empresa, zona.
 --   Son códigos AFIP y sujetos vistos en comprobantes: no pertenecen a nadie.
+--   cct_categoria y cct_escala son la grilla y el básico publicados del
+--   convenio: dato nacional y público, igual que el CCT del que cuelgan.
 --   contraparte es el caso deliberado — dos estudios que le facturan al mismo
 --   proveedor comparten la fila, y eso está bien: no revela nada del otro
 --   estudio (quién le factura a quién vive en comprobante, que sí está aislado).
@@ -156,7 +160,7 @@ create policy tenant on escala_salarial to arca_app, arca_agent
 --   de sesión (en el login todavía no sabemos la org). El aislamiento acá lo
 --   hace Better Auth, no Postgres.
 --
--- Total: 52 tablas con política, 27 sin.
+-- Total: 53 tablas con política, 29 sin.
 
 comment on schema public is
   'BD_IDEAL. Aislamiento multi-tenant por RLS: toda conexión de app/agente debe abrir transacción y hacer `set local app.org_id = ''<org>''` antes de consultar; sin eso se ven cero filas. Ver schema-rls.sql. Los catálogos globales y las tablas de auth están exentas a propósito.';

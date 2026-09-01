@@ -107,7 +107,7 @@ function RouteComponent() {
   return (
     <div className="space-y-0 overflow-x-clip">
       {/* Header */}
-      <div className="px-4 md:px-[3rem] pt-4 md:pt-[3rem] pb-0">
+      <div className="px-9 pt-7 pb-0">
         {aiAgentEnabled && selectedOption && (
           <CopilotReadableEntity
             description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
@@ -158,7 +158,7 @@ function RouteComponent() {
       </div>
 
       {!clientId ? (
-        <div className="px-4 md:px-[3rem] pt-6 pb-8">
+        <div className="px-9 pt-6 pb-8">
           <EmpresasSueldosTable onSelect={(id) => setSelectedOptionId(id)} />
         </div>
       ) : (
@@ -169,7 +169,7 @@ function RouteComponent() {
         >
           {/* Tab bar */}
           <div className="sticky top-0 z-10 bg-[var(--arca-bg)] border-b border-[var(--arca-border)]">
-            <div className="px-4 md:px-[3rem]">
+            <div className="px-9">
               <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto overflow-y-hidden justify-start">
                 <TabsTrigger value="dashboard" className={tabTriggerCls()}>
                   <LayoutDashboard className="h-[14px] w-[14px]" />
@@ -208,7 +208,7 @@ function RouteComponent() {
           </div>
 
           {/* Content */}
-          <div className="px-4 md:px-[3rem] pt-5 pb-6">
+          <div className="px-9 pt-5 pb-6">
             <TabsContent value="dashboard" className="mt-0">
               <SueldosDashboard clientId={clientId} />
             </TabsContent>

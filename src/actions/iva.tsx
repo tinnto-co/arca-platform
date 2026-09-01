@@ -6,6 +6,7 @@ import {
   ivaDeclaracion,
   comprobante,
   comprobanteAlicuota,
+  clienteMonotributo,
   comprobanteTipo,
   condicionIva,
 } from '@/drizzle/schema';
@@ -22,12 +23,18 @@ export const FISCAL_CONDITIONS = condicionIva.enumValues;
 /**
  * Los logins de AFIP del cliente, en una sola línea. Un cliente puede tener
  * más de uno (varios representantes declaran por él), así que se agregan.
+ *
+ * La correlación va como `"cliente"."id"` literal y no `${cliente.id}`:
+ * cuando la consulta externa no tiene joins, Drizzle renderiza la columna sin
+ * calificar («"id"») y dentro de la subconsulta choca con `credencial_afip.id`
+ * — `column reference "id" is ambiguous`. Los dos fragmentos solo tienen
+ * sentido en consultas cuyo FROM es `cliente`, así que el literal es seguro.
  */
 const credencialesSql = sql<string | null>`(
   select string_agg(distinct coalesce(cr.nombre, cr.cuit), ', ')
   from cliente_credencial cc
   join credencial_afip cr on cr.id = cc.credencial_id
-  where cc.cliente_id = ${cliente.id}
+  where cc.cliente_id = "cliente"."id"
 )`;
 
 /**
@@ -38,7 +45,7 @@ const credencialesSql = sql<string | null>`(
 const credencialPreferidaSql = sql<string | null>`(
   select cc.credencial_id::text
   from cliente_credencial cc
-  where cc.cliente_id = ${cliente.id}
+  where cc.cliente_id = "cliente"."id"
   order by cc.preferida desc, cc.created_at asc
   limit 1
 )`;
@@ -239,6 +246,11 @@ export const getMonotributistasFacturacion = createServerFn({
       cuit: cliente.cuit,
       credenciales: credencialesSql,
       condicionIva: cliente.condicionIva,
+      // Vienen de AFIP por el scrapper: la categoría en la que el cliente
+      // ESTÁ inscripto, que puede no ser la que le corresponde por lo que
+      // facturó. Ver esa diferencia es el punto de la solapa.
+      categoria: clienteMonotributo.categoria,
+      cuotaMensual: clienteMonotributo.cuotaMensual,
       comprobanteCount: sql<number>`count(${comprobante.id})::int`,
       ultimoComprobante: sql<
         string | null
@@ -255,6 +267,10 @@ export const getMonotributistasFacturacion = createServerFn({
       )
     )
     .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+    .leftJoin(
+      clienteMonotributo,
+      eq(clienteMonotributo.clienteId, cliente.id)
+    )
     .where(
       and(
         eq(cliente.orgId, orgId),
@@ -266,7 +282,9 @@ export const getMonotributistasFacturacion = createServerFn({
       cliente.id,
       cliente.razonSocial,
       cliente.cuit,
-      cliente.condicionIva
+      cliente.condicionIva,
+      clienteMonotributo.categoria,
+      clienteMonotributo.cuotaMensual
     )
     .orderBy(desc(facturado));
 });

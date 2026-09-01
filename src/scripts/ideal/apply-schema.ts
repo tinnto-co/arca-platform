@@ -31,6 +31,7 @@ const files = [
   'schema-dominio6.sql',
   'schema-dominio7.sql',
   'schema-dominio8.sql',
+  'schema-dominio9.sql',
   'schema-rls.sql',
   'schema-rls-portal.sql',
   'schema-rls-scrapper.sql',

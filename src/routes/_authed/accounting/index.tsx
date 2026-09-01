@@ -56,8 +56,14 @@ import {
   Boxes,
   CheckCircle2,
   XCircle,
+  Check,
+  Bookmark,
+  BookmarkPlus,
+  Eye,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
 import { OrdenDocumento } from '@/components/accounting/OrdenDocumento';
@@ -66,6 +72,9 @@ import {
   fechaLarga,
   rangoAnexos,
   rangoNotas,
+  fillAuditReport,
+  AUDIT_REPORT_VARS,
+  type AuditReportVars,
 } from '@/lib/accounting-audit-report';
 import { frameworkCite } from '@/lib/accounting-labels';
 import {
@@ -86,6 +95,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import { cn } from '@/lib/utils';
+import {
+  variablesDelBalance,
+  missingVars,
+} from '@/lib/accounting-audit-report';
+import {
+  leerNotasDeWord,
+  plantillaNotasWord,
+  PLANTILLA,
+  type NotaImportada,
+} from '@/lib/notas-word';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import {
   listAccountingClients,
   getCurrentRole,
@@ -165,6 +200,11 @@ import {
   type AuditEventType,
   type AuditLogEntry,
   type JournalEntryListRow,
+  listJournalTemplates,
+  saveJournalTemplate,
+  deleteJournalTemplate,
+  type JournalTemplate,
+  updateClientFiscalData,
 } from '@/actions/accounting';
 import {
   exportMayorExcel,
@@ -267,6 +307,7 @@ const accountingSearchSchema = z.object({
   clientId: z.string().uuid().optional(),
   tab: z.enum(TAB_IDS).optional(),
 });
+type AccountingSearch = z.infer<typeof accountingSearchSchema>;
 
 /**
  * Ejercicio que se muestra cuando el usuario todavía no eligió ninguno.
@@ -705,6 +746,13 @@ function AccountingPage() {
       ? (t as Tab)
       : SOLAPAS[0].id;
   });
+  // `Route.useNavigate()` y no `useNavigate()`: el primero conoce el schema de
+  // search de esta ruta, así que el updater `(prev) => ({...prev, clientId})`
+  // tipa. Con el genérico, TypeScript no puede inferirlo y se queja.
+  const navigate = Route.useNavigate();
+  const [recordado, recordarCliente] = useClienteSeleccionado();
+  // La URL manda si la trae: un link compartido tiene que abrir en la empresa
+  // del link, no en la última que miró quien lo abre. Si no, el recordado.
   const [clientId, setClientId] = useState<string>(() =>
     String(search.clientId ?? '')
   );
@@ -719,7 +767,40 @@ function AccountingPage() {
   });
   const isOwner = roleData?.role === 'owner';
 
-  const effectiveClientId = clientId || clients[0]?.id || '';
+  /**
+   * El recordado solo vale si sigue en la lista: un cliente dado de baja, o
+   * uno de otra organización tras cambiar de cuenta, no debe resucitar. Es el
+   * caso de borde que pide el ticket («un cliente que se da de baja mientras
+   * estaba seleccionado no debe romper la sesión activa»).
+   */
+  const recordadoValido =
+    recordado && clients.some((c) => c.id === recordado) ? recordado : '';
+
+  const effectiveClientId = clientId || recordadoValido || clients[0]?.id || '';
+
+  // Si se entró sin `clientId` en la URL, dejarlo puesto una vez resuelto:
+  // así la solapa que se abra después comparte la misma empresa y el link
+  // sigue siendo compartible.
+  useEffect(() => {
+    if (!effectiveClientId) return;
+    if (search.clientId === effectiveClientId) return;
+    void navigate({
+      search: (prev: AccountingSearch) => ({
+        ...prev,
+        clientId: effectiveClientId,
+      }),
+      replace: true,
+    });
+  }, [effectiveClientId, search.clientId, navigate]);
+
+  // TIN-1425: la selección se recuerda entre módulos, no solo entre solapas.
+  const handleClientChange = (v: string) => {
+    setClientId(v);
+    recordarCliente(v);
+    void navigate({
+      search: (prev: AccountingSearch) => ({ ...prev, clientId: v }),
+    });
+  };
 
   const { data: pendingEntries = [] } = useQuery({
     queryKey: ['accounting', 'pending-review', effectiveClientId],
@@ -728,10 +809,15 @@ function AccountingPage() {
     enabled: !!effectiveClientId,
   });
 
+  // TIN-1425: opciones para el buscador de clientes.
+  const clientOptions = clients.map((c) => ({
+    value: c.id,
+    label: `${c.name} · ${c.identityNumber}`,
+  }));
+
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
+    <PageShell>
       <PageHeader
-        icon={Scale}
         title="Balances y Estados Contables"
         subtitle="Plan de cuentas, libro diario, mayor y Estados Contables"
         actions={
@@ -740,21 +826,15 @@ function AccountingPage() {
               className="w-4 h-4 text-[var(--arca-ink-3)]"
               strokeWidth={1.8}
             />
-            <Select
+            <SearchableSelect
+              options={clientOptions}
               value={effectiveClientId}
-              onValueChange={(v) => setClientId(v)}
-            >
-              <SelectTrigger size="sm" className="max-w-[260px] text-[12.5px]">
-                <SelectValue placeholder="Sin empresas" />
-              </SelectTrigger>
-              <SelectContent>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name} · {c.identityNumber}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onValueChange={handleClientChange}
+              placeholder="Sin empresas"
+              searchPlaceholder="Buscar empresa…"
+              emptyMessage="No se encontraron empresas"
+              width={300}
+            />
           </div>
         }
       />
@@ -858,7 +938,7 @@ function AccountingPage() {
           </div>
         </ArcaCard>
       )}
-    </div>
+    </PageShell>
   );
 }
 
@@ -3546,11 +3626,130 @@ interface PostableAccount {
   name: string;
   accountGroup: string | null;
 }
+
+function groupedPostable(accounts: PostableAccount[]) {
+  const groups: { label: string; items: PostableAccount[] }[] = [];
+  const idx = new Map<string, number>();
+  for (const a of accounts) {
+    const key = a.accountGroup ?? '__none__';
+    if (!idx.has(key)) {
+      idx.set(key, groups.length);
+      const label = a.accountGroup
+        ? (ACCOUNT_GROUP_LABELS[a.accountGroup as AccountGroup] ??
+          a.accountGroup)
+        : 'Sin rubro';
+      groups.push({ label, items: [] });
+    }
+    groups[idx.get(key)!].items.push(a);
+  }
+  return groups;
+}
+
+function AccountCombobox({
+  value,
+  onChange,
+  postable,
+  onCreate,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+  postable: PostableAccount[];
+  onCreate: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = postable.find((a) => a.id === value);
+  const groups = groupedPostable(postable);
+
+  return (
+    // `modal`: el selector vive dentro del diálogo del asiento, y el popover se
+    // portalea al body — o sea, fuera del diálogo. El bloqueo de scroll que el
+    // diálogo pone sobre todo lo que está afuera se comía la rueda del mouse y
+    // la lista de cuentas no scrolleaba. En modal el popover trae su propio
+    // manejo y se exceptúa a sí mismo.
+    <Popover modal open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            'flex h-8 flex-1 min-w-0 w-0 items-center justify-between gap-1 rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 text-[12.5px] hover:bg-[var(--arca-surface-2)] transition-colors',
+            selected ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-3)]'
+          )}
+        >
+          <span className="truncate min-w-0">
+            {selected
+              ? `${selected.code} · ${selected.name}`
+              : '— Elegí cuenta —'}
+          </span>
+          <ChevronsUpDown className="w-3 h-3 shrink-0 text-[var(--arca-ink-4)]" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start" sideOffset={4}>
+        <Command>
+          <CommandInput
+            placeholder="Buscar cuenta..."
+            className="text-[12.5px]"
+          />
+          <CommandList className="max-h-60">
+            <CommandEmpty className="py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
+              Sin resultados
+            </CommandEmpty>
+            {groups.map((g) => (
+              <CommandGroup key={g.label} heading={g.label}>
+                {g.items.map((a) => (
+                  <CommandItem
+                    key={a.id}
+                    value={`${a.code} ${a.name}`}
+                    onSelect={() => {
+                      onChange(a.id);
+                      setOpen(false);
+                    }}
+                    className="text-[12.5px] gap-2"
+                  >
+                    <Check
+                      className={cn(
+                        'w-3 h-3 shrink-0',
+                        value === a.id ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {a.code} · {a.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+          <div className="border-t border-[var(--arca-border)] p-1">
+            <button
+              className="flex w-full items-center gap-1.5 rounded-[6px] px-2 py-1.5 text-[12px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors"
+              onClick={() => {
+                setOpen(false);
+                onCreate();
+              }}
+            >
+              <Plus className="w-3 h-3" strokeWidth={2.5} />
+              Nueva cuenta
+            </button>
+          </div>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 interface LineDraft {
   accountId: string;
   debit: string;
   credit: string;
   description: string;
+  /**
+   * El lado que traía el template, cuando la línea vino de uno.
+   *
+   * Hace falta porque un template no guarda importes: al cargarlo las dos
+   * columnas quedan en cero y el lado deja de poder deducirse de ellas. Sin
+   * esto, cargar un template y volver a guardarlo era imposible — no quedaba
+   * ninguna línea con importe y el guardado las descartaba todas.
+   *
+   * Es solo el valor de arranque: si el usuario escribe un importe, ese manda.
+   */
+  lado?: 'debe' | 'haber';
 }
 
 /** parseFloat seguro: NaN/'' → 0. */
@@ -3930,6 +4129,7 @@ function AsientoEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const qc = useQueryClient();
   const init = state.initial;
   const [entryDate, setEntryDate] = useState(init?.entryDate ?? '');
   const [description, setDescription] = useState(init?.description ?? '');
@@ -3938,6 +4138,197 @@ function AsientoEditor({
       ? init.lines
       : [emptyLine(), emptyLine()]
   );
+  const [createAccountOpen, setCreateAccountOpen] = useState(false);
+  // Un ref y no el estado: el cierre del hijo y el evento que lo disparó no
+  // siempre caen en el mismo tick, y para cuando el diálogo de abajo mira el
+  // estado ya volvió a false. El ref se libera un tick después del desmonte.
+  const hayDialogoEncima = useRef(false);
+  /**
+   * Marca que hay un diálogo montado sobre el del asiento, para que este
+   * ignore su propio cierre. Al cerrarse se libera un tick después, no en el
+   * momento: el evento que cerró al hijo todavía está en vuelo.
+   */
+  const marcarDialogoEncima = (abierto: boolean) => {
+    if (abierto) {
+      hayDialogoEncima.current = true;
+      return;
+    }
+    setTimeout(() => {
+      hayDialogoEncima.current = false;
+    }, 0);
+  };
+  const abrirNuevaCuenta = () => {
+    marcarDialogoEncima(true);
+    setCreateAccountOpen(true);
+  };
+  const cerrarNuevaCuenta = () => {
+    setCreateAccountOpen(false);
+    marcarDialogoEncima(false);
+  };
+  const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
+  const [saveTemplateName, setSaveTemplateName] = useState('');
+  /**
+   * Qué template se cargó en el editor, para poder actualizarlo después.
+   * El guardado pisa por (cliente, nombre), así que sin recordar el nombre el
+   * usuario tiene que reescribirlo de memoria y una letra de más crea un
+   * duplicado en vez de editar.
+   */
+  const [templateCargado, setTemplateCargado] = useState<{
+    id: string;
+    nombre: string;
+  } | null>(null);
+  /**
+   * Template elegido que todavía no se aplicó, porque el asiento ya tenía
+   * líneas. Aplicar reemplaza todo y no hay deshacer, así que pisar en
+   * silencio lo que el usuario tipeó no es una opción.
+   */
+  const [templateAConfirmar, setTemplateAConfirmar] =
+    useState<JournalTemplate | null>(null);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+
+  const { data: chart } = useQuery({
+    queryKey: ['accounting', 'chart', clientId],
+    queryFn: () => getChartOfAccounts({ data: { clientId } }),
+  });
+
+  const { data: templates = [] } = useQuery({
+    queryKey: ['accounting', 'templates', clientId],
+    queryFn: () => listJournalTemplates({ data: { clientId } }),
+  });
+
+  /**
+   * Un template guarda cuentas y lados, no importes. El lado sale de en qué
+   * columna hay un número, así que una línea sin importe no se puede guardar —
+   * y con menos de dos, el asiento no existe. Se explica acá y no después del
+   * error del servidor, porque la regla no es adivinable.
+   */
+  /** Algo más que las dos líneas vacías con las que arranca el editor. */
+  const hayContenido = lines.some(
+    (l) =>
+      l.accountId ||
+      num(l.debit) > 0 ||
+      num(l.credit) > 0 ||
+      l.description.trim()
+  );
+
+  function elegirTemplate(t: JournalTemplate) {
+    if (hayContenido) {
+      marcarDialogoEncima(true);
+      setTemplateAConfirmar(t);
+      setTemplatePopoverOpen(false);
+      return;
+    }
+    applyTemplate(t);
+  }
+
+  function ladoDeLinea(l: LineDraft): 'debe' | 'haber' | null {
+    if (num(l.debit) > 0) return 'debe';
+    if (num(l.credit) > 0) return 'haber';
+    return l.lado ?? null;
+  }
+
+  function lineasParaTemplate() {
+    return lines
+      .map((l) => ({ linea: l, lado: ladoDeLinea(l) }))
+      .filter((x) => x.linea.accountId && x.lado !== null);
+  }
+
+  const saveTemplateMut = useMutation({
+    mutationFn: (args: { nombre: string; id?: string }) =>
+      saveJournalTemplate({
+        data: {
+          clientId,
+          nombre: args.nombre,
+          id: args.id,
+          // Una sola fuente: la misma función que valida antes de mandar.
+          // Cuando esto estaba duplicado, la guarda y el payload podían no
+          // coincidir y el error salía recién del servidor.
+          lineas: lineasParaTemplate().map(({ linea, lado }) => ({
+            cuentaId: linea.accountId,
+            lado: lado as 'debe' | 'haber',
+            descripcion: linea.description || undefined,
+          })),
+        },
+      }),
+    onSuccess: (res) => {
+      void qc.invalidateQueries({
+        queryKey: ['accounting', 'templates', clientId],
+      });
+      // Queda apuntando al template guardado, así el siguiente cambio lo
+      // vuelve a editar en vez de crear otro.
+      setTemplateCargado({ id: res.id, nombre: nombreTipeado });
+      setSaveTemplateOpen(false);
+      setSaveTemplateName('');
+      toast.success(
+        accionGuardar === 'renombrar'
+          ? `Template renombrado a «${nombreTipeado}»`
+          : accionGuardar === 'crear'
+            ? 'Template creado'
+            : 'Template actualizado'
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteTemplateMut = useMutation({
+    mutationFn: (id: string) => deleteJournalTemplate({ data: { id } }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['accounting', 'templates', clientId] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  /**
+   * Qué va a pasar al guardar. Son tres cosas distintas y antes las tres se
+   * veían igual, que es como renombrar terminaba creando un duplicado.
+   */
+  const nombreTipeado = saveTemplateName.trim();
+  const otroConEseNombre = templates.find(
+    (t) =>
+      t.nombre.toLowerCase() === nombreTipeado.toLowerCase() &&
+      t.id !== templateCargado?.id
+  );
+  const accionGuardar: 'crear' | 'actualizar' | 'renombrar' | 'pisar' =
+    templateCargado
+      ? nombreTipeado.toLowerCase() === templateCargado.nombre.toLowerCase()
+        ? 'actualizar'
+        : otroConEseNombre
+          ? 'pisar'
+          : 'renombrar'
+      : otroConEseNombre
+        ? 'pisar'
+        : 'crear';
+
+  function guardarTemplate(comoCopia = false) {
+    const utiles = lineasParaTemplate();
+    if (utiles.length < 2) {
+      toast.error(
+        'Un template necesita al menos dos líneas con una cuenta elegida y un ' +
+          'importe en el debe o en el haber. El importe no se guarda: solo ' +
+          'define de qué lado va la línea.'
+      );
+      return;
+    }
+    saveTemplateMut.mutate({
+      nombre: nombreTipeado,
+      // Sin id se crea (o se pisa el que tenga ese nombre); con id se edita
+      // ese template, que es lo que permite renombrarlo.
+      id: comoCopia ? undefined : templateCargado?.id,
+    });
+  }
+
+  function applyTemplate(t: JournalTemplate) {
+    setLines(
+      t.lineas.map((l) => ({
+        accountId: l.cuentaId,
+        debit: l.lado === 'debe' ? '' : '0',
+        credit: l.lado === 'haber' ? '' : '0',
+        description: l.descripcion ?? '',
+        lado: l.lado,
+      }))
+    );
+    setTemplateCargado({ id: t.id, nombre: t.nombre });
+    setTemplatePopoverOpen(false);
+  }
 
   const title =
     state.mode === 'edit'
@@ -3959,6 +4350,43 @@ function AsientoEditor({
       prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l))
     );
 
+  // TIN-1443: detect when the entry date falls outside all fiscal years.
+  const { data: fiscalYears = [] } = useQuery({
+    queryKey: ['accounting', 'fiscal-years', clientId],
+    queryFn: () => getFiscalYears({ data: { clientId } }),
+    enabled: state.mode !== 'edit',
+  });
+  /**
+   * Confirmación pendiente por fecha fuera del ejercicio (TIN-1443).
+   *
+   * El criterio pide un cartel «que el usuario debe confirmar para continuar»,
+   * con el caso de prueba «cancelar la advertencia: el asiento no debe
+   * guardarse». Un banner informativo no lo cumple: se puede guardar sin
+   * haberlo leído, y no hay nada que cancelar.
+   */
+  const [confirmarFueraDeRango, setConfirmarFueraDeRango] = useState(false);
+
+  const outOfRangeFy = useMemo(() => {
+    if (!entryDate || !fiscalYears.length || state.mode === 'edit') return null;
+    const inRange = fiscalYears.some(
+      (fy) => entryDate >= fy.fechaDesde && entryDate <= fy.fechaHasta
+    );
+    if (inRange) return null;
+    // Find the FY whose boundary is nearest to the entry date.
+    return fiscalYears.reduce((prev, curr) => {
+      const dist = (fy: (typeof fiscalYears)[0]) =>
+        Math.min(
+          Math.abs(
+            new Date(entryDate).getTime() - new Date(fy.fechaDesde).getTime()
+          ),
+          Math.abs(
+            new Date(entryDate).getTime() - new Date(fy.fechaHasta).getTime()
+          )
+        );
+      return dist(curr) < dist(prev) ? curr : prev;
+    });
+  }, [entryDate, fiscalYears, state.mode]);
+
   const mut = useMutation({
     mutationFn: async () => {
       const payloadLines = lines.map((l) => ({
@@ -3976,18 +4404,21 @@ function AsientoEditor({
             lines: payloadLines,
           },
         });
+        return null;
       } else {
-        await createJournalEntry({
+        return await createJournalEntry({
           data: {
             clientId,
             entryDate,
             description: description || undefined,
             lines: payloadLines,
+            fiscalYearId: outOfRangeFy?.id,
           },
         });
       }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (result?.warning) toast.warning(result.warning);
       toast.success(
         state.mode === 'edit' ? 'Asiento actualizado' : 'Asiento guardado'
       );
@@ -3997,165 +4428,461 @@ function AsientoEditor({
   });
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[760px]">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>
-            Debe = Haber para poder guardar. Solo cuentas imputables y activas.
-            La fecha define el período (no puede estar en un período cerrado).
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      {/* El asiento ignora su propio cierre mientras haya un diálogo encima:
+          son dos diálogos hermanos y los dos montados con `open`, así que el
+          Esc o el click que cerraba el de nueva cuenta cerraba también este y
+          se perdía el asiento a medio cargar. */}
+      <Dialog
+        open
+        onOpenChange={(o) => {
+          if (!o && !hayDialogoEncima.current) onClose();
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-[760px]"
+          onEscapeKeyDown={(e) => {
+            if (hayDialogoEncima.current) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (hayDialogoEncima.current) e.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>
+              Debe = Haber para poder guardar. Solo cuentas imputables y
+              activas. La fecha define el período (no puede estar en un período
+              cerrado).
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-3 py-1">
-          <div className="flex gap-3">
-            <div className="flex flex-col gap-1 w-44">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Fecha *
-              </label>
-              <input
-                type="date"
-                value={entryDate}
-                onChange={(e) => setEntryDate(e.target.value)}
-                className={`${INPUT_CLASS} w-full h-9`}
+          {outOfRangeFy && (
+            <div className="flex items-start gap-2 rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+              <AlertTriangle
+                className="w-3.5 h-3.5 mt-0.5 shrink-0"
+                strokeWidth={2}
               />
+              <span>
+                La fecha está fuera del ejercicio vigente. El asiento se
+                guardará en el ejercicio N°{outOfRangeFy.numero} (
+                {fmtFecha(outOfRangeFy.fechaDesde)} –{' '}
+                {fmtFecha(outOfRangeFy.fechaHasta)}).
+              </span>
             </div>
-            <div className="flex flex-col gap-1 flex-1">
-              <label className="text-[11px] text-[var(--arca-ink-3)]">
-                Descripción
-              </label>
-              <input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Ej: Cobro factura A-0001 cliente X"
-                className={`${INPUT_CLASS} w-full h-9`}
-              />
-            </div>
-          </div>
+          )}
 
-          {/* Líneas */}
-          <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-              <div className="flex-1">Cuenta</div>
-              <div className="w-40">Detalle</div>
-              <div className="w-24 text-right">Debe</div>
-              <div className="w-24 text-right">Haber</div>
-              <div className="w-6" />
+          <div className="space-y-3 py-1">
+            <div className="flex gap-3">
+              <div className="flex flex-col gap-1 w-44">
+                <label className="text-[11px] text-[var(--arca-ink-3)]">
+                  Fecha *
+                </label>
+                <input
+                  type="date"
+                  value={entryDate}
+                  onChange={(e) => setEntryDate(e.target.value)}
+                  className={`${INPUT_CLASS} w-full h-9`}
+                />
+              </div>
+              <div className="flex flex-col gap-1 flex-1">
+                <label className="text-[11px] text-[var(--arca-ink-3)]">
+                  Descripción
+                </label>
+                <input
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Ej: Cobro factura A-0001 cliente X"
+                  className={`${INPUT_CLASS} w-full h-9`}
+                />
+              </div>
             </div>
-            {lines.map((l, i) => (
-              <div
-                key={i}
-                className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
+
+            {/* Template toolbar */}
+            <div className="flex items-center justify-between">
+              {/* `modal` por lo mismo que el selector de cuentas: portaleado
+                fuera del diálogo, sin esto no scrollea. */}
+              <Popover
+                modal
+                open={templatePopoverOpen}
+                onOpenChange={setTemplatePopoverOpen}
               >
-                <Select
-                  value={l.accountId}
-                  onValueChange={(v) => updateLine(i, { accountId: v })}
+                <PopoverTrigger asChild>
+                  <button className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors">
+                    <Bookmark className="w-3 h-3" strokeWidth={2} />
+                    Cargar template
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  className="w-72 p-0"
+                  sideOffset={4}
                 >
-                  <SelectTrigger
-                    size="sm"
-                    className="flex-1 min-w-0 w-0 text-[12.5px]"
-                  >
-                    <SelectValue placeholder="— Elegí cuenta —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {postable.map((a) => (
-                      <SelectItem key={a.id} value={a.id}>
-                        {a.code} · {a.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <input
-                  value={l.description}
-                  onChange={(e) =>
-                    updateLine(i, { description: e.target.value })
-                  }
-                  placeholder="opcional"
-                  className={`${INPUT_CLASS} w-40 h-8`}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={l.debit}
-                  onChange={(e) =>
-                    updateLine(i, { debit: e.target.value, credit: '' })
-                  }
-                  className={`${INPUT_CLASS} w-24 h-8 text-right`}
-                />
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={l.credit}
-                  onChange={(e) =>
-                    updateLine(i, { credit: e.target.value, debit: '' })
-                  }
-                  className={`${INPUT_CLASS} w-24 h-8 text-right`}
-                />
+                  {/* Mismo combobox que el selector de cuentas: buscador
+                      arriba y lista filtrable. Un estudio con muchos modelos
+                      no los encuentra scrolleando. */}
+                  <Command>
+                    <CommandInput
+                      placeholder="Buscar template..."
+                      className="text-[12.5px]"
+                    />
+                    <CommandList className="max-h-60">
+                      <CommandEmpty className="py-4 text-center text-[12px] text-[var(--arca-ink-3)]">
+                        {templates.length === 0
+                          ? 'Todavía no guardaste ningún template'
+                          : 'Sin resultados'}
+                      </CommandEmpty>
+                      {templates.length > 0 && (
+                        <CommandGroup heading="Templates">
+                          {templates.map((t) => (
+                            <CommandItem
+                              key={t.id}
+                              value={t.nombre}
+                              onSelect={() => elegirTemplate(t)}
+                              className="group text-[12.5px] gap-2"
+                            >
+                              <Bookmark
+                                className="w-3 h-3 shrink-0 text-[var(--arca-ink-4)]"
+                                strokeWidth={2}
+                              />
+                              <span className="flex-1 truncate">
+                                {t.nombre}
+                              </span>
+                              <span
+                                role="button"
+                                tabIndex={-1}
+                                aria-label={`Borrar ${t.nombre}`}
+                                className="shrink-0 p-1 -m-1 rounded-[6px] opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-[oklch(0.55_0.18_25)] transition-all"
+                                onPointerDown={(e) => {
+                                  // Solo cortar la propagación: cmdk dispara
+                                  // onSelect desde el click del ítem, y un
+                                  // preventDefault acá se comería el nuestro.
+                                  e.stopPropagation();
+                                }}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  deleteTemplateMut.mutate(t.id);
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" strokeWidth={1.8} />
+                              </span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      )}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+
+              {!saveTemplateOpen && (
                 <button
-                  onClick={() =>
-                    setLines((prev) => prev.filter((_, idx) => idx !== i))
-                  }
-                  disabled={lines.length <= 2}
-                  className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
-                  title="Eliminar línea"
+                  className="flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] px-2 py-1 rounded-[6px] hover:bg-[var(--arca-surface-2)] transition-colors"
+                  onClick={() => {
+                    setSaveTemplateName(templateCargado?.nombre ?? '');
+                    setSaveTemplateOpen(true);
+                  }}
                 >
-                  <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  <BookmarkPlus className="w-3 h-3" strokeWidth={2} />
+                  {templateCargado
+                    ? 'Guardar cambios'
+                    : 'Guardar como template'}
                 </button>
+              )}
+            </div>
+
+            {saveTemplateOpen && (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    value={saveTemplateName}
+                    onChange={(e) => setSaveTemplateName(e.target.value)}
+                    placeholder="Nombre del template…"
+                    className={`${INPUT_CLASS} flex-1 h-8`}
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && saveTemplateName.trim())
+                        guardarTemplate();
+                      if (e.key === 'Escape') {
+                        setSaveTemplateOpen(false);
+                        setSaveTemplateName('');
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => guardarTemplate()}
+                    disabled={
+                      !saveTemplateName.trim() || saveTemplateMut.isPending
+                    }
+                    className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+                  >
+                    {saveTemplateMut.isPending
+                      ? '…'
+                      : accionGuardar === 'renombrar'
+                        ? 'Renombrar'
+                        : accionGuardar === 'crear'
+                          ? 'Crear'
+                          : 'Actualizar'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSaveTemplateOpen(false);
+                      setSaveTemplateName('');
+                    }}
+                    className="h-8 px-3 text-[12px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+
+                {/* Decir de antemano qué va a pasar. Los cuatro casos se veían
+                    igual, y así es como renombrar terminaba duplicando. */}
+                {accionGuardar === 'renombrar' && (
+                  <p className="text-[11px] text-[var(--arca-ink-3)] pl-0.5">
+                    Se va a renombrar «{templateCargado?.nombre}» a «
+                    {nombreTipeado}» y guardar las líneas actuales.{' '}
+                    <button
+                      type="button"
+                      onClick={() => guardarTemplate(true)}
+                      className="underline underline-offset-2 hover:text-[var(--arca-ink)]"
+                    >
+                      Guardar como copia
+                    </button>{' '}
+                    si preferís conservar los dos.
+                  </p>
+                )}
+                {accionGuardar === 'pisar' && (
+                  <p className="text-[11px] text-[oklch(0.55_0.14_60)] pl-0.5">
+                    Ya existe un template «{nombreTipeado}»: se va a reemplazar
+                    con las líneas que tenés ahora.
+                  </p>
+                )}
+                {accionGuardar === 'actualizar' && (
+                  <p className="text-[11px] text-[var(--arca-ink-3)] pl-0.5">
+                    Se va a actualizar «{nombreTipeado}» con las líneas que
+                    tenés ahora.
+                  </p>
+                )}
               </div>
-            ))}
-            {/* Totales */}
-            <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12px] font-semibold">
-              <button
-                onClick={() => setLines((prev) => [...prev, emptyLine()])}
-                className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-              >
-                <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
-              </button>
-              <div className="flex-1" />
-              <div className="w-40" />
-              <div className="w-24 text-right text-[var(--arca-ink)]">
-                $ {fmtMoney(totalDebit)}
+            )}
+
+            {/* Líneas */}
+            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+                <div className="flex-1">Cuenta</div>
+                <div className="w-40">Detalle</div>
+                <div className="w-24 text-right">Debe</div>
+                <div className="w-24 text-right">Haber</div>
+                <div className="w-6" />
               </div>
-              <div className="w-24 text-right text-[var(--arca-ink)]">
-                $ {fmtMoney(totalCredit)}
+              {lines.map((l, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
+                >
+                  <AccountCombobox
+                    value={l.accountId}
+                    onChange={(v) => updateLine(i, { accountId: v })}
+                    postable={postable}
+                    onCreate={abrirNuevaCuenta}
+                  />
+                  <input
+                    value={l.description}
+                    onChange={(e) =>
+                      updateLine(i, { description: e.target.value })
+                    }
+                    placeholder="opcional"
+                    className={`${INPUT_CLASS} w-40 h-8`}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={l.debit}
+                    onChange={(e) =>
+                      updateLine(i, { debit: e.target.value, credit: '' })
+                    }
+                    className={`${INPUT_CLASS} w-24 h-8 text-right`}
+                  />
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={l.credit}
+                    onChange={(e) =>
+                      updateLine(i, { credit: e.target.value, debit: '' })
+                    }
+                    className={`${INPUT_CLASS} w-24 h-8 text-right`}
+                  />
+                  <button
+                    onClick={() =>
+                      setLines((prev) => prev.filter((_, idx) => idx !== i))
+                    }
+                    disabled={lines.length <= 2}
+                    className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
+                    title="Eliminar línea"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
+                  </button>
+                </div>
+              ))}
+              {/* Totales */}
+              <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[12px] font-semibold">
+                <button
+                  onClick={() => setLines((prev) => [...prev, emptyLine()])}
+                  className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+                >
+                  <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
+                </button>
+                <div className="flex-1" />
+                <div className="w-40" />
+                <div className="w-24 text-right text-[var(--arca-ink)]">
+                  $ {fmtMoney(totalDebit)}
+                </div>
+                <div className="w-24 text-right text-[var(--arca-ink)]">
+                  $ {fmtMoney(totalCredit)}
+                </div>
+                <div className="w-6" />
               </div>
-              <div className="w-6" />
+            </div>
+
+            <div className="flex items-center justify-end text-[12px]">
+              {balanced ? (
+                <span className="text-[oklch(0.40_0.14_145)]">
+                  ✓ Asiento balanceado
+                </span>
+              ) : (
+                <span className="text-[oklch(0.55_0.18_25)]">
+                  Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} —
+                  Debe debe ser igual a Haber
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center justify-end text-[12px]">
-            {balanced ? (
-              <span className="text-[oklch(0.40_0.14_145)]">
-                ✓ Asiento balanceado
-              </span>
-            ) : (
-              <span className="text-[oklch(0.55_0.18_25)]">
-                Diferencia: $ {fmtMoney(Math.abs(totalDebit - totalCredit))} —
-                Debe debe ser igual a Haber
-              </span>
-            )}
-          </div>
-        </div>
+          <DialogFooter>
+            <button
+              onClick={onClose}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => {
+                if (outOfRangeFy) {
+                  marcarDialogoEncima(true);
+                  setConfirmarFueraDeRango(true);
+                  return;
+                }
+                mut.mutate();
+              }}
+              disabled={!canSave || mut.isPending}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            >
+              {mut.isPending ? 'Guardando…' : 'Guardar asiento'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {createAccountOpen && (
+        <AccountFormDialog
+          mode={{ kind: 'custom' }}
+          clientId={clientId}
+          accounts={chart?.accounts ?? []}
+          onClose={cerrarNuevaCuenta}
+          onSaved={() => {
+            cerrarNuevaCuenta();
+            void qc.invalidateQueries({
+              queryKey: ['accounting', 'postable', clientId],
+            });
+            void qc.invalidateQueries({
+              queryKey: ['accounting', 'chart', clientId],
+            });
+          }}
+        />
+      )}
 
-        <DialogFooter>
-          <button
-            onClick={onClose}
-            className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={() => mut.mutate()}
-            disabled={!canSave || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
-          >
-            {mut.isPending ? 'Guardando…' : 'Guardar asiento'}
-          </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      {/* Fecha fuera del ejercicio: el criterio de TIN-1443 pide confirmar
+          para continuar, y que cancelar NO guarde el asiento. */}
+      <AlertDialog
+        open={confirmarFueraDeRango}
+        onOpenChange={(o) => {
+          if (!o) {
+            setConfirmarFueraDeRango(false);
+            marcarDialogoEncima(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              La fecha está fuera del ejercicio vigente
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              El asiento del {entryDate ? fmtFecha(entryDate) : ''} se va a
+              guardar en el ejercicio N°{outOfRangeFy?.numero} (
+              {outOfRangeFy ? fmtFecha(outOfRangeFy.fechaDesde) : ''} –{' '}
+              {outOfRangeFy ? fmtFecha(outOfRangeFy.fechaHasta) : ''}), que es
+              el más cercano a esa fecha. Revisá que sea el ejercicio correcto
+              antes de continuar: el asiento va a numerarse dentro de ese
+              ejercicio y va a impactar en sus estados contables.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmarFueraDeRango(false);
+                marcarDialogoEncima(false);
+                mut.mutate();
+              }}
+            >
+              Guardar igual
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reemplazar las líneas cargadas no se puede deshacer, así que va en un
+          diálogo y no en un cartel dentro del popover: ahí es fácil apretar de
+          más sin leer. `marcarDialogoEncima` evita que este cierre arrastre al
+          del asiento, que es el problema que tuvimos con «nueva cuenta». */}
+      <AlertDialog
+        open={templateAConfirmar !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setTemplateAConfirmar(null);
+            marcarDialogoEncima(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Este asiento ya tiene líneas cargadas
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Cargar «{templateAConfirmar?.nombre}» reemplaza las{' '}
+              {lines.filter((l) => l.accountId).length} líneas actuales por las
+              del template. No se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (templateAConfirmar) applyTemplate(templateAConfirmar);
+                setTemplateAConfirmar(null);
+                marcarDialogoEncima(false);
+              }}
+            >
+              Reemplazar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -6178,10 +6905,15 @@ function RuleEditorDialog({
                   <SelectValue placeholder="— Cuenta —" />
                 </SelectTrigger>
                 <SelectContent>
-                  {postable.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} · {a.name}
-                    </SelectItem>
+                  {groupedPostable(postable).map((g) => (
+                    <SelectGroup key={g.label}>
+                      <SelectLabel>{g.label}</SelectLabel>
+                      {g.items.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.code} · {a.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
                 </SelectContent>
               </Select>
@@ -7720,7 +8452,7 @@ function AnexoIView({
   const [selectedFyId, setSelectedFyId] = useState('');
   const [editor, setEditor] = useState<EditorState | null>(null);
 
-  const { data: fiscalYears = [] } = useQuery({
+  const { data: fiscalYears = [], isLoading: cargandoEjercicios } = useQuery({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
@@ -7748,6 +8480,19 @@ function AnexoIView({
     queryKey: ['accounting', 'membrete', clientId],
     queryFn: () => getMembreteData({ data: { clientId } }),
   });
+
+  // Distinguir «todavía no llegó la lista» de «no hay ejercicios»: contra una
+  // base remota la consulta tarda, y afirmar que no existe ninguno mientras
+  // carga manda al usuario a crear un ejercicio que ya existe.
+  if (cargandoEjercicios) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Cargando ejercicios…
+        </div>
+      </ArcaCard>
+    );
+  }
 
   if (fiscalYears.length === 0) {
     return (
@@ -7797,6 +8542,9 @@ function AnexoIView({
           cuit: membrete.cuit,
           domicilio: membrete.domicilio,
           actividadPrincipal: membrete.actividadPrincipal,
+          fechaConstitucion: membrete.fechaConstitucion
+            ? fmtFecha(membrete.fechaConstitucion)
+            : '',
           fechaInscripcion: membrete.fechaInscripcion
             ? fmtFecha(membrete.fechaInscripcion)
             : '',
@@ -8245,6 +8993,7 @@ function EstadosContables({
     | 'informe'
     | 'orden'
     | 'export'
+    | 'datos'
   >('esp');
   /**
    * Los EECC se presentan ajustados por inflación (RT 6). "Histórico" excluye el
@@ -8255,7 +9004,7 @@ function EstadosContables({
   );
   const [selectedFyId, setSelectedFyId] = useState('');
 
-  const { data: fiscalYears = [] } = useQuery({
+  const { data: fiscalYears = [], isLoading: cargandoEjercicios } = useQuery({
     queryKey: ['accounting', 'fiscal-years', clientId],
     queryFn: () => getFiscalYears({ data: { clientId } }),
   });
@@ -8351,6 +9100,19 @@ function EstadosContables({
       toast.error(e instanceof Error ? e.message : 'Error al reabrir'),
   });
 
+  // Distinguir «todavía no llegó la lista» de «no hay ejercicios»: contra una
+  // base remota la consulta tarda, y afirmar que no existe ninguno mientras
+  // carga manda al usuario a crear un ejercicio que ya existe.
+  if (cargandoEjercicios) {
+    return (
+      <ArcaCard>
+        <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+          Cargando ejercicios…
+        </div>
+      </ArcaCard>
+    );
+  }
+
   if (fiscalYears.length === 0) {
     return (
       <ArcaCard>
@@ -8407,6 +9169,7 @@ function EstadosContables({
     {
       grupo: 'Documento',
       items: [
+        { k: 'datos', label: 'Datos iniciales' },
         { k: 'informe', label: 'Informe del auditor' },
         { k: 'orden', label: 'Orden del documento' },
         { k: 'export', label: 'Exportar' },
@@ -8635,6 +9398,10 @@ function EstadosContables({
               selectedFy={selectedFy}
             />
           )}
+          {view === 'datos' && (
+            <DatosInicialesView clientId={clientId} canEdit={isOwner} />
+          )}
+
           {view === 'informe' &&
             (fs && selectedFy ? (
               <InformeAuditor
@@ -8653,6 +9420,12 @@ function EstadosContables({
                   notas: rangoNotas(fs.notes.length),
                   anexos: rangoAnexos(3),
                   destinatario: 'Señores Socios',
+                  inicio: fechaLarga(new Date(selectedFy.fechaDesde)),
+                  constitucion: membreteEecc?.fechaConstitucion
+                    ? fechaLarga(new Date(membreteEecc.fechaConstitucion))
+                    : '',
+                  igj: membreteEecc?.numeroInscripcion ?? '',
+                  ...variablesDelBalance(espParaRefs),
                   contador: membreteEecc?.accountant?.nombre ?? '',
                   matricula: [
                     membreteEecc?.accountant?.tomo &&
@@ -8693,6 +9466,37 @@ function EstadosContables({
                 approved={approved}
                 canEdit={isOwner}
                 onSaved={invalidateFs}
+                clientName={clientName}
+                vars={
+                  selectedFy
+                    ? {
+                        empresa: clientName,
+                        cuit: clientCuit,
+                        domicilio: membreteEecc?.domicilio ?? '',
+                        cierre: fechaLarga(new Date(selectedFy.fechaHasta)),
+                        ejercicio: String(selectedFy.numero),
+                        notas: rangoNotas(fs.notes.length),
+                        anexos: rangoAnexos(3),
+                        destinatario: 'Señores Socios',
+                        inicio: fechaLarga(new Date(selectedFy.fechaDesde)),
+                        constitucion: membreteEecc?.fechaConstitucion
+                          ? fechaLarga(new Date(membreteEecc.fechaConstitucion))
+                          : '',
+                        igj: membreteEecc?.numeroInscripcion ?? '',
+                        ...variablesDelBalance(espParaRefs),
+                        contador: membreteEecc?.accountant?.nombre ?? '',
+                        matricula: [
+                          membreteEecc?.accountant?.tomo &&
+                            `Tomo ${membreteEecc.accountant.tomo}`,
+                          membreteEecc?.accountant?.folio &&
+                            `Folio ${membreteEecc.accountant.folio}`,
+                          membreteEecc?.accountant?.consejo,
+                        ]
+                          .filter(Boolean)
+                          .join(' '),
+                      }
+                    : {}
+                }
               />
             ) : (
               <ArcaCard>
@@ -9557,7 +10361,7 @@ function EfeView({
             ))
           )}
           <EfeRow
-            label={`Flujo neto por ${a.label.toLowerCase()}`}
+            label={`Flujo neto de ${a.label.toLowerCase()}`}
             value={a}
             strong
             hasPrior={data.hasPrior}
@@ -10164,6 +10968,9 @@ function AnexoCMVView({
             cuit: membrete.cuit,
             domicilio: membrete.domicilio,
             actividadPrincipal: membrete.actividadPrincipal,
+            fechaConstitucion: membrete.fechaConstitucion
+              ? fmtFecha(membrete.fechaConstitucion)
+              : '',
             fechaInscripcion: membrete.fechaInscripcion
               ? fmtFecha(membrete.fechaInscripcion)
               : '',
@@ -10444,6 +11251,8 @@ function NotesEditor({
   approved,
   canEdit,
   onSaved,
+  clientName,
+  vars = {},
 }: {
   clientId: string;
   fiscalYearId: string;
@@ -10453,6 +11262,10 @@ function NotesEditor({
   approved: boolean;
   canEdit: boolean;
   onSaved: () => void;
+  /** Nombre de empresa, para el archivo Word exportado. */
+  clientName?: string;
+  /** Variables de la empresa/ejercicio para autocompletar en las notas. */
+  vars?: Partial<AuditReportVars>;
 }) {
   const [notes, setNotes] = useState<FsNote[]>(initialNotes);
   // El orden vive aparte del contenido: incluye los bloques que genera el
@@ -10489,8 +11302,21 @@ function NotesEditor({
       toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   });
 
-  const newId = () =>
-    `n-${notes.reduce((m, n) => Math.max(m, Number(n.id.split('-')[1]) || 0), 0) + 1}`;
+  /**
+   * `cantidad` ids nuevos, correlativos.
+   *
+   * Devuelve varios de una y no uno por llamada porque el id sale del máximo
+   * del estado actual: llamarlo N veces seguidas dentro de un `map` daba N
+   * veces el mismo id, y las notas se pisaban entre sí.
+   */
+  const nuevosIds = (cantidad: number) => {
+    const desde = notes.reduce(
+      (m, n) => Math.max(m, Number(n.id.split('-')[1]) || 0),
+      0
+    );
+    return Array.from({ length: cantidad }, (_, i) => `n-${desde + 1 + i}`);
+  };
+  const newId = () => nuevosIds(1)[0];
 
   const addNote = () => {
     const id = newId();
@@ -10523,6 +11349,103 @@ function NotesEditor({
       return n;
     });
 
+  /** Notas leídas de un .docx, esperando confirmación. */
+  const [importadas, setImportadas] = useState<NotaImportada[] | null>(null);
+  const [importando, setImportando] = useState(false);
+  const inputWord = useRef<HTMLInputElement>(null);
+
+  const elegirArchivo = async (file: File | undefined) => {
+    if (!file) return;
+    setImportando(true);
+    try {
+      const notas = await leerNotasDeWord(file);
+      if (notas.length === 0) {
+        toast.error('No se encontró texto en el documento.');
+        return;
+      }
+      // No se aplica de una: importar agrega notas al balance y el usuario
+      // tiene que ver cuántas y cuáles antes.
+      setImportadas(notas);
+    } catch {
+      toast.error(
+        'No se pudo leer el documento. Tiene que ser un .docx de Word.'
+      );
+    } finally {
+      setImportando(false);
+      if (inputWord.current) inputWord.current.value = '';
+    }
+  };
+
+  const [formatoAbierto, setFormatoAbierto] = useState(false);
+
+  const bajarPlantilla = async () => {
+    const blob = await plantillaNotasWord();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'formato_notas.docx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  /** Las importadas se agregan al final; no reemplazan lo que ya hay. */
+  const confirmarImportacion = () => {
+    if (!importadas) return;
+    const ids = nuevosIds(importadas.length);
+    const nuevas = importadas.map((n, i) => ({
+      id: ids[i],
+      title: n.titulo.slice(0, 200),
+      content: n.contenido.slice(0, 20000),
+    }));
+    setNotes((prev) => [...prev, ...nuevas]);
+    setLayout((prev) => [
+      ...prev,
+      ...nuevas.map((n): LayoutEntry => `note:${n.id}`),
+    ]);
+    setImportadas(null);
+    toast.success(
+      nuevas.length === 1
+        ? 'Se agregó 1 nota. Revisala y guardá.'
+        : `Se agregaron ${nuevas.length} notas. Revisalas y guardá.`
+    );
+  };
+
+  const exportWord = async () => {
+    const { Document, Paragraph, TextRun, HeadingLevel, Packer } =
+      await import('docx');
+    const children: InstanceType<typeof Paragraph>[] = [];
+    for (const item of secuencia) {
+      if (item.isSystem) continue;
+      const note = notes.find((n) => `note:${n.id}` === item.entry);
+      if (!note) continue;
+      children.push(
+        new Paragraph({
+          text: `Nota ${item.number}. ${note.title}`,
+          heading: HeadingLevel.HEADING_2,
+        })
+      );
+      const filledContent = fillAuditReport(note.content, vars);
+      for (const line of filledContent.split('\n')) {
+        children.push(
+          new Paragraph({
+            children: [new TextRun({ text: line })],
+          })
+        );
+      }
+      children.push(new Paragraph({ text: '' }));
+    }
+    const doc = new Document({
+      sections: [{ properties: {}, children }],
+    });
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `notas_${(clientName ?? 'balance').replace(/\s+/g, '_')}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <ArcaCard>
       <div className="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-[var(--arca-border)]">
@@ -10533,8 +11456,39 @@ function NotesEditor({
           Formato Markdown
         </span>
         <div className="flex-1" />
+        {notes.length > 0 && (
+          <button
+            onClick={exportWord}
+            className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+            title="Exportar todas las notas como documento Word (.docx)"
+          >
+            Exportar Word
+          </button>
+        )}
         {editable && (
           <>
+            <input
+              ref={inputWord}
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={(e) => void elegirArchivo(e.target.files?.[0])}
+            />
+            <button
+              onClick={() => inputWord.current?.click()}
+              disabled={importando}
+              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
+              title="Importar notas desde un documento Word (.docx)"
+            >
+              {importando ? 'Leyendo…' : 'Importar Word'}
+            </button>
+            <button
+              onClick={() => setFormatoAbierto(true)}
+              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+              title="Ver el formato que espera la importación"
+            >
+              Ver formato
+            </button>
             <button
               onClick={addNote}
               className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
@@ -10551,6 +11505,131 @@ function NotesEditor({
           </>
         )}
       </div>
+
+      {/* Vista previa del formato. Renderiza la misma plantilla que se
+          descarga, así lo que se ve y lo que se baja no pueden divergir. */}
+      <Dialog open={formatoAbierto} onOpenChange={setFormatoAbierto}>
+        <DialogContent
+          /* `sm:` es necesario: DialogContent trae `sm:max-w-lg`, que sin
+             el prefijo le gana a este por breakpoint y deja el diálogo en
+             512px. */
+          className="sm:max-w-[min(95vw,1400px)] max-h-[92vh] flex flex-col gap-0 p-0"
+        >
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-[var(--arca-border)]">
+            <DialogTitle>Formato del Word para importar</DialogTitle>
+            <DialogDescription>
+              Así tiene que verse el documento. Lo único que importa es que cada
+              título de nota esté con estilo de encabezado —Título 1, 2 o 3 en
+              Word y en Google Docs—, no en negrita: el sistema corta el
+              documento por los encabezados.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto bg-[var(--arca-surface-2)] px-6 py-6">
+            <div className="mx-auto max-w-[1000px] bg-white rounded-[8px] border border-[var(--arca-border)] px-12 py-10 shadow-sm">
+              {PLANTILLA.map((b, i) =>
+                b.tipo === 'titulo' ? (
+                  <div
+                    key={i}
+                    className="mt-6 first:mt-0 flex items-baseline gap-3"
+                  >
+                    <h3 className="text-[17px] font-semibold text-[var(--arca-ink)]">
+                      {b.texto}
+                    </h3>
+                    <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--arca-ink-4)] border border-[var(--arca-border)] rounded-[4px] px-1.5 py-0.5">
+                      Título 2
+                    </span>
+                  </div>
+                ) : b.tipo === 'vineta' ? (
+                  <p
+                    key={i}
+                    className="mt-1 pl-8 text-[13.5px] leading-relaxed text-[var(--arca-ink-2)] before:content-['•'] before:-ml-4 before:mr-2 before:text-[var(--arca-ink-4)]"
+                  >
+                    {b.texto}
+                  </p>
+                ) : (
+                  <p
+                    key={i}
+                    className="mt-3 text-[13.5px] leading-relaxed text-[var(--arca-ink-2)]"
+                  >
+                    {b.texto}
+                  </p>
+                )
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="px-6 py-4 border-t border-[var(--arca-border)]">
+            <button
+              onClick={() => setFormatoAbierto(false)}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
+            >
+              Cerrar
+            </button>
+            <button
+              onClick={() => void bajarPlantilla()}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+            >
+              Descargar .docx de ejemplo
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Qué se va a importar, antes de tocar las notas del balance. Un .docx
+          puede traer diez notas y el usuario tiene que poder mirarlas —y ver
+          si el parser partió bien los títulos— sin haber modificado nada. */}
+      <AlertDialog
+        open={importadas !== null}
+        onOpenChange={(o) => {
+          if (!o) setImportadas(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {importadas?.length === 1
+                ? 'Se encontró 1 nota en el documento'
+                : `Se encontraron ${importadas?.length ?? 0} notas en el documento`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Se agregan al final de las notas que ya tenés; no reemplazan
+              ninguna. Después podés reordenarlas, editarlas o borrarlas, y los
+              cambios recién quedan cuando apretás Guardar.
+              {importadas?.length === 1 &&
+                importadas[0].titulo === 'Nota importada' && (
+                  <>
+                    {' '}
+                    <strong>
+                      El documento no tenía títulos con estilo de encabezado
+                    </strong>
+                    , así que entró todo como una sola nota. Si esperabas
+                    varias, marcá cada título como Título 1, 2 o 3 en Word y
+                    volvé a importar — «ver formato» baja un ejemplo.
+                  </>
+                )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-64 overflow-y-auto rounded-[8px] border border-[var(--arca-border)] divide-y divide-[var(--arca-border)]">
+            {importadas?.map((n, i) => (
+              <div key={i} className="px-3 py-2">
+                <p className="text-[12.5px] font-medium text-[var(--arca-ink)]">
+                  {n.titulo || <span className="italic">Sin título</span>}
+                </p>
+                <p className="text-[11.5px] text-[var(--arca-ink-3)] line-clamp-2">
+                  {n.contenido || 'Sin contenido'}
+                </p>
+              </div>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmarImportacion}>
+              Agregar {importadas?.length === 1 ? 'la nota' : 'las notas'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {approved && (
         <div className="px-5 py-2 text-[11.5px] text-emerald-700 bg-emerald-50 border-b border-[var(--arca-border)]">
@@ -10674,7 +11753,7 @@ function NotesEditor({
                 <div className="px-4 py-3 text-[13px] text-[var(--arca-ink-2)] [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-[var(--arca-ink)] [&_em]:italic [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:my-2 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:my-2 [&_h3]:font-semibold [&_a]:text-blue-600 [&_a]:underline [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-[var(--arca-surface-2)] [&_code]:px-1 [&_code]:rounded [&_table]:w-full [&_th]:text-left [&_th]:border-b [&_th]:border-[var(--arca-border)] [&_td]:py-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--arca-border)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--arca-ink-3)]">
                   {note.content.trim() ? (
                     <Markdown remarkPlugins={[remarkGfm]}>
-                      {note.content}
+                      {fillAuditReport(note.content, vars)}
                     </Markdown>
                   ) : (
                     <span className="text-[var(--arca-ink-3)] italic">
@@ -10683,13 +11762,39 @@ function NotesEditor({
                   )}
                 </div>
               ) : (
-                <textarea
-                  value={note.content}
-                  onChange={(e) => update(note.id, { content: e.target.value })}
-                  placeholder="Escribí la nota en Markdown…"
-                  rows={6}
-                  className="w-full px-4 py-3 bg-transparent text-[13px] text-[var(--arca-ink)] outline-none resize-y font-mono"
-                />
+                <>
+                  <textarea
+                    value={note.content}
+                    onChange={(e) =>
+                      update(note.id, { content: e.target.value })
+                    }
+                    placeholder="Escribí la nota en Markdown…"
+                    rows={6}
+                    className="w-full px-4 py-3 bg-transparent text-[13px] text-[var(--arca-ink)] outline-none resize-y font-mono"
+                  />
+                  {editable && (
+                    <div className="px-4 pb-2 text-[11px] text-[var(--arca-ink-3)] border-t border-[var(--arca-border)] pt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
+                      <span className="font-medium text-[var(--arca-ink-4)]">
+                        Variables:
+                      </span>
+                      {AUDIT_REPORT_VARS.map((v) => (
+                        <button
+                          key={v.key}
+                          type="button"
+                          onClick={() =>
+                            update(note.id, {
+                              content: note.content + `{{${v.key}}}`,
+                            })
+                          }
+                          title={`${v.label} — ej: ${v.ejemplo}`}
+                          className="font-mono text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] hover:underline"
+                        >
+                          {`{{${v.key}}}`}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );
@@ -10706,6 +11811,249 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     fr.onerror = () => reject(new Error('No se pudo leer el PDF'));
     fr.readAsDataURL(blob);
   });
+}
+
+function DatosInicialesView({
+  clientId,
+  canEdit,
+}: {
+  clientId: string;
+  canEdit: boolean;
+}) {
+  const qc = useQueryClient();
+  const { data: membrete } = useQuery({
+    queryKey: ['accounting', 'membrete', clientId],
+    queryFn: () => getMembreteData({ data: { clientId } }),
+  });
+
+  const [form, setForm] = useState({
+    address: '',
+    actividadPrincipal: '',
+    fechaConstitucion: '',
+    fechaInscripcion: '',
+    numeroInscripcion: '',
+    accountingFramework: 'rt54' as 'rt54' | 'rt6',
+  });
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!membrete) return;
+    setForm({
+      address: membrete.domicilio ?? '',
+      actividadPrincipal: membrete.actividadPrincipal ?? '',
+      fechaConstitucion: membrete.fechaConstitucion ?? '',
+      fechaInscripcion: membrete.fechaInscripcion ?? '',
+      numeroInscripcion: membrete.numeroInscripcion ?? '',
+      accountingFramework: membrete.accountingFramework ?? 'rt54',
+    });
+    setDirty(false);
+  }, [membrete]);
+
+  const mut = useMutation({
+    mutationFn: () =>
+      updateClientFiscalData({
+        data: {
+          clientId,
+          address: form.address || undefined,
+          actividadPrincipal: form.actividadPrincipal || null,
+          fechaConstitucion: form.fechaConstitucion || null,
+          fechaInscripcion: form.fechaInscripcion || null,
+          numeroInscripcion: form.numeroInscripcion || null,
+          accountingFramework: form.accountingFramework,
+        },
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounting', 'membrete', clientId] });
+      setDirty(false);
+      toast.success('Datos iniciales guardados');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const set = (k: keyof typeof form, v: string) => {
+    setForm((f) => ({ ...f, [k]: v }));
+    setDirty(true);
+  };
+
+  return (
+    <ArcaCard>
+      <div className="px-5 py-4 space-y-5">
+        <div>
+          <div className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            Datos iniciales del balance
+          </div>
+          <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
+            Estos datos aparecen en la carátula del paquete EECC y pueden usarse
+            como base para las Notas 1 y 2.
+          </div>
+        </div>
+
+        {/* Empresa + CUIT — solo lectura */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <div className="text-[11px] font-medium text-[var(--arca-ink-3)] uppercase tracking-wide">
+              Razón social
+            </div>
+            <div className="text-[13px] text-[var(--arca-ink)]">
+              {membrete?.empresaName ?? '—'}
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="text-[11px] font-medium text-[var(--arca-ink-3)] uppercase tracking-wide">
+              CUIT
+            </div>
+            <div className="text-[13px] text-[var(--arca-ink)]">
+              {membrete?.cuit ?? '—'}
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-[var(--arca-border)]" />
+
+        {/* Campos editables */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            mut.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+              Domicilio
+            </label>
+            <input
+              value={form.address}
+              onChange={(e) => set('address', e.target.value)}
+              disabled={!canEdit}
+              placeholder="Av. Corrientes 1234, Buenos Aires"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+              Actividad principal
+            </label>
+            <input
+              value={form.actividadPrincipal}
+              onChange={(e) => set('actividadPrincipal', e.target.value)}
+              disabled={!canEdit}
+              placeholder="Venta al por menor de…"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+            />
+          </div>
+
+          {/* Tres columnas: los datos registrales juntos y en orden
+              cronológico — primero se constituye, después se inscribe. */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+                Fecha constitución
+              </label>
+              <input
+                type="date"
+                value={form.fechaConstitucion}
+                onChange={(e) => set('fechaConstitucion', e.target.value)}
+                disabled={!canEdit}
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+                Fecha inscripción RPC
+              </label>
+              <input
+                type="date"
+                value={form.fechaInscripcion}
+                onChange={(e) => set('fechaInscripcion', e.target.value)}
+                disabled={!canEdit}
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+                N° inscripción IGJ
+              </label>
+              <input
+                value={form.numeroInscripcion}
+                onChange={(e) => set('numeroInscripcion', e.target.value)}
+                disabled={!canEdit}
+                placeholder="12345"
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
+              Norma contable aplicada
+            </label>
+            <Select
+              value={form.accountingFramework}
+              onValueChange={(v) => set('accountingFramework', v)}
+              disabled={!canEdit}
+            >
+              <SelectTrigger size="sm" className="w-64 text-[12.5px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rt54">
+                  RT 54 (T.O. RT 59) — entes pequeños
+                </SelectItem>
+                <SelectItem value="rt6">RT 6 — norma general</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-[var(--arca-ink-3)]">
+              Define cómo se cita el ajuste por inflación en los EECC. El
+              cálculo es idéntico en ambas normas.
+            </p>
+          </div>
+
+          {canEdit && (
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={mut.isPending || !dirty}
+                className="px-4 h-8 rounded-[7px] bg-[var(--arca-ink)] text-white text-[12.5px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+              >
+                {mut.isPending ? 'Guardando…' : 'Guardar cambios'}
+              </button>
+            </div>
+          )}
+        </form>
+
+        {/* Contador — solo lectura */}
+        {membrete?.accountant && (
+          <>
+            <div className="border-t border-[var(--arca-border)]" />
+            <div className="space-y-1">
+              <div className="text-[11px] font-medium text-[var(--arca-ink-3)] uppercase tracking-wide">
+                Contador firmante
+              </div>
+              <div className="text-[13px] text-[var(--arca-ink)]">
+                {membrete.accountant.nombre}
+              </div>
+              <div className="text-[12px] text-[var(--arca-ink-3)]">
+                {[
+                  membrete.accountant.tomo &&
+                    `Tomo ${membrete.accountant.tomo}`,
+                  membrete.accountant.folio &&
+                    `Folio ${membrete.accountant.folio}`,
+                  membrete.accountant.consejo,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </div>
+              <div className="text-[11px] text-[var(--arca-ink-4)] mt-1">
+                La firma se configura en «Firma digital» del módulo Sueldos.
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </ArcaCard>
+  );
 }
 
 function ExportView({
@@ -10833,54 +12181,129 @@ function ExportView({
     }
   };
 
+  /**
+   * Las variables con las que se rellenan las notas del paquete.
+   *
+   * Una sola función para el PDF y para el chequeo previo: si fueran dos, el
+   * aviso podría decir que falta algo que sí se rellena, o al revés.
+   */
+  const noteVarsDelPaquete = (): Partial<AuditReportVars> => ({
+    empresa: clientName,
+    cuit: clientCuit,
+    domicilio: membrete?.domicilio ?? '',
+    inicio: selectedFy ? fechaLarga(new Date(selectedFy.fechaDesde)) : '',
+    constitucion: membrete?.fechaConstitucion
+      ? fechaLarga(new Date(membrete.fechaConstitucion))
+      : '',
+    igj: membrete?.numeroInscripcion ?? '',
+    ...variablesDelBalance(esp),
+    contador: membrete?.accountant?.nombre ?? '',
+    matricula: [
+      membrete?.accountant?.tomo && `Tomo ${membrete.accountant.tomo}`,
+      membrete?.accountant?.folio && `Folio ${membrete.accountant.folio}`,
+      membrete?.accountant?.consejo,
+    ]
+      .filter(Boolean)
+      .join(' '),
+  });
+
+  /**
+   * Variables escritas en las notas que no tienen dato cargado.
+   *
+   * `fillAuditReport` deja la llave a la vista cuando falta el valor —borrarla
+   * escondería el hueco justo en el documento que se firma—, pero eso se
+   * descubre recién abriendo el PDF. Conviene avisar antes.
+   */
+  const variablesFaltantes = () => {
+    const vars = noteVarsDelPaquete();
+    const faltan = new Set<string>();
+    for (const n of notes)
+      for (const k of missingVars(n.content, vars)) faltan.add(k);
+    return [...faltan];
+  };
+
+  const [faltantesPdf, setFaltantesPdf] = useState<string[] | null>(null);
+
   const onPackage = async () => {
     if (!esp || !er || !anexoII || !selectedFy) {
       toast.error('Los datos del paquete aún se están cargando');
       return;
     }
+    const faltan = variablesFaltantes();
+    if (faltan.length > 0) {
+      setFaltantesPdf(faltan);
+      return;
+    }
+    await generarPaquete();
+  };
+
+  /**
+   * Los datos del paquete, armados una sola vez: los usan la descarga y la
+   * vista previa, así lo que se previsualiza es exactamente lo que se baja.
+   */
+  const armarDatosPaquete = () => {
+    if (!esp || !er || !anexoII || !selectedFy) return null;
+    return {
+      empresaName: clientName,
+      cuit: clientCuit,
+      fiscalYearNumber: esp.fiscalYearNumber,
+      periodLabel: esp.periodLabel,
+      generatedLabel: new Date().toLocaleDateString('es-AR'),
+      domicilio: membrete?.domicilio ?? undefined,
+      actividadPrincipal: membrete?.actividadPrincipal ?? undefined,
+      // Formateadas acá: la columna `date` viaja como YYYY-MM-DD y la
+      // carátula la imprime tal cual le llegue.
+      fechaConstitucion: membrete?.fechaConstitucion
+        ? fmtFecha(membrete.fechaConstitucion)
+        : undefined,
+      fechaInscripcion: membrete?.fechaInscripcion
+        ? fmtFecha(membrete.fechaInscripcion)
+        : undefined,
+      numeroInscripcion: membrete?.numeroInscripcion ?? undefined,
+      esp,
+      er,
+      eepn: eepn ?? null,
+      efe: efe ?? null,
+      valuation,
+      norma,
+      accountant: membrete?.accountant ?? null,
+      auditReport,
+      auditoriaFecha: auditReport?.fecha ?? null,
+      // El número de cada nota sale de su posición, no del orden de carga.
+      noteSequence: numberNotes(layout, notes, sectionLabels),
+      references,
+      sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
+        (x) => x.entry
+      ),
+      anexoII,
+      anexoI: anexoI
+        ? {
+            categories: anexoI.categories,
+            grandTotals: anexoI.grandTotals,
+            prior: anexoIMuestraComparativo(sectionLabels)
+              ? anexoI.prior
+              : null,
+          }
+        : null,
+      cmv: cmv?.hasData
+        ? {
+            existenciaInicial: cmv.existenciaInicial,
+            comprasGastos: cmv.comprasGastos,
+            existenciaFinal: cmv.existenciaFinal,
+            total: cmv.total,
+          }
+        : null,
+      notes,
+      noteVars: noteVarsDelPaquete(),
+    };
+  };
+
+  const generarPaquete = async () => {
+    const datos = armarDatosPaquete();
+    if (!datos || !selectedFy) return;
     setBusy('package');
     try {
-      const blob = await exportEeccPackagePdf({
-        empresaName: clientName,
-        cuit: clientCuit,
-        fiscalYearNumber: esp.fiscalYearNumber,
-        periodLabel: esp.periodLabel,
-        generatedLabel: new Date().toLocaleDateString('es-AR'),
-        esp,
-        er,
-        eepn: eepn ?? null,
-        efe: efe ?? null,
-        valuation,
-        norma,
-        accountant: membrete?.accountant ?? null,
-        auditReport,
-        auditoriaFecha: auditReport?.fecha ?? null,
-        // El número de cada nota sale de su posición, no del orden de carga.
-        noteSequence: numberNotes(layout, notes, sectionLabels),
-        references,
-        sections: resolveDocumentLayout(layout, notes, sectionLabels).map(
-          (x) => x.entry
-        ),
-        anexoII,
-        anexoI: anexoI
-          ? {
-              categories: anexoI.categories,
-              grandTotals: anexoI.grandTotals,
-              prior: anexoIMuestraComparativo(sectionLabels)
-                ? anexoI.prior
-                : null,
-            }
-          : null,
-        cmv: cmv?.hasData
-          ? {
-              existenciaInicial: cmv.existenciaInicial,
-              comprasGastos: cmv.comprasGastos,
-              existenciaFinal: cmv.existenciaFinal,
-              total: cmv.total,
-            }
-          : null,
-        notes,
-      });
+      const blob = await exportEeccPackagePdf(datos);
       if (isOwner) {
         const dataUrl = await blobToDataUrl(blob);
         await saveFinancialStatementPdf({
@@ -10901,6 +12324,74 @@ function ExportView({
     } finally {
       setBusy(null);
     }
+  };
+
+  /** Vista previa abierta: el documento, su título y cómo descargarlo. */
+  const [preview, setPreview] = useState<{
+    url: string;
+    titulo: string;
+    descargar: () => void;
+  } | null>(null);
+  const cerrarPreview = () => {
+    if (preview) URL.revokeObjectURL(preview.url);
+    setPreview(null);
+  };
+
+  /**
+   * Arma la vista previa de cualquier exporte PDF: genera el blob sin
+   * descargarlo ni guardarlo — mirar no es publicar — y deja a mano el
+   * botón de descarga real, que pasa por el flujo completo de ese exporte.
+   */
+  const previsualizar = async (
+    key: string,
+    titulo: string,
+    generar: () => Promise<Blob> | null,
+    descargar: () => void
+  ) => {
+    const blob$ = generar();
+    if (!blob$) {
+      toast.error('Los datos aún se están cargando');
+      return;
+    }
+    setBusy(`${key}-preview`);
+    try {
+      const blob = await blob$;
+      setPreview({ url: URL.createObjectURL(blob), titulo, descargar });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Error al generar el PDF');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const previsualizarPaquete = () =>
+    previsualizar(
+      'package',
+      'Paquete contable completo',
+      () => {
+        const datos = armarDatosPaquete();
+        return datos ? exportEeccPackagePdf(datos, { descargar: false }) : null;
+      },
+      () => void onPackage()
+    );
+
+  const armarDatosMayor = (): MayorExportData | null => {
+    if (!consol?.ejercicio || consol.accounts.length === 0) return null;
+    return {
+      empresaName: clientName,
+      fiscalYearNumber: consol.ejercicio.number,
+      from: consol.from,
+      to: consol.to,
+      sections: consol.accounts.map((a) => ({
+        code: a.code,
+        name: a.name,
+        saldoInicial: a.saldoInicial,
+        rows: a.movements,
+        totalDebit: a.totalDebit,
+        totalCredit: a.totalCredit,
+        saldoFinal: a.saldoFinal,
+      })),
+    };
   };
 
   const onMayor = async () => {
@@ -10933,6 +12424,44 @@ function ExportView({
       setBusy(null);
     }
   };
+
+  const armarDatosInventarios = () =>
+    esp && er
+      ? {
+          empresaName: clientName,
+          cuit: clientCuit,
+          fiscalYearNumber: esp.fiscalYearNumber,
+          periodLabel: esp.periodLabel,
+          esp,
+          er,
+          eepn: eepn ?? null,
+          valuation,
+        }
+      : null;
+
+  const previsualizarMayor = () =>
+    previsualizar(
+      'mayor',
+      'Libro Mayor',
+      () => {
+        const datos = armarDatosMayor();
+        return datos ? exportLibroMayorPdf(datos, { descargar: false }) : null;
+      },
+      () => void onMayor()
+    );
+
+  const previsualizarInventarios = () =>
+    previsualizar(
+      'inv',
+      'Libro Inventarios y Balances',
+      () => {
+        const datos = armarDatosInventarios();
+        return datos
+          ? exportLibroInventariosPdf(datos, { descargar: false })
+          : null;
+      },
+      () => void onInventarios()
+    );
 
   const onInventarios = async () => {
     if (!esp || !er) {
@@ -10967,12 +12496,15 @@ function ExportView({
     extra?: string;
     /** Etiqueta del botón; por defecto PDF. */
     format?: 'PDF' | 'Excel';
+    /** Vista previa sin descargar ni guardar. */
+    onPreview?: () => Promise<void>;
   }[] = [
     {
       key: 'package',
       title: 'Paquete contable completo (EECC)',
       desc: 'Carátula, ESP, ER, EEPN, Flujo de Efectivo, Nota 3, Anexo I, Anexo II, notas y espacios de firma. Sigue la valuación elegida arriba.',
       onClick: onPackage,
+      onPreview: previsualizarPaquete,
       extra: isOwner
         ? 'Se guarda asociado al ejercicio.'
         : 'Solo el Owner puede guardarlo.',
@@ -10982,17 +12514,19 @@ function ExportView({
       title: 'Libro Mayor',
       desc: 'Todas las cuentas con sus movimientos del ejercicio. Una página por cuenta — formato rubricable.',
       onClick: onMayor,
+      onPreview: previsualizarMayor,
     },
     {
       key: 'inv',
       title: 'Libro Inventarios y Balances',
       desc: 'Inventario al cierre, ESP, ER y Evolución del Patrimonio Neto. Formato rubricable.',
       onClick: onInventarios,
+      onPreview: previsualizarInventarios,
     },
     {
       key: 'estados-excel',
       title: 'Estados nuevos en Excel',
-      desc: 'EEPN, Flujo de Efectivo y Nota 3, una hoja por estado. Sigue la valuación elegida arriba.',
+      desc: 'EEPN, Flujo de Efectivo, Nota 3 e Inventario, una hoja por estado y en el orden del documento. Sigue la valuación elegida arriba.',
       onClick: onEstadosExcel,
       extra: 'Para cruzar contra el papel de trabajo.',
       format: 'Excel',
@@ -11000,49 +12534,168 @@ function ExportView({
   ];
 
   return (
-    <ArcaCard>
-      <div className="px-5 py-3 border-b border-[var(--arca-border)]">
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          Exportes
-        </span>
-        {pdfGeneratedAt && (
-          <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5">
-            Último paquete guardado:{' '}
-            {new Date(pdfGeneratedAt).toLocaleString('es-AR')}
-            {pdfGeneratedByName ? ` · ${pdfGeneratedByName}` : ''}
-          </div>
-        )}
-      </div>
-      <div className="divide-y divide-[var(--arca-border)]">
-        {items.map((it) => (
-          <div key={it.key} className="flex items-center gap-4 px-5 py-4">
-            <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-medium text-[var(--arca-ink)]">
-                {it.title}
-              </div>
-              <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
-                {it.desc}
-              </div>
-              {it.extra && (
-                <div className="text-[10.5px] text-[var(--arca-ink-3)] mt-0.5 italic">
-                  {it.extra}
-                </div>
-              )}
+    <>
+      <ArcaCard>
+        <div className="px-5 py-3 border-b border-[var(--arca-border)]">
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            Exportes
+          </span>
+          {pdfGeneratedAt && (
+            <div className="text-[11px] text-[var(--arca-ink-3)] mt-0.5">
+              Último paquete guardado:{' '}
+              {new Date(pdfGeneratedAt).toLocaleString('es-AR')}
+              {pdfGeneratedByName ? ` · ${pdfGeneratedByName}` : ''}
             </div>
+          )}
+          {!ready && (
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--arca-ink-3)]">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Cargando los datos del ejercicio… los exportes se habilitan solos.
+            </div>
+          )}
+        </div>
+        <div className="divide-y divide-[var(--arca-border)]">
+          {items.map((it) => (
+            <div key={it.key} className="flex items-center gap-4 px-5 py-4">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-[var(--arca-ink)]">
+                  {it.title}
+                </div>
+                <div className="text-[12px] text-[var(--arca-ink-3)] mt-0.5">
+                  {it.desc}
+                </div>
+                {it.extra && (
+                  <div className="text-[10.5px] text-[var(--arca-ink-3)] mt-0.5 italic">
+                    {it.extra}
+                  </div>
+                )}
+              </div>
+              {it.onPreview && (
+                <button
+                  onClick={() => void it.onPreview!()}
+                  disabled={!ready || busy !== null}
+                  title={
+                    !ready ? 'Cargando los datos del ejercicio…' : undefined
+                  }
+                  className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 flex items-center gap-1.5"
+                >
+                  {busy === `${it.key}-preview` || (!ready && busy === null) ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
+                  {busy === `${it.key}-preview` ? 'Generando…' : 'Vista previa'}
+                </button>
+              )}
+              <button
+                onClick={() => void it.onClick()}
+                disabled={!ready || busy !== null}
+                title={!ready ? 'Cargando los datos del ejercicio…' : undefined}
+                className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
+              >
+                {busy === it.key || (!ready && busy === null) ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
+                {busy === it.key
+                  ? 'Generando…'
+                  : `Descargar ${it.format ?? 'PDF'}`}
+              </button>
+            </div>
+          ))}
+        </div>
+      </ArcaCard>
+      {/* Vista previa de cualquier exporte PDF: el mismo armado que la
+          descarga, en un visor. Sin `sandbox` en el iframe — rompe el visor
+          de PDF de Chrome. */}
+      <Dialog
+        open={preview !== null}
+        onOpenChange={(o) => {
+          if (!o) cerrarPreview();
+        }}
+      >
+        <DialogContent className="sm:max-w-[min(95vw,1100px)] h-[92vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b border-[var(--arca-border)]">
+            <DialogTitle>Vista previa · {preview?.titulo}</DialogTitle>
+            <DialogDescription>
+              Es exactamente lo que baja «Descargar PDF», sin guardar nada.
+            </DialogDescription>
+          </DialogHeader>
+          {preview && (
+            <iframe
+              src={preview.url}
+              title={`Vista previa · ${preview.titulo}`}
+              className="flex-1 min-h-0 w-full"
+            />
+          )}
+          <DialogFooter className="px-6 py-3 border-t border-[var(--arca-border)]">
             <button
-              onClick={() => void it.onClick()}
-              disabled={!ready || busy !== null}
-              className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
+              onClick={cerrarPreview}
+              className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
             >
-              <Download className="w-3.5 h-3.5" />
-              {busy === it.key
-                ? 'Generando…'
-                : `Descargar ${it.format ?? 'PDF'}`}
+              Cerrar
             </button>
+            <button
+              onClick={() => {
+                const descargar = preview?.descargar;
+                cerrarPreview();
+                descargar?.();
+              }}
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+            >
+              Descargar PDF
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Avisar antes de exportar, no después de abrir el PDF: una variable
+          sin dato queda impresa como «{{igj}}» en un documento que se firma. */}
+      <AlertDialog
+        open={faltantesPdf !== null}
+        onOpenChange={(o) => {
+          if (!o) setFaltantesPdf(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {faltantesPdf?.length === 1
+                ? 'Hay una variable sin dato cargado'
+                : `Hay ${faltantesPdf?.length ?? 0} variables sin dato cargado`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Las notas las mencionan pero el ejercicio no tiene esos datos, así
+              que en el PDF van a salir impresas tal cual, entre llaves. Podés
+              completarlas en «Datos iniciales» y volver a exportar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-wrap gap-1.5">
+            {faltantesPdf?.map((k) => (
+              <span
+                key={k}
+                className="rounded-[6px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-1 font-mono text-[11.5px] text-[var(--arca-ink-2)]"
+              >
+                {AUDIT_REPORT_VARS.find((v) => v.key === k)?.label ??
+                  `{{${k}}}`}
+              </span>
+            ))}
           </div>
-        ))}
-      </div>
-    </ArcaCard>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setFaltantesPdf(null);
+                void generarPaquete();
+              }}
+            >
+              Exportar igual
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

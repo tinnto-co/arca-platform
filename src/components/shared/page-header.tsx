@@ -1,50 +1,61 @@
-import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { cn } from '@/lib/utils';
 
+/**
+ * Encabezado de pantalla. Es igual en todas las vistas: mismo H1, mismo
+ * subtítulo, mismo aire, sin ícono y sin borde.
+ *
+ * Antes cada pantalla lo resolvía por su cuenta —cinco tamaños de H1 (22, 24,
+ * 28 y 30 px), cuatro paddings distintos, y unas con tile de ícono y otras
+ * no—, así que pasar de Clientes a Notificaciones se sentía como cambiar de
+ * aplicación. El valor del design system es 30/600 con `-0.025em`.
+ *
+ * No lleva padding propio: el aire lo pone `PageShell`, que es el mismo para
+ * las pantallas que scrollean con la página y para las que ocupan el alto
+ * completo.
+ */
 interface PageHeaderProps {
-  icon?: LucideIcon;
   title: string;
-  subtitle?: string;
+  /** Texto o nodos: el resumen suele llevar números resaltados. */
+  subtitle?: ReactNode;
   actions?: ReactNode;
+  /** Segunda fila, para la barra de filtros. */
+  filters?: ReactNode;
+  className?: string;
 }
 
 export function PageHeader({
-  icon: Icon,
   title,
   subtitle,
   actions,
+  filters,
+  className,
 }: PageHeaderProps) {
   return (
-    <div className="flex items-start justify-between gap-4 mb-6">
-      <div className="flex items-center gap-3">
-        {Icon && (
-          <div
-            className="w-9 h-9 rounded-[10px] flex items-center justify-center shrink-0"
-            style={{
-              background: 'var(--arca-surface-2)',
-              border: '1px solid var(--arca-border)',
-            }}
-          >
-            <Icon
-              className="w-[18px] h-[18px] text-[var(--arca-ink-2)]"
-              strokeWidth={1.8}
-            />
-          </div>
-        )}
-        <div>
-          <h1 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)] leading-tight">
+    <div className={cn('mb-5 flex shrink-0 flex-col gap-3', className)}>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        {/* `basis` y no `min-w-0`: con `min-w-0` el bloque del título se
+            aplasta hasta cero antes de que las acciones bajen de línea, y el
+            buscador termina encima del H1. Con un ancho base, cuando no entran
+            las dos columnas las acciones se van abajo. */}
+        <div className="min-w-[min(100%,260px)] flex-1">
+          <h1 className="text-[30px] leading-none font-semibold tracking-[-0.025em] text-[var(--arca-ink)] [font-family:var(--ff-display)]">
             {title}
           </h1>
           {subtitle && (
-            <p className="text-[13px] text-[var(--arca-ink-3)] mt-0.5">
+            <p className="mt-1.5 text-[12px] text-[var(--arca-ink-3)] tabular-nums">
               {subtitle}
             </p>
           )}
         </div>
+
+        {actions && (
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        )}
       </div>
 
-      {actions && (
-        <div className="flex items-center gap-2 shrink-0">{actions}</div>
+      {filters && (
+        <div className="flex flex-wrap items-center gap-2">{filters}</div>
       )}
     </div>
   );

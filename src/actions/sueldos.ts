@@ -10,6 +10,7 @@ import {
   convenio,
   convenioFuente,
   convenioCategoria,
+  cctEscala,
   escalaSalarial,
   modalidadContratacion,
   situacionRevista,
@@ -1156,7 +1157,38 @@ async function getBasicoVigenteInternal(
     )
     .orderBy(desc(escalaSalarial.vigenciaDesde))
     .limit(1);
-  return escala ? Number(escala.montoBasico) : 0;
+  if (escala) return Number(escala.montoBasico);
+
+  /*
+   * Sin escala propia, la publicada del convenio.
+   *
+   * `escala_salarial` es lo que este empleador paga distinto —por encima del
+   * convenio, o una categoría que no existe en la grilla oficial— y por eso
+   * manda. El básico de convenio es nacional y vive una sola vez en
+   * `cct_escala`, que es donde escribe el scrapeo semanal: antes tenía que
+   * copiarlo a cada cliente adherido, y sin clientes adheridos no escribía
+   * nada y terminaba en OK igual.
+   */
+  const [publicada] = await db
+    .select({ montoBasico: cctEscala.montoBasico })
+    .from(cctEscala)
+    .innerJoin(
+      convenioCategoria,
+      eq(convenioCategoria.cctCategoriaId, cctEscala.cctCategoriaId)
+    )
+    .where(
+      and(
+        eq(convenioCategoria.id, categoriaId),
+        sql`(${cctEscala.vigenciaDesde})::date <= (to_date(${periodo} || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date`,
+        or(
+          isNull(cctEscala.vigenciaHasta),
+          sql`(${cctEscala.vigenciaHasta})::date >= to_date(${periodo} || '-01', 'YYYY-MM-DD')`
+        )
+      )
+    )
+    .orderBy(desc(cctEscala.vigenciaDesde))
+    .limit(1);
+  return publicada ? Number(publicada.montoBasico) : 0;
 }
 
 /**

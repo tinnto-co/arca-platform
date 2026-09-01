@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 import { dispatchAllJobs } from '@/actions/job';
 
@@ -94,7 +95,7 @@ function UpdateAllButton() {
 
 function RouteComponent() {
   return (
-    <div className="p-[28px_36px_60px] max-w-[1440px]">
+    <PageShell>
       <PageHeader
         title="Clientes"
         subtitle="Gestión de clientes y sus perfiles"
@@ -112,6 +113,6 @@ function RouteComponent() {
         }
       />
       <RepresentativesTable />
-    </div>
+    </PageShell>
   );
 }

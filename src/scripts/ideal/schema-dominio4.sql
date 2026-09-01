@@ -260,6 +260,22 @@ comment on table asiento_linea is
 comment on column asiento_linea.debe is
   'Una línea es del debe o del haber, nunca de las dos: lo garantiza el CHECK. La suma de debe = suma de haber la valida la app al confirmar el asiento.';
 
+create table asiento_template (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references organization(id) on delete cascade,
+  cliente_id uuid not null references cliente(id) on delete cascade,
+  nombre text not null,
+  lineas jsonb not null default '[]'::jsonb,
+  creado_en timestamptz not null default now(),
+  unique (cliente_id, nombre)
+);
+create index idx_asiento_template_cliente on asiento_template(cliente_id);
+
+comment on table asiento_template is
+  'Asiento modelo reutilizable: el usuario carga un asiento frecuente una vez y después lo aplica. Vive acá y no en dominio9 porque necesita el grant que schema-rls.sql da a todas las tablas que ya existen cuando corre.';
+comment on column asiento_template.lineas is
+  'Las líneas del modelo, en JSON. No son asiento_linea: no hay asiento todavía, y los importes pueden venir vacíos para que el usuario los complete al aplicarlo.';
+
 -- ============================================================================
 -- ESTADOS CONTABLES
 -- ============================================================================

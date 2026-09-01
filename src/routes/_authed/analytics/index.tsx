@@ -20,9 +20,9 @@ import {
   DollarSign,
   Bell,
   Calendar,
-  BarChart2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import {
   Select,
   SelectContent,
@@ -257,11 +257,10 @@ function AnalyticsPage() {
     : [];
 
   return (
-    <div className="flex flex-col gap-6 p-6 max-w-[1200px] mx-auto">
+    <PageShell className="flex flex-col gap-6">
       <PageHeader
         title="Analytics"
         subtitle="Resumen ejecutivo, riesgo por cliente y ratios financieros"
-        icon={BarChart2}
       />
 
       {/* ─── Executive summary ─── */}
@@ -615,7 +614,10 @@ function AnalyticsPage() {
           <h2 className="text-[12px] font-semibold uppercase tracking-widest text-[var(--arca-ink-3)]">
             Proyección IVA
           </h2>
-          <Select value={ivaClienteId} onValueChange={(v) => setIvaClienteId(v)}>
+          <Select
+            value={ivaClienteId}
+            onValueChange={(v) => setIvaClienteId(v)}
+          >
             <SelectTrigger className="w-[260px] text-[13px]">
               <SelectValue placeholder="Seleccionar cliente…" />
             </SelectTrigger>
@@ -693,6 +695,6 @@ function AnalyticsPage() {
           </ArcaCard>
         )}
       </section>
-    </div>
+    </PageShell>
   );
 }
