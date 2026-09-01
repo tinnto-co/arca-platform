@@ -14,10 +14,7 @@
  */
 import { db } from '@/lib/db';
 import { organization } from '@/drizzle/auth';
-import {
-  autoGenerarTareasParaOrg,
-  getPeriodoActualAR,
-} from '@/lib/tareas-batch';
+import { autoGenerarTareasParaOrg } from '@/lib/tareas-batch';
 import { runWithDbContext } from '../../lib/db-context';
 
 /** Hora UTC en la que corre el cron (07:00 AR = 10:00 UTC). */
@@ -33,8 +30,7 @@ function msHastaProximaEjecucion(): number {
 }
 
 async function tick(): Promise<void> {
-  const periodo = getPeriodoActualAR();
-  console.log(`[tareas-auto] corriendo para período ${periodo}...`);
+  console.log('[tareas-auto] corriendo (todo lo vigente)...');
 
   let orgs: { id: string }[];
   try {
@@ -51,7 +47,7 @@ async function tick(): Promise<void> {
       // Sin request no hay contexto RLS: hay que abrirlo por org. Sin esto las
       // políticas devuelven cero filas y el cron termina «bien» sin crear nada.
       const result = await runWithDbContext({ orgId: org.id }, () =>
-        autoGenerarTareasParaOrg(org.id, periodo)
+        autoGenerarTareasParaOrg(org.id)
       );
       if (result.creadas > 0 || result.sinCliente > 0) {
         console.log(

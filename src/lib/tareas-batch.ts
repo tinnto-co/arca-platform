@@ -2,17 +2,7 @@
  * Lógica de auto-generación de tareas sin dependencia de sesión HTTP.
  * Puede ser invocada tanto desde server actions como desde crons.
  */
-import {
-  and,
-  asc,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  lte,
-  or,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import {
   tarea,
@@ -53,6 +43,8 @@ export interface AutoGenResult {
   creadas: number;
   omitidas: number;
   sinCliente: number;
+  /** Tareas creadas por período (YYYY-MM), para poder contarlo en la UI. */
+  porPeriodo: Record<string, number>;
 }
 
 /**
@@ -64,13 +56,19 @@ export interface AutoGenResult {
  */
 export async function autoGenerarTareasParaOrg(
   orgId: string,
-  periodo: string,
   creadoPor: string | null = null
 ): Promise<AutoGenResult> {
-  const [year, month] = periodo.split('-').map(Number) as [number, number];
-  const fromStr = `${year}-${String(month).padStart(2, '0')}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const toStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  /**
+   * El alcance es «todo lo vigente»: desde el primer día del mes actual en
+   * hora argentina, sin tope hacia adelante. No se pide un período porque el
+   * período no es una decisión del usuario — cada vencimiento ya trae el suyo
+   * y la tarea se agrupa en ese. Los meses pasados quedan afuera a propósito:
+   * convertirlos en tareas resucitaría trabajo ya hecho fuera del sistema.
+   */
+  const hoyAR = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+  }).format(new Date());
+  const fromStr = `${hoyAR.slice(0, 7)}-01`;
 
   const orgClientes = await db
     .select({ id: cliente.id, cuit: cliente.cuit, name: cliente.razonSocial })
@@ -78,7 +76,7 @@ export async function autoGenerarTareasParaOrg(
     .where(eq(cliente.orgId, orgId));
 
   if (orgClientes.length === 0)
-    return { creadas: 0, omitidas: 0, sinCliente: 0 };
+    return { creadas: 0, omitidas: 0, sinCliente: 0, porPeriodo: {} };
 
   const clienteById = Object.fromEntries(orgClientes.map((c) => [c.id, c]));
   const clienteByCuit = Object.fromEntries(orgClientes.map((c) => [c.cuit, c]));
@@ -97,13 +95,12 @@ export async function autoGenerarTareasParaOrg(
       and(
         eq(vencimiento.orgId, orgId),
         gte(vencimiento.venceAt, fromStr),
-        lte(vencimiento.venceAt, toStr),
         or(isNotNull(vencimiento.clienteId), isNotNull(vencimiento.cuit))
       )
     );
 
   if (vencimientosRaw.length === 0)
-    return { creadas: 0, omitidas: 0, sinCliente: 0 };
+    return { creadas: 0, omitidas: 0, sinCliente: 0, porPeriodo: {} };
 
   const vencimientoIds = vencimientosRaw.map((v) => v.id);
   const yaAsignados = await db
@@ -145,7 +142,12 @@ export async function autoGenerarTareasParaOrg(
   }
 
   if (resueltos.length === 0)
-    return { creadas: 0, omitidas: cubiertos.size, sinCliente };
+    return {
+      creadas: 0,
+      omitidas: cubiertos.size,
+      sinCliente,
+      porPeriodo: {},
+    };
 
   const grupos = new Map<
     string,
@@ -154,6 +156,7 @@ export async function autoGenerarTareasParaOrg(
       taxLabel: string;
       concept: string;
       fecha: string;
+      periodo: string;
       items: { clienteId: string; vencimientoId: string }[];
     }
   >();
@@ -167,6 +170,9 @@ export async function autoGenerarTareasParaOrg(
         taxLabel: v.tax,
         concept: v.concept,
         fecha: v.dueDate,
+        // El período sale del vencimiento, no de la corrida: una misma tanda
+        // puede crear tareas de septiembre y de octubre.
+        periodo: v.dueDate.slice(0, 7),
         items: [],
       });
     }
@@ -192,6 +198,7 @@ export async function autoGenerarTareasParaOrg(
     .limit(1);
 
   let creadas = 0;
+  const porPeriodo: Record<string, number> = {};
 
   for (const grupo of grupos.values()) {
     const fechaDate = new Date(grupo.fecha + 'T12:00:00Z');
@@ -209,7 +216,7 @@ export async function autoGenerarTareasParaOrg(
         and(
           eq(tarea.orgId, orgId),
           eq(tarea.tipo, grupo.tipo),
-          eq(tarea.periodo, periodo),
+          eq(tarea.periodo, grupo.periodo),
           eq(tarea.fuente, 'automatica')
         )
       )
@@ -224,7 +231,7 @@ export async function autoGenerarTareasParaOrg(
             titulo,
             tipo: grupo.tipo,
             estado: 'pendiente',
-            periodo,
+            periodo: grupo.periodo,
             venceAt: fechaDate,
             fuente: 'automatica',
             creadoPor,
@@ -233,7 +240,10 @@ export async function autoGenerarTareasParaOrg(
           .returning()
           .then((r) => r[0]!.id);
 
-    if (!existing) creadas++;
+    if (!existing) {
+      creadas++;
+      porPeriodo[grupo.periodo] = (porPeriodo[grupo.periodo] ?? 0) + 1;
+    }
 
     for (const item of grupo.items) {
       await db
@@ -248,14 +258,5 @@ export async function autoGenerarTareasParaOrg(
     }
   }
 
-  return { creadas, omitidas: cubiertos.size, sinCliente };
-}
-
-/** Retorna el período actual en formato YYYY-MM usando hora de Argentina (UTC-3). */
-export function getPeriodoActualAR(): string {
-  const now = new Date();
-  const ar = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  const year = ar.getUTCFullYear();
-  const month = String(ar.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}`;
+  return { creadas, omitidas: cubiertos.size, sinCliente, porPeriodo };
 }

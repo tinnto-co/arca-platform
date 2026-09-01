@@ -1064,10 +1064,12 @@ export const deleteTareaPaso = createServerFn({ method: 'POST' })
 // ─── Auto-generación desde vencimientos ──────────────────────────────────────
 
 export const autoGenerarTareas = createServerFn({ method: 'POST' })
-  .validator(z.object({ periodo: z.string().regex(/^\d{4}-\d{2}$/) }))
-  .handler(async (ctx) => {
+  // Sin parámetros a propósito: genera todo lo vigente (mes actual en
+  // adelante). El período no es una decisión del usuario — cada vencimiento
+  // trae el suyo y la tarea se agrupa ahí.
+  .handler(async () => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
-    return autoGenerarTareasParaOrg(orgId, ctx.data.periodo, userId);
+    return autoGenerarTareasParaOrg(orgId, userId);
   });

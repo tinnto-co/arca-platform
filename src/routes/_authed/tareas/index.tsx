@@ -92,6 +92,13 @@ export const Route = createFileRoute('/_authed/tareas/')({
 
 const SIN_COLUMNA = '__sin_columna__';
 
+/** «2026-09» → «septiembre», para los mensajes de la autogeneración. */
+const nombreMes = (periodo: string) =>
+  new Date(periodo + '-15T12:00:00Z').toLocaleDateString('es-AR', {
+    month: 'long',
+    timeZone: 'UTC',
+  });
+
 /** Un filtro vacío no viaja en la URL: `''` significa "sin filtrar". */
 const oQuitar = (v: string) => (v === '' ? undefined : v);
 
@@ -322,26 +329,21 @@ function TareasPage() {
     void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
 
   const autogenerar = useMutation({
-    mutationFn: () => {
-      // Genera para el período que el tablero está mirando; sin filtro, el mes
-      // en curso en hora argentina — cerca de fin de mes UTC ya va un día
-      // adelante y generaría el período equivocado.
-      const periodo =
-        filtros.periodo ||
-        new Intl.DateTimeFormat('sv-SE', {
-          timeZone: 'America/Argentina/Buenos_Aires',
-        })
-          .format(new Date())
-          .slice(0, 7);
-      return autoGenerarTareas({ data: { periodo } });
-    },
+    // Sin parámetros: genera todo lo vigente (mes actual en adelante), sin
+    // depender de qué esté filtrando el tablero.
+    mutationFn: () => autoGenerarTareas(),
     onSuccess: (r) => {
       refrescar();
       // Los tres ceros distintos del ticket TIN-1411, cada uno con su mensaje:
       // que «no hay nada» y «está roto» no se vean iguales es el punto.
       if (r.creadas > 0) {
+        const meses = Object.entries(r.porPeriodo)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([p, n]) => `${n} de ${nombreMes(p)}`)
+          .join(', ');
         toast.success(
-          `${r.creadas} ${r.creadas === 1 ? 'tarea creada' : 'tareas creadas'} desde los vencimientos` +
+          `${r.creadas} ${r.creadas === 1 ? 'tarea creada' : 'tareas creadas'}` +
+            (Object.keys(r.porPeriodo).length > 1 ? `: ${meses}` : '') +
             (r.sinCliente > 0
               ? ` — ${r.sinCliente} vencimientos sin cliente asociado`
               : '')
@@ -351,9 +353,9 @@ function TareasPage() {
           `Se encontraron vencimientos pero ${r.sinCliente} no se pudieron asociar a ningún cliente`
         );
       } else if (r.omitidas > 0) {
-        toast.info('Todos los vencimientos del período ya tienen su tarea');
+        toast.info('Todos los vencimientos vigentes ya tienen su tarea');
       } else {
-        toast.info('No hay vencimientos para este período');
+        toast.info('No hay vencimientos vigentes (del mes actual en adelante)');
       }
     },
     onError: (e) =>
