@@ -129,7 +129,9 @@ function RouteComponent() {
     return (
       <div className="overflow-x-hidden bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px]">
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <h2 className="text-lg font-semibold mb-2 text-[#12131A]">Perfil no encontrado</h2>
+          <h2 className="text-lg font-semibold mb-2 text-[#12131A]">
+            Perfil no encontrado
+          </h2>
           <p className="text-[#9B9CA3] max-w-md">
             No encontramos un perfil con ese identificador habilitado para
             sueldos.
@@ -176,7 +178,7 @@ function RouteComponent() {
             >
               <ChevronLeft className="h-[15px] w-[15px]" />
             </Link>
-            <h1 className="font-[family-name:var(--ff-display)] text-[29px] font-bold tracking-[-0.025em] leading-[1.1] text-[#12131A] truncate">
+            <h1 className="truncate text-[30px] leading-none font-semibold tracking-[-0.025em] text-[var(--arca-ink)] [font-family:var(--ff-display)]">
               {selectedOption?.name ?? 'Cargando…'}
             </h1>
           </div>

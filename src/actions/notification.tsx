@@ -10,6 +10,8 @@ import {
   documento,
   evento,
   notificacionSeveridad,
+  tarea,
+  tareaNotificacion,
 } from '@/drizzle/schema';
 import { member, user } from '@/drizzle/auth';
 import {
@@ -17,7 +19,19 @@ import {
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import { eq, desc, and, gte, lte, sql, isNull } from 'drizzle-orm';
+import {
+  eq,
+  desc,
+  and,
+  gte,
+  lte,
+  sql,
+  isNull,
+  isNotNull,
+  ilike,
+  or,
+  inArray,
+} from 'drizzle-orm';
 
 /**
  * Las notificaciones cuelgan del login de AFIP (`credencial_afip`), no del
@@ -43,6 +57,10 @@ export const getNotifications = createServerFn({
       /** Nivel de importancia. Enum `notificacion_severidad`. */
       severidad: z.string().optional(),
       onlyUnresolved: z.boolean().optional(),
+      /** El inverso: sólo las ya resueltas. Es el tab `Resueltas`. */
+      soloResueltas: z.boolean().optional(),
+      /** Sólo las que traen archivo adjunto. */
+      soloConAdjunto: z.boolean().optional(),
     })
   )
   .handler(async (ctx) => {
@@ -59,6 +77,9 @@ export const getNotifications = createServerFn({
       categoria,
       severidad,
       onlyUnresolved,
+      soloResueltas,
+      search,
+      soloConAdjunto,
     } = ctx.data;
     const offset = (page - 1) * limit;
 
@@ -93,12 +114,44 @@ export const getNotifications = createServerFn({
     if (onlyUnresolved) {
       conditions.push(isNull(notificacion.resueltaAt));
     }
+    if (soloResueltas) {
+      conditions.push(isNotNull(notificacion.resueltaAt));
+    }
+
+    // El texto busca sobre el cuerpo, el resumen y la razón social. Estaba
+    // declarado en el validator pero nunca se aplicaba: el buscador de la
+    // pantalla devolvía la lista entera.
+    const termino = search?.trim();
+    if (termino) {
+      const patron = `%${termino}%`;
+      const porTexto = or(
+        ilike(notificacion.mensaje, patron),
+        ilike(notificacion.aiResumen, patron),
+        ilike(cliente.razonSocial, patron),
+        ilike(cliente.cuit, patron),
+        ilike(credencialAfip.nombre, patron)
+      );
+      if (porTexto) conditions.push(porTexto);
+    }
+
+    if (soloConAdjunto) {
+      conditions.push(
+        sql`exists (select 1 from ${notificacionAdjunto} a where a.notificacion_id = ${notificacion.id})`
+      );
+    }
 
     const whereCondition = and(...conditions);
 
+    // Los mismos joins que el listado: el filtro de texto toca `cliente` y
+    // `credencial_afip`, así que sin ellos el count no compila.
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)` })
       .from(notificacion)
+      .innerJoin(
+        credencialAfip,
+        eq(notificacion.credencialId, credencialAfip.id)
+      )
+      .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
       .where(whereCondition);
 
     const notifications = await db
@@ -124,6 +177,17 @@ export const getNotifications = createServerFn({
         resueltaPor: notificacion.resueltaPor,
         createdAt: notificacion.createdAt,
         updatedAt: notificacion.updatedAt,
+
+        // Subconsultas y no joins: con `left join` sobre dos hijas el conteo
+        // de una multiplica al de la otra.
+        adjuntos: sql<number>`(
+          select count(*)::int from ${notificacionAdjunto} a
+           where a.notificacion_id = ${notificacion.id}
+        )`,
+        tareas: sql<number>`(
+          select count(*)::int from ${tareaNotificacion} tn
+           where tn.notificacion_id = ${notificacion.id}
+        )`,
       })
       .from(notificacion)
       .innerJoin(
@@ -250,19 +314,35 @@ export const markNotificationUnread = createServerFn({
     return { leida: false };
   });
 
+/**
+ * Marca leídas las no leídas. Con `ids`, sólo esas: la pantalla manda las del
+ * resultado filtrado, porque "marcar todas" tiene que significar las que se
+ * están viendo y no las mil de la bandeja entera.
+ */
 export const markAllNotificationsRead = createServerFn({
   method: 'POST',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+})
+  .validator(
+    z.object({ ids: z.array(z.string().uuid()).optional() }).optional()
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const ids = ctx.data?.ids;
 
-  const updated = await db
-    .update(notificacion)
-    .set({ leida: true, updatedAt: new Date() })
-    .where(and(eq(notificacion.orgId, orgId), eq(notificacion.leida, false)))
-    .returning({ id: notificacion.id });
+    const updated = await db
+      .update(notificacion)
+      .set({ leida: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notificacion.orgId, orgId),
+          eq(notificacion.leida, false),
+          ...(ids && ids.length > 0 ? [inArray(notificacion.id, ids)] : [])
+        )
+      )
+      .returning({ id: notificacion.id });
 
-  return { count: updated.length };
-});
+    return { count: updated.length };
+  });
 
 export const deleteNotification = createServerFn({
   method: 'POST',
@@ -376,6 +456,81 @@ export const unresolveNotification = createServerFn({
     return updated;
   });
 
+/**
+ * Los números del encabezado y las opciones de los filtros, en una sola ida.
+ * El total y las no leídas son de la bandeja entera, no del recorte: son el
+ * contexto contra el que se lee el conteo de resultados.
+ */
+export const getInboxResumen = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const [[totales], categorias] = await Promise.all([
+    db
+      .select({
+        total: sql<number>`count(*)::int`,
+        sinLeer: sql<number>`count(*) filter (where ${notificacion.leida} = false)::int`,
+        // Mensajes distintos sin clasificar: es lo que cuesta, no las filas.
+        sinClasificar: sql<number>`count(distinct ${notificacion.mensaje}) filter (where ${notificacion.aiClasificadaAt} is null)::int`,
+        // Cuándo entró la última: es lo que el header muestra como
+        // "última sincronización".
+        ultima: sql<Date | null>`max(${notificacion.createdAt})`,
+      })
+      .from(notificacion)
+      .where(eq(notificacion.orgId, orgId)),
+    db
+      .selectDistinct({ categoria: notificacion.categoria })
+      .from(notificacion)
+      .where(
+        and(eq(notificacion.orgId, orgId), isNotNull(notificacion.categoria))
+      )
+      .orderBy(notificacion.categoria),
+  ]);
+
+  return {
+    total: totales?.total ?? 0,
+    sinLeer: totales?.sinLeer ?? 0,
+    sinClasificar: totales?.sinClasificar ?? 0,
+    ultimaSync: totales?.ultima ?? null,
+    categorias: categorias
+      .map((c) => c.categoria)
+      .filter((c): c is string => c !== null),
+  };
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Vínculo con tareas
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Las tareas que salieron de esta notificación, para la tira del panel. */
+export const listTareasDeNotificacion = createServerFn({
+  method: 'GET',
+})
+  .validator(z.object({ notificacionId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    return db
+      .select({
+        id: tarea.id,
+        titulo: tarea.titulo,
+        estado: tarea.estado,
+        columnaId: tarea.columnaId,
+        fuente: tareaNotificacion.fuente,
+        vinculadaAt: tareaNotificacion.createdAt,
+      })
+      .from(tareaNotificacion)
+      .innerJoin(tarea, eq(tarea.id, tareaNotificacion.tareaId))
+      .where(
+        and(
+          eq(tareaNotificacion.notificacionId, ctx.data.notificacionId),
+          eq(tarea.orgId, orgId)
+        )
+      )
+      .orderBy(desc(tareaNotificacion.createdAt));
+  });
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Clasificación con IA
 // ─────────────────────────────────────────────────────────────────────────────
@@ -462,6 +617,120 @@ async function registrarEventoClasificacion(
     detalle: { severidad: result.severidad, categoria: result.categoria },
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clasificación automática
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Copia la clasificación entre notificaciones con el MISMO texto.
+ *
+ * Las de AFIP se repiten muchísimo: en la base de un estudio hay 1.006
+ * notificaciones y 181 mensajes distintos; «SCT - Intimación» sola aparece 240
+ * veces. Clasificar cada fila sería pagarle a Gemini 825 veces por leer un
+ * texto que ya leyó.
+ *
+ * Corre antes de cualquier llamada al modelo y es sólo SQL.
+ */
+async function propagarClasificacion(orgId: string) {
+  const r = await db.execute(sql`
+    update notificacion n
+       set severidad = f.severidad,
+           categoria = f.categoria,
+           ai_resumen = f.ai_resumen,
+           ai_clasificada_at = f.ai_clasificada_at,
+           updated_at = now()
+      from (
+        select distinct on (mensaje)
+               mensaje, severidad, categoria, ai_resumen, ai_clasificada_at
+          from notificacion
+         where org_id = ${orgId} and ai_clasificada_at is not null
+         order by mensaje, ai_clasificada_at desc
+      ) f
+     where n.org_id = ${orgId}
+       and n.ai_clasificada_at is null
+       and n.mensaje = f.mensaje
+  `);
+  return r.count ?? 0;
+}
+
+/**
+ * Clasifica lo que quede pendiente, de a poco.
+ *
+ * Devuelve cuántas faltan para que la pantalla vuelva a llamar hasta llegar a
+ * cero: así el trabajo se reparte en tandas cortas en vez de un request de
+ * media hora que el servidor corta por timeout.
+ *
+ * Agrupa por texto: una llamada por mensaje distinto, aplicada a todas las
+ * filas que lo comparten.
+ */
+export const clasificarPendientes = createServerFn({ method: 'POST' })
+  .validator(
+    z
+      .object({ mensajes: z.number().int().min(1).max(20).default(8) })
+      .optional()
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const copiadas = await propagarClasificacion(orgId);
+
+    // Los textos distintos que siguen sin clasificar.
+    const pendientes = await db
+      .selectDistinct({ mensaje: notificacion.mensaje })
+      .from(notificacion)
+      .where(
+        and(eq(notificacion.orgId, orgId), isNull(notificacion.aiClasificadaAt))
+      )
+      .limit(ctx.data?.mensajes ?? 8);
+
+    let clasificados = 0;
+    let errores = 0;
+
+    // En paralelo: son pocas por tanda y el cuello es la latencia del modelo,
+    // no el CPU.
+    await Promise.all(
+      pendientes.map(async ({ mensaje }) => {
+        try {
+          const r = await classifyWithGemini(mensaje);
+          const now = new Date();
+          await db
+            .update(notificacion)
+            .set({
+              severidad: r.severidad,
+              categoria: r.categoria,
+              aiResumen: r.resumen,
+              aiClasificadaAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(notificacion.orgId, orgId),
+                eq(notificacion.mensaje, mensaje),
+                isNull(notificacion.aiClasificadaAt)
+              )
+            );
+          clasificados++;
+        } catch {
+          // Una falla no frena la tanda: la próxima vuelta lo reintenta.
+          errores++;
+        }
+      })
+    );
+
+    const [{ faltan }] = (await db
+      .select({
+        faltan: sql<number>`count(distinct ${notificacion.mensaje})::int`,
+      })
+      .from(notificacion)
+      .where(
+        and(eq(notificacion.orgId, orgId), isNull(notificacion.aiClasificadaAt))
+      )) as { faltan: number }[];
+
+    return { copiadas, clasificados, errores, faltan };
+  });
 
 export const classifyNotification = createServerFn({
   method: 'POST',

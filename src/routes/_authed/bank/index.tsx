@@ -13,6 +13,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import {
   Select,
   SelectContent,
@@ -371,12 +372,8 @@ function BankPage() {
   const matchedCount = transactions.filter((t) => t.conciliado).length;
 
   return (
-    <div className="p-[28px_36px_60px] max-w-[1440px]">
-      <PageHeader
-        icon={Landmark}
-        title="Banco"
-        subtitle="Conciliación bancaria"
-      />
+    <PageShell>
+      <PageHeader title="Banco" subtitle="Conciliación bancaria" />
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-5 items-center">
@@ -519,6 +516,6 @@ function BankPage() {
           </div>
         </ArcaCard>
       )}
-    </div>
+    </PageShell>
   );
 }

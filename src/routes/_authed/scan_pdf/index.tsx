@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { DragDrop } from '@/components/drag-drop';
-import { ScanText } from 'lucide-react';
+
 import { useState } from 'react';
 import { scanBankStatement } from '@/actions/scannerAi';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/command';
 import { Check, ChevronsUpDown, FileUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PageHeader } from '@/components/shared/page-header';
 
 export const Route = createFileRoute('/_authed/scan_pdf/')({
   component: RouteComponent,
@@ -77,16 +78,10 @@ function RouteComponent() {
 
   return (
     <div className="flex flex-col space-y-4 p-4 md:space-y-6 md:p-0 md:m-[3rem] max-w-4xl">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <ScanText className="h-6 w-6" />
-          <h1 className="text-2xl font-bold">Escanear PDF</h1>
-        </div>
-        <p className="text-muted-foreground">
-          Subí un PDF bancario para importar automáticamente los movimientos.
-        </p>
-      </div>
+      <PageHeader
+        title="Escanear PDF"
+        subtitle="Subí un PDF bancario para importar automáticamente los movimientos."
+      />
 
       {/* Flujo pre-escaneo: Drag & Drop + Botón */}
       {!result && (

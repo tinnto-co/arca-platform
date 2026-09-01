@@ -30,3 +30,6 @@ docs/
 Documentacion Tecnica/
 dump_staging.sql
 dump_staging.sql
+
+# backups de .env — tienen credenciales de producción
+.env.bak-*

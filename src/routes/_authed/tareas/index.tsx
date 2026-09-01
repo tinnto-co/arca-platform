@@ -1,46 +1,22 @@
-import { useState, useMemo } from 'react';
-import { createFileRoute } from '@tanstack/react-router';
+import { generateKeyBetween } from 'fractional-indexing';
+import { useMemo, useState } from 'react';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
+import { z } from 'zod';
 import { toast } from 'sonner';
 import {
   DndContext,
-  closestCenter,
-  MouseSensor,
-  TouchSensor,
+  DragOverlay,
+  closestCorners,
+  PointerSensor,
   useSensor,
   useSensors,
-  useDroppable,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core';
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import {
-  Plus,
-  Loader2,
-  Pencil,
-  Trash2,
-  ChevronLeft,
-  ChevronRight,
-  Check,
-  X,
-  Kanban,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Plus } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,7 +28,11 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { TaskCard } from '@/components/tareas/TaskCard';
-import { NuevaTareaDialog } from '@/components/tareas/NuevaTareaDialog';
+import { TaskDetailDialog } from '@/components/tareas/TaskDetailDialog';
+import { BoardColumn } from '@/components/tareas/BoardColumn';
+import { BoardHeader } from '@/components/tareas/BoardHeader';
+import { BuscarTareas } from '@/components/tareas/BuscarTareas';
+import { PageShell } from '@/components/shared/page-shell';
 import {
   listTareas,
   listOrgMembers,
@@ -61,708 +41,643 @@ import {
   createColumna,
   updateColumna,
   deleteColumna,
-  reorderColumnas,
   moverTarea,
   reorderTarea,
+  COLORES_COLUMNA,
+  TIPOS_TAREA,
+  CLAVE_ARCHIVADAS,
 } from '@/actions/tareas';
-import { TIPO_LABELS } from '@/components/tareas/utils';
+import type { TareaConDetalle, TipoTarea } from '@/components/tareas/utils';
 import { cn } from '@/lib/utils';
 
+/**
+ * Los filtros son la única forma de recortar el tablero, así que la fuente de
+ * verdad es la URL: un recorte se comparte pegando el link y sobrevive al
+ * refresh. `tarea` abre el modal de detalle, también por link.
+ */
+interface Busqueda {
+  periodo?: string;
+  tipo?: TipoTarea;
+  asignado?: string;
+  empresa?: string;
+  vence_hasta?: string;
+  tarea?: string;
+  archivadas?: boolean;
+}
+
+// Cada campo lleva su `.catch`: un parámetro basura en la URL no puede tumbar
+// la pantalla, simplemente no filtra.
+const esquemaBusqueda = z.object({
+  periodo: z
+    .string()
+    .regex(/^\d{4}-\d{2}$/)
+    .optional()
+    .catch(undefined),
+  tipo: z.enum(TIPOS_TAREA).optional().catch(undefined),
+  asignado: z.string().optional().catch(undefined),
+  empresa: z.string().optional().catch(undefined),
+  vence_hasta: z.string().optional().catch(undefined),
+  tarea: z.string().uuid().optional().catch(undefined),
+  archivadas: z.boolean().optional().catch(undefined),
+});
+
 export const Route = createFileRoute('/_authed/tareas/')({
+  // Tipo de retorno explícito, como el resto de las rutas del proyecto: pasar
+  // el schema de zod pelado deja el `useSearch()` en `any`.
+  validateSearch: (s: Record<string, unknown>): Busqueda =>
+    esquemaBusqueda.parse(s),
   component: TareasPage,
 });
 
-const now = new Date();
-const ANOS = Array.from({ length: 6 }, (_, i) => String(now.getFullYear() - i));
-const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, '0'),
-  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
-}));
+const SIN_COLUMNA = '__sin_columna__';
 
-type Tarea = Awaited<ReturnType<typeof listTareas>>[number];
+/** Un filtro vacío no viaja en la URL: `''` significa "sin filtrar". */
+const oQuitar = (v: string) => (v === '' ? undefined : v);
 
-// ─── SortableTaskCard ─────────────────────────────────────────────────────────
+// ─── Card arrastrable ────────────────────────────────────────────────────────
 
-function SortableTaskCard({ tarea }: { tarea: Tarea }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: tarea.id });
-  const style = {
-    transform: CSS.Transform.toString(transform),
+function CardArrastrable({
+  tarea,
+  seleccionada,
+  onAbrir,
+}: {
+  tarea: TareaConDetalle;
+  seleccionada: boolean;
+  onAbrir: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
     transition,
-  };
+    isDragging,
+  } = useSortable({ id: tarea.id });
+
   return (
     <div
       ref={setNodeRef}
-      style={style}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
       {...attributes}
       {...listeners}
-      className={cn('cursor-grab active:cursor-grabbing touch-none', isDragging && 'opacity-40')}
+      // Mientras se arrastra queda el hueco de destino: la card viaja en el
+      // DragOverlay, no acá.
+      className={cn(
+        'touch-none',
+        isDragging &&
+          'rounded-[var(--arca-r-md)] border border-dashed border-[var(--arca-border-strong)] bg-[rgba(30,52,96,0.03)] opacity-100 [&>*]:invisible'
+      )}
     >
-      <TaskCard tarea={tarea} />
+      <TaskCard tarea={tarea} seleccionada={seleccionada} onAbrir={onAbrir} />
     </div>
   );
 }
 
-// ─── TareasPage ──────────────────────────────────────────────────────────────
+/**
+ * Clave fraccional para insertar en `insertIdx` dentro de una lista ya ordenada
+ * (sin la tarjeta que se está moviendo).
+ *
+ * `generateKeyBetween` exige que los dos bordes sean claves válidas o `null`,
+ * así que se busca la vecina más cercana que TENGA posición en cada dirección:
+ * una tarea vieja sin backfillear no puede servir de borde. Devuelve `null` si
+ * la clave no se puede generar, para no escribir una posición inválida.
+ */
+function posicionEntre(
+  lista: TareaConDetalle[],
+  insertIdx: number
+): string | null {
+  let antes: string | null = null;
+  for (let i = insertIdx - 1; i >= 0; i--) {
+    const pos = lista[i]?.posicion;
+    if (pos != null) {
+      antes = pos;
+      break;
+    }
+  }
+  let despues: string | null = null;
+  for (let i = insertIdx; i < lista.length; i++) {
+    const pos = lista[i]?.posicion;
+    if (pos != null) {
+      despues = pos;
+      break;
+    }
+  }
+
+  try {
+    return generateKeyBetween(antes, despues);
+  } catch {
+    // Bordes incoherentes (antes >= despues). Pasa sólo si el cliente quedó con
+    // datos viejos; el refetch posterior lo acomoda.
+    return null;
+  }
+}
+
+// ─── Página ──────────────────────────────────────────────────────────────────
 
 function TareasPage() {
   const queryClient = useQueryClient();
-  const [nuevaOpen, setNuevaOpen] = useState(false);
-  const [nuevaColumnaId, setNuevaColumnaId] = useState<string | undefined>(undefined);
+  const navigate = useNavigate({ from: Route.fullPath });
+  // Anotado a mano: el `useSearch()` generado por el router queda en `any`
+  // hasta que se regenera el routeTree, y ese `any` se propaga a todos los
+  // filtros sin que tsc diga nada.
+  const search: Busqueda = Route.useSearch();
 
-  const [filtroAno, setFiltroAno] = useState('');
-  const [filtroMes, setFiltroMes] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState('');
-  const [filtroAsignado, setFiltroAsignado] = useState('');
-  const [filtroCliente, setFiltroCliente] = useState('');
-  const [filtroVencimientoHasta, setFiltroVencimientoHasta] = useState('');
+  const viendoArchivadas = search.archivadas === true;
 
-  // Column management state
-  const [editingColId, setEditingColId] = useState<string | null>(null);
-  const [editingColNombre, setEditingColNombre] = useState('');
-  const [creandoColumna, setCreandoColumna] = useState(false);
-  const [nuevaColNombre, setNuevaColNombre] = useState('');
-  const [deleteColConfirm, setDeleteColConfirm] = useState<{ id: string; nombre: string } | null>(null);
+  const [composerEn, setComposerEn] = useState<string | null>(null);
+  const [buscando, setBuscando] = useState(false);
+  const [arrastrando, setArrastrando] = useState<string | null>(null);
+  const [nuevaColumna, setNuevaColumna] = useState(false);
+  const [nombreNuevo, setNombreNuevo] = useState('');
+  const [aEliminar, setAEliminar] = useState<{
+    id: string;
+    nombre: string;
+    tareas: number;
+  } | null>(null);
 
-  const filtroPeriodo = filtroAno && filtroMes ? `${filtroAno}-${filtroMes}` : '';
+  const filtros = {
+    periodo: search.periodo ?? '',
+    tipo: search.tipo ?? ('' as const),
+    asignado: search.asignado ?? '',
+    cliente: search.empresa ?? '',
+    venceHasta: search.vence_hasta ?? '',
+  };
 
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
-  );
+  /** Escribe los filtros en la URL. `''` saca el parámetro. */
+  const setFiltros = (p: Partial<typeof filtros>) => {
+    void navigate({
+      search: (prev: Busqueda) => ({
+        ...prev,
+        ...(p.periodo !== undefined && { periodo: oQuitar(p.periodo) }),
+        ...(p.tipo !== undefined && { tipo: oQuitar(p.tipo) as TipoTarea }),
+        ...(p.asignado !== undefined && { asignado: oQuitar(p.asignado) }),
+        ...(p.cliente !== undefined && { empresa: oQuitar(p.cliente) }),
+        ...(p.venceHasta !== undefined && {
+          vence_hasta: oQuitar(p.venceHasta),
+        }),
+      }),
+      replace: true,
+    });
+  };
 
-  const { data: members = [] } = useQuery({
-    queryKey: ['org-members'],
-    queryFn: () => listOrgMembers(),
-  });
+  const abrirTarea = (id: string | undefined) =>
+    void navigate({
+      search: (prev: Busqueda) => ({ ...prev, tarea: id }),
+      replace: true,
+    });
 
-  const { data: representatives = [] } = useQuery({
-    queryKey: ['org-representatives'],
-    queryFn: () => listOrgRepresentatives(),
-  });
+  // ─── Datos ────────────────────────────────────────────────────────────────
 
-  const { data: columnas = [], isLoading: isColsLoading } = useQuery({
+  const { data: columnas = [], isLoading: cargandoCols } = useQuery({
     queryKey: ['tareas-columnas'],
     queryFn: () => listColumnas(),
   });
 
-  const { data: tareas = [], isLoading: isTareasLoading } = useQuery({
-    queryKey: ['tareas', filtroPeriodo, filtroTipo, filtroAsignado, filtroCliente, filtroVencimientoHasta],
+  const { data: miembros = [] } = useQuery({
+    queryKey: ['tareas-miembros'],
+    queryFn: () => listOrgMembers(),
+  });
+
+  const { data: empresas = [] } = useQuery({
+    queryKey: ['tareas-empresas'],
+    queryFn: () => listOrgRepresentatives(),
+  });
+
+  const { data: tareas = [], isLoading: cargandoTareas } = useQuery({
+    queryKey: [
+      'tareas',
+      filtros.periodo,
+      filtros.tipo,
+      filtros.asignado,
+      filtros.cliente,
+      filtros.venceHasta,
+      viendoArchivadas,
+    ],
     queryFn: () =>
       listTareas({
         data: {
-          periodo: filtroPeriodo || undefined,
-          tipo: filtroTipo || undefined,
-          asignadoA: filtroAsignado || undefined,
-          clienteId: filtroCliente || undefined,
-          vencimientoHasta: filtroVencimientoHasta || undefined,
+          periodo: oQuitar(filtros.periodo),
+          tipo: oQuitar(filtros.tipo) as TipoTarea | undefined,
+          asignadoA: oQuitar(filtros.asignado),
+          clienteId: oQuitar(filtros.cliente),
+          vencimientoHasta: oQuitar(filtros.venceHasta),
+          archivadas: viendoArchivadas || undefined,
         },
       }),
   });
 
-  const isLoading = isColsLoading || isTareasLoading;
+  const cargando = cargandoCols || cargandoTareas;
 
-  // Group tasks by columnaId, sorted by posicion within each column
-  const tareasPorColumna = useMemo(() => {
-    const map: Record<string, Tarea[]> = { __sin_columna__: [] };
+  // El tablero muestra las columnas del estudio; el archivo, sólo Archivadas.
+  // Es una columna real —la tienen todas las organizaciones— pero la maneja la
+  // aplicación, así que nunca se ven las dos cosas juntas.
+  const columnasVisibles = useMemo(
+    () =>
+      columnas.filter((c) =>
+        viendoArchivadas
+          ? c.clave === CLAVE_ARCHIVADAS
+          : c.clave !== CLAVE_ARCHIVADAS
+      ),
+    [columnas, viendoArchivadas]
+  );
+
+  // Agrupa por columna. NO reordena: `listTareas` ya devuelve las tareas por
+  // `posicion` con `collate "C"`, y ordenarlas de nuevo acá con parseFloat las
+  // rompía — las claves fraccionales son texto ("a0", "Zz"), no números.
+  const porColumna = useMemo(() => {
+    const map: Record<string, TareaConDetalle[]> = { [SIN_COLUMNA]: [] };
     for (const col of columnas) map[col.id] = [];
     for (const t of tareas) {
-      const key = t.columnaId ?? '__sin_columna__';
+      const key = t.columnaId ?? SIN_COLUMNA;
       if (map[key] !== undefined) map[key].push(t);
-          else map.__sin_columna__.push(t);
-    }
-    for (const key of Object.keys(map)) {
-      map[key]?.sort((a, b) => {
-        const pa = a.posicion != null ? parseFloat(a.posicion) : null;
-        const pb = b.posicion != null ? parseFloat(b.posicion) : null;
-        if (pa != null && pb != null) return pa - pb;
-        if (pa != null) return -1;
-        if (pb != null) return 1;
-        const va = a.venceAt ? new Date(a.venceAt).getTime() : Infinity;
-        const vb = b.venceAt ? new Date(b.venceAt).getTime() : Infinity;
-        return va !== vb ? va - vb : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      });
+      else map[SIN_COLUMNA].push(t);
     }
     return map;
   }, [tareas, columnas]);
 
-  const sinColumna = tareasPorColumna.__sin_columna__ ?? [];
+  const resumen = useMemo(() => {
+    const finSemana = new Date();
+    finSemana.setDate(finSemana.getDate() + 7);
+    const empresasUnicas = new Set<string>();
+    let venceSemana = 0;
+    for (const t of tareas) {
+      for (const c of t.clientes) empresasUnicas.add(c.clienteId);
+      if (t.venceAt && new Date(t.venceAt) <= finSemana) venceSemana++;
+    }
+    return {
+      tareas: tareas.length,
+      empresas: empresasUnicas.size,
+      venceSemana,
+    };
+  }, [tareas]);
 
-  // ─── Mutations ────────────────────────────────────────────────────────────
+  const tareaAbierta = tareas.find((t) => t.id === search.tarea) ?? null;
 
-  const moveMutation = useMutation({
-    mutationFn: ({ id, columnaId }: { id: string; columnaId: string | null }) =>
-      moverTarea({ data: { id, columnaId } }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false }),
-    onError: () => toast.error('Error al mover la tarea'),
+  // ─── Mutaciones ───────────────────────────────────────────────────────────
+
+  const refrescar = () =>
+    void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false });
+  const refrescarCols = () =>
+    void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
+
+  const mover = useMutation({
+    mutationFn: (v: {
+      id: string;
+      columnaId: string | null;
+      posicion?: string;
+    }) => moverTarea({ data: v }),
+    onSuccess: refrescar,
+    onError: () => toast.error('No se pudo mover la tarea'),
   });
 
-  const reorderMutation = useMutation({
-    mutationFn: ({ id, posicion }: { id: string; posicion: string }) =>
-      reorderTarea({ data: { id, posicion } }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tareas'], exact: false }),
-    onError: () => toast.error('Error al reordenar'),
+  const reordenar = useMutation({
+    mutationFn: (v: { id: string; posicion: string }) =>
+      reorderTarea({ data: v }),
+    onSuccess: refrescar,
+    onError: () => toast.error('No se pudo reordenar'),
   });
 
-  const createColMutation = useMutation({
+  const crearCol = useMutation({
     mutationFn: (nombre: string) => createColumna({ data: { nombre } }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
-      setCreandoColumna(false);
-      setNuevaColNombre('');
-      toast.success('Columna creada');
+      refrescarCols();
+      setNuevaColumna(false);
+      setNombreNuevo('');
     },
-    onError: () => toast.error('Error al crear la columna'),
+    onError: () => toast.error('No se pudo crear la columna'),
   });
 
-  const updateColMutation = useMutation({
-    mutationFn: ({ id, nombre }: { id: string; nombre: string }) =>
-      updateColumna({ data: { id, nombre } }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
-      setEditingColId(null);
-    },
-    onError: () => toast.error('Error al renombrar la columna'),
+  const editarCol = useMutation({
+    mutationFn: (v: {
+      id: string;
+      nombre?: string;
+      color?: (typeof COLORES_COLUMNA)[number];
+    }) => updateColumna({ data: v }),
+    onSuccess: refrescarCols,
+    onError: () => toast.error('No se pudo actualizar la columna'),
   });
 
-  const deleteColMutation = useMutation({
+  const borrarCol = useMutation({
     mutationFn: (id: string) => deleteColumna({ data: { id } }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
-      void queryClient.invalidateQueries({ queryKey: ['tareas'] });
+      refrescarCols();
+      refrescar();
+      setAEliminar(null);
       toast.success('Columna eliminada');
     },
-    onError: () => toast.error('Error al eliminar la columna'),
+    onError: () => toast.error('No se pudo eliminar la columna'),
   });
 
-  const reorderColsMutation = useMutation({
-    mutationFn: (ids: string[]) => reorderColumnas({ data: { ids } }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] }),
-    onError: () => toast.error('Error al reordenar columnas'),
-  });
+  // ─── Drag & drop ──────────────────────────────────────────────────────────
 
-  // ─── Drag & Drop ──────────────────────────────────────────────────────────
+  const sensors = useSensors(
+    // Un umbral de 6px: sin esto un click sobre la card empieza un arrastre y
+    // el modal no abre nunca.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
 
-  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    setArrastrando(null);
     if (!over || active.id === over.id) return;
 
     const activeId = String(active.id);
     const overId = String(over.id);
+    const activa = tareas.find((t) => t.id === activeId);
+    if (!activa) return;
 
-    const activeTarea = tareas.find((t) => t.id === activeId);
-    if (!activeTarea) return;
+    const origen = activa.columnaId ?? SIN_COLUMNA;
 
-    const srcColKey = activeTarea.columnaId ?? '__sin_columna__';
+    // `overId` es otra tarjeta, o el id de la columna cuando se suelta en el vacío.
+    const sobreTarea = tareas.find((t) => t.id === overId);
+    const destino = sobreTarea ? (sobreTarea.columnaId ?? SIN_COLUMNA) : overId;
+    if (porColumna[destino] === undefined) return;
 
-    // Determine destination column key
-    const overTarea = tareas.find((t) => t.id === overId);
-    const destColKey = overTarea
-      ? (overTarea.columnaId ?? '__sin_columna__')
-      : overId; // overId is a column droppable id
+    const columnaId = destino === SIN_COLUMNA ? null : destino;
+    const lista = (porColumna[destino] ?? []).filter((t) => t.id !== activeId);
 
-    const destColumnaId = destColKey === '__sin_columna__' ? null : destColKey;
-
-    if (srcColKey !== destColKey) {
-      // Cross-column move
-      moveMutation.mutate({ id: activeId, columnaId: destColumnaId });
-      return;
+    let insertIdx: number;
+    if (!sobreTarea) {
+      insertIdx = lista.length;
+    } else {
+      const idx = lista.findIndex((t) => t.id === overId);
+      if (idx === -1) return;
+      if (origen === destino) {
+        // En la misma columna, arrastrar hacia abajo inserta DESPUÉS de la
+        // tarjeta de destino; hacia arriba, antes.
+        const actual = porColumna[origen] ?? [];
+        const bajando =
+          actual.findIndex((t) => t.id === activeId) <
+          actual.findIndex((t) => t.id === overId);
+        insertIdx = bajando ? idx + 1 : idx;
+      } else {
+        insertIdx = idx;
+      }
     }
 
-    // Same column — reorder by fractional position
-    if (!overTarea) return;
+    const posicion = posicionEntre(lista, insertIdx);
+    if (posicion === null) return;
 
-    const sorted = tareasPorColumna[srcColKey] ?? [];
-    const sortedActiveIdx = sorted.findIndex((t) => t.id === activeId);
-    const sortedOverIdx = sorted.findIndex((t) => t.id === overId);
-    if (sortedActiveIdx === sortedOverIdx) return;
-
-    const movingDown = sortedActiveIdx < sortedOverIdx;
-    const withoutActive = sorted.filter((t) => t.id !== activeId);
-    const overIdxInWithout = withoutActive.findIndex((t) => t.id === overId);
-
-    // Insert after over when moving down, before over when moving up
-    const insertIdx = movingDown ? overIdxInWithout + 1 : overIdxInWithout;
-
-    const before = withoutActive[insertIdx - 1];
-    const after = withoutActive[insertIdx];
-
-    const getPos = (t: Tarea, fallbackIdx: number) =>
-      t.posicion != null ? parseFloat(t.posicion) : (fallbackIdx + 1) * 1000;
-
-    const beforePos = before ? getPos(before, withoutActive.indexOf(before)) : 0;
-    const afterPos = after ? getPos(after, withoutActive.indexOf(after)) : beforePos + 2000;
-    const newPos = String((beforePos + afterPos) / 2);
-
-    reorderMutation.mutate({ id: activeId, posicion: newPos });
+    if (origen !== destino) mover.mutate({ id: activeId, columnaId, posicion });
+    else reordenar.mutate({ id: activeId, posicion });
   };
 
-  // ─── Column handlers ──────────────────────────────────────────────────────
+  const enArrastre = tareas.find((t) => t.id === arrastrando) ?? null;
 
-  const moveColumn = (colId: string, direction: 'left' | 'right') => {
-    const idx = columnas.findIndex((c) => c.id === colId);
-    if (idx === -1) return;
-    const ids = columnas.map((c) => c.id);
-    const swapIdx = direction === 'left' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= ids.length) return;
-    const tmp = ids[idx];
-    ids[idx] = ids[swapIdx]!;
-    ids[swapIdx] = tmp!;
-    reorderColsMutation.mutate(ids);
+  const defaultsComposer = {
+    tipo: oQuitar(filtros.tipo) as TipoTarea | undefined,
+    periodo: oQuitar(filtros.periodo),
   };
 
-  const startEditCol = (id: string, nombre: string) => {
-    setEditingColId(id);
-    setEditingColNombre(nombre);
-  };
+  const sinColumna = porColumna[SIN_COLUMNA] ?? [];
+  const hayFiltros = Object.values(filtros).some(Boolean);
 
-  const saveEditCol = () => {
-    if (!editingColId || !editingColNombre.trim()) return;
-    updateColMutation.mutate({ id: editingColId, nombre: editingColNombre });
-  };
-
-  const openNuevaTarea = (columnaId?: string) => {
-    setNuevaColumnaId(columnaId);
-    setNuevaOpen(true);
-  };
-
-  const hayFiltros = !!(filtroAno || filtroMes || filtroTipo || filtroAsignado || filtroCliente || filtroVencimientoHasta);
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#F7F6F2]">
-      {/* Header */}
-      <div className="border-b px-8 py-4">
-        <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-xl font-semibold">Tareas</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {tareas.length} tarea{tareas.length !== 1 ? 's' : ''}
-              {filtroMes && ` · ${MESES.find((m) => m.value === filtroMes)?.label ?? filtroMes}`}
-              {filtroAno && ` ${filtroAno}`}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" onClick={() => openNuevaTarea()}>
-              <Plus className="h-4 w-4 mr-1.5" />
-              Nueva tarea
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <div className="border-b px-8 py-2.5">
-        <div className="max-w-[1400px] mx-auto flex items-center gap-2 flex-wrap">
-          <Select value={filtroAno} onValueChange={setFiltroAno}>
-            <SelectTrigger className="h-8 w-24 text-xs">
-              <SelectValue placeholder="Año" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Año</SelectItem>
-              {ANOS.map((a) => (
-                <SelectItem key={a} value={a}>{a}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroMes} onValueChange={setFiltroMes}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="Mes" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Mes</SelectItem>
-              {MESES.map((m) => (
-                <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroTipo} onValueChange={setFiltroTipo}>
-            <SelectTrigger className="h-8 w-40 text-xs">
-              <SelectValue placeholder="Todos los tipos" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Todos los tipos</SelectItem>
-              {Object.entries(TIPO_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroAsignado} onValueChange={setFiltroAsignado}>
-            <SelectTrigger className="h-8 w-44 text-xs">
-              <SelectValue placeholder="Todos los asignados" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Todos los asignados</SelectItem>
-              <SelectItem value="sin_asignar">Sin asignar</SelectItem>
-              {members.map((m) => (
-                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={filtroCliente} onValueChange={setFiltroCliente}>
-            <SelectTrigger className="h-8 w-52 text-xs">
-              <SelectValue placeholder="Todas las empresas" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">Todas las empresas</SelectItem>
-              {representatives.map((r) => (
-                <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Vence hasta</span>
-            <Input
-              type="date"
-              value={filtroVencimientoHasta}
-              onChange={(e) => setFiltroVencimientoHasta(e.target.value)}
-              className="h-8 w-36 text-xs"
-            />
-          </div>
-
-          {hayFiltros && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 text-xs text-muted-foreground"
-              onClick={() => {
-                setFiltroAno('');
-                setFiltroMes('');
-                setFiltroTipo('');
-                setFiltroAsignado('');
-                setFiltroCliente('');
-                setFiltroVencimientoHasta('');
-              }}
-            >
-              Limpiar filtros
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Kanban */}
-      <div className="px-8 py-6 overflow-x-auto">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <div className="flex gap-4 items-start min-w-fit">
-              {/* Sin columna — solo visible si hay tareas sin asignar */}
-              {sinColumna.length > 0 && (
-                <KanbanColumn
-                  id={null}
-                  nombre="Sin columna"
-                  tasks={sinColumna}
-                  isFirst={true}
-                  isLast={true}
-                  readOnly
-                />
-              )}
-
-              {/* Columnas dinámicas */}
-              {columnas.map((col, idx) => {
-                const tasks = tareasPorColumna[col.id] ?? [];
-                const isEditing = editingColId === col.id;
-
-                return (
-                  <KanbanColumn
-                    key={col.id}
-                    id={col.id}
-                    nombre={col.nombre}
-                    tasks={tasks}
-                    isFirst={idx === 0}
-                    isLast={idx === columnas.length - 1}
-                    isEditing={isEditing}
-                    editingNombre={editingColNombre}
-                    onEditStart={() => startEditCol(col.id, col.nombre)}
-                    onEditChange={setEditingColNombre}
-                    onEditSave={saveEditCol}
-                    onEditCancel={() => setEditingColId(null)}
-                    onDelete={() => setDeleteColConfirm({ id: col.id, nombre: col.nombre })}
-                    onMoveLeft={() => moveColumn(col.id, 'left')}
-                    onMoveRight={() => moveColumn(col.id, 'right')}
-                    onAddCard={() => openNuevaTarea(col.id)}
-                  />
-                );
-              })}
-
-              {/* Crear columna */}
-              {creandoColumna ? (
-                <div className="w-72 shrink-0">
-                  <div className="bg-white border border-border rounded-lg p-3 shadow-sm">
-                    <Input
-                      autoFocus
-                      value={nuevaColNombre}
-                      onChange={(e) => setNuevaColNombre(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && nuevaColNombre.trim()) {
-                          createColMutation.mutate(nuevaColNombre);
-                        }
-                        if (e.key === 'Escape') {
-                          setCreandoColumna(false);
-                          setNuevaColNombre('');
-                        }
-                      }}
-                      placeholder="Nombre de la columna..."
-                      className="mb-2 h-8 text-sm"
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          if (nuevaColNombre.trim()) createColMutation.mutate(nuevaColNombre);
-                        }}
-                        disabled={!nuevaColNombre.trim() || createColMutation.isPending}
-                      >
-                        {createColMutation.isPending ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          'Crear'
-                        )}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 text-xs"
-                        onClick={() => {
-                          setCreandoColumna(false);
-                          setNuevaColNombre('');
-                        }}
-                      >
-                        Cancelar
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setCreandoColumna(true)}
-                  className="w-72 shrink-0 flex items-center justify-center gap-2 h-11 rounded-lg border-2 border-dashed border-border text-sm text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  Crear columna
-                </button>
-              )}
-
-              {/* Estado vacío */}
-              {columnas.length === 0 && sinColumna.length === 0 && !creandoColumna && (
-                <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
-                  <Kanban className="h-10 w-10 text-muted-foreground/40 mb-3" />
-                  <p className="text-sm font-medium text-muted-foreground">No hay columnas todavía</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Creá una columna para empezar a organizar tus tareas
-                  </p>
-                </div>
-              )}
-            </div>
-          </DndContext>
-        )}
-      </div>
-
-      <NuevaTareaDialog
-        open={nuevaOpen}
-        onOpenChange={setNuevaOpen}
-        columnas={columnas}
-        defaultColumnaId={nuevaColumnaId}
+    <PageShell variant="panel">
+      <BoardHeader
+        filtros={filtros}
+        onFiltro={setFiltros}
+        onLimpiar={() =>
+          setFiltros({
+            periodo: '',
+            tipo: '',
+            asignado: '',
+            cliente: '',
+            venceHasta: '',
+          })
+        }
+        miembros={miembros}
+        empresas={empresas}
+        resumen={resumen}
+        onBuscar={() => setBuscando(true)}
+        viendoArchivadas={viendoArchivadas}
+        onVerArchivadas={(v) =>
+          void navigate({
+            search: (prev: Busqueda) => ({
+              ...prev,
+              archivadas: v || undefined,
+            }),
+            replace: true,
+          })
+        }
       />
 
-      {/* AlertDialog: eliminar columna */}
+      {cargando ? (
+        <div className="flex flex-1 gap-[14px] overflow-x-auto px-7 pt-[18px] pb-[22px]">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="flex w-[264px] min-w-[264px] flex-col gap-[9px] self-start rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] p-[10px]"
+            >
+              <div className="h-4 w-24 animate-pulse rounded bg-[var(--arca-border)]" />
+              {[0, 1, 2].map((j) => (
+                <div
+                  key={j}
+                  className="h-[78px] animate-pulse rounded-[var(--arca-r-md)] bg-[var(--arca-surface)]"
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : columnas.length === 0 && tareas.length === 0 && hayFiltros ? (
+        <div className="px-7 pt-[18px]">
+          <div className="grid place-items-center gap-3 rounded-[var(--arca-r-lg)] border border-dashed border-[var(--arca-border-strong)] py-14">
+            <p className="text-[12.5px] text-[var(--arca-ink-3)]">
+              No hay tareas con estos filtros
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                setFiltros({
+                  periodo: '',
+                  tipo: '',
+                  asignado: '',
+                  cliente: '',
+                  venceHasta: '',
+                })
+              }
+              className="text-[11.5px] font-medium text-[var(--arca-navy-700)] hover:underline"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCorners}
+          onDragStart={(e: DragStartEvent) =>
+            setArrastrando(String(e.active.id))
+          }
+          onDragCancel={() => setArrastrando(null)}
+          onDragEnd={onDragEnd}
+        >
+          <div className="flex min-h-0 flex-1 snap-x snap-proximity gap-[14px] overflow-x-auto pt-[18px] pb-[22px]">
+            {/* Sin columna: sólo si hay tareas ahí. No es una columna del
+                estudio, es dónde caen las que perdieron la suya. */}
+            {!viendoArchivadas && sinColumna.length > 0 && (
+              <BoardColumn
+                id={SIN_COLUMNA}
+                columnaId={null}
+                nombre="Sin columna"
+                color="neutro"
+                tareas={sinColumna}
+                tareaAbierta={search.tarea ?? null}
+                composerAbierto={composerEn === SIN_COLUMNA}
+                filtrosDefault={defaultsComposer}
+                editable={false}
+                soloLectura={viendoArchivadas}
+                onAbrirComposer={() => setComposerEn(SIN_COLUMNA)}
+                onCerrarComposer={() => setComposerEn(null)}
+                renderCard={(t) => (
+                  <CardArrastrable
+                    key={t.id}
+                    tarea={t}
+                    seleccionada={t.id === search.tarea}
+                    onAbrir={() => abrirTarea(t.id)}
+                  />
+                )}
+              />
+            )}
+
+            {columnasVisibles.map((col) => (
+              <BoardColumn
+                key={col.id}
+                id={col.id}
+                columnaId={col.id}
+                nombre={col.nombre}
+                color={col.color}
+                tareas={porColumna[col.id] ?? []}
+                tareaAbierta={search.tarea ?? null}
+                composerAbierto={composerEn === col.id}
+                filtrosDefault={defaultsComposer}
+                editable={col.clave === null}
+                soloLectura={viendoArchivadas}
+                onAbrirComposer={() => setComposerEn(col.id)}
+                onCerrarComposer={() => setComposerEn(null)}
+                onRenombrar={(nombre) =>
+                  editarCol.mutate({ id: col.id, nombre })
+                }
+                onColor={(color) => editarCol.mutate({ id: col.id, color })}
+                onEliminar={() =>
+                  setAEliminar({
+                    id: col.id,
+                    nombre: col.nombre,
+                    tareas: (porColumna[col.id] ?? []).length,
+                  })
+                }
+                renderCard={(t) => (
+                  <CardArrastrable
+                    key={t.id}
+                    tarea={t}
+                    seleccionada={t.id === search.tarea}
+                    onAbrir={() => abrirTarea(t.id)}
+                  />
+                )}
+              />
+            ))}
+
+            {/* Columna virtual */}
+            {!viendoArchivadas && (
+              <div className="w-[180px] min-w-[180px] self-start rounded-[var(--arca-r-lg)] border border-dashed border-[var(--arca-border-strong)] p-[11px]">
+                {nuevaColumna ? (
+                  <input
+                    autoFocus
+                    value={nombreNuevo}
+                    onChange={(e) => setNombreNuevo(e.target.value)}
+                    placeholder="Nombre"
+                    aria-label="Nombre de la columna nueva"
+                    className="w-full border-b border-dashed border-[var(--arca-border-strong)] bg-transparent pb-1 text-[12.5px] outline-none placeholder:text-[var(--arca-ink-4)]"
+                    onBlur={() => {
+                      const v = nombreNuevo.trim();
+                      if (v) crearCol.mutate(v);
+                      else setNuevaColumna(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      if (e.key === 'Escape') {
+                        setNombreNuevo('');
+                        setNuevaColumna(false);
+                      }
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setNuevaColumna(true)}
+                    className="flex w-full items-center gap-1.5 text-left text-[12.5px] font-medium text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:text-[var(--arca-ink)]"
+                  >
+                    <Plus className="size-3.5" />
+                    Crear columna
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* La card viaja acá para poder inclinarse sin deformar el hueco. */}
+          <DragOverlay dropAnimation={{ duration: 150, easing: 'ease' }}>
+            {enArrastre && (
+              <div className="w-[244px] rotate-[1.2deg] shadow-[var(--arca-shadow-md)]">
+                <TaskCard tarea={enArrastre} />
+              </div>
+            )}
+          </DragOverlay>
+        </DndContext>
+      )}
+
+      <BuscarTareas
+        tareas={tareas}
+        abierto={buscando}
+        onAbrirChange={setBuscando}
+        onElegir={abrirTarea}
+      />
+
+      {tareaAbierta && (
+        <TaskDetailDialog
+          tarea={tareaAbierta}
+          open
+          onOpenChange={(v) => !v && abrirTarea(undefined)}
+        />
+      )}
+
       <AlertDialog
-        open={!!deleteColConfirm}
-        onOpenChange={(open) => { if (!open) setDeleteColConfirm(null); }}
+        open={aEliminar !== null}
+        onOpenChange={(v) => !v && setAEliminar(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>¿Eliminar columna?</AlertDialogTitle>
+            <AlertDialogTitle>¿Eliminar la columna?</AlertDialogTitle>
             <AlertDialogDescription>
-              Se eliminará la columna{deleteColConfirm ? ` "${deleteColConfirm.nombre}"` : ''}. Las tareas
-              asignadas a ella quedarán sin columna. Esta acción no se puede deshacer.
+              Se elimina «{aEliminar?.nombre}»{' '}
+              {aEliminar && aEliminar.tareas > 0 ? (
+                <>
+                  y sus{' '}
+                  <strong>
+                    {aEliminar.tareas}{' '}
+                    {aEliminar.tareas === 1 ? 'tarea' : 'tareas'}
+                  </strong>
+                  , con sus pasos y comentarios
+                </>
+              ) : (
+                <>, que está vacía</>
+              )}
+              . Es la única forma de borrar tareas de a muchas y no se puede
+              deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (deleteColConfirm) {
-                  deleteColMutation.mutate(deleteColConfirm.id);
-                  setDeleteColConfirm(null);
-                }
-              }}
+              onClick={() => aEliminar && borrarCol.mutate(aEliminar.id)}
             >
               Eliminar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  );
-}
-
-// ─── KanbanColumn ─────────────────────────────────────────────────────────────
-
-interface KanbanColumnProps {
-  id: string | null;
-  nombre: string;
-  tasks: Tarea[];
-  isFirst: boolean;
-  isLast: boolean;
-  readOnly?: boolean;
-  isEditing?: boolean;
-  editingNombre?: string;
-  onEditStart?: () => void;
-  onEditChange?: (v: string) => void;
-  onEditSave?: () => void;
-  onEditCancel?: () => void;
-  onDelete?: () => void;
-  onMoveLeft?: () => void;
-  onMoveRight?: () => void;
-  onAddCard?: () => void;
-}
-
-function KanbanColumn({
-  id,
-  nombre,
-  tasks,
-  isFirst,
-  isLast,
-  readOnly,
-  isEditing,
-  editingNombre,
-  onEditStart,
-  onEditChange,
-  onEditSave,
-  onEditCancel,
-  onDelete,
-  onMoveLeft,
-  onMoveRight,
-  onAddCard,
-}: KanbanColumnProps) {
-  const droppableId = id ?? '__sin_columna__';
-  const { setNodeRef, isOver } = useDroppable({ id: droppableId });
-
-  return (
-    <div className="w-72 shrink-0 flex flex-col gap-0 bg-[#EBECF0] rounded-xl p-2">
-      {/* Column header */}
-      <div className="flex items-center gap-1.5 px-2 py-2 rounded-lg group/header mb-2">
-        {isEditing ? (
-          <div className="flex items-center gap-1 flex-1 min-w-0">
-            <input
-              autoFocus
-              value={editingNombre}
-              onChange={(e) => onEditChange?.(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onEditSave?.();
-                if (e.key === 'Escape') onEditCancel?.();
-              }}
-              className="flex-1 min-w-0 text-sm font-semibold bg-transparent border-b border-primary outline-none"
-            />
-            <button onClick={onEditSave} className="text-green-600 hover:text-green-700 p-0.5">
-              <Check className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={onEditCancel} className="text-muted-foreground hover:text-foreground p-0.5">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : (
-          <>
-            <span
-              className="text-sm font-semibold flex-1 truncate text-[#172B4D]"
-              onDoubleClick={!readOnly ? onEditStart : undefined}
-              title={readOnly ? nombre : 'Doble clic para editar'}
-            >
-              {nombre}
-            </span>
-            <Badge variant="secondary" className="text-xs h-5 shrink-0">
-              {tasks.length}
-            </Badge>
-            {!readOnly && (
-              <div className="flex items-center gap-0.5 opacity-0 group-hover/header:opacity-100 transition-opacity">
-                <button
-                  onClick={onMoveLeft}
-                  disabled={isFirst}
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Mover izquierda"
-                >
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={onMoveRight}
-                  disabled={isLast}
-                  className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="Mover derecha"
-                >
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={onEditStart}
-                  className="p-0.5 text-muted-foreground hover:text-foreground"
-                  title="Renombrar"
-                >
-                  <Pencil className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={onDelete}
-                  className="p-0.5 text-muted-foreground hover:text-destructive"
-                  title="Eliminar columna"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Cards drop zone */}
-      <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-        <div
-          ref={setNodeRef}
-          className={cn(
-            'flex flex-col gap-2 min-h-[60px] rounded-lg transition-colors',
-            isOver && 'bg-primary/10 ring-2 ring-primary/20 ring-inset'
-          )}
-        >
-          {tasks.length === 0 ? (
-            <div
-              className={cn(
-                'text-center py-8 text-sm text-muted-foreground border border-dashed rounded-lg border-[#C1C4CF]',
-                isOver && 'border-primary/40 text-primary/60 bg-primary/5'
-              )}
-            >
-              {isOver ? 'Soltar aquí' : 'Sin tareas'}
-            </div>
-          ) : (
-            <>
-              {tasks.map((tarea) => (
-                <SortableTaskCard key={tarea.id} tarea={tarea} />
-              ))}
-              {isOver && (
-                <div className="text-center py-3 text-xs text-primary/60 border border-dashed border-primary/30 rounded-lg">
-                  Soltar aquí
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      </SortableContext>
-
-      {/* Add card button */}
-      {!readOnly && onAddCard && (
-        <button
-          onClick={onAddCard}
-          className="flex items-center gap-1.5 w-full px-2 py-1.5 mt-1.5 text-xs text-[#5E6C84] hover:text-foreground hover:bg-black/10 rounded-lg transition-colors"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Agregar tarea
-        </button>
-      )}
-    </div>
+    </PageShell>
   );
 }

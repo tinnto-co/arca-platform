@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { VencimientosCalendar } from '@/components/vencimientos-calendar';
+import { PageShell } from '@/components/shared/page-shell';
 
 export const Route = createFileRoute('/_authed/vencimientos/')({
   component: RouteComponent,
@@ -7,8 +8,8 @@ export const Route = createFileRoute('/_authed/vencimientos/')({
 
 function RouteComponent() {
   return (
-    <div className="max-w-[1400px] mx-auto px-[44px] pt-[34px] pb-[64px] bg-[#F7F6F2] min-h-screen">
+    <PageShell>
       <VencimientosCalendar />
-    </div>
+    </PageShell>
   );
 }

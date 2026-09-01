@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Globe, MapPin } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Select,
@@ -644,7 +645,7 @@ function RouteComponent() {
   );
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
+    <PageShell>
       <PageHeader
         title="IIBB / Convenio Multilateral"
         subtitle="Ingresos brutos por régimen local y convenio multilateral"
@@ -678,6 +679,6 @@ function RouteComponent() {
           />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

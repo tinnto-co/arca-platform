@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
+import { PageShell } from '@/components/shared/page-shell';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { relativeTime } from '@/components/dashboard/shared';
 import {
@@ -406,7 +407,7 @@ function AlertsPage() {
   ).length;
 
   return (
-    <div className="p-[28px_36px_60px] max-w-[1440px]">
+    <PageShell>
       <div className="flex items-start justify-between gap-4 mb-6">
         <PageHeader
           title="Alertas"
@@ -542,6 +543,6 @@ function AlertsPage() {
           </div>
         )}
       </ArcaCard>
-    </div>
+    </PageShell>
   );
 }
