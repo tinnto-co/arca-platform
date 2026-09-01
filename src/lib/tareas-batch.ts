@@ -2,11 +2,33 @@
  * Lógica de auto-generación de tareas sin dependencia de sesión HTTP.
  * Puede ser invocada tanto desde server actions como desde crons.
  */
-import { and, eq, gte, inArray, isNotNull, lte, or } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lte,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { tarea, tareaCliente, cliente, vencimiento } from '@/drizzle/schema';
+import {
+  tarea,
+  tareaCliente,
+  tareaColumna,
+  cliente,
+  vencimiento,
+} from '@/drizzle/schema';
 
-export type TipoTarea = 'iva' | 'iibb' | 'ddjj' | 'sueldos' | 'convenios' | 'otro';
+export type TipoTarea =
+  | 'iva'
+  | 'iibb'
+  | 'ddjj'
+  | 'sueldos'
+  | 'convenios'
+  | 'otro';
 
 const TAX_TO_TIPO: Record<string, TipoTarea> = {
   iva: 'iva',
@@ -55,7 +77,8 @@ export async function autoGenerarTareasParaOrg(
     .from(cliente)
     .where(eq(cliente.orgId, orgId));
 
-  if (orgClientes.length === 0) return { creadas: 0, omitidas: 0, sinCliente: 0 };
+  if (orgClientes.length === 0)
+    return { creadas: 0, omitidas: 0, sinCliente: 0 };
 
   const clienteById = Object.fromEntries(orgClientes.map((c) => [c.id, c]));
   const clienteByCuit = Object.fromEntries(orgClientes.map((c) => [c.cuit, c]));
@@ -79,7 +102,8 @@ export async function autoGenerarTareasParaOrg(
       )
     );
 
-  if (vencimientosRaw.length === 0) return { creadas: 0, omitidas: 0, sinCliente: 0 };
+  if (vencimientosRaw.length === 0)
+    return { creadas: 0, omitidas: 0, sinCliente: 0 };
 
   const vencimientoIds = vencimientosRaw.map((v) => v.id);
   const yaAsignados = await db
@@ -87,7 +111,9 @@ export async function autoGenerarTareasParaOrg(
     .from(tareaCliente)
     .where(inArray(tareaCliente.vencimientoId, vencimientoIds));
 
-  const cubiertos = new Set(yaAsignados.map((r) => r.vencimientoId).filter(Boolean) as string[]);
+  const cubiertos = new Set(
+    yaAsignados.map((r) => r.vencimientoId).filter(Boolean) as string[]
+  );
 
   let sinCliente = 0;
   const resueltos: {
@@ -101,63 +127,124 @@ export async function autoGenerarTareasParaOrg(
 
   for (const v of vencimientosRaw) {
     if (cubiertos.has(v.id)) continue;
-    const resolved = v.clienteId ? clienteById[v.clienteId] : clienteByCuit[v.cuit];
-    if (!resolved) { sinCliente++; continue; }
+    const resolved = v.clienteId
+      ? clienteById[v.clienteId]
+      : clienteByCuit[v.cuit];
+    if (!resolved) {
+      sinCliente++;
+      continue;
+    }
     resueltos.push({
-      id: v.id, tax: v.tax, concept: v.concept, dueDate: v.dueDate,
-      clienteId: resolved.id, clienteNombre: resolved.name,
+      id: v.id,
+      tax: v.tax,
+      concept: v.concept,
+      dueDate: v.dueDate,
+      clienteId: resolved.id,
+      clienteNombre: resolved.name,
     });
   }
 
-  if (resueltos.length === 0) return { creadas: 0, omitidas: cubiertos.size, sinCliente };
+  if (resueltos.length === 0)
+    return { creadas: 0, omitidas: cubiertos.size, sinCliente };
 
-  const grupos = new Map<string, {
-    tipo: TipoTarea; taxLabel: string; concept: string; fecha: string;
-    items: { clienteId: string; vencimientoId: string }[];
-  }>();
+  const grupos = new Map<
+    string,
+    {
+      tipo: TipoTarea;
+      taxLabel: string;
+      concept: string;
+      fecha: string;
+      items: { clienteId: string; vencimientoId: string }[];
+    }
+  >();
 
   for (const v of resueltos) {
     const tipo = taxToTipo(v.tax);
     const key = `${tipo}|${v.dueDate}`;
     if (!grupos.has(key)) {
-      grupos.set(key, { tipo, taxLabel: v.tax, concept: v.concept, fecha: v.dueDate, items: [] });
+      grupos.set(key, {
+        tipo,
+        taxLabel: v.tax,
+        concept: v.concept,
+        fecha: v.dueDate,
+        items: [],
+      });
     }
-    grupos.get(key)!.items.push({ clienteId: v.clienteId, vencimientoId: v.id });
+    grupos
+      .get(key)!
+      .items.push({ clienteId: v.clienteId, vencimientoId: v.id });
   }
+
+  /**
+   * Las tareas nuevas entran por la primera columna del tablero — la de más a
+   * la izquierda según el orden del estudio, salvo Archivadas. Sin esto caían
+   * con columna null en el carril «Sin columna», que existe para huérfanas,
+   * no como bandeja de entrada. Si el estudio no armó columnas todavía, null
+   * sigue siendo el fallback correcto.
+   */
+  const [primeraColumna] = await db
+    .select({ id: tareaColumna.id })
+    .from(tareaColumna)
+    .where(
+      sql`${tareaColumna.orgId} = ${orgId} and coalesce(${tareaColumna.clave}, '') <> 'archivadas'`
+    )
+    .orderBy(asc(tareaColumna.orden), asc(tareaColumna.createdAt))
+    .limit(1);
 
   let creadas = 0;
 
   for (const grupo of grupos.values()) {
     const fechaDate = new Date(grupo.fecha + 'T12:00:00Z');
     const fechaStr = fechaDate.toLocaleDateString('es-AR', {
-      day: '2-digit', month: '2-digit', timeZone: 'America/Argentina/Buenos_Aires',
+      day: '2-digit',
+      month: '2-digit',
+      timeZone: 'America/Argentina/Buenos_Aires',
     });
     const titulo = `${grupo.taxLabel}${grupo.concept ? ` — ${grupo.concept}` : ''} · vence ${fechaStr}`;
 
     const [existing] = await db
       .select({ id: tarea.id })
       .from(tarea)
-      .where(and(
-        eq(tarea.orgId, orgId),
-        eq(tarea.tipo, grupo.tipo),
-        eq(tarea.periodo, periodo),
-        eq(tarea.fuente, 'automatica')
-      ))
+      .where(
+        and(
+          eq(tarea.orgId, orgId),
+          eq(tarea.tipo, grupo.tipo),
+          eq(tarea.periodo, periodo),
+          eq(tarea.fuente, 'automatica')
+        )
+      )
       .limit(1);
 
     const tareaId = existing
       ? existing.id
-      : (await db.insert(tarea).values({
-          orgId, titulo, tipo: grupo.tipo, estado: 'pendiente',
-          periodo, venceAt: fechaDate, fuente: 'automatica', creadoPor,
-        }).returning().then((r) => r[0]!.id));
+      : await db
+          .insert(tarea)
+          .values({
+            orgId,
+            titulo,
+            tipo: grupo.tipo,
+            estado: 'pendiente',
+            periodo,
+            venceAt: fechaDate,
+            fuente: 'automatica',
+            creadoPor,
+            columnaId: primeraColumna?.id ?? null,
+          })
+          .returning()
+          .then((r) => r[0]!.id);
 
     if (!existing) creadas++;
 
     for (const item of grupo.items) {
-      await db.insert(tareaCliente).values({
-        tareaId, clienteId: item.clienteId, vencimientoId: item.vencimientoId, completado: false,
-      }).onConflictDoNothing();
+      await db
+        .insert(tareaCliente)
+        .values({
+          tareaId,
+          clienteId: item.clienteId,
+          vencimientoId: item.vencimientoId,
+          completado: false,
+        })
+        .onConflictDoNothing();
     }
   }
 
