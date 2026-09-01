@@ -60,6 +60,7 @@ import {
   Bookmark,
   BookmarkPlus,
   Eye,
+  Loader2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -12325,29 +12326,72 @@ function ExportView({
     }
   };
 
-  /** URL de objeto del PDF en vista previa; null = cerrada. */
-  const [previewPdf, setPreviewPdf] = useState<string | null>(null);
+  /** Vista previa abierta: el documento, su título y cómo descargarlo. */
+  const [preview, setPreview] = useState<{
+    url: string;
+    titulo: string;
+    descargar: () => void;
+  } | null>(null);
   const cerrarPreview = () => {
-    if (previewPdf) URL.revokeObjectURL(previewPdf);
-    setPreviewPdf(null);
+    if (preview) URL.revokeObjectURL(preview.url);
+    setPreview(null);
   };
 
-  const previsualizarPaquete = async () => {
-    const datos = armarDatosPaquete();
-    if (!datos) {
-      toast.error('Los datos del paquete aún se están cargando');
+  /**
+   * Arma la vista previa de cualquier exporte PDF: genera el blob sin
+   * descargarlo ni guardarlo — mirar no es publicar — y deja a mano el
+   * botón de descarga real, que pasa por el flujo completo de ese exporte.
+   */
+  const previsualizar = async (
+    key: string,
+    titulo: string,
+    generar: () => Promise<Blob> | null,
+    descargar: () => void
+  ) => {
+    const blob$ = generar();
+    if (!blob$) {
+      toast.error('Los datos aún se están cargando');
       return;
     }
-    setBusy('package-preview');
+    setBusy(`${key}-preview`);
     try {
-      // Sin descarga y sin guardar en R2: mirar no es publicar.
-      const blob = await exportEeccPackagePdf(datos, { descargar: false });
-      setPreviewPdf(URL.createObjectURL(blob));
+      const blob = await blob$;
+      setPreview({ url: URL.createObjectURL(blob), titulo, descargar });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Error al generar el PDF');
     } finally {
       setBusy(null);
     }
+  };
+
+  const previsualizarPaquete = () =>
+    previsualizar(
+      'package',
+      'Paquete contable completo',
+      () => {
+        const datos = armarDatosPaquete();
+        return datos ? exportEeccPackagePdf(datos, { descargar: false }) : null;
+      },
+      () => void onPackage()
+    );
+
+  const armarDatosMayor = (): MayorExportData | null => {
+    if (!consol?.ejercicio || consol.accounts.length === 0) return null;
+    return {
+      empresaName: clientName,
+      fiscalYearNumber: consol.ejercicio.number,
+      from: consol.from,
+      to: consol.to,
+      sections: consol.accounts.map((a) => ({
+        code: a.code,
+        name: a.name,
+        saldoInicial: a.saldoInicial,
+        rows: a.movements,
+        totalDebit: a.totalDebit,
+        totalCredit: a.totalCredit,
+        saldoFinal: a.saldoFinal,
+      })),
+    };
   };
 
   const onMayor = async () => {
@@ -12380,6 +12424,44 @@ function ExportView({
       setBusy(null);
     }
   };
+
+  const armarDatosInventarios = () =>
+    esp && er
+      ? {
+          empresaName: clientName,
+          cuit: clientCuit,
+          fiscalYearNumber: esp.fiscalYearNumber,
+          periodLabel: esp.periodLabel,
+          esp,
+          er,
+          eepn: eepn ?? null,
+          valuation,
+        }
+      : null;
+
+  const previsualizarMayor = () =>
+    previsualizar(
+      'mayor',
+      'Libro Mayor',
+      () => {
+        const datos = armarDatosMayor();
+        return datos ? exportLibroMayorPdf(datos, { descargar: false }) : null;
+      },
+      () => void onMayor()
+    );
+
+  const previsualizarInventarios = () =>
+    previsualizar(
+      'inv',
+      'Libro Inventarios y Balances',
+      () => {
+        const datos = armarDatosInventarios();
+        return datos
+          ? exportLibroInventariosPdf(datos, { descargar: false })
+          : null;
+      },
+      () => void onInventarios()
+    );
 
   const onInventarios = async () => {
     if (!esp || !er) {
@@ -12432,12 +12514,14 @@ function ExportView({
       title: 'Libro Mayor',
       desc: 'Todas las cuentas con sus movimientos del ejercicio. Una página por cuenta — formato rubricable.',
       onClick: onMayor,
+      onPreview: previsualizarMayor,
     },
     {
       key: 'inv',
       title: 'Libro Inventarios y Balances',
       desc: 'Inventario al cierre, ESP, ER y Evolución del Patrimonio Neto. Formato rubricable.',
       onClick: onInventarios,
+      onPreview: previsualizarInventarios,
     },
     {
       key: 'estados-excel',
@@ -12463,6 +12547,12 @@ function ExportView({
               {pdfGeneratedByName ? ` · ${pdfGeneratedByName}` : ''}
             </div>
           )}
+          {!ready && (
+            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[var(--arca-ink-3)]">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Cargando los datos del ejercicio… los exportes se habilitan solos.
+            </div>
+          )}
         </div>
         <div className="divide-y divide-[var(--arca-border)]">
           {items.map((it) => (
@@ -12484,18 +12574,30 @@ function ExportView({
                 <button
                   onClick={() => void it.onPreview!()}
                   disabled={!ready || busy !== null}
+                  title={
+                    !ready ? 'Cargando los datos del ejercicio…' : undefined
+                  }
                   className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 flex items-center gap-1.5"
                 >
-                  <Eye className="w-3.5 h-3.5" />
+                  {busy === `${it.key}-preview` || (!ready && busy === null) ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
                   {busy === `${it.key}-preview` ? 'Generando…' : 'Vista previa'}
                 </button>
               )}
               <button
                 onClick={() => void it.onClick()}
                 disabled={!ready || busy !== null}
+                title={!ready ? 'Cargando los datos del ejercicio…' : undefined}
                 className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
               >
-                <Download className="w-3.5 h-3.5" />
+                {busy === it.key || (!ready && busy === null) ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" />
+                )}
                 {busy === it.key
                   ? 'Generando…'
                   : `Descargar ${it.format ?? 'PDF'}`}
@@ -12504,25 +12606,26 @@ function ExportView({
           ))}
         </div>
       </ArcaCard>
-      {/* Vista previa del paquete: el mismo armado que la descarga, en un
-          visor. Sin `sandbox` en el iframe — rompe el visor de PDF de Chrome. */}
+      {/* Vista previa de cualquier exporte PDF: el mismo armado que la
+          descarga, en un visor. Sin `sandbox` en el iframe — rompe el visor
+          de PDF de Chrome. */}
       <Dialog
-        open={previewPdf !== null}
+        open={preview !== null}
         onOpenChange={(o) => {
           if (!o) cerrarPreview();
         }}
       >
         <DialogContent className="sm:max-w-[min(95vw,1100px)] h-[92vh] flex flex-col gap-0 p-0">
           <DialogHeader className="px-6 pt-5 pb-3 border-b border-[var(--arca-border)]">
-            <DialogTitle>Vista previa del paquete</DialogTitle>
+            <DialogTitle>Vista previa · {preview?.titulo}</DialogTitle>
             <DialogDescription>
               Es exactamente lo que baja «Descargar PDF», sin guardar nada.
             </DialogDescription>
           </DialogHeader>
-          {previewPdf && (
+          {preview && (
             <iframe
-              src={previewPdf}
-              title="Vista previa del paquete contable"
+              src={preview.url}
+              title={`Vista previa · ${preview.titulo}`}
               className="flex-1 min-h-0 w-full"
             />
           )}
@@ -12535,8 +12638,9 @@ function ExportView({
             </button>
             <button
               onClick={() => {
+                const descargar = preview?.descargar;
                 cerrarPreview();
-                void onPackage();
+                descargar?.();
               }}
               className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
             >

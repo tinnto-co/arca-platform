@@ -3170,10 +3170,15 @@ function LibroMayorDoc({ data }: { data: MayorExportData }) {
 }
 
 export async function exportLibroMayorPdf(
-  data: MayorExportData
-): Promise<void> {
+  data: MayorExportData,
+  /** `descargar: false` genera el blob sin bajar el archivo (vista previa). */
+  opts: { descargar?: boolean } = {}
+): Promise<Blob> {
   const blob = await pdf(<LibroMayorDoc data={data} />).toBlob();
-  triggerDownload(blob, `libro_mayor_ej${data.fiscalYearNumber ?? ''}.pdf`);
+  if (opts.descargar !== false) {
+    triggerDownload(blob, `libro_mayor_ej${data.fiscalYearNumber ?? ''}.pdf`);
+  }
+  return blob;
 }
 
 /* ── Libro Inventarios y Balances — US 7.1.3 ── */
@@ -3374,13 +3379,18 @@ function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
 }
 
 export async function exportLibroInventariosPdf(
-  data: LibroInventariosData
-): Promise<void> {
+  data: LibroInventariosData,
+  /** `descargar: false` genera el blob sin bajar el archivo (vista previa). */
+  opts: { descargar?: boolean } = {}
+): Promise<Blob> {
   const blob = await pdf(<LibroInventariosDoc data={data} />).toBlob();
-  triggerDownload(
-    blob,
-    `libro_inventarios_balances_ej${data.fiscalYearNumber}.pdf`
-  );
+  if (opts.descargar !== false) {
+    triggerDownload(
+      blob,
+      `libro_inventarios_balances_ej${data.fiscalYearNumber}.pdf`
+    );
+  }
+  return blob;
 }
 
 /* ═════ Excel de los estados nuevos: EEPN, EFE y Nota 3 (AXI-6/7/8) ═════ */
