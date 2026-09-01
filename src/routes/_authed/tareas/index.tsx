@@ -43,6 +43,7 @@ import {
   deleteColumna,
   moverTarea,
   reorderTarea,
+  autoGenerarTareas,
   COLORES_COLUMNA,
   TIPOS_TAREA,
   CLAVE_ARCHIVADAS,
@@ -320,6 +321,45 @@ function TareasPage() {
   const refrescarCols = () =>
     void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
 
+  const autogenerar = useMutation({
+    mutationFn: () => {
+      // Genera para el período que el tablero está mirando; sin filtro, el mes
+      // en curso en hora argentina — cerca de fin de mes UTC ya va un día
+      // adelante y generaría el período equivocado.
+      const periodo =
+        filtros.periodo ||
+        new Intl.DateTimeFormat('sv-SE', {
+          timeZone: 'America/Argentina/Buenos_Aires',
+        })
+          .format(new Date())
+          .slice(0, 7);
+      return autoGenerarTareas({ data: { periodo } });
+    },
+    onSuccess: (r) => {
+      refrescar();
+      // Los tres ceros distintos del ticket TIN-1411, cada uno con su mensaje:
+      // que «no hay nada» y «está roto» no se vean iguales es el punto.
+      if (r.creadas > 0) {
+        toast.success(
+          `${r.creadas} ${r.creadas === 1 ? 'tarea creada' : 'tareas creadas'} desde los vencimientos` +
+            (r.sinCliente > 0
+              ? ` — ${r.sinCliente} vencimientos sin cliente asociado`
+              : '')
+        );
+      } else if (r.sinCliente > 0) {
+        toast.warning(
+          `Se encontraron vencimientos pero ${r.sinCliente} no se pudieron asociar a ningún cliente`
+        );
+      } else if (r.omitidas > 0) {
+        toast.info('Todos los vencimientos del período ya tienen su tarea');
+      } else {
+        toast.info('No hay vencimientos para este período');
+      }
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al autogenerar'),
+  });
+
   const mover = useMutation({
     mutationFn: (v: {
       id: string;
@@ -451,6 +491,8 @@ function TareasPage() {
         empresas={empresas}
         resumen={resumen}
         onBuscar={() => setBuscando(true)}
+        onAutogenerar={() => autogenerar.mutate()}
+        autogenerando={autogenerar.isPending}
         viendoArchivadas={viendoArchivadas}
         onVerArchivadas={(v) =>
           void navigate({

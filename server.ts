@@ -486,6 +486,16 @@ async function initializeServer() {
   // Build static routes with intelligent preloading
   const { routes } = await initializeStaticRoutes(CLIENT_DIRECTORY);
 
+  // Autogeneración diaria de tareas desde los vencimientos (TIN-1411). Vive
+  // en el server de producción: el dev server de Vite no lo corre, y ahí el
+  // disparador es el botón «Autogenerar» del tablero.
+  try {
+    const { startTareasAutoCron } = await import('./src/lib/tareas-auto-cron');
+    startTareasAutoCron();
+  } catch (err) {
+    console.error('[tareas-auto] no se pudo iniciar el cron:', err);
+  }
+
   // Create Bun server
   const server = Bun.serve({
     port: SERVER_PORT,

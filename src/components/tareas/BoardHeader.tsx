@@ -17,6 +17,8 @@ import {
   Check,
   MoreHorizontal,
   Search,
+  Zap,
+  Loader2,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -64,6 +66,9 @@ interface BoardHeaderProps {
   /** El tablero muestra las activas; con esto se ve el archivo. */
   viendoArchivadas: boolean;
   onVerArchivadas: (v: boolean) => void;
+  /** Genera las tareas del período desde los vencimientos scrapeados. */
+  onAutogenerar: () => void;
+  autogenerando: boolean;
   onFiltro: (parcial: Partial<FiltrosTablero>) => void;
   onLimpiar: () => void;
   miembros: { id: string; name: string; email: string }[];
@@ -83,6 +88,8 @@ export function BoardHeader({
   filtros,
   viendoArchivadas,
   onVerArchivadas,
+  onAutogenerar,
+  autogenerando,
   onFiltro,
   onLimpiar,
   miembros,
@@ -366,6 +373,23 @@ export function BoardHeader({
 
           {activos > 0 && <LimpiarFiltros onLimpiar={onLimpiar} />}
 
+          {/* Convierte los vencimientos del período en tareas. El cron lo
+            hace solo cada mañana en producción; el botón es para no esperar
+            hasta mañana — y para el dev server, donde el cron no corre. */}
+          <button
+            type="button"
+            onClick={onAutogenerar}
+            disabled={autogenerando}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-[var(--arca-r-pill)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-[10px] py-1 text-[11.5px] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
+          >
+            {autogenerando ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <Zap className="size-3" />
+            )}
+            {autogenerando ? 'Generando…' : 'Autogenerar'}
+          </button>
+
           {/* El archivo no es un filtro más: cambia qué lista se está mirando,
             así que va separado y a la derecha. */}
           <button
@@ -373,7 +397,7 @@ export function BoardHeader({
             aria-pressed={viendoArchivadas}
             onClick={() => onVerArchivadas(!viendoArchivadas)}
             className={cn(
-              'ml-auto inline-flex items-center gap-1.5 rounded-[var(--arca-r-pill)] border px-[10px] py-1 text-[11.5px] transition-colors duration-[120ms]',
+              'inline-flex items-center gap-1.5 rounded-[var(--arca-r-pill)] border px-[10px] py-1 text-[11.5px] transition-colors duration-[120ms]',
               viendoArchivadas
                 ? 'border-[var(--arca-navy-700)] bg-[var(--arca-navy-700)] font-medium text-white'
                 : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'

@@ -14,7 +14,11 @@
  */
 import { db } from '@/lib/db';
 import { organization } from '@/drizzle/auth';
-import { autoGenerarTareasParaOrg, getPeriodoActualAR } from '@/lib/tareas-batch';
+import {
+  autoGenerarTareasParaOrg,
+  getPeriodoActualAR,
+} from '@/lib/tareas-batch';
+import { runWithDbContext } from '../../lib/db-context';
 
 /** Hora UTC en la que corre el cron (07:00 AR = 10:00 UTC). */
 const TARGET_HOUR_UTC = Number(process.env.TAREAS_AUTO_CRON_HOUR_UTC ?? 10);
@@ -44,11 +48,15 @@ async function tick(): Promise<void> {
 
   for (const org of orgs) {
     try {
-      const result = await autoGenerarTareasParaOrg(org.id, periodo);
+      // Sin request no hay contexto RLS: hay que abrirlo por org. Sin esto las
+      // políticas devuelven cero filas y el cron termina «bien» sin crear nada.
+      const result = await runWithDbContext({ orgId: org.id }, () =>
+        autoGenerarTareasParaOrg(org.id, periodo)
+      );
       if (result.creadas > 0 || result.sinCliente > 0) {
         console.log(
           `[tareas-auto] org=${org.id}: ${result.creadas} creadas, ` +
-          `${result.omitidas} omitidas, ${result.sinCliente} sin cliente`
+            `${result.omitidas} omitidas, ${result.sinCliente} sin cliente`
         );
       }
       totalCreadas += result.creadas;
@@ -57,10 +65,14 @@ async function tick(): Promise<void> {
     }
   }
 
-  console.log(`[tareas-auto] finalizado: ${totalCreadas} tareas creadas en total`);
+  console.log(
+    `[tareas-auto] finalizado: ${totalCreadas} tareas creadas en total`
+  );
 
   // Programar siguiente ejecución
-  setTimeout(() => { tick().catch(console.error); }, msHastaProximaEjecucion());
+  setTimeout(() => {
+    tick().catch(console.error);
+  }, msHastaProximaEjecucion());
 }
 
 export function startTareasAutoCron(): void {
@@ -78,8 +90,10 @@ export function startTareasAutoCron(): void {
   const minutos = Math.floor((delay / 1000 / 60) % 60);
   console.log(
     `[tareas-auto] cron activo: próxima ejecución en ${horas}h ${minutos}m ` +
-    `(${TARGET_HOUR_UTC}:00 UTC = 07:00 AR)`
+      `(${TARGET_HOUR_UTC}:00 UTC = 07:00 AR)`
   );
 
-  setTimeout(() => { tick().catch(console.error); }, delay);
+  setTimeout(() => {
+    tick().catch(console.error);
+  }, delay);
 }
