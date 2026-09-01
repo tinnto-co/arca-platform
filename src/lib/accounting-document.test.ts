@@ -226,6 +226,7 @@ describe('orden completo del documento', () => {
       'anexo_i',
       'anexo_ii',
       'anexo_cmv',
+      'inventario',
       'informe_auditor',
     ]);
   });
@@ -244,6 +245,7 @@ describe('orden completo del documento', () => {
       ['anexo_i', null],
       ['anexo_ii', null],
       ['anexo_cmv', null],
+      ['inventario', null],
       ['informe_auditor', null],
     ]);
   });
@@ -264,8 +266,12 @@ describe('orden completo del documento', () => {
       'anexo_cmv',
     ];
     const r = resolveDocumentLayout(layout, notas);
-    // Lo que el layout no menciona —el informe— se agrega al final.
-    expect(r.map((x) => x.entry)).toEqual([...layout, 'informe_auditor']);
+    // Lo que el layout no menciona —inventario e informe— se agrega al final.
+    expect(r.map((x) => x.entry)).toEqual([
+      ...layout,
+      'inventario',
+      'informe_auditor',
+    ]);
     // Y la numeración sigue el orden del documento, no el de carga.
     expect(
       r.filter((x) => x.isNote).map((x) => [x.entry, x.noteNumber])
