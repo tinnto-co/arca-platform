@@ -7,6 +7,7 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronsUpDown,
+  Pencil,
   Search,
   X,
 } from 'lucide-react';
@@ -27,6 +28,7 @@ import {
   getMonotributistasFacturacion,
   getClientesSinClasificar,
   updateClienteCondicionIva,
+  updateIvaDeclaracionManual,
 } from '@/actions/iva';
 import { cn } from '@/lib/utils';
 
@@ -213,6 +215,103 @@ function SortableTh({
         )}
       </span>
     </th>
+  );
+}
+
+/**
+ * "1.234,56" / "1234.56" / "1234" → número. Vacío → null (borra el dato).
+ * Devuelve undefined si no se puede interpretar.
+ */
+function parsearImporte(s: string): number | null | undefined {
+  const limpio = s.trim();
+  if (!limpio) return null;
+  const normalizado = limpio.includes(',')
+    ? limpio.replace(/\./g, '').replace(',', '.')
+    : limpio;
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+type CampoDeclaracion =
+  | 'saldoTecnicoFavor'
+  | 'saldoLibreDisponibilidadFavor'
+  | 'retencionesPercepcionesPeriodo';
+
+/**
+ * Celda de un importe que solo existe del lado de AFIP: si el scrapeo no lo
+ * trajo, el estudio lo completa a mano acá (persiste en iva_declaracion con
+ * fuente manual; la declaración real lo pisa cuando llega).
+ */
+function CeldaImporteEditable({
+  clienteId,
+  periodo,
+  campo,
+  valor,
+}: {
+  clienteId: string;
+  periodo: string;
+  campo: CampoDeclaracion;
+  valor: string | null;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [borrador, setBorrador] = useState('');
+  const queryClient = useQueryClient();
+
+  const guardar = useMutation({
+    mutationFn: (v: number | null) =>
+      updateIvaDeclaracionManual({
+        data: { clienteId, periodo, campo, valor: v },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['iva', 'ri'] });
+      setEditando(false);
+      toast.success('Importe guardado');
+    },
+    onError: (e: Error) => toast.error(e.message || 'No se pudo guardar'),
+  });
+
+  if (editando) {
+    return (
+      <Input
+        autoFocus
+        defaultValue={valor ?? ''}
+        onChange={(e) => setBorrador(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setEditando(false);
+          if (e.key === 'Enter') {
+            const n = parsearImporte(borrador || (valor ?? ''));
+            if (n === undefined) {
+              toast.error('Importe inválido');
+              return;
+            }
+            guardar.mutate(n);
+          }
+        }}
+        onBlur={() => {
+          if (!guardar.isPending) setEditando(false);
+        }}
+        disabled={guardar.isPending}
+        className="h-7 w-[120px] text-right text-[12px] tabular-nums ml-auto"
+        placeholder="0,00"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setBorrador(valor ?? '');
+        setEditando(true);
+      }}
+      title="Editar (dato de AFIP faltante o a corregir)"
+      className="group/celda inline-flex w-full items-center justify-end gap-1.5 cursor-pointer"
+    >
+      <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover/celda:opacity-60" />
+      <span className="tabular-nums" style={monoStyle}>
+        {formatARS(valor)}
+      </span>
+    </button>
   );
 }
 
@@ -457,8 +556,10 @@ function IvaResumenRI({ search }: { search: string }) {
         Débito, crédito y saldo técnico se calculan sobre los comprobantes
         cargados del período — los mismos números que la ficha de cada empresa.
         Saldo libre disponibilidad y retenciones/percepciones vienen de la
-        declaración de AFIP: no se pueden derivar de comprobantes. El saldo
-        técnico es débito menos crédito: positivo es a pagar.
+        declaración de AFIP: no se pueden derivar de comprobantes — si el
+        scrapeo todavía no los trajo, se pueden cargar a mano haciendo click en
+        la celda (la declaración real los pisa cuando llega). El saldo técnico
+        es débito menos crédito: positivo es a pagar.
       </p>
 
       {isLoading ? (
@@ -612,11 +713,13 @@ function IvaResumenRI({ search }: { search: string }) {
                   >
                     {formatARS(r.calcCreditoFiscal)}
                   </td>
-                  <td
-                    className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
-                    style={monoStyle}
-                  >
-                    {formatARS(r.saldoTecnicoFavor)}
+                  <td className="px-3 py-2 text-right text-[var(--arca-ink)]">
+                    <CeldaImporteEditable
+                      clienteId={r.clienteId}
+                      periodo={periodo}
+                      campo="saldoTecnicoFavor"
+                      valor={r.saldoTecnicoFavor}
+                    />
                   </td>
                   <td
                     className="px-3 py-2 text-right font-medium tabular-nums"
@@ -639,17 +742,21 @@ function IvaResumenRI({ search }: { search: string }) {
                   >
                     {formatARS(r.calcSaldoTecnico)}
                   </td>
-                  <td
-                    className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
-                    style={monoStyle}
-                  >
-                    {formatARS(r.saldoLibreDisponibilidadFavor)}
+                  <td className="px-3 py-2 text-right text-[var(--arca-ink)]">
+                    <CeldaImporteEditable
+                      clienteId={r.clienteId}
+                      periodo={periodo}
+                      campo="saldoLibreDisponibilidadFavor"
+                      valor={r.saldoLibreDisponibilidadFavor}
+                    />
                   </td>
-                  <td
-                    className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
-                    style={monoStyle}
-                  >
-                    {formatARS(r.retencionesPercepcionesPeriodo)}
+                  <td className="px-3 py-2 text-right text-[var(--arca-ink)]">
+                    <CeldaImporteEditable
+                      clienteId={r.clienteId}
+                      periodo={periodo}
+                      campo="retencionesPercepcionesPeriodo"
+                      valor={r.retencionesPercepcionesPeriodo}
+                    />
                   </td>
                   <td
                     className="px-3 py-2 text-right font-semibold tabular-nums"

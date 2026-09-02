@@ -315,6 +315,64 @@ export const getMonotributistasFacturacion = createServerFn({
   });
 
 /** Clientes activos de la organización sin condición fiscal asignada. */
+/**
+ * Carga manual de los importes que solo existen del lado de AFIP (saldo a
+ * favor del período anterior, saldo de libre disponibilidad, retenciones y
+ * percepciones). Cuando el scrapeo del F2051 todavía no los trajo, el estudio
+ * los conoce por otra vía y los puede completar desde la tabla de IVA.
+ *
+ * Se persiste sobre `iva_declaracion` con fuente 'manual' (decisión de
+ * producto): si después el scrapper trae la declaración real, la pisa — AFIP
+ * es la fuente de verdad y el valor manual era el puente hasta tenerla.
+ */
+export const updateIvaDeclaracionManual = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clienteId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{2}\/\d{4}$/, 'Formato esperado: MM/YYYY'),
+      campo: z.enum([
+        'saldoTecnicoFavor',
+        'saldoLibreDisponibilidadFavor',
+        'retencionesPercepcionesPeriodo',
+      ]),
+      /** Null borra el dato (vuelve a mostrarse como faltante). */
+      valor: z.number().finite().nullable(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const [c] = await db
+      .select({ id: cliente.id })
+      .from(cliente)
+      .where(and(eq(cliente.id, ctx.data.clienteId), eq(cliente.orgId, orgId)))
+      .limit(1);
+    if (!c) throw new Error('Cliente no encontrado');
+
+    const periodo = periodoADate(ctx.data.periodo);
+    const valor = ctx.data.valor === null ? null : ctx.data.valor.toFixed(2);
+
+    await db
+      .insert(ivaDeclaracion)
+      .values({
+        clienteId: c.id,
+        periodo,
+        [ctx.data.campo]: valor,
+        fuente: 'manual',
+      })
+      .onConflictDoUpdate({
+        target: [ivaDeclaracion.clienteId, ivaDeclaracion.periodo],
+        set: {
+          [ctx.data.campo]: valor,
+          fuente: 'manual',
+          updatedAt: new Date(),
+        },
+      });
+
+    return { ok: true };
+  });
+
 export const getClientesSinClasificar = createServerFn({
   method: 'GET',
 }).handler(async () => {
