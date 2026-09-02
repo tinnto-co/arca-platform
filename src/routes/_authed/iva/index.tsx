@@ -766,8 +766,6 @@ function MonotributistasTab({ search }: { search: string }) {
     empresa: (r) => r.razonSocial,
     cuit: (r) => r.cuit,
     representante: (r) => r.credenciales,
-    comprobantes: (r) => r.comprobanteCount,
-    ultimaFactura: (r) => r.ultimoComprobante,
     categoria: (r) => r.categoria,
     cuota: (r) => (r.cuotaMensual ? Number(r.cuotaMensual) : null),
     facturacion: (r) => Number(r.facturacion12m),
@@ -834,19 +832,6 @@ function MonotributistasTab({ search }: { search: string }) {
                   onSort={onSort}
                 />
                 <SortableTh
-                  label="Comprobantes (12m)"
-                  colKey="comprobantes"
-                  sort={sort}
-                  onSort={onSort}
-                  align="right"
-                />
-                <SortableTh
-                  label="Última factura"
-                  colKey="ultimaFactura"
-                  sort={sort}
-                  onSort={onSort}
-                />
-                <SortableTh
                   label="Categoría"
                   colKey="categoria"
                   sort={sort}
@@ -888,14 +873,6 @@ function MonotributistasTab({ search }: { search: string }) {
                   </td>
                   <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
                     {r.credenciales ?? '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
-                    {r.comprobanteCount}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap tabular-nums">
-                    {r.ultimoComprobante
-                      ? r.ultimoComprobante.slice(0, 10)
-                      : '—'}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {r.categoria ? (
