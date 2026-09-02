@@ -51,7 +51,13 @@ const estado = async () => {
            to_regclass('public.cct_escala')    is not null as tabla_escala,
            (select count(*) > 0 from information_schema.columns
              where table_name = 'convenio_categoria'
-               and column_name = 'cct_categoria_id')       as vinculo`;
+               and column_name = 'cct_categoria_id')       as vinculo,
+           -- Ahí escribe el job "escalas" del scrapper. La primera versión de
+           -- este script no le daba permiso, así que se chequea aparte.
+           coalesce(to_regclass('public.cct_escala') is not null
+             and has_table_privilege('arca_scrapper','cct_categoria','insert')
+             and has_table_privilege('arca_scrapper','cct_escala','insert'),
+             false)                                        as scrapper_escribe`;
   return r;
 };
 
@@ -59,8 +65,9 @@ const antes = await estado();
 console.log(`  cct_categoria                       ${antes.tabla_categoria ? 'ya está' : 'FALTA'}`);
 console.log(`  cct_escala                          ${antes.tabla_escala ? 'ya está' : 'FALTA'}`);
 console.log(`  convenio_categoria.cct_categoria_id ${antes.vinculo ? 'ya está' : 'FALTA'}`);
+console.log(`  grant a arca_scrapper               ${antes.scrapper_escribe ? 'ya está' : 'FALTA'}`);
 
-if (antes.tabla_categoria && antes.tabla_escala && antes.vinculo) {
+if (antes.tabla_categoria && antes.tabla_escala && antes.vinculo && antes.scrapper_escribe) {
   console.log('\n✓ Nada que hacer.\n');
   await sql.end();
   process.exit(0);
@@ -135,6 +142,7 @@ await sql.begin(async (tx) => {
   // Los grants son por tabla y el general de schema-rls.sql ya corrió.
   await tx.unsafe(`
     grant select, insert, update, delete on cct_categoria, cct_escala to arca_app;
+    grant select, insert, update on cct_categoria, cct_escala to arca_scrapper;
     grant select on cct_categoria, cct_escala to arca_agent;
   `);
 });
@@ -146,6 +154,10 @@ const [final] = await sql`
            where table_name='convenio_categoria'
              and column_name='cct_categoria_id')                    as vinculo,
          has_table_privilege('arca_app','cct_escala','insert')      as app_escribe,
+         has_table_privilege('arca_scrapper','cct_categoria','insert')
+           and has_table_privilege('arca_scrapper','cct_escala','insert')
+                                                                    as scrapper_escribe,
+         has_table_privilege('arca_scrapper','cct_escala','delete') as scrapper_borra,
          has_table_privilege('arca_agent','cct_escala','select')    as agent_lee,
          has_table_privilege('arca_agent','cct_escala','insert')    as agent_escribe`;
 
@@ -157,8 +169,10 @@ const bien =
   final.tabla_escala &&
   final.vinculo &&
   final.app_escribe &&
+  final.scrapper_escribe &&
   final.agent_lee &&
-  !final.agent_escribe;
+  !final.agent_escribe &&
+  !final.scrapper_borra;
 console.log(bien ? '\n✓ Listo.\n' : '\n✗ Algo no quedó como se esperaba.\n');
 await sql.end();
 process.exit(bien ? 0 : 1);

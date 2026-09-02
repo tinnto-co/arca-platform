@@ -55,6 +55,12 @@ grant update (afip_contribuyente_id) on cliente_credencial to arca_scrapper;
 -- De las escalas salariales solo agrega/pisa el básico de convenio. Las categorías
 -- y los convenios los arma el estudio: el scrapper los lee para saber a quién aplicar.
 grant select, insert, update on escala_salarial to arca_scrapper;
+-- La escala PUBLICADA del convenio va en las tablas globales: una fila por
+-- categoría oficial, no una copia por cliente. Ahí escribe el job `escalas`.
+grant select, insert, update on cct_categoria, cct_escala to arca_scrapper;
+-- La categoría de monotributo y la cuota las informa AFIP (padrón A5): las
+-- escribe el job `monotributo`. Upsert por cliente; no borra.
+grant select, insert, update on cliente_monotributo to arca_scrapper;
 -- El tope imponible SIPA lo trae un job mensual (decisión D17, 11/08): upsert
 -- sobre parametro_periodo. Sin este grant el job muere con permission denied.
 grant select, insert, update on parametro_periodo to arca_scrapper;
@@ -82,7 +88,7 @@ begin
     'alerta','cliente','comprobante','credencial_afip','deuda','documento',
     'evento','job','notificacion','vencimiento',
     -- org vía cliente
-    'cliente_credencial','iva_declaracion',
+    'cliente_credencial','iva_declaracion','cliente_monotributo',
     -- hijas, heredan del padre
     'comprobante_alicuota','job_log','notificacion_adjunto',
     -- escalas salariales: convenio tiene org_id, categoria y escala cuelgan de él
@@ -93,8 +99,8 @@ begin
 end
 $do$;
 
--- `contraparte`, `cct` y `cct_fuente` no tienen RLS (catálogos globales, ver
--- schema-rls.sql): con el grant alcanza.
+-- `contraparte`, `cct`, `cct_fuente`, `cct_categoria` y `cct_escala` no tienen
+-- RLS (catálogos globales, ver schema-rls.sql): con el grant alcanza.
 
 -- ---------- arranque del job ----------
 -- Huevo y gallina: el worker recibe un credencialId y necesita leer esa credencial
