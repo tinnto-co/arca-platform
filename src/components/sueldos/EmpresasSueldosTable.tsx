@@ -270,8 +270,8 @@ export function EmpresasSueldosTable({
       columns={columns}
       data={empresas}
       isLoading={isLoading}
-      searchKey="razonSocial"
-      searchPlaceholder="Buscar por empresa o CUIT..."
+      // Sin buscador propio: la empresa se busca en el selector global del
+      // header, que además replica la elección en las demás vistas.
       filters={[
         {
           columnId: 'liquidaSueldos',
