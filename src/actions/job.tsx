@@ -264,6 +264,26 @@ export interface FinishedJobRow {
   finishedAt: Date | null;
 }
 
+/**
+ * Fecha (hora argentina) del job más reciente de la organización. La pantalla
+ * de jobs abre filtrada en ese día: la pregunta que contesta es "¿el último
+ * scrapeo salió bien?", y los acumulados históricos no la contestan.
+ */
+export const getUltimaFechaScrapeo = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+    const [r] = await db
+      .select({
+        fecha: sql<
+          string | null
+        >`(max(${job.createdAt}) AT TIME ZONE 'America/Argentina/Buenos_Aires')::date::text`,
+      })
+      .from(job)
+      .where(eq(job.orgId, orgId));
+    return { fecha: r?.fecha ?? null };
+  }
+);
+
 export interface ActiveJobsSummary {
   active: ActiveJobRow[];
   recentlyFinished: FinishedJobRow[];

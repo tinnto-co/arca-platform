@@ -20,20 +20,27 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Chip } from '@/components/dashboard/shared';
-import { getJobErrorSummary, type ErrorGroup, type JobType } from '@/actions/job';
+import {
+  getJobErrorSummary,
+  type ErrorGroup,
+  type JobType,
+} from '@/actions/job';
 
 const SEVERITY_META: Record<string, { label: string; className: string }> = {
   critical: {
     label: 'Crítica',
-    className: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
+    className:
+      'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
   },
   high: {
     label: 'Alta',
-    className: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
+    className:
+      'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
   },
   medium: {
     label: 'Media',
-    className: 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+    className:
+      'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
   },
   low: {
     label: 'Baja',
@@ -88,7 +95,22 @@ export function JobsErrorSummary({
       }),
   });
 
-  if (!summary || summary.totalFailed === 0) return null;
+  if (!summary) return null;
+
+  // Sin fallas no hay tabla de errores, pero el silencio no contesta la
+  // pregunta de la pantalla ("¿salió bien?"): se dice explícitamente.
+  if (summary.totalFailed === 0) {
+    if (summary.totalJobs === 0) return null;
+    return (
+      <div className="flex items-center gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-accent-pos-bg)] px-4 py-2.5 text-[13px] text-[var(--arca-accent-pos-fg)]">
+        <span className="font-semibold">✓ Sin errores</span>
+        <span>
+          · {summary.totalJobs} job{summary.totalJobs !== 1 ? 's' : ''} en el
+          período, ninguno fallido
+        </span>
+      </div>
+    );
+  }
 
   const failureRate =
     summary.totalJobs > 0
@@ -111,7 +133,9 @@ export function JobsErrorSummary({
           label="Causa principal"
           value={summary.topCategory?.label ?? '—'}
           chipText={
-            summary.topCategory ? `${summary.topCategory.count} jobs` : undefined
+            summary.topCategory
+              ? `${summary.topCategory.count} jobs`
+              : undefined
           }
         />
         <SummaryCard
@@ -142,12 +166,15 @@ export function JobsErrorSummary({
           </TableHeader>
           <TableBody>
             {summary.groups.map((group) => {
-              const severity = SEVERITY_META[group.severity] ?? SEVERITY_META.medium;
+              const severity =
+                SEVERITY_META[group.severity] ?? SEVERITY_META.medium;
               return (
                 <TableRow key={group.category}>
                   <TableCell className="font-medium">{group.label}</TableCell>
                   <TableCell>
-                    <Badge className={severity.className}>{severity.label}</Badge>
+                    <Badge className={severity.className}>
+                      {severity.label}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {group.count}
@@ -220,7 +247,9 @@ export function JobsErrorSummary({
                           </div>
                           {cred.clientes.length > 0 && (
                             <div className="text-[12px] text-[var(--arca-ink-3)] truncate">
-                              {cred.clientes.map((c) => c.razonSocial).join(', ')}
+                              {cred.clientes
+                                .map((c) => c.razonSocial)
+                                .join(', ')}
                             </div>
                           )}
                         </div>
