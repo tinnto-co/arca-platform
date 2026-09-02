@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import {
   Select,
   SelectContent,
@@ -22,7 +24,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ArcaCard } from '@/components/dashboard/shared';
-import { getClientes } from '@/actions/client';
 import {
   listCuentasBancarias,
   listMovimientos,
@@ -310,17 +311,23 @@ function CreateAccountForm({
 
 /* ─── Page ─── */
 function BankPage() {
-  const [clienteId, setClienteId] = useState('');
+  // La empresa es la global del header (store cliente-seleccionado): venir de
+  // otra vista con una empresa elegida abre Banco ya parado en ella.
+  const [clienteGlobal] = useClienteSeleccionado();
+  const clienteId = clienteGlobal ?? '';
   const [accountId, setAccountId] = useState('');
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const queryClient = useQueryClient();
 
-  /* Clientes */
-  const { data: clientes = [] } = useQuery({
-    queryKey: ['clientes'],
-    queryFn: () => getClientes(),
-    staleTime: 60_000,
-  });
+  // Si la empresa cambia (desde acá o desde otra vista), la cuenta elegida
+  // deja de tener sentido: sin esto, las transacciones mostradas serían de la
+  // cuenta de la empresa anterior. Ajuste durante el render, no en un efecto.
+  const [prevCliente, setPrevCliente] = useState(clienteId);
+  if (prevCliente !== clienteId) {
+    setPrevCliente(clienteId);
+    setAccountId('');
+    setShowCreateAccount(false);
+  }
 
   /* Bank accounts */
   const { data: accounts = [] } = useQuery({
@@ -361,35 +368,19 @@ function BankPage() {
     onError: () => toast.error('Error en la conciliación automática'),
   });
 
-  /* When client changes, reset account selection */
-  const handleClientChange = (id: string) => {
-    setClienteId(id);
-    setAccountId('');
-    setShowCreateAccount(false);
-  };
-
   const unmatchedCount = transactions.filter((t) => !t.conciliado).length;
   const matchedCount = transactions.filter((t) => t.conciliado).length;
 
   return (
     <PageShell>
-      <PageHeader title="Banco" subtitle="Conciliación bancaria" />
+      <PageHeader
+        title="Banco"
+        subtitle="Conciliación bancaria"
+        actions={<SelectorClienteGlobal />}
+      />
 
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-5 items-center">
-        <Select value={clienteId} onValueChange={(v) => handleClientChange(v)}>
-          <SelectTrigger className="w-[220px] text-[13px]">
-            <SelectValue placeholder="Seleccionar cliente..." />
-          </SelectTrigger>
-          <SelectContent>
-            {clientes.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.razonSocial}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         {clienteId && (
           <Select value={accountId} onValueChange={(v) => setAccountId(v)}>
             <SelectTrigger className="w-[260px] text-[13px]">
