@@ -95,19 +95,19 @@ export const getInicio = createServerFn({ method: 'GET' })
       .from(vencimiento)
       .where(eq(vencimiento.orgId, orgId));
 
-    // Mismo criterio que autoGenerarTareas: vigente = del 1° del mes actual en
-    // adelante, sin completar, y con un cliente al que colgarle la tarea
-    // (por cliente_id o, si no tiene, por CUIT).
+    // Mismo criterio que autoGenerarTareas: vigente = del 1° del mes actual
+    // en adelante, sin completar. Los de CUITs que no son cliente también
+    // cuentan — Autogenerar los manda a la columna «Sin cliente» del tablero.
     const sinTarea = db
       .select({
         id: vencimiento.id,
         impuesto: vencimiento.impuesto,
         concepto: vencimiento.concepto,
         venceAt: vencimiento.venceAt,
-        clienteNombre: cliente.razonSocial,
+        clienteNombre: sql<string>`coalesce(${cliente.razonSocial}, 'CUIT ' || ${vencimiento.cuit})`,
       })
       .from(vencimiento)
-      .innerJoin(
+      .leftJoin(
         cliente,
         or(
           eq(cliente.id, vencimiento.clienteId),

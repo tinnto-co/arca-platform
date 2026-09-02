@@ -177,8 +177,8 @@ export function AgendaCard({
         toast.info('Todos los vencimientos vigentes ya tienen su tarea');
       }
       if (r.sinCliente > 0) {
-        toast.warning(
-          `${r.sinCliente} vencimiento${r.sinCliente !== 1 ? 's' : ''} sin cliente asociado quedaron afuera`
+        toast.info(
+          `${r.sinCliente} vencimiento${r.sinCliente !== 1 ? 's' : ''} de CUITs sin cliente quedaron en la columna «Sin cliente» del tablero`
         );
       }
       void queryClient.invalidateQueries({ queryKey: ['inicio'] });

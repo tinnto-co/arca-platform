@@ -2694,7 +2694,7 @@ export const tarea = pgTable("tarea", {
 export const tareaCliente = pgTable("tarea_cliente", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tareaId: uuid("tarea_id").notNull(),
-	clienteId: uuid("cliente_id").notNull(),
+	clienteId: uuid("cliente_id"),
 	completado: boolean().default(false).notNull(),
 	completadoAt: timestamp("completado_at"),
 	completadoPor: text("completado_por"),
@@ -2726,6 +2726,7 @@ export const tareaCliente = pgTable("tarea_cliente", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
    FROM tarea t
   WHERE ((t.id = tarea_cliente.tarea_id) AND (t.org_id = current_setting('app.org_id'::text, true)))))` }),
+	check("tarea_cliente_destino", sql`(cliente_id IS NOT NULL) OR (vencimiento_id IS NOT NULL)`),
 ]);
 
 export const tareaNotificacion = pgTable("tarea_notificacion", {

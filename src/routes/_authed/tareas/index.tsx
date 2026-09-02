@@ -44,7 +44,7 @@ import {
   moverTarea,
   reorderTarea,
   autoGenerarTareas,
-  COLORES_COLUMNA,
+  type COLORES_COLUMNA,
   TIPOS_TAREA,
   CLAVE_ARCHIVADAS,
 } from '@/actions/tareas';
@@ -309,7 +309,9 @@ function TareasPage() {
     const empresasUnicas = new Set<string>();
     let venceSemana = 0;
     for (const t of tareas) {
-      for (const c of t.clientes) empresasUnicas.add(c.clienteId);
+      // Las filas sin cliente (columna «Sin cliente») no cuentan como empresa.
+      for (const c of t.clientes)
+        if (c.clienteId) empresasUnicas.add(c.clienteId);
       if (t.venceAt && new Date(t.venceAt) <= finSemana) venceSemana++;
     }
     return {
@@ -345,12 +347,8 @@ function TareasPage() {
           `${r.creadas} ${r.creadas === 1 ? 'tarea creada' : 'tareas creadas'}` +
             (Object.keys(r.porPeriodo).length > 1 ? `: ${meses}` : '') +
             (r.sinCliente > 0
-              ? ` — ${r.sinCliente} vencimientos sin cliente asociado`
+              ? ` — ${r.sinCliente} de CUITs sin cliente quedaron en la columna «Sin cliente»`
               : '')
-        );
-      } else if (r.sinCliente > 0) {
-        toast.warning(
-          `Se encontraron vencimientos pero ${r.sinCliente} no se pudieron asociar a ningún cliente`
         );
       } else if (r.omitidas > 0) {
         toast.info('Todos los vencimientos vigentes ya tienen su tarea');
