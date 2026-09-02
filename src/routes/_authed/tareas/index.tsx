@@ -336,6 +336,9 @@ function TareasPage() {
     mutationFn: () => autoGenerarTareas(),
     onSuccess: (r) => {
       refrescar();
+      // La corrida puede haber creado la columna «Sin cliente»: sin esto,
+      // las tareas nuevas quedan invisibles hasta refrescar a mano.
+      refrescarCols();
       // Los tres ceros distintos del ticket TIN-1411, cada uno con su mensaje:
       // que «no hay nada» y «está roto» no se vean iguales es el punto.
       if (r.creadas > 0) {

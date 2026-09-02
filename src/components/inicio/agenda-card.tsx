@@ -183,6 +183,8 @@ export function AgendaCard({
       }
       void queryClient.invalidateQueries({ queryKey: ['inicio'] });
       void queryClient.invalidateQueries({ queryKey: ['tareas'] });
+      // La corrida puede haber creado la columna «Sin cliente» del tablero.
+      void queryClient.invalidateQueries({ queryKey: ['tareas-columnas'] });
     },
     onError: (e) =>
       toast.error(
