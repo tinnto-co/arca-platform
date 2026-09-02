@@ -745,11 +745,19 @@ function IvaResumenRI({ search }: { search: string }) {
   );
 }
 
-/** Tab Monotributista: facturación emitida acumulada últimos 12 meses por empresa. */
+/** Tab Monotributista: facturación de los 12 meses que terminan en el período elegido. */
 function MonotributistasTab({ search }: { search: string }) {
+  const now = new Date();
+  // Default: mes anterior, como en RI — los últimos 12 meses cerrados, que es
+  // contra lo que se mira el tope de categoría.
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const [selectedYear, setSelectedYear] = useState(prev.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(prev.getMonth());
+  const periodo = `${String(selectedMonth + 1).padStart(2, '0')}/${selectedYear}`;
+
   const { data: allRows = [], isLoading } = useQuery({
-    queryKey: ['iva', 'monotributo'],
-    queryFn: () => getMonotributistasFacturacion(),
+    queryKey: ['iva', 'monotributo', periodo],
+    queryFn: () => getMonotributistasFacturacion({ data: { periodo } }),
   });
   const rows = useMemo(
     () => filtrarPorTexto(allRows, search),
@@ -776,12 +784,54 @@ function MonotributistasTab({ search }: { search: string }) {
     [rows, sort]
   );
 
+  const yearsMono = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+  const maxMonthMono = selectedYear === now.getFullYear() ? now.getMonth() : 11;
+
   return (
     <div>
+      <div className="flex items-center gap-2 mb-4">
+        <Select
+          value={String(selectedMonth)}
+          onValueChange={(v) => setSelectedMonth(Number(v))}
+        >
+          <SelectTrigger className="w-[140px] text-[13px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: maxMonthMono + 1 }, (_, i) => (
+              <SelectItem key={i} value={String(i)}>
+                {MONTH_NAMES[i]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={String(selectedYear)}
+          onValueChange={(v) => {
+            const y = Number(v);
+            setSelectedYear(y);
+            if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
+              setSelectedMonth(now.getMonth());
+            }
+          }}
+        >
+          <SelectTrigger className="w-[100px] text-[13px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {yearsMono.map((y) => (
+              <SelectItem key={y} value={String(y)}>
+                {y}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
-        Facturación emitida de los últimos 12 meses (desde comprobantes
-        cargados; las notas de crédito restan). Útil para monitorear límites de
-        categoría.
+        Facturación emitida de los 12 meses que terminan en el período elegido
+        (desde comprobantes cargados; las notas de crédito restan). Útil para
+        monitorear límites de categoría.
       </p>
 
       {isLoading ? (

@@ -232,62 +232,87 @@ export const getIvaResumenRI = createServerFn({ method: 'GET' })
  */
 export const getMonotributistasFacturacion = createServerFn({
   method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+})
+  .validator(
+    z.object({
+      /**
+       * Mes final de la ventana (MM/YYYY). La facturación es la de los 12
+       * meses calendario que TERMINAN en ese mes, inclusive. Sin período:
+       * el mes anterior — los últimos 12 meses cerrados, que es contra lo
+       * que se mira el tope de categoría.
+       */
+      periodo: z
+        .string()
+        .regex(/^\d{2}\/\d{4}$/)
+        .optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
 
-  const facturado = sql`coalesce(sum(
+    const ahora = new Date();
+    const [mesStr, anioStr] = ctx.data.periodo?.split('/') ?? [];
+    const fin = ctx.data.periodo
+      ? new Date(Number(anioStr), Number(mesStr), 1) // 1° del mes SIGUIENTE al elegido
+      : new Date(ahora.getFullYear(), ahora.getMonth(), 1); // sin período: cierra en el mes anterior
+    const inicio = new Date(fin.getFullYear() - 1, fin.getMonth(), 1);
+    const aFecha = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+
+    const facturado = sql`coalesce(sum(
     case when ${comprobanteTipo.esNc} then -${comprobante.total} else ${comprobante.total} end
   ), 0)`;
 
-  return await db
-    .select({
-      clienteId: cliente.id,
-      razonSocial: cliente.razonSocial,
-      cuit: cliente.cuit,
-      credenciales: credencialesSql,
-      condicionIva: cliente.condicionIva,
-      // Vienen de AFIP por el scrapper: la categoría en la que el cliente
-      // ESTÁ inscripto, que puede no ser la que le corresponde por lo que
-      // facturó. Ver esa diferencia es el punto de la solapa.
-      categoria: clienteMonotributo.categoria,
-      cuotaMensual: clienteMonotributo.cuotaMensual,
-      comprobanteCount: sql<number>`count(${comprobante.id})::int`,
-      ultimoComprobante: sql<
-        string | null
-      >`max(${comprobante.fechaEmision})::text`,
-      facturacion12m: sql<string>`${facturado}::text`,
-    })
-    .from(cliente)
-    .leftJoin(
-      comprobante,
-      and(
-        eq(comprobante.clienteId, cliente.id),
-        eq(comprobante.direccion, 'emitido'),
-        sql`${comprobante.fechaEmision} >= date_trunc('month', now()) - interval '12 months'`
+    return await db
+      .select({
+        clienteId: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        credenciales: credencialesSql,
+        condicionIva: cliente.condicionIva,
+        // Vienen de AFIP por el scrapper: la categoría en la que el cliente
+        // ESTÁ inscripto, que puede no ser la que le corresponde por lo que
+        // facturó. Ver esa diferencia es el punto de la solapa.
+        categoria: clienteMonotributo.categoria,
+        cuotaMensual: clienteMonotributo.cuotaMensual,
+        comprobanteCount: sql<number>`count(${comprobante.id})::int`,
+        ultimoComprobante: sql<
+          string | null
+        >`max(${comprobante.fechaEmision})::text`,
+        facturacion12m: sql<string>`${facturado}::text`,
+      })
+      .from(cliente)
+      .leftJoin(
+        comprobante,
+        and(
+          eq(comprobante.clienteId, cliente.id),
+          eq(comprobante.direccion, 'emitido'),
+          sql`${comprobante.fechaEmision} >= ${aFecha(inicio)}::date`,
+          sql`${comprobante.fechaEmision} < ${aFecha(fin)}::date`
+        )
       )
-    )
-    .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
-    .leftJoin(
-      clienteMonotributo,
-      eq(clienteMonotributo.clienteId, cliente.id)
-    )
-    .where(
-      and(
-        eq(cliente.orgId, orgId),
-        eq(cliente.condicionIva, 'monotributista'),
-        eq(cliente.estado, 'activo')
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(
+        clienteMonotributo,
+        eq(clienteMonotributo.clienteId, cliente.id)
       )
-    )
-    .groupBy(
-      cliente.id,
-      cliente.razonSocial,
-      cliente.cuit,
-      cliente.condicionIva,
-      clienteMonotributo.categoria,
-      clienteMonotributo.cuotaMensual
-    )
-    .orderBy(desc(facturado));
-});
+      .where(
+        and(
+          eq(cliente.orgId, orgId),
+          eq(cliente.condicionIva, 'monotributista'),
+          eq(cliente.estado, 'activo')
+        )
+      )
+      .groupBy(
+        cliente.id,
+        cliente.razonSocial,
+        cliente.cuit,
+        cliente.condicionIva,
+        clienteMonotributo.categoria,
+        clienteMonotributo.cuotaMensual
+      )
+      .orderBy(desc(facturado));
+  });
 
 /** Clientes activos de la organización sin condición fiscal asignada. */
 export const getClientesSinClasificar = createServerFn({
