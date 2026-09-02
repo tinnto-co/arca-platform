@@ -8,8 +8,6 @@ import {
   ArrowDown,
   ChevronsUpDown,
   Pencil,
-  Search,
-  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +21,9 @@ import {
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
+import { getClientes } from '@/actions/client';
 import {
   getIvaResumenRI,
   getMonotributistasFacturacion,
@@ -112,37 +113,6 @@ function filtrarPorTexto<T extends { razonSocial: string; cuit: string }>(
   return rows.filter(
     (r) =>
       normalizar(r.razonSocial).includes(q) || normalizar(r.cuit).includes(q)
-  );
-}
-
-/** Input de búsqueda compartido por los tres bloques de la página. */
-function SearchBox({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="relative w-full max-w-[320px]">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--arca-ink-3)]" />
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Buscar por empresa o CUIT..."
-        className="pl-8 pr-8 text-[13px]"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange('')}
-          aria-label="Limpiar búsqueda"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
   );
 }
 
@@ -569,7 +539,7 @@ function IvaResumenRI({ search }: { search: string }) {
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           {allRows.length > 0
-            ? `Ninguna empresa Responsable Inscripto coincide con "${search}".`
+            ? 'La empresa elegida en el header no es Responsable Inscripto.'
             : 'No hay empresas clasificadas como Responsable Inscripto. Asignales una condición fiscal desde el bloque “Sin clasificar”.'}
         </div>
       ) : (
@@ -948,7 +918,7 @@ function MonotributistasTab({ search }: { search: string }) {
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           {allRows.length > 0
-            ? `Ningún monotributista coincide con "${search}".`
+            ? 'La empresa elegida en el header no es monotributista.'
             : 'No hay empresas clasificadas como monotributistas.'}
         </div>
       ) : (
@@ -1148,16 +1118,26 @@ function SinClasificarBlock({ search }: { search: string }) {
 }
 
 function RouteComponent() {
-  // La búsqueda es de la página, no de una tabla: filtra los tres bloques a la
-  // vez, así una empresa no queda escondida en la pestaña que no estás mirando.
-  const [search, setSearch] = useState('');
+  // El filtro es el selector global de empresa (mismo patrón que Sueldos y
+  // Contabilidad): elegir una empresa acota los tres bloques a la vez, y la
+  // elección viaja con vos a las demás vistas. Se filtra por CUIT —único por
+  // empresa— reusando el filtro de texto que las tablas ya tenían. Si la
+  // empresa elegida no está en una tab (una RI en Monotributista), esa tab
+  // muestra su estado vacío: limitación conocida y aceptada.
+  const [seleccionado] = useClienteSeleccionado();
+  const { data: clientes = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
+    staleTime: 60_000,
+  });
+  const search = clientes.find((c) => c.id === seleccionado)?.cuit ?? '';
 
   return (
     <PageShell>
       <PageHeader
         title="IVA"
         subtitle="Posición mensual de IVA por empresa y monitoreo de monotributo"
-        actions={<SearchBox value={search} onChange={setSearch} />}
+        actions={<SelectorClienteGlobal />}
       />
 
       <Tabs defaultValue="ri">
