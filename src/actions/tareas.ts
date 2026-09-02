@@ -22,6 +22,7 @@ import {
   tareaNotificacion,
   notificacion,
   cliente,
+  vencimiento,
 } from '@/drizzle/schema';
 import { autoGenerarTareasParaOrg } from '@/lib/tareas-batch';
 import { user, member } from '@/drizzle/auth';
@@ -152,13 +153,16 @@ export const listTareas = createServerFn({ method: 'GET' })
           tareaId: tareaCliente.tareaId,
           id: tareaCliente.id,
           clienteId: tareaCliente.clienteId,
-          clienteNombre: cliente.razonSocial,
+          // Sin cliente (columna «Sin cliente» del tablero), la fila muestra
+          // el CUIT del vencimiento que la originó.
+          clienteNombre: sql<string>`coalesce(${cliente.razonSocial}, 'CUIT ' || ${vencimiento.cuit}, '(sin cliente)')`,
           completado: tareaCliente.completado,
           completadoAt: tareaCliente.completadoAt,
           completadoPor: tareaCliente.completadoPor,
         })
         .from(tareaCliente)
         .leftJoin(cliente, eq(tareaCliente.clienteId, cliente.id))
+        .leftJoin(vencimiento, eq(tareaCliente.vencimientoId, vencimiento.id))
         .where(inArray(tareaCliente.tareaId, taskIds)),
       db
         .select({

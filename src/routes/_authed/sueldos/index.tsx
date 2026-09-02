@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { Button } from '@/components/ui/button';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
@@ -71,12 +73,32 @@ const tabTriggerCls = () =>
   );
 
 function RouteComponent() {
-  const [selectedOptionId, setSelectedOptionId] = useState<string>('');
+  // La empresa elegida es global (store de cliente-seleccionado): venir de
+  // contabilidad con una empresa abre Sueldos ya parado en ella, y elegir acá
+  // se replica en las demás vistas. Si la empresa global no tiene sueldos
+  // habilitados, no está en `clients` y se cae al listado — limitación
+  // conocida y aceptada.
+  const [clienteGlobal, setClienteGlobal] = useClienteSeleccionado();
+  const selectedOptionId = clienteGlobal ?? '';
+  const setSelectedOptionId = (id: string) => setClienteGlobal(id || null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [editReciboData, setEditReciboData] = useState<
     EditReciboData | undefined
   >(undefined);
   const [reciboFiltroEmpleadoId, setReciboFiltroEmpleadoId] = useState('');
+
+  // Cambiar de empresa —desde acá o desde otra vista— resetea el trabajo en
+  // curso: seguir editando un recibo con la empresa nueva sería peor que
+  // volver al dashboard. Ajuste durante el render (patrón de React para
+  // derivar estado de una prop), no en un efecto.
+  const [prevCliente, setPrevCliente] = useState(selectedOptionId);
+  if (prevCliente !== selectedOptionId) {
+    setPrevCliente(selectedOptionId);
+    setActiveTab('dashboard');
+    setEditReciboData(undefined);
+    setReciboFiltroEmpleadoId('');
+  }
+
   const [vistaNuevoRecibo, setVistaNuevoRecibo] = useLocalStorageState<
     'nueva' | 'clasica'
   >('arca:sueldos:vista-nuevo-recibo', 'nueva');
@@ -137,22 +159,25 @@ function RouteComponent() {
               : 'Elegí una empresa para gestionar sus sueldos'
           }
           actions={
-            selectedOption ? (
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => {
-                  setSelectedOptionId('');
-                  setActiveTab('dashboard');
-                  setEditReciboData(undefined);
-                  setReciboFiltroEmpleadoId('');
-                }}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Todas las empresas
-              </Button>
-            ) : undefined
+            <div className="flex flex-wrap items-center gap-2">
+              {selectedOption && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => {
+                    setSelectedOptionId('');
+                    setActiveTab('dashboard');
+                    setEditReciboData(undefined);
+                    setReciboFiltroEmpleadoId('');
+                  }}
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Todas las empresas
+                </Button>
+              )}
+              <SelectorClienteGlobal />
+            </div>
           }
         />
       </div>

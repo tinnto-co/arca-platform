@@ -5,7 +5,8 @@ import { Globe, MapPin } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import {
   Select,
   SelectContent,
@@ -94,7 +95,14 @@ function IIBBDesglose({
   const now = new Date();
   const queryClient = useQueryClient();
 
-  const [selectedRepId, setSelectedRepId] = useState('');
+  // La empresa viene del selector global del header. Solo vale si está en el
+  // subset de este régimen (local o multilateral): una empresa del otro
+  // régimen —o sin IIBB— deja esta tab en su estado vacío.
+  const [clienteGlobal] = useClienteSeleccionado();
+  const selectedRepId =
+    clienteGlobal && clients.some((c) => c.id === clienteGlobal)
+      ? clienteGlobal
+      : '';
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
 
@@ -195,10 +203,15 @@ function IIBBDesglose({
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
   const maxMonth = selectedYear === now.getFullYear() ? now.getMonth() : 11;
-  const repOptions = clients.map((c) => ({
-    value: c.id,
-    label: `${c.razonSocial}${c.cuit ? ` (${c.cuit})` : ''}`,
-  }));
+
+  // Cambiar de empresa descarta la liquidación local a medio editar, igual
+  // que hacía el selector propio que este componente tenía antes. Ajuste
+  // durante el render, no en un efecto.
+  const [prevRep, setPrevRep] = useState(selectedRepId);
+  if (prevRep !== selectedRepId) {
+    setPrevRep(selectedRepId);
+    setLocalLiq({});
+  }
 
   const rows = provinceSummary;
   const isLoading = loadingInvoices || loadingLiq;
@@ -249,18 +262,8 @@ function IIBBDesglose({
 
   return (
     <div>
-      {/* Selectors */}
+      {/* Selectors — la empresa se elige en el selector global del header. */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <SearchableSelect
-          options={repOptions}
-          value={selectedRepId}
-          onValueChange={(v) => {
-            setSelectedRepId(v);
-            setLocalLiq({});
-          }}
-          placeholder="Seleccionar empresa..."
-          width={320}
-        />
         <div className="flex items-center gap-2">
           <Select
             value={String(selectedMonth)}
@@ -649,6 +652,7 @@ function RouteComponent() {
       <PageHeader
         title="IIBB / Convenio Multilateral"
         subtitle="Ingresos brutos por régimen local y convenio multilateral"
+        actions={<SelectorClienteGlobal />}
       />
 
       <Tabs defaultValue="local">

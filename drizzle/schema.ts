@@ -56,7 +56,7 @@ export const impuesto = pgEnum("impuesto", ['iva', 'ganancias', 'ingresos_brutos
 export const indiceInflacionFuente = pgEnum("indice_inflacion_fuente", ['facpce_rt6', 'indec_ipc', 'manual'])
 export const jobLogLevel = pgEnum("job_log_level", ['debug', 'info', 'warn', 'error'])
 export const jobStatus = pgEnum("job_status", ['pending', 'running', 'failed', 'finished'])
-export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas', 'tope_imponible'])
+export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas', 'tope_imponible', 'monotributo'])
 export const marcoContable = pgEnum("marco_contable", ['rt54', 'rt6'])
 export const movimientoDireccion = pgEnum("movimiento_direccion", ['ingreso', 'egreso'])
 export const notificacionSeveridad = pgEnum("notificacion_severidad", ['sin_clasificar', 'informativa', 'accion_requerida', 'urgente'])
@@ -2694,7 +2694,7 @@ export const tarea = pgTable("tarea", {
 export const tareaCliente = pgTable("tarea_cliente", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	tareaId: uuid("tarea_id").notNull(),
-	clienteId: uuid("cliente_id").notNull(),
+	clienteId: uuid("cliente_id"),
 	completado: boolean().default(false).notNull(),
 	completadoAt: timestamp("completado_at"),
 	completadoPor: text("completado_por"),
@@ -2726,6 +2726,7 @@ export const tareaCliente = pgTable("tarea_cliente", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
    FROM tarea t
   WHERE ((t.id = tarea_cliente.tarea_id) AND (t.org_id = current_setting('app.org_id'::text, true)))))` }),
+	check("tarea_cliente_destino", sql`(cliente_id IS NOT NULL) OR (vencimiento_id IS NOT NULL)`),
 ]);
 
 export const tareaNotificacion = pgTable("tarea_notificacion", {
@@ -2820,7 +2821,7 @@ export const job = pgTable("job", {
 			name: "job_org_id_fkey"
 		}).onDelete("cascade"),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
-	check("job_credencial_requerida", sql`(type = ANY (ARRAY['escalas'::job_type, 'tope_imponible'::job_type])) OR (credencial_id IS NOT NULL)`),
+	check("job_credencial_requerida", sql`(type = ANY (ARRAY['escalas'::job_type, 'tope_imponible'::job_type, 'monotributo'::job_type])) OR (credencial_id IS NOT NULL)`),
 ]);
 
 export const baseCalculoConcepto = pgTable("base_calculo_concepto", {

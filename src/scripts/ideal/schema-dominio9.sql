@@ -121,7 +121,10 @@ create index if not exists ix_tarea_columna_posicion on tarea(columna_id, posici
 create table if not exists tarea_cliente (
   id uuid primary key default gen_random_uuid(),
   tarea_id uuid not null references tarea(id) on delete cascade,
-  cliente_id uuid not null references cliente(id) on delete cascade,
+  -- Null solo cuando la fila viene de un vencimiento cuyo CUIT no es cliente
+  -- de la plataforma: la tarea igual se crea (columna «Sin cliente») para que
+  -- el trabajo no desaparezca en un toast. El CHECK de abajo lo garantiza.
+  cliente_id uuid references cliente(id) on delete cascade,
   completado boolean not null default false,
   completado_at timestamp,
   completado_por text references "user"(id) on delete set null,
@@ -129,7 +132,11 @@ create table if not exists tarea_cliente (
   -- De qué vencimiento salió esta fila. Es la guarda de idempotencia del
   -- generador automático (`src/lib/tareas-batch.ts`): sin ella, cada corrida
   -- del cron vuelve a crear las mismas tareas.
-  vencimiento_id uuid references vencimiento(id) on delete set null
+  vencimiento_id uuid references vencimiento(id) on delete set null,
+
+  -- Una fila sin cliente Y sin vencimiento no apunta a nada: no existe.
+  constraint tarea_cliente_destino
+    check (cliente_id is not null or vencimiento_id is not null)
 );
 
 create unique index if not exists uq_tarea_cliente on tarea_cliente(tarea_id, cliente_id);

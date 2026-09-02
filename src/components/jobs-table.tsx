@@ -65,6 +65,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import {
   getJobs,
   getJobLogs,
+  getUltimaFechaScrapeo,
   dispatchAllJobs,
   type JobStatus,
   type JobType,
@@ -74,6 +75,16 @@ import {
 } from '@/actions/job';
 import { getCredenciales } from '@/actions/client';
 import { JobsErrorSummary } from '@/components/jobs-error-summary';
+
+/** "2026-09-02" → "martes 2 de septiembre" (parse local: por UTC corre un día). */
+function fechaLegible(fecha: string): string {
+  const [y, m, d] = fecha.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
 
 export function JobsTable() {
   const routerNavigate = useNavigate();
@@ -100,6 +111,22 @@ export function JobsTable() {
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  // La pantalla abre filtrada en el día del último scrapeo. En la URL,
+  // date '' = ese default, 'todo' = histórico completo (elección explícita),
+  // cualquier otra cosa = fecha elegida a mano.
+  const { data: ultimoScrapeo } = useQuery({
+    queryKey: ['ultima-fecha-scrapeo'],
+    queryFn: () => getUltimaFechaScrapeo(),
+    staleTime: 60_000,
+  });
+  const fechaEfectiva =
+    date === 'todo' ? '' : date !== '' ? date : (ultimoScrapeo?.fecha ?? '');
+  // Sin esto, mientras se resuelve la última fecha se dispararía una consulta
+  // del histórico entero que enseguida se descarta.
+  const filtrosListos =
+    date === 'todo' || !!date || ultimoScrapeo !== undefined;
+
   const [selectedJob, setSelectedJob] = useState<JobRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -151,9 +178,10 @@ export function JobsTable() {
       statusFilter,
       typeFilter,
       clientFilter,
-      date,
+      fechaEfectiva,
       fromTime,
     ],
+    enabled: filtrosListos,
     queryFn: async (): Promise<JobsResponse> => {
       const response = await getJobs({
         data: {
@@ -162,7 +190,7 @@ export function JobsTable() {
           credencialId: clientFilter === 'all' ? undefined : clientFilter,
           status: statusFilter === 'all' ? undefined : statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
-          date,
+          date: fechaEfectiva === '' ? undefined : fechaEfectiva,
           fromTime: fromTime || undefined,
         },
       });
@@ -452,7 +480,7 @@ export function JobsTable() {
 
           <Input
             type="date"
-            value={date}
+            value={date === 'todo' ? '' : fechaEfectiva}
             onChange={(e) => setFilter({ date: e.target.value })}
             className="flex-1 min-w-[140px]"
           />
@@ -554,10 +582,41 @@ export function JobsTable() {
         </div>
       </div>
 
+      {/* Qué se está mirando: el último scrapeo (default) o el histórico. */}
+      {date !== 'todo' && !date && ultimoScrapeo?.fecha && (
+        <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-3)]">
+          <span>
+            Mostrando el último scrapeo ·{' '}
+            <span className="font-semibold text-[var(--arca-ink)]">
+              {fechaLegible(ultimoScrapeo.fecha)}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setFilter({ date: 'todo' })}
+            className="underline cursor-pointer hover:text-[var(--arca-ink)]"
+          >
+            Ver histórico completo
+          </button>
+        </div>
+      )}
+      {date === 'todo' && (
+        <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-3)]">
+          <span>Mostrando el histórico completo (todos los scrapeos)</span>
+          <button
+            type="button"
+            onClick={() => setFilter({ date: '' })}
+            className="underline cursor-pointer hover:text-[var(--arca-ink)]"
+          >
+            Volver al último scrapeo
+          </button>
+        </div>
+      )}
+
       <JobsErrorSummary
         credencialId={clientFilter === 'all' ? undefined : clientFilter}
         type={typeFilter === 'all' ? undefined : (typeFilter as JobType)}
-        date={date || undefined}
+        date={fechaEfectiva === '' ? undefined : fechaEfectiva}
         fromTime={fromTime || undefined}
       />
 
