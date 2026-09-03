@@ -108,6 +108,7 @@ function RouteComponent() {
         actions={
           <>
             <ActiveJobsIndicator />
+            <SelectorClienteGlobal />
             <UpdateAllButton />
             <CreateRepresentativeDialog>
               <Button
@@ -118,7 +119,6 @@ function RouteComponent() {
                 <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
               </Button>
             </CreateRepresentativeDialog>
-            <SelectorClienteGlobal />
           </>
         }
       />
