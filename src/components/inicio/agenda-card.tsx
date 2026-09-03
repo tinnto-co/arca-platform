@@ -169,10 +169,17 @@ export function AgendaCard({
   const generar = useMutation({
     mutationFn: () => autoGenerarTareas(),
     onSuccess: (r) => {
-      if (r.creadas > 0) {
-        toast.success(
-          `${r.creadas} tarea${r.creadas !== 1 ? 's' : ''} creada${r.creadas !== 1 ? 's' : ''}`
-        );
+      if (r.creadas > 0 || r.itemsAgregados > 0) {
+        const partes = [];
+        if (r.creadas > 0)
+          partes.push(
+            `${r.creadas} tarea${r.creadas !== 1 ? 's' : ''} creada${r.creadas !== 1 ? 's' : ''}`
+          );
+        if (r.itemsAgregados > 0)
+          partes.push(
+            `${r.itemsAgregados} vencimiento${r.itemsAgregados !== 1 ? 's' : ''} cubierto${r.itemsAgregados !== 1 ? 's' : ''}`
+          );
+        toast.success(partes.join(' · '));
       } else {
         toast.info('Todos los vencimientos vigentes ya tienen su tarea');
       }

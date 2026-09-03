@@ -139,7 +139,13 @@ create table if not exists tarea_cliente (
     check (cliente_id is not null or vencimiento_id is not null)
 );
 
-create unique index if not exists uq_tarea_cliente on tarea_cliente(tarea_id, cliente_id);
+-- Parcial: un cliente aparece una sola vez en el checklist manual de una
+-- tarea, pero puede aparecer N veces vía vencimientos (una fila por
+-- obligación: DDJJ y anticipo del mismo período son dos filas legítimas).
+-- Con el unique pleno, el segundo vencimiento del mismo cliente chocaba en
+-- silencio (onConflictDoNothing) y quedaba sin tarea para siempre.
+create unique index if not exists uq_tarea_cliente on tarea_cliente(tarea_id, cliente_id)
+  where vencimiento_id is null;
 create index if not exists ix_tarea_cliente_cliente on tarea_cliente(cliente_id);
 -- Parcial: un vencimiento se convierte en tarea una sola vez, pero las filas
 -- creadas a mano no tienen vencimiento y no deben chocar entre sí.

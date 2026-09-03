@@ -48,6 +48,12 @@ export interface AutoGenResult {
    * del tablero, donde el usuario puede verlos uno por uno.
    */
   sinCliente: number;
+  /**
+   * Vencimientos sumados a tareas EXISTENTES en esta corrida. Sin este
+   * numero, cubrir 100 vencimientos sin crear tareas nuevas se reportaba
+   * como que no hubo nada que hacer.
+   */
+  itemsAgregados: number;
   /** Tareas creadas por período (YYYY-MM), para poder contarlo en la UI. */
   porPeriodo: Record<string, number>;
 }
@@ -145,7 +151,13 @@ export async function autoGenerarTareasParaOrg(
     );
 
   if (vencimientosRaw.length === 0)
-    return { creadas: 0, omitidas: 0, sinCliente: 0, porPeriodo: {} };
+    return {
+      creadas: 0,
+      omitidas: 0,
+      sinCliente: 0,
+      itemsAgregados: 0,
+      porPeriodo: {},
+    };
 
   const vencimientoIds = vencimientosRaw.map((v) => v.id);
   const yaAsignados = await db
@@ -189,6 +201,7 @@ export async function autoGenerarTareasParaOrg(
       creadas: 0,
       omitidas: cubiertos.size,
       sinCliente: 0,
+      itemsAgregados: 0,
       porPeriodo: {},
     };
 
@@ -251,6 +264,7 @@ export async function autoGenerarTareasParaOrg(
     : null;
 
   let creadas = 0;
+  let itemsAgregados = 0;
   const porPeriodo: Record<string, number> = {};
 
   for (const grupo of grupos.values()) {
@@ -307,7 +321,7 @@ export async function autoGenerarTareasParaOrg(
     }
 
     for (const item of grupo.items) {
-      await db
+      const insertadas = await db
         .insert(tareaCliente)
         .values({
           tareaId,
@@ -315,9 +329,17 @@ export async function autoGenerarTareasParaOrg(
           vencimientoId: item.vencimientoId,
           completado: false,
         })
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: tareaCliente.id });
+      itemsAgregados += insertadas.length;
     }
   }
 
-  return { creadas, omitidas: cubiertos.size, sinCliente, porPeriodo };
+  return {
+    creadas,
+    omitidas: cubiertos.size,
+    sinCliente,
+    itemsAgregados,
+    porPeriodo,
+  };
 }

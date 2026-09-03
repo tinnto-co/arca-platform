@@ -2705,7 +2705,7 @@ export const tareaCliente = pgTable("tarea_cliente", {
 	vencimientoId: uuid("vencimiento_id"),
 }, (table) => [
 	index("ix_tarea_cliente_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
-	uniqueIndex("uq_tarea_cliente").using("btree", table.tareaId.asc().nullsLast().op("uuid_ops"), table.clienteId.asc().nullsLast().op("uuid_ops")),
+	uniqueIndex("uq_tarea_cliente").using("btree", table.tareaId.asc().nullsLast().op("uuid_ops"), table.clienteId.asc().nullsLast().op("uuid_ops")).where(sql`(vencimiento_id IS NULL)`),
 	uniqueIndex("uq_tarea_cliente_vencimiento").using("btree", table.vencimientoId.asc().nullsLast().op("uuid_ops")).where(sql`(vencimiento_id IS NOT NULL)`),
 	foreignKey({
 			columns: [table.tareaId],
