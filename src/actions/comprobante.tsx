@@ -416,6 +416,57 @@ export const getClienteMultilateralResumen = createServerFn({ method: 'GET' })
       .groupBy(provinciaSql);
   });
 
+/**
+ * Resumen de IIBB del período agrupado POR EMPRESA, para la portada de la
+ * pantalla: al entrar sin empresa elegida hay que chocarse con información,
+ * no con la orden de elegir una. Mismo cálculo que el desglose por provincia
+ * (emitidos, NC restando, base imponible según letra) para que la fila y su
+ * detalle no puedan divergir.
+ */
+export const getIibbResumenPorEmpresa = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      regimen: z.enum(['local', 'convenio_multilateral']),
+      dateFrom: z.string(),
+      dateTo: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    return await db
+      .select({
+        clienteId: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        comprobantes: sql<number>`count(${comprobante.id})::int`,
+        provincias: sql<number>`count(distinct case when ${comprobante.id} is not null then ${provinciaSql} end)::int`,
+        totalBase: sql<string>`(coalesce(sum(${signoNcSql} * ${baseImponibleSql}), 0))::text`,
+        totalIva: sql<string>`(coalesce(sum(${signoNcSql} * ${comprobante.ivaTotal}), 0))::text`,
+      })
+      .from(cliente)
+      .leftJoin(
+        comprobante,
+        and(
+          eq(comprobante.clienteId, cliente.id),
+          eq(comprobante.direccion, 'emitido'),
+          gte(comprobante.fechaEmision, ctx.data.dateFrom),
+          lte(comprobante.fechaEmision, ctx.data.dateTo)
+        )
+      )
+      .leftJoin(contraparte, eq(comprobante.contraparteId, contraparte.id))
+      .leftJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
+      .where(
+        and(
+          eq(cliente.orgId, orgId),
+          eq(cliente.iibbRegimen, ctx.data.regimen),
+          eq(cliente.estado, 'activo')
+        )
+      )
+      .groupBy(cliente.id, cliente.razonSocial, cliente.cuit)
+      .orderBy(sql`coalesce(sum(${signoNcSql} * ${baseImponibleSql}), 0) desc`);
+  });
+
 export const getClienteMultilateralComprobantes = createServerFn({
   method: 'GET',
 })

@@ -17,6 +17,7 @@ import {
 import { getClientesForIIBB } from '@/actions/client';
 import {
   getClienteMultilateralResumen,
+  getIibbResumenPorEmpresa,
   getLiquidacionIibb,
   saveLiquidacionIibb,
 } from '@/actions/comprobante';
@@ -90,16 +91,17 @@ function IIBBDesglose({
   regimen,
 }: {
   clients: ClienteIIBB[];
-  /** «régimen local» o «convenio multilateral», para los mensajes vacíos. */
-  regimen: string;
+  regimen: 'local' | 'convenio_multilateral';
 }) {
   const now = new Date();
   const queryClient = useQueryClient();
+  const regimenLabel =
+    regimen === 'local' ? 'régimen local' : 'convenio multilateral';
 
   // La empresa viene del selector global del header. Solo vale si está en el
-  // subset de este régimen (local o multilateral): una empresa del otro
-  // régimen —o sin IIBB— deja esta tab en su estado vacío.
-  const [clienteGlobal] = useClienteSeleccionado();
+  // subset de este régimen (local o multilateral): sin empresa (o con una del
+  // otro régimen) la tab muestra la portada agrupada por empresa.
+  const [clienteGlobal, setClienteGlobal] = useClienteSeleccionado();
   const selectedRepId =
     clienteGlobal && clients.some((c) => c.id === clienteGlobal)
       ? clienteGlobal
@@ -111,6 +113,15 @@ function IIBBDesglose({
   const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const dateTo = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
   const periodo = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
+
+  // Portada sin empresa elegida: el período agrupado por empresa. Entrar a la
+  // pantalla tiene que chocar con información, no con la orden de elegir.
+  const { data: resumenEmpresas = [], isLoading: cargandoResumen } = useQuery({
+    queryKey: ['iibb', 'resumen-empresas', regimen, dateFrom, dateTo],
+    queryFn: () =>
+      getIibbResumenPorEmpresa({ data: { regimen, dateFrom, dateTo } }),
+    enabled: !selectedRepId,
+  });
 
   const { data: provinceSummary = [], isLoading: loadingInvoices } = useQuery({
     queryKey: ['iibb', 'summary', selectedRepId, dateFrom, dateTo],
@@ -309,16 +320,102 @@ function IIBBDesglose({
         </div>
       </div>
 
-      {/* Tabla. IIBB es siempre por empresa: no existe la vista «todas». */}
+      {/* Sin empresa: portada del período agrupada por empresa. Click en una
+          fila la elige (escribe el selector global) y baja al detalle. */}
       {!selectedRepId ? (
-        <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
-          {clients.length === 0
-            ? `No hay clientes con ${regimen} configurado.`
-            : clienteGlobal
-              ? // Hay empresa elegida, pero es del otro régimen (o no tiene IIBB).
-                `La empresa elegida no tiene ${regimen} configurado.`
-              : 'Elegí una empresa en el selector de arriba a la derecha para ver el desglose por provincia.'}
-        </div>
+        clients.length === 0 ? (
+          <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+            {`No hay clientes con ${regimenLabel} configurado.`}
+          </div>
+        ) : cargandoResumen ? (
+          <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+            Cargando...
+          </div>
+        ) : (
+          <div>
+            {clienteGlobal && (
+              <p className="mb-3 text-[12px] text-[var(--arca-ink-3)]">
+                La empresa elegida no tiene {regimenLabel} configurado — estas
+                son las que sí. Click en una fila para ver su detalle.
+              </p>
+            )}
+            <div
+              style={{
+                border: '1px solid var(--arca-border)',
+                borderRadius: 8,
+                overflowX: 'auto',
+              }}
+            >
+              <table
+                className="text-[12px]"
+                style={{ width: '100%', borderCollapse: 'collapse' }}
+              >
+                <thead>
+                  <tr
+                    style={{
+                      borderBottom: '1px solid var(--arca-border)',
+                      background: 'var(--arca-surface-2)',
+                    }}
+                  >
+                    <th className="px-3 py-2.5 text-left font-semibold text-[var(--arca-ink-2)]">
+                      Empresa
+                    </th>
+                    <th className="px-3 py-2.5 text-left font-semibold text-[var(--arca-ink-2)]">
+                      CUIT
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                      Comprobantes
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                      Provincias
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                      Base imponible
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                      IVA
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resumenEmpresas.map((r, i) => (
+                    <tr
+                      key={r.clienteId}
+                      onClick={() => setClienteGlobal(r.clienteId)}
+                      className="cursor-pointer transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
+                      style={{
+                        borderTop:
+                          i === 0 ? undefined : '1px solid var(--arca-border)',
+                      }}
+                    >
+                      <td className="px-3 py-2 font-medium text-[var(--arca-ink)] whitespace-nowrap">
+                        {r.razonSocial}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums whitespace-nowrap"
+                        style={{ fontFamily: 'var(--ff-mono)' }}
+                      >
+                        {r.cuit}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--arca-ink-2)]">
+                        {r.comprobantes}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--arca-ink-2)]">
+                        {r.provincias}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium text-[var(--arca-ink)]">
+                        {formatARS(r.totalBase)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-[var(--arca-ink-2)]">
+                        {formatARS(r.totalIva)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
       ) : isLoading ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           Cargando...
@@ -674,13 +771,13 @@ function RouteComponent() {
         </div>
 
         <TabsContent value="local" className="mt-6">
-          <IIBBDesglose clients={localClients} regimen="régimen local" />
+          <IIBBDesglose clients={localClients} regimen="local" />
         </TabsContent>
 
         <TabsContent value="multilateral" className="mt-6">
           <IIBBDesglose
             clients={multilateralClients}
-            regimen="convenio multilateral"
+            regimen="convenio_multilateral"
           />
         </TabsContent>
       </Tabs>
