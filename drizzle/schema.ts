@@ -700,10 +700,12 @@ export const credencialAfip = pgTable("credencial_afip", {
 	estado: credencialEstado().default('activa').notNull(),
 	ultimoLoginOk: timestamp("ultimo_login_ok", { withTimezone: true }),
 	verificadaAt: timestamp("verificada_at", { withTimezone: true }),
+	comprobantesFrecuencia: text("comprobantes_frecuencia").default('estandar').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
 	index("idx_credencial_afip_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
+	check("credencial_afip_comprobantes_frecuencia_check", sql`comprobantes_frecuencia = ANY (ARRAY['estandar'::text, 'semanal'::text, 'pausada'::text])`),
 	foreignKey({
 			columns: [table.orgId],
 			foreignColumns: [organization.id],
