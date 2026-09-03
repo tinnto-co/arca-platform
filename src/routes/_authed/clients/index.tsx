@@ -16,6 +16,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/shared/page-header';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import { FrecuenciaClavesCard } from '@/components/frecuencia-claves-card';
 import { PageShell } from '@/components/shared/page-shell';
 import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
@@ -55,9 +56,13 @@ function UpdateAllButton() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline">
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Actualizar todos"
+          title="Actualizar todos"
+        >
           <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} />
-          Actualizar todos
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -105,11 +110,15 @@ function RouteComponent() {
             <ActiveJobsIndicator />
             <UpdateAllButton />
             <CreateRepresentativeDialog>
-              <Button>
+              <Button
+                size="icon"
+                aria-label="Nuevo cliente"
+                title="Nuevo cliente"
+              >
                 <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-                Nuevo cliente
               </Button>
             </CreateRepresentativeDialog>
+            <SelectorClienteGlobal />
           </>
         }
       />
