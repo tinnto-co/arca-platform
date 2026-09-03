@@ -29,6 +29,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { PageHeader } from '@/components/shared/page-header';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
   ChevronChip,
   ConteoResultados,
@@ -128,6 +129,9 @@ export function InboxHeader({
       }
       actions={
         <>
+          {/* La empresa se elige en el selector global: la elección viaja a
+              las demás vistas. El buscador de texto queda para el asunto. */}
+          <SelectorClienteGlobal />
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-[11px] size-3.5 -translate-y-1/2 text-[var(--arca-ink-3)]" />
             <input

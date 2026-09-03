@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { z } from 'zod';
 import { InboxHeader } from '@/components/notificaciones/InboxHeader';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import type { FiltrosInbox } from '@/components/notificaciones/InboxHeader';
 import { ListaNotificaciones } from '@/components/notificaciones/ListaNotificaciones';
 import { PanelLectura } from '@/components/notificaciones/PanelLectura';
@@ -69,6 +70,7 @@ function RouteComponent() {
   const search: Busqueda = Route.useSearch();
   const queryClient = useQueryClient();
 
+  const [clienteGlobal] = useClienteSeleccionado();
   const [paginas, setPaginas] = useState(1);
   const [creandoTarea, setCreandoTarea] = useState(false);
 
@@ -132,7 +134,9 @@ function RouteComponent() {
     limit: POR_PAGINA * paginas,
     page: 1,
     credencialFilter: oQuitar(filtros.credencial),
-    clienteId: oQuitar(filtros.empresa),
+    // El selector global de empresa del header manda; el filtro «empresa» de
+    // Más filtros queda como secundario cuando no hay elección global.
+    clienteId: clienteGlobal ?? oQuitar(filtros.empresa),
     dateFrom: oQuitar(filtros.desde),
     dateTo: oQuitar(filtros.hasta),
     categoria: oQuitar(filtros.categoria),

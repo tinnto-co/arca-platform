@@ -7,19 +7,13 @@ import {
   AlertTriangle,
   CheckCircle2,
   Circle,
-  Filter,
-  ChevronDown,
 } from 'lucide-react';
 import { getCalendarDueDates } from '@/actions/dashboard';
 import { markVencimientoCompletado } from '@/actions/client';
 import { cn } from '@/lib/utils';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select';
 import { PageHeader } from '@/components/shared/page-header';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 
 /* ─── Types ─── */
 
@@ -29,6 +23,7 @@ interface CalendarEvent {
   title: string;
   subtitle: string;
   kind: 'due' | 'debt';
+  clienteId: string | null;
   clientName: string | null;
   balance?: string;
   completedAt?: Date | null;
@@ -93,7 +88,9 @@ export function VencimientosCalendar() {
     () => new Date(today.getFullYear(), today.getMonth(), 1)
   );
   const [selectedDate, setSelectedDate] = useState<Date | null>(today);
-  const [clientFilter, setClientFilter] = useState<string>('__all__');
+  // El filtro es el selector global de empresa del header: la elección viaja
+  // con el usuario a las demás vistas (mismo patrón que Contabilidad).
+  const [clienteGlobal] = useClienteSeleccionado();
 
   // Fetch a bit extra for the grid edges (prev/next month days visible in grid)
   const gridDays = useMemo(
@@ -144,6 +141,7 @@ export function VencimientosCalendar() {
         title: dd.impuesto || 'Vencimiento',
         subtitle: dd.concepto || '',
         kind: 'due',
+        clienteId: dd.clienteId,
         clientName: dd.clienteNombre,
         completedAt: dd.completadoAt ? new Date(dd.completadoAt) : null,
       });
@@ -162,6 +160,7 @@ export function VencimientosCalendar() {
         title: debt.impuesto || 'Deuda',
         subtitle: debt.concepto || '',
         kind: 'debt',
+        clienteId: debt.clienteId,
         clientName: debt.clienteNombre,
         balance: debt.saldo,
       });
@@ -186,27 +185,16 @@ export function VencimientosCalendar() {
     setSelectedDate(today);
   }
 
-  // Unique client names from events for filter
-  const clientNames = useMemo(() => {
-    const names = new Set<string>();
-    eventsByDay.forEach((events) =>
-      events.forEach((e) => {
-        if (e.clientName) names.add(e.clientName);
-      })
-    );
-    return Array.from(names).sort();
-  }, [eventsByDay]);
-
   // Filtered events
   const filteredEventsByDay = useMemo(() => {
-    if (clientFilter === '__all__') return eventsByDay;
+    if (!clienteGlobal) return eventsByDay;
     const filtered = new Map<string, CalendarEvent[]>();
     eventsByDay.forEach((events, key) => {
-      const f = events.filter((e) => e.clientName === clientFilter);
+      const f = events.filter((e) => e.clienteId === clienteGlobal);
       if (f.length > 0) filtered.set(key, f);
     });
     return filtered;
-  }, [eventsByDay, clientFilter]);
+  }, [eventsByDay, clienteGlobal]);
 
   const filteredSelectedEvents = useMemo(() => {
     if (!selectedDate) return [];
@@ -238,28 +226,7 @@ export function VencimientosCalendar() {
       <PageHeader
         title="Calendario de vencimientos"
         subtitle="Obligaciones fiscales y deudas de toda tu cartera, por fecha"
-        actions={
-          <Select value={clientFilter} onValueChange={setClientFilter}>
-            <SelectTrigger className="bg-white border border-[#DFDCD3] rounded-[10px] px-[14px] py-[9px] h-auto w-auto min-w-[180px] gap-2 shadow-none focus:ring-0 [&>svg]:hidden">
-              <div className="flex items-center gap-2">
-                <Filter className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
-                <span className="text-[13.5px] text-[#9B9CA3]">Cliente</span>
-                <span className="text-[13.5px] font-semibold text-[#12131A]">
-                  {clientFilter === '__all__' ? 'Todos' : clientFilter}
-                </span>
-                <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
-              </div>
-            </SelectTrigger>
-            <SelectContent className="max-h-[300px]">
-              <SelectItem value="__all__">Todos</SelectItem>
-              {clientNames.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
+        actions={<SelectorClienteGlobal />}
       />
 
       {/* ── Body grid ── */}
