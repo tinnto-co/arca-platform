@@ -165,8 +165,11 @@ function IIBBDesglose({
     clienteGlobal && clients.some((c) => c.id === clienteGlobal)
       ? clienteGlobal
       : '';
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
+  // Default: mes anterior, como IVA — es el período que se está liquidando;
+  // el mes en curso casi no tiene comprobantes los primeros días.
+  const prevMes = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const [selectedYear, setSelectedYear] = useState(prevMes.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(prevMes.getMonth());
 
   const dateFrom = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
   const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
@@ -574,7 +577,7 @@ function IIBBDesglose({
         </div>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
-          Sin comprobantes outbound para el período seleccionado.
+          {`Sin comprobantes emitidos en ${MONTH_NAMES[selectedMonth]} ${selectedYear} para esta empresa — probá con otro período.`}
         </div>
       ) : (
         <div
