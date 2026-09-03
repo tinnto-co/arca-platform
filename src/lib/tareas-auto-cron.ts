@@ -81,15 +81,17 @@ export function startTareasAutoCron(): void {
     return;
   }
 
-  const delay = msHastaProximaEjecucion();
-  const horas = Math.floor(delay / 1000 / 60 / 60);
-  const minutos = Math.floor((delay / 1000 / 60) % 60);
+  // Corrida de recuperación al arrancar, y de ahí la cadena diaria: `tick`
+  // se reprograma solo a las TARGET_HOUR_UTC al terminar. Sin la corrida de
+  // arranque, el timer moría con cada deploy y según la hora a la que cayera
+  // había días sin corrida (pasó: cientos de vencimientos vigentes sin
+  // tarea). Es seguro porque la generación es idempotente — lo ya cubierto
+  // se omite. El minuto y medio deja que el servidor termine de levantar.
   console.log(
-    `[tareas-auto] cron activo: próxima ejecución en ${horas}h ${minutos}m ` +
-      `(${TARGET_HOUR_UTC}:00 UTC = 07:00 AR)`
+    `[tareas-auto] cron activo: corrida de arranque en 90s, luego diaria a ` +
+      `las ${TARGET_HOUR_UTC}:00 UTC (07:00 AR)`
   );
-
   setTimeout(() => {
     tick().catch(console.error);
-  }, delay);
+  }, 90_000);
 }

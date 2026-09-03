@@ -341,14 +341,23 @@ function TareasPage() {
       refrescarCols();
       // Los tres ceros distintos del ticket TIN-1411, cada uno con su mensaje:
       // que «no hay nada» y «está roto» no se vean iguales es el punto.
-      if (r.creadas > 0) {
+      if (r.creadas > 0 || r.itemsAgregados > 0) {
         const meses = Object.entries(r.porPeriodo)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([p, n]) => `${n} de ${nombreMes(p)}`)
           .join(', ');
+        const partes = [];
+        if (r.creadas > 0)
+          partes.push(
+            `${r.creadas} ${r.creadas === 1 ? 'tarea creada' : 'tareas creadas'}` +
+              (Object.keys(r.porPeriodo).length > 1 ? `: ${meses}` : '')
+          );
+        if (r.itemsAgregados > 0)
+          partes.push(
+            `${r.itemsAgregados} vencimiento${r.itemsAgregados !== 1 ? 's' : ''} cubierto${r.itemsAgregados !== 1 ? 's' : ''}`
+          );
         toast.success(
-          `${r.creadas} ${r.creadas === 1 ? 'tarea creada' : 'tareas creadas'}` +
-            (Object.keys(r.porPeriodo).length > 1 ? `: ${meses}` : '') +
+          partes.join(' · ') +
             (r.sinCliente > 0
               ? ` — ${r.sinCliente} de CUITs sin cliente quedaron en la columna «Sin cliente»`
               : '')
