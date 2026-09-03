@@ -2,14 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
-import {
-  Eye,
-  Edit,
-  Trash2,
-  MoreHorizontal,
-  Play,
-  Loader2,
-} from 'lucide-react';
+import { Eye, Edit, Trash2, MoreHorizontal, Play, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DataTable } from '@/components/ui/data-table';
@@ -42,6 +35,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { getClientes, scrapBatchJobs } from '@/actions/client';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { deleteCliente } from '@/actions/afip-profiles';
 import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
@@ -154,15 +148,21 @@ export function RepresentativesTable() {
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
 
-  const clientsTyped: ClientRow[] = clients.map((c) => {
-    const cred = c.credenciales[0];
-    return {
-      ...c,
-      credencialId: cred?.id ?? null,
-      credencialNombre: cred?.nombre ?? null,
-      credencialCuit: cred?.cuit ?? null,
-    };
-  });
+  // El buscador de la tabla es el selector global de empresa del header,
+  // como en el resto de las vistas: elegida una empresa, la tabla muestra
+  // solo su fila.
+  const [clienteGlobal] = useClienteSeleccionado();
+  const clientsTyped: ClientRow[] = clients
+    .filter((c) => !clienteGlobal || c.id === clienteGlobal)
+    .map((c) => {
+      const cred = c.credenciales[0];
+      return {
+        ...c,
+        credencialId: cred?.id ?? null,
+        credencialNombre: cred?.nombre ?? null,
+        credencialCuit: cred?.cuit ?? null,
+      };
+    });
   const clientesResumen = clientsTyped.slice(0, 30).map((c) => ({
     id: c.id,
     name: c.razonSocial,
@@ -420,8 +420,6 @@ export function RepresentativesTable() {
         columns={columns}
         data={clientsTyped}
         isLoading={isLoading}
-        searchKey="razonSocial"
-        searchPlaceholder="Buscar por CUIT, cliente o representante..."
         filters={[
           {
             columnId: 'estado',
@@ -434,7 +432,7 @@ export function RepresentativesTable() {
           },
         ]}
         onRowClick={(row) => {
-          const cliente = row as ClientRow;
+          const cliente = row;
           if (!cliente.credencialId) return;
           navigate({
             to: '/clients/$clientId',
@@ -442,7 +440,7 @@ export function RepresentativesTable() {
             search: { empresa: cliente.id },
           });
         }}
-        onSelectionChange={(rows) => setSelectedClients(rows as ClientRow[])}
+        onSelectionChange={(rows) => setSelectedClients(rows)}
         toolbar={
           selectedClients.length > 0 ? (
             <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>

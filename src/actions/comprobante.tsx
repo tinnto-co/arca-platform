@@ -15,7 +15,17 @@ import {
   getMemberRole,
 } from '@/actions/helpers';
 import { PROVINCE_LABELS } from '@/lib/provinces';
-import { eq, desc, asc, and, gte, lte, sql, isNull } from 'drizzle-orm';
+import {
+  eq,
+  desc,
+  asc,
+  and,
+  gte,
+  lte,
+  sql,
+  isNull,
+  isNotNull,
+} from 'drizzle-orm';
 import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
 
 /** Valida que el cliente sea de la organización activa. */
@@ -416,6 +426,57 @@ export const getClienteMultilateralResumen = createServerFn({ method: 'GET' })
       .groupBy(provinciaSql);
   });
 
+/**
+ * Resumen de IIBB del período agrupado POR EMPRESA, para la portada de la
+ * pantalla: al entrar sin empresa elegida hay que chocarse con información,
+ * no con la orden de elegir una. Mismo cálculo que el desglose por provincia
+ * (emitidos, NC restando, base imponible según letra) para que la fila y su
+ * detalle no puedan divergir.
+ */
+export const getIibbResumenPorEmpresa = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      regimen: z.enum(['local', 'convenio_multilateral']),
+      dateFrom: z.string(),
+      dateTo: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    return await db
+      .select({
+        clienteId: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+        comprobantes: sql<number>`count(${comprobante.id})::int`,
+        provincias: sql<number>`count(distinct case when ${comprobante.id} is not null then ${provinciaSql} end)::int`,
+        totalBase: sql<string>`(coalesce(sum(${signoNcSql} * ${baseImponibleSql}), 0))::text`,
+        totalIva: sql<string>`(coalesce(sum(${signoNcSql} * ${comprobante.ivaTotal}), 0))::text`,
+      })
+      .from(cliente)
+      .leftJoin(
+        comprobante,
+        and(
+          eq(comprobante.clienteId, cliente.id),
+          eq(comprobante.direccion, 'emitido'),
+          gte(comprobante.fechaEmision, ctx.data.dateFrom),
+          lte(comprobante.fechaEmision, ctx.data.dateTo)
+        )
+      )
+      .leftJoin(contraparte, eq(comprobante.contraparteId, contraparte.id))
+      .leftJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
+      .where(
+        and(
+          eq(cliente.orgId, orgId),
+          eq(cliente.iibbRegimen, ctx.data.regimen),
+          eq(cliente.estado, 'activo')
+        )
+      )
+      .groupBy(cliente.id, cliente.razonSocial, cliente.cuit)
+      .orderBy(sql`coalesce(sum(${signoNcSql} * ${baseImponibleSql}), 0) desc`);
+  });
+
 export const getClienteMultilateralComprobantes = createServerFn({
   method: 'GET',
 })
@@ -567,6 +628,9 @@ export const getLiquidacionIibb = createServerFn({ method: 'GET' })
         percepcionesAduaneras: Number(r.percepcionesAduaneras),
         retencionesAgentes: Number(r.retencionesAgentes),
         retencionesBancarias: Number(r.retencionesBancarias),
+        // Fila manual: su base se carga a mano y resta de la provincia padre.
+        provinciaPadre: r.provinciaPadre,
+        baseManual: r.baseManual === null ? null : Number(r.baseManual),
       })),
       carryOver,
     };
@@ -584,13 +648,27 @@ export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
       percepcionesAduaneras: z.number().min(0),
       retencionesAgentes: z.number().min(0),
       retencionesBancarias: z.number().min(0),
+      /**
+       * Fila manual dentro de una jurisdicción ("Otro Capital Federal"):
+       * parte de la base a otra alícuota según la actividad. Van juntas o
+       * ninguna — el CHECK de la tabla lo garantiza del lado de la base.
+       */
+      provinciaPadre: z.string().optional(),
+      baseManual: z.number().min(0).optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
 
-    const { clienteId, periodo, provincia, ...montos } = ctx.data;
+    const {
+      clienteId,
+      periodo,
+      provincia,
+      provinciaPadre,
+      baseManual,
+      ...montos
+    } = ctx.data;
     await assertClienteDeOrg(clienteId, orgId);
 
     const valores = {
@@ -600,6 +678,8 @@ export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
       percepcionesAduaneras: String(montos.percepcionesAduaneras),
       retencionesAgentes: String(montos.retencionesAgentes),
       retencionesBancarias: String(montos.retencionesBancarias),
+      provinciaPadre: provinciaPadre ?? null,
+      baseManual: baseManual === undefined ? null : String(baseManual),
     };
 
     await db
@@ -620,5 +700,71 @@ export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
         set: { ...valores, updatedAt: new Date() },
       });
 
+    return { ok: true };
+  });
+
+/**
+ * Renombra una fila MANUAL de la liquidación: nace como «Otro <provincia>»
+ * pero el estudio la llama por la actividad real («Servicios CABA 3%»).
+ * El nombre es la clave visible de la fila, así que debe ser único en el
+ * período del cliente.
+ */
+export const renameLiquidacionIibbFila = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      id: z.string().uuid(),
+      nombre: z
+        .string()
+        .trim()
+        .min(1, 'El nombre no puede quedar vacío')
+        .max(80),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    try {
+      const filas = await db
+        .update(liquidacionIibb)
+        .set({ provincia: ctx.data.nombre, updatedAt: new Date() })
+        .where(
+          and(
+            eq(liquidacionIibb.id, ctx.data.id),
+            eq(liquidacionIibb.orgId, orgId),
+            isNotNull(liquidacionIibb.provinciaPadre)
+          )
+        )
+        .returning({ id: liquidacionIibb.id });
+      if (filas.length === 0) throw new Error('Fila no encontrada');
+    } catch (e) {
+      const code =
+        (e as { cause?: { code?: string }; code?: string }).cause?.code ??
+        (e as { code?: string }).code;
+      if (code === '23505')
+        throw new Error('Ya existe una fila con ese nombre en este período');
+      throw e;
+    }
+    return { ok: true };
+  });
+
+/** Borra una fila MANUAL de la liquidación. Las normales no se borran: su base sale de los comprobantes. */
+export const deleteLiquidacionIibbFila = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const borradas = await db
+      .delete(liquidacionIibb)
+      .where(
+        and(
+          eq(liquidacionIibb.id, ctx.data.id),
+          eq(liquidacionIibb.orgId, orgId),
+          isNotNull(liquidacionIibb.provinciaPadre)
+        )
+      )
+      .returning({ id: liquidacionIibb.id });
+    if (borradas.length === 0) throw new Error('Fila no encontrada');
     return { ok: true };
   });

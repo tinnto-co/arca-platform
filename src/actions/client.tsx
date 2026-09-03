@@ -1303,3 +1303,103 @@ export const upsertEeccConfig = createServerFn({ method: 'POST' })
 
     return { ok: true };
   });
+
+// ─── Frecuencia de scrapeo de comprobantes por clave ────────────────────────
+
+export const FRECUENCIAS_COMPROBANTES = [
+  'estandar',
+  'semanal',
+  'pausada',
+] as const;
+export type FrecuenciaComprobantes = (typeof FRECUENCIAS_COMPROBANTES)[number];
+
+/**
+ * Claves candidatas a espaciar el scrapeo de comprobantes (el 83% del gasto
+ * de proxy): las 100% vacías —ninguna de sus empresas activas tiene un solo
+ * comprobante— más las que ya fueron espaciadas, para poder revertirlas.
+ *
+ * La unidad es la credencial y no el cliente: el job recorre todas las
+ * empresas del login, así que una clave "mixta" (empresas vacías conviviendo
+ * con empresas que facturan) no es candidata — su job corre igual.
+ */
+export const getClavesParaEspaciar = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
+
+    const filas = await db.execute(sql`
+      with stats as (
+        select cc.credencial_id,
+               count(distinct c.id) as empresas,
+               count(distinct c.id) filter (where exists (
+                 select 1 from comprobante cp where cp.cliente_id = c.id
+               )) as con_comprobantes
+        from cliente c
+        join cliente_credencial cc on cc.cliente_id = c.id
+        where c.org_id = ${orgId} and c.estado = 'activo'
+        group by cc.credencial_id
+      )
+      select cr.id,
+             cr.nombre,
+             cr.cuit,
+             cr.comprobantes_frecuencia as frecuencia,
+             s.empresas::int as empresas,
+             s.con_comprobantes::int as con_comprobantes,
+             (s.empresas - s.con_comprobantes)::int as vacias,
+             (select count(*)::int from job j
+               where j.credencial_id = cr.id
+                 and j.type in ('comprobantes', 'comprobantes_full')
+                 and j.status = 'finished') as scrapeos_ok
+      from credencial_afip cr
+      join stats s on s.credencial_id = cr.id
+      where cr.org_id = ${orgId}
+        and (s.con_comprobantes = 0 or cr.comprobantes_frecuencia <> 'estandar')
+      order by cr.comprobantes_frecuencia <> 'estandar' desc,
+               s.empresas desc, cr.nombre
+    `);
+
+    return (filas as unknown as Record<string, unknown>[]).map((f) => ({
+      id: String(f.id),
+      nombre: (f.nombre as string | null) ?? null,
+      cuit: String(f.cuit),
+      frecuencia: f.frecuencia as FrecuenciaComprobantes,
+      empresas: Number(f.empresas),
+      conComprobantes: Number(f.con_comprobantes),
+      vacias: Number(f.vacias),
+      scrapeosOk: Number(f.scrapeos_ok),
+    }));
+  }
+);
+
+/**
+ * Cambia la frecuencia de scrapeo de comprobantes de una clave. Lo decide una
+ * persona (no hay automatismo a propósito: una empresa puede empezar a
+ * facturar cualquier mes). El scrapper lee la marca en su cron.
+ */
+export const updateComprobantesFrecuencia = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      credencialId: z.string().uuid(),
+      frecuencia: z.enum(FRECUENCIAS_COMPROBANTES),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const actualizadas = await db
+      .update(credencialAfip)
+      .set({
+        comprobantesFrecuencia: ctx.data.frecuencia,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(credencialAfip.id, ctx.data.credencialId),
+          eq(credencialAfip.orgId, orgId)
+        )
+      )
+      .returning({ id: credencialAfip.id });
+
+    if (actualizadas.length === 0) throw new Error('Credencial no encontrada');
+    return { ok: true };
+  });

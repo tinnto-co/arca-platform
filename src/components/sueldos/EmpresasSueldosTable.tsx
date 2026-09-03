@@ -25,7 +25,7 @@ import {
   updateRazonSocial,
 } from '@/actions/sueldos';
 
-type Empresa = {
+interface Empresa {
   id: string;
   razonSocial: string;
   cuit: string;
@@ -34,7 +34,7 @@ type Empresa = {
   empleados: number;
   convenio: string | null;
   ultimoPeriodo: string | null;
-};
+}
 
 const MESES = [
   'ene',
@@ -270,22 +270,12 @@ export function EmpresasSueldosTable({
       columns={columns}
       data={empresas}
       isLoading={isLoading}
-      searchKey="razonSocial"
-      searchPlaceholder="Buscar por empresa o CUIT..."
-      filters={[
-        {
-          columnId: 'liquidaSueldos',
-          label: 'Sueldos',
-          options: [
-            { value: 'si', label: 'Liquida' },
-            { value: 'no', label: 'No liquida' },
-          ],
-        },
-      ]}
+      // Sin buscador ni filtro propios: la empresa se busca en el selector
+      // global del header, y quién liquida se ve ordenando por la columna.
       pagination
       pageSize={20}
       emptyMessage="No hay empresas cargadas"
-      onRowClick={(row) => onSelect((row as Empresa).id)}
+      onRowClick={(row) => onSelect(row.id)}
     />
   );
 }

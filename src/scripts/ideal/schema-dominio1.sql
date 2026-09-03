@@ -167,6 +167,12 @@ create table credencial_afip (
   estado credencial_estado not null default 'activa',
   ultimo_login_ok timestamptz,
   verificada_at timestamptz,
+  -- Con qué frecuencia se scrapean los COMPROBANTES de esta clave. La unidad
+  -- es la credencial y no el cliente a propósito: el job recorre todas las
+  -- empresas del login, así que espaciar un cliente suelto no ahorra el job.
+  -- La decide una persona desde la pantalla de clientes, no un automatismo.
+  comprobantes_frecuencia text not null default 'estandar'
+    check (comprobantes_frecuencia in ('estandar', 'semanal', 'pausada')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -176,6 +182,8 @@ create trigger trg_set_updated_at before update on credencial_afip for each row 
 comment on table credencial_afip is
   'Login de AFIP (clave fiscal): un medio de acceso para scrapear, NO una entidad de negocio. La clave está cifrada AES-256-GCM. nombre/email/telefono = contacto opcional de la persona del login (sin crear un cliente fantasma).';
 comment on column credencial_afip.cuit is 'CUIT que loguea en AFIP (puede o no ser también un cliente del estudio).';
+comment on column credencial_afip.comprobantes_frecuencia is
+  'Con qué frecuencia se scrapean los comprobantes de esta clave. estandar = el cron normal; semanal = solo los lunes; pausada = no se scrapean. Para claves cuyas empresas no facturan y vuelven vacías — ojo: pausada implica no enterarse si empiezan a facturar, semanal es la opción segura. Solo afecta comprobantes; notificaciones/deuda/IVA siguen normal.';
 comment on column credencial_afip.estado is
   'Juicio DERIVADO, no un hecho: se pasa a clave_invalida/bloqueada tras N logins fallidos seguidos, nunca por uno solo — AFIP responde "Clave o usuario incorrecto" también cuando lo que falló fue el captcha. Los hechos son ultimo_login_ok y verificada_at.';
 comment on column credencial_afip.ultimo_login_ok is 'Hecho: último login exitoso en AFIP con esta clave.';

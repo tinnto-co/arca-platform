@@ -1,6 +1,5 @@
 import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { toTitleCase } from '@/lib/format-name';
 import {
   Search,
   Download,
@@ -49,7 +48,7 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { getComprobantes, getComprobante } from '@/actions/comprobante';
-import { getClientes } from '@/actions/client';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
 
 /** Fila de la grilla, tal cual la devuelve `getComprobantes`. */
@@ -223,7 +222,11 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
     const [searchTerm, setSearchTerm] = useState('');
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [clientFilter, setClientFilter] = useState<string>('all');
+    // En la página de Facturas el filtro de cliente es el selector global de
+    // empresa del header (patrón de Contabilidad/Sueldos/IVA); embebida en la
+    // ficha de un cliente, el cliente ya viene fijo por prop.
+    const [clienteGlobal] = useClienteSeleccionado();
+    const clientFilter = isEmbedded ? 'all' : (clienteGlobal ?? 'all');
     const [profileFilter, setProfileFilter] = useState<string>('all');
     const [dateRange, setDateRange] = useState<DateRange | undefined>(
       undefined
@@ -328,18 +331,18 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       if (isEmbedded && onFiltersChange) {
         onFiltersChange({ profileFilter, typeFilter, directionFilter });
       }
-    }, [isEmbedded, onFiltersChange, profileFilter, typeFilter, directionFilter]);
+    }, [
+      isEmbedded,
+      onFiltersChange,
+      profileFilter,
+      typeFilter,
+      directionFilter,
+    ]);
 
     const effectiveSearchTerm =
       controlledSearchTerm !== undefined
         ? controlledSearchTerm
         : debouncedSearchTerm;
-
-    const { data: clientes = [] } = useQuery({
-      queryKey: ['clientes'],
-      queryFn: () => getClientes(),
-      enabled: !isEmbedded,
-    });
 
     /**
      * Cliente por el que se filtra: prop del padre > filtro controlado >
@@ -746,7 +749,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         {/* Filters */}
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between flex-shrink-0">
           <div className="flex flex-col gap-2 md:flex-row md:items-center flex-wrap">
-            {!isFiltersControlled && (
+            {!isFiltersControlled && isEmbedded && (
               <div className="relative">
                 <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
                 <Input
@@ -756,23 +759,6 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   className="pl-8 w-full md:w-80"
                 />
               </div>
-            )}
-
-            {!isEmbedded && (
-              <SearchableSelect
-                value={clientFilter}
-                onValueChange={setClientFilter}
-                placeholder="Filtrar por cliente"
-                searchPlaceholder="Buscar cliente..."
-                options={[
-                  { value: 'all', label: 'Todos los clientes' },
-                  ...clientes.map((c) => ({
-                    value: c.id,
-                    label: toTitleCase(c.razonSocial),
-                  })),
-                ]}
-                width={192}
-              />
             )}
 
             {!isFiltersControlled && (

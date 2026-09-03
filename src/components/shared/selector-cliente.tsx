@@ -27,10 +27,16 @@ export function SelectorClienteGlobal({ width = 300 }: { width?: number }) {
     staleTime: 60_000,
   });
 
-  const opciones = clientes.map((c) => ({
-    value: c.id,
-    label: `${c.razonSocial} · ${c.cuit}`,
-  }));
+  // Primera opción: volver a ver todo. Sin ella, una vez elegida una empresa
+  // no había forma de soltar el filtro.
+  const TODAS = '__todas__';
+  const opciones = [
+    { value: TODAS, label: 'Todas las empresas' },
+    ...clientes.map((c) => ({
+      value: c.id,
+      label: `${c.razonSocial} · ${c.cuit}`,
+    })),
+  ];
 
   // Un cliente dado de baja (o de otra cuenta) no debe resucitar del store.
   const valor =
@@ -47,8 +53,8 @@ export function SelectorClienteGlobal({ width = 300 }: { width?: number }) {
       <SearchableSelect
         options={opciones}
         value={valor}
-        onValueChange={(v) => setSeleccionado(v || null)}
-        placeholder="Elegir empresa…"
+        onValueChange={(v) => setSeleccionado(v && v !== TODAS ? v : null)}
+        placeholder="Todas las empresas"
         searchPlaceholder="Buscar empresa…"
         emptyMessage="No se encontraron empresas"
         width={width}

@@ -27,7 +27,7 @@ import { useLocalStorageState } from '@/lib/use-local-storage-state';
 import { SueldosRecibo } from '@/components/sueldos/SueldosRecibo';
 import { SueldosFirmaDigital } from '@/components/sueldos/SueldosFirmaDigital';
 import { SueldosCargas } from '@/components/sueldos/SueldosCargas';
-import { getClientesForSueldos } from '@/actions/client';
+import { getClientes, getClientesForSueldos } from '@/actions/client';
 import { EmpresasSueldosTable } from '@/components/sueldos/EmpresasSueldosTable';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
@@ -105,7 +105,7 @@ function RouteComponent() {
   // Editar desde la tab Recibo abre siempre la vista clásica.
   const usaVistaNueva = vistaNuevoRecibo === 'nueva' && !editReciboData;
 
-  const { data: clients = [] } = useQuery({
+  const { data: clients = [], isLoading: clientsQueryLoading } = useQuery({
     queryKey: ['clients', 'sueldos'],
     queryFn: () => getClientesForSueldos(),
   });
@@ -119,6 +119,20 @@ function RouteComponent() {
 
   const selectedOption = clients.find((c) => c.id === selectedOptionId);
   const clientId = selectedOption?.id ?? '';
+
+  // Nombre de la empresa global cuando NO está entre las que liquidan
+  // sueldos, para avisarlo en vez de quedarse en el listado en silencio.
+  // La query comparte cache con el selector global del header.
+  const { data: todosLosClientes = [], isSuccess: clientesListos } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
+    staleTime: 60_000,
+  });
+  const nombreGlobalSinSueldos =
+    clientesListos && !clientsQueryLoading && selectedOptionId && !selectedOption
+      ? (todosLosClientes.find((c) => c.id === selectedOptionId)?.razonSocial ??
+        null)
+      : null;
 
   const setTab = (next: string) => {
     if (next !== 'simulador') setEditReciboData(undefined);
@@ -184,6 +198,24 @@ function RouteComponent() {
 
       {!clientId ? (
         <div className="px-9 pt-6 pb-8">
+          {/* La empresa global existe pero no liquida sueldos: sin este aviso
+              la selección del header parece no hacer nada. */}
+          {nombreGlobalSinSueldos && (
+            <div
+              className="mb-4 flex items-center gap-2 rounded-[10px] border px-4 py-2.5 text-[13px]"
+              style={{
+                background: 'var(--arca-accent-warn-bg)',
+                borderColor: 'var(--arca-border)',
+                color: 'var(--arca-accent-warn-fg)',
+              }}
+            >
+              <span className="font-semibold">{nombreGlobalSinSueldos}</span>
+              <span>
+                no liquida sueldos por ahora — activá «Liquida sueldos» en su
+                fila para gestionarla acá.
+              </span>
+            </div>
+          )}
           <EmpresasSueldosTable onSelect={(id) => setSelectedOptionId(id)} />
         </div>
       ) : (

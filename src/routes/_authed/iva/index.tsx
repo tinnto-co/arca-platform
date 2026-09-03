@@ -7,8 +7,7 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronsUpDown,
-  Search,
-  X,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -22,11 +21,15 @@ import {
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
+import { getClientes } from '@/actions/client';
 import {
   getIvaResumenRI,
   getMonotributistasFacturacion,
   getClientesSinClasificar,
   updateClienteCondicionIva,
+  updateIvaDeclaracionManual,
 } from '@/actions/iva';
 import { cn } from '@/lib/utils';
 
@@ -113,37 +116,6 @@ function filtrarPorTexto<T extends { razonSocial: string; cuit: string }>(
   );
 }
 
-/** Input de búsqueda compartido por los tres bloques de la página. */
-function SearchBox({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="relative w-full max-w-[320px]">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--arca-ink-3)]" />
-      <Input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Buscar por empresa o CUIT..."
-        className="pl-8 pr-8 text-[13px]"
-      />
-      {value && (
-        <button
-          type="button"
-          onClick={() => onChange('')}
-          aria-label="Limpiar búsqueda"
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      )}
-    </div>
-  );
-}
-
 interface SortState {
   key: string;
   dir: 'asc' | 'desc';
@@ -213,6 +185,103 @@ function SortableTh({
         )}
       </span>
     </th>
+  );
+}
+
+/**
+ * "1.234,56" / "1234.56" / "1234" → número. Vacío → null (borra el dato).
+ * Devuelve undefined si no se puede interpretar.
+ */
+function parsearImporte(s: string): number | null | undefined {
+  const limpio = s.trim();
+  if (!limpio) return null;
+  const normalizado = limpio.includes(',')
+    ? limpio.replace(/\./g, '').replace(',', '.')
+    : limpio;
+  const n = Number(normalizado);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+type CampoDeclaracion =
+  | 'saldoTecnicoFavor'
+  | 'saldoLibreDisponibilidadFavor'
+  | 'retencionesPercepcionesPeriodo';
+
+/**
+ * Celda de un importe que solo existe del lado de AFIP: si el scrapeo no lo
+ * trajo, el estudio lo completa a mano acá (persiste en iva_declaracion con
+ * fuente manual; la declaración real lo pisa cuando llega).
+ */
+function CeldaImporteEditable({
+  clienteId,
+  periodo,
+  campo,
+  valor,
+}: {
+  clienteId: string;
+  periodo: string;
+  campo: CampoDeclaracion;
+  valor: string | null;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [borrador, setBorrador] = useState('');
+  const queryClient = useQueryClient();
+
+  const guardar = useMutation({
+    mutationFn: (v: number | null) =>
+      updateIvaDeclaracionManual({
+        data: { clienteId, periodo, campo, valor: v },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['iva', 'ri'] });
+      setEditando(false);
+      toast.success('Importe guardado');
+    },
+    onError: (e: Error) => toast.error(e.message || 'No se pudo guardar'),
+  });
+
+  if (editando) {
+    return (
+      <Input
+        autoFocus
+        defaultValue={valor ?? ''}
+        onChange={(e) => setBorrador(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') setEditando(false);
+          if (e.key === 'Enter') {
+            const n = parsearImporte(borrador || (valor ?? ''));
+            if (n === undefined) {
+              toast.error('Importe inválido');
+              return;
+            }
+            guardar.mutate(n);
+          }
+        }}
+        onBlur={() => {
+          if (!guardar.isPending) setEditando(false);
+        }}
+        disabled={guardar.isPending}
+        className="h-7 w-[120px] text-right text-[12px] tabular-nums ml-auto"
+        placeholder="0,00"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setBorrador(valor ?? '');
+        setEditando(true);
+      }}
+      title="Editar (dato de AFIP faltante o a corregir)"
+      className="group/celda inline-flex w-full items-center justify-end gap-1.5 cursor-pointer"
+    >
+      <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover/celda:opacity-60" />
+      <span className="tabular-nums" style={monoStyle}>
+        {formatARS(valor)}
+      </span>
+    </button>
   );
 }
 
@@ -457,8 +526,10 @@ function IvaResumenRI({ search }: { search: string }) {
         Débito, crédito y saldo técnico se calculan sobre los comprobantes
         cargados del período — los mismos números que la ficha de cada empresa.
         Saldo libre disponibilidad y retenciones/percepciones vienen de la
-        declaración de AFIP: no se pueden derivar de comprobantes. El saldo
-        técnico es débito menos crédito: positivo es a pagar.
+        declaración de AFIP: no se pueden derivar de comprobantes — si el
+        scrapeo todavía no los trajo, se pueden cargar a mano haciendo click en
+        la celda (la declaración real los pisa cuando llega). El saldo técnico
+        es débito menos crédito: positivo es a pagar.
       </p>
 
       {isLoading ? (
@@ -468,7 +539,7 @@ function IvaResumenRI({ search }: { search: string }) {
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           {allRows.length > 0
-            ? `Ninguna empresa Responsable Inscripto coincide con "${search}".`
+            ? 'La empresa elegida en el header no es Responsable Inscripto.'
             : 'No hay empresas clasificadas como Responsable Inscripto. Asignales una condición fiscal desde el bloque “Sin clasificar”.'}
         </div>
       ) : (
@@ -612,11 +683,13 @@ function IvaResumenRI({ search }: { search: string }) {
                   >
                     {formatARS(r.calcCreditoFiscal)}
                   </td>
-                  <td
-                    className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
-                    style={monoStyle}
-                  >
-                    {formatARS(r.saldoTecnicoFavor)}
+                  <td className="px-3 py-2 text-right text-[var(--arca-ink)]">
+                    <CeldaImporteEditable
+                      clienteId={r.clienteId}
+                      periodo={periodo}
+                      campo="saldoTecnicoFavor"
+                      valor={r.saldoTecnicoFavor}
+                    />
                   </td>
                   <td
                     className="px-3 py-2 text-right font-medium tabular-nums"
@@ -639,17 +712,21 @@ function IvaResumenRI({ search }: { search: string }) {
                   >
                     {formatARS(r.calcSaldoTecnico)}
                   </td>
-                  <td
-                    className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
-                    style={monoStyle}
-                  >
-                    {formatARS(r.saldoLibreDisponibilidadFavor)}
+                  <td className="px-3 py-2 text-right text-[var(--arca-ink)]">
+                    <CeldaImporteEditable
+                      clienteId={r.clienteId}
+                      periodo={periodo}
+                      campo="saldoLibreDisponibilidadFavor"
+                      valor={r.saldoLibreDisponibilidadFavor}
+                    />
                   </td>
-                  <td
-                    className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
-                    style={monoStyle}
-                  >
-                    {formatARS(r.retencionesPercepcionesPeriodo)}
+                  <td className="px-3 py-2 text-right text-[var(--arca-ink)]">
+                    <CeldaImporteEditable
+                      clienteId={r.clienteId}
+                      periodo={periodo}
+                      campo="retencionesPercepcionesPeriodo"
+                      valor={r.retencionesPercepcionesPeriodo}
+                    />
                   </td>
                   <td
                     className="px-3 py-2 text-right font-semibold tabular-nums"
@@ -745,11 +822,19 @@ function IvaResumenRI({ search }: { search: string }) {
   );
 }
 
-/** Tab Monotributista: facturación emitida acumulada últimos 12 meses por empresa. */
+/** Tab Monotributista: facturación de los 12 meses que terminan en el período elegido. */
 function MonotributistasTab({ search }: { search: string }) {
+  const now = new Date();
+  // Default: mes anterior, como en RI — los últimos 12 meses cerrados, que es
+  // contra lo que se mira el tope de categoría.
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const [selectedYear, setSelectedYear] = useState(prev.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(prev.getMonth());
+  const periodo = `${String(selectedMonth + 1).padStart(2, '0')}/${selectedYear}`;
+
   const { data: allRows = [], isLoading } = useQuery({
-    queryKey: ['iva', 'monotributo'],
-    queryFn: () => getMonotributistasFacturacion(),
+    queryKey: ['iva', 'monotributo', periodo],
+    queryFn: () => getMonotributistasFacturacion({ data: { periodo } }),
   });
   const rows = useMemo(
     () => filtrarPorTexto(allRows, search),
@@ -766,8 +851,6 @@ function MonotributistasTab({ search }: { search: string }) {
     empresa: (r) => r.razonSocial,
     cuit: (r) => r.cuit,
     representante: (r) => r.credenciales,
-    comprobantes: (r) => r.comprobanteCount,
-    ultimaFactura: (r) => r.ultimoComprobante,
     categoria: (r) => r.categoria,
     cuota: (r) => (r.cuotaMensual ? Number(r.cuotaMensual) : null),
     facturacion: (r) => Number(r.facturacion12m),
@@ -778,12 +861,54 @@ function MonotributistasTab({ search }: { search: string }) {
     [rows, sort]
   );
 
+  const yearsMono = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+  const maxMonthMono = selectedYear === now.getFullYear() ? now.getMonth() : 11;
+
   return (
     <div>
+      <div className="flex items-center gap-2 mb-4">
+        <Select
+          value={String(selectedMonth)}
+          onValueChange={(v) => setSelectedMonth(Number(v))}
+        >
+          <SelectTrigger className="w-[140px] text-[13px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Array.from({ length: maxMonthMono + 1 }, (_, i) => (
+              <SelectItem key={i} value={String(i)}>
+                {MONTH_NAMES[i]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select
+          value={String(selectedYear)}
+          onValueChange={(v) => {
+            const y = Number(v);
+            setSelectedYear(y);
+            if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
+              setSelectedMonth(now.getMonth());
+            }
+          }}
+        >
+          <SelectTrigger className="w-[100px] text-[13px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {yearsMono.map((y) => (
+              <SelectItem key={y} value={String(y)}>
+                {y}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
-        Facturación emitida de los últimos 12 meses (desde comprobantes
-        cargados; las notas de crédito restan). Útil para monitorear límites de
-        categoría.
+        Facturación emitida de los 12 meses que terminan en el período elegido
+        (desde comprobantes cargados; las notas de crédito restan). Útil para
+        monitorear límites de categoría.
       </p>
 
       {isLoading ? (
@@ -793,7 +918,7 @@ function MonotributistasTab({ search }: { search: string }) {
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           {allRows.length > 0
-            ? `Ningún monotributista coincide con "${search}".`
+            ? 'La empresa elegida en el header no es monotributista.'
             : 'No hay empresas clasificadas como monotributistas.'}
         </div>
       ) : (
@@ -830,19 +955,6 @@ function MonotributistasTab({ search }: { search: string }) {
                 <SortableTh
                   label="Login AFIP"
                   colKey="representante"
-                  sort={sort}
-                  onSort={onSort}
-                />
-                <SortableTh
-                  label="Comprobantes (12m)"
-                  colKey="comprobantes"
-                  sort={sort}
-                  onSort={onSort}
-                  align="right"
-                />
-                <SortableTh
-                  label="Última factura"
-                  colKey="ultimaFactura"
                   sort={sort}
                   onSort={onSort}
                 />
@@ -888,14 +1000,6 @@ function MonotributistasTab({ search }: { search: string }) {
                   </td>
                   <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
                     {r.credenciales ?? '—'}
-                  </td>
-                  <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
-                    {r.comprobanteCount}
-                  </td>
-                  <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap tabular-nums">
-                    {r.ultimoComprobante
-                      ? r.ultimoComprobante.slice(0, 10)
-                      : '—'}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {r.categoria ? (
@@ -1014,16 +1118,26 @@ function SinClasificarBlock({ search }: { search: string }) {
 }
 
 function RouteComponent() {
-  // La búsqueda es de la página, no de una tabla: filtra los tres bloques a la
-  // vez, así una empresa no queda escondida en la pestaña que no estás mirando.
-  const [search, setSearch] = useState('');
+  // El filtro es el selector global de empresa (mismo patrón que Sueldos y
+  // Contabilidad): elegir una empresa acota los tres bloques a la vez, y la
+  // elección viaja con vos a las demás vistas. Se filtra por CUIT —único por
+  // empresa— reusando el filtro de texto que las tablas ya tenían. Si la
+  // empresa elegida no está en una tab (una RI en Monotributista), esa tab
+  // muestra su estado vacío: limitación conocida y aceptada.
+  const [seleccionado] = useClienteSeleccionado();
+  const { data: clientes = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
+    staleTime: 60_000,
+  });
+  const search = clientes.find((c) => c.id === seleccionado)?.cuit ?? '';
 
   return (
     <PageShell>
       <PageHeader
         title="IVA"
         subtitle="Posición mensual de IVA por empresa y monitoreo de monotributo"
-        actions={<SearchBox value={search} onChange={setSearch} />}
+        actions={<SelectorClienteGlobal />}
       />
 
       <Tabs defaultValue="ri">
