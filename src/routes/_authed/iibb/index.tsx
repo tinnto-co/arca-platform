@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Globe, MapPin } from 'lucide-react';
+import { Globe, MapPin, Plus, X } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import { getClientesForIIBB } from '@/actions/client';
 import {
+  deleteLiquidacionIibbFila,
   getClienteMultilateralResumen,
   getIibbResumenPorEmpresa,
   getLiquidacionIibb,
@@ -68,6 +69,10 @@ interface LiqRow {
   percepcionesAduaneras: number;
   retencionesAgentes: number;
   retencionesBancarias: number;
+  /** Solo filas manuales («Otro Capital Federal»): de qué provincia restan. */
+  provinciaPadre?: string;
+  /** Base cargada a mano de la fila manual. */
+  baseManual?: number;
 }
 
 const DEFAULT_LIQ: LiqRow = {
@@ -80,7 +85,7 @@ const DEFAULT_LIQ: LiqRow = {
 };
 
 const inputCls =
-  'w-[100px] rounded border border-[var(--arca-border)] bg-[var(--arca-surface)] px-1.5 py-0.5 text-right text-[12px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-accent,#2563eb)] tabular-nums';
+  'w-[82px] rounded border border-[var(--arca-border)] bg-[var(--arca-surface)] px-1 py-0.5 text-right text-[11.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-accent,#2563eb)] tabular-nums';
 
 /** Cliente con régimen de IIBB que alimenta el selector. */
 type ClienteIIBB = Awaited<ReturnType<typeof getClientesForIIBB>>[number];
@@ -158,6 +163,8 @@ function IIBBDesglose({
         percepcionesAduaneras: r.percepcionesAduaneras,
         retencionesAgentes: r.retencionesAgentes,
         retencionesBancarias: r.retencionesBancarias,
+        provinciaPadre: r.provinciaPadre ?? undefined,
+        baseManual: r.baseManual ?? undefined,
       };
     }
     setLocalLiq(next);
@@ -176,6 +183,8 @@ function IIBBDesglose({
           percepcionesAduaneras: vars.percepcionesAduaneras,
           retencionesAgentes: vars.retencionesAgentes,
           retencionesBancarias: vars.retencionesBancarias,
+          provinciaPadre: vars.provinciaPadre,
+          baseManual: vars.baseManual,
         },
       }),
     onSuccess: () => {
@@ -228,12 +237,90 @@ function IIBBDesglose({
   const rows = provinceSummary;
   const isLoading = loadingInvoices || loadingLiq;
 
+  /**
+   * Filas a mostrar: cada provincia con su base calculada MENOS lo asignado a
+   * sus filas manuales, seguida de esas filas («Otro Capital Federal», parte
+   * de la base a otra alícuota según la actividad). El total no cambia: la
+   * base solo se reparte.
+   */
+  const filasManuales = (liqData?.rows ?? []).filter(
+    (r) => r.provinciaPadre != null
+  );
+  const filasDisplay = useMemo(() => {
+    const baseManualDe = (etiqueta: string, servidor: number | null) =>
+      localLiq[etiqueta]?.baseManual ?? servidor ?? 0;
+    const out: {
+      key: string;
+      esManual: boolean;
+      id?: string;
+      cantidad: number | null;
+      base: number;
+    }[] = [];
+    for (const row of rows) {
+      const prov = row.provincia ?? '';
+      const subs = filasManuales.filter((m) => m.provinciaPadre === prov);
+      const restar = subs.reduce(
+        (a, m) => a + baseManualDe(m.provincia, m.baseManual),
+        0
+      );
+      out.push({
+        key: prov,
+        esManual: false,
+        cantidad: row.cantidad,
+        base: Number(row.totalBase ?? 0) - restar,
+      });
+      for (const m of subs)
+        out.push({
+          key: m.provincia,
+          esManual: true,
+          id: m.id,
+          cantidad: null,
+          base: baseManualDe(m.provincia, m.baseManual),
+        });
+    }
+    // Manuales cuya provincia no facturó este período: se muestran igual.
+    for (const m of filasManuales)
+      if (!out.some((f) => f.key === m.provincia))
+        out.push({
+          key: m.provincia,
+          esManual: true,
+          id: m.id,
+          cantidad: null,
+          base: baseManualDe(m.provincia, m.baseManual),
+        });
+    return out;
+  }, [rows, filasManuales, localLiq]);
+
+  const agregarFila = (provPadre: string) => {
+    const labelPadre = provPadre || 'Capital Federal';
+    let etiqueta = `Otro ${labelPadre}`;
+    let n = 2;
+    const existentes = new Set(filasDisplay.map((f) => f.key));
+    while (existentes.has(etiqueta)) etiqueta = `Otro ${labelPadre} ${n++}`;
+    const nueva: LiqRow = {
+      ...DEFAULT_LIQ,
+      alicuota: getLiq(provPadre).alicuota,
+      provinciaPadre: provPadre,
+      baseManual: 0,
+    };
+    setLocalLiq((prev) => ({ ...prev, [etiqueta]: nueva }));
+    saveMutation.mutate({ provincia: etiqueta, ...nueva });
+  };
+
+  const borrarFila = useMutation({
+    mutationFn: (id: string) => deleteLiquidacionIibbFila({ data: { id } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['iibb', 'liq', selectedRepId, periodo],
+      });
+    },
+  });
+
   const totals = useMemo(() => {
-    return rows.reduce(
-      (acc, row) => {
-        const prov = row.provincia ?? '';
-        const liq = getLiq(prov);
-        const base = Number(row.totalBase ?? 0);
+    return filasDisplay.reduce(
+      (acc, fila) => {
+        const liq = getLiq(fila.key);
+        const base = fila.base;
         const impDet = base * liq.alicuota;
         const liquidacion =
           impDet -
@@ -243,7 +330,7 @@ function IIBBDesglose({
           liq.retencionesAgentes -
           liq.retencionesBancarias;
         return {
-          count: acc.count + (row.cantidad ?? 0),
+          count: acc.count + (fila.cantidad ?? 0),
           base: acc.base + base,
           impDet: acc.impDet + impDet,
           saldoAFavor: acc.saldoAFavor + liq.saldoAFavor,
@@ -435,7 +522,7 @@ function IIBBDesglose({
           <table
             className="text-[12px]"
             style={{
-              minWidth: 1100,
+              minWidth: 960,
               width: '100%',
               borderCollapse: 'collapse',
             }}
@@ -447,46 +534,46 @@ function IIBBDesglose({
                   background: 'var(--arca-surface-2)',
                 }}
               >
-                <th className="text-left px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-left px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Provincia
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Comp.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Base imponible
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Alícuota %
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
-                  Imp. determinado
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                  Imp. determ.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Saldo a favor
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Perc. Agentes
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
-                  Perc. Aduaneras
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                  Perc. Aduan.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Ret. Agentes
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
-                  Ret. Bancarias
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                  Ret. Banc.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
                   Liquidación
                 </th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => {
-                const prov = row.provincia ?? '';
+              {filasDisplay.map((fila, i) => {
+                const prov = fila.key;
                 const liq = getLiq(prov);
-                const base = Number(row.totalBase ?? 0);
+                const base = fila.base;
                 const impDet = base * liq.alicuota;
                 const liquidacion =
                   impDet -
@@ -504,20 +591,63 @@ function IIBBDesglose({
                         i === 0 ? undefined : '1px solid var(--arca-border)',
                     }}
                   >
-                    <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
-                      {prov || 'Capital Federal'}
+                    <td className="px-2 py-2 text-[var(--arca-ink)] whitespace-nowrap">
+                      {fila.esManual ? (
+                        <span className="inline-flex items-center gap-1.5 pl-4 text-[var(--arca-ink-2)]">
+                          {prov}
+                          <button
+                            type="button"
+                            aria-label={`Quitar ${prov}`}
+                            title="Quitar esta fila manual"
+                            onClick={() =>
+                              fila.id && borrarFila.mutate(fila.id)
+                            }
+                            className="cursor-pointer text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)]"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          {prov || 'Capital Federal'}
+                          <button
+                            type="button"
+                            aria-label={`Agregar fila manual en ${prov || 'Capital Federal'}`}
+                            title="Agregar fila manual: parte de la base a otra alícuota (ej. otra actividad)"
+                            onClick={() => agregarFila(prov)}
+                            className="cursor-pointer text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)]"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )}
                     </td>
-                    <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
-                      {row.cantidad}
+                    <td className="px-2 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
+                      {fila.cantidad ?? '—'}
                     </td>
                     <td
-                      className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
+                      className="px-2 py-2 text-right text-[var(--arca-ink)] tabular-nums"
                       style={{ fontFamily: 'var(--ff-mono)' }}
                     >
-                      {formatARS(row.totalBase)}
+                      {fila.esManual ? (
+                        // La base manual resta de la calculada de su provincia.
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.01}
+                          value={base === 0 ? '' : base}
+                          placeholder="0,00"
+                          onChange={(e) =>
+                            handleChange(prov, 'baseManual', e.target.value)
+                          }
+                          className={inputCls}
+                        />
+                      ) : (
+                        formatARS(base)
+                      )}
                     </td>
                     {/* Alícuota editable — ingreso en % (ej. "1" = 1%) */}
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       <input
                         type="number"
                         min={0}
@@ -535,13 +665,13 @@ function IIBBDesglose({
                       />
                     </td>
                     <td
-                      className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
+                      className="px-2 py-2 text-right text-[var(--arca-ink)] tabular-nums"
                       style={{ fontFamily: 'var(--ff-mono)' }}
                     >
                       {formatARS(impDet)}
                     </td>
                     {/* Saldo a favor editable */}
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       <input
                         type="number"
                         min={0}
@@ -555,7 +685,7 @@ function IIBBDesglose({
                       />
                     </td>
                     {/* Percepciones Agentes */}
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       <input
                         type="number"
                         min={0}
@@ -577,7 +707,7 @@ function IIBBDesglose({
                       />
                     </td>
                     {/* Percepciones Aduaneras */}
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       <input
                         type="number"
                         min={0}
@@ -599,7 +729,7 @@ function IIBBDesglose({
                       />
                     </td>
                     {/* Retenciones Agentes */}
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       <input
                         type="number"
                         min={0}
@@ -621,7 +751,7 @@ function IIBBDesglose({
                       />
                     </td>
                     {/* Retenciones Bancarias */}
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-2 py-2 text-right">
                       <input
                         type="number"
                         min={0}
@@ -644,7 +774,7 @@ function IIBBDesglose({
                     </td>
                     {/* Liquidación final */}
                     <td
-                      className="px-3 py-2 text-right font-semibold tabular-nums"
+                      className="px-2 py-2 text-right font-semibold tabular-nums"
                       style={{
                         fontFamily: 'var(--ff-mono)',
                         color:
@@ -666,57 +796,57 @@ function IIBBDesglose({
                   background: 'var(--arca-surface-2)',
                 }}
               >
-                <td className="px-3 py-2 font-semibold text-[var(--arca-ink)]">
+                <td className="px-2 py-2 font-semibold text-[var(--arca-ink)]">
                   Total
                 </td>
-                <td className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums">
+                <td className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums">
                   {totals.count}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.base)}
                 </td>
                 <td className="px-3 py-2" />
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.impDet)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.saldoAFavor)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.percepcionesAgentes)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.percepcionesAduaneras)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.retencionesAgentes)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.retencionesBancarias)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold tabular-nums"
+                  className="px-2 py-2 text-right font-semibold tabular-nums"
                   style={{
                     fontFamily: 'var(--ff-mono)',
                     color:

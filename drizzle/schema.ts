@@ -2077,6 +2077,8 @@ export const liquidacionIibb = pgTable("liquidacion_iibb", {
 	percepcionesAduaneras: numeric("percepciones_aduaneras", { precision: 15, scale:  2 }).default('0').notNull(),
 	retencionesAgentes: numeric("retenciones_agentes", { precision: 15, scale:  2 }).default('0').notNull(),
 	retencionesBancarias: numeric("retenciones_bancarias", { precision: 15, scale:  2 }).default('0').notNull(),
+	provinciaPadre: text("provincia_padre"),
+	baseManual: numeric("base_manual", { precision: 15, scale:  2 }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

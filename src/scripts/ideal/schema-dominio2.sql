@@ -307,9 +307,18 @@ create table liquidacion_iibb (
   percepciones_aduaneras numeric(15, 2) not null default 0,
   retenciones_agentes numeric(15, 2) not null default 0,
   retenciones_bancarias numeric(15, 2) not null default 0,
+  -- Fila manual dentro de una jurisdicción ("Otro Capital Federal"): parte de
+  -- la base a otra alícuota según la actividad. `provincia` pasa a ser la
+  -- etiqueta de la fila; `provincia_padre` dice de qué provincia real resta su
+  -- `base_manual`. Las filas normales tienen ambas en null (la base sale de
+  -- los comprobantes).
+  provincia_padre text,
+  base_manual numeric(15, 2),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (cliente_id, periodo, provincia)
+  unique (cliente_id, periodo, provincia),
+  constraint liquidacion_iibb_fila_manual
+    check ((provincia_padre is null) = (base_manual is null))
 );
 create index idx_liquidacion_iibb_cliente on liquidacion_iibb(cliente_id);
 create trigger trg_set_updated_at before update on liquidacion_iibb for each row execute function set_updated_at();

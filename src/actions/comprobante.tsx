@@ -15,7 +15,17 @@ import {
   getMemberRole,
 } from '@/actions/helpers';
 import { PROVINCE_LABELS } from '@/lib/provinces';
-import { eq, desc, asc, and, gte, lte, sql, isNull } from 'drizzle-orm';
+import {
+  eq,
+  desc,
+  asc,
+  and,
+  gte,
+  lte,
+  sql,
+  isNull,
+  isNotNull,
+} from 'drizzle-orm';
 import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
 
 /** Valida que el cliente sea de la organización activa. */
@@ -618,6 +628,9 @@ export const getLiquidacionIibb = createServerFn({ method: 'GET' })
         percepcionesAduaneras: Number(r.percepcionesAduaneras),
         retencionesAgentes: Number(r.retencionesAgentes),
         retencionesBancarias: Number(r.retencionesBancarias),
+        // Fila manual: su base se carga a mano y resta de la provincia padre.
+        provinciaPadre: r.provinciaPadre,
+        baseManual: r.baseManual === null ? null : Number(r.baseManual),
       })),
       carryOver,
     };
@@ -635,13 +648,27 @@ export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
       percepcionesAduaneras: z.number().min(0),
       retencionesAgentes: z.number().min(0),
       retencionesBancarias: z.number().min(0),
+      /**
+       * Fila manual dentro de una jurisdicción ("Otro Capital Federal"):
+       * parte de la base a otra alícuota según la actividad. Van juntas o
+       * ninguna — el CHECK de la tabla lo garantiza del lado de la base.
+       */
+      provinciaPadre: z.string().optional(),
+      baseManual: z.number().min(0).optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
 
-    const { clienteId, periodo, provincia, ...montos } = ctx.data;
+    const {
+      clienteId,
+      periodo,
+      provincia,
+      provinciaPadre,
+      baseManual,
+      ...montos
+    } = ctx.data;
     await assertClienteDeOrg(clienteId, orgId);
 
     const valores = {
@@ -651,6 +678,8 @@ export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
       percepcionesAduaneras: String(montos.percepcionesAduaneras),
       retencionesAgentes: String(montos.retencionesAgentes),
       retencionesBancarias: String(montos.retencionesBancarias),
+      provinciaPadre: provinciaPadre ?? null,
+      baseManual: baseManual === undefined ? null : String(baseManual),
     };
 
     await db
@@ -671,5 +700,26 @@ export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
         set: { ...valores, updatedAt: new Date() },
       });
 
+    return { ok: true };
+  });
+
+/** Borra una fila MANUAL de la liquidación. Las normales no se borran: su base sale de los comprobantes. */
+export const deleteLiquidacionIibbFila = createServerFn({ method: 'POST' })
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const borradas = await db
+      .delete(liquidacionIibb)
+      .where(
+        and(
+          eq(liquidacionIibb.id, ctx.data.id),
+          eq(liquidacionIibb.orgId, orgId),
+          isNotNull(liquidacionIibb.provinciaPadre)
+        )
+      )
+      .returning({ id: liquidacionIibb.id });
+    if (borradas.length === 0) throw new Error('Fila no encontrada');
     return { ok: true };
   });
