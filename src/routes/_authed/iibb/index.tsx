@@ -87,10 +87,11 @@ type ClienteIIBB = Awaited<ReturnType<typeof getClientesForIIBB>>[number];
 /** Selector de empresa + periodo + tabla de desglose + liquidación IIBB por provincia. */
 function IIBBDesglose({
   clients,
-  emptyMessage,
+  regimen,
 }: {
   clients: ClienteIIBB[];
-  emptyMessage: string;
+  /** «régimen local» o «convenio multilateral», para los mensajes vacíos. */
+  regimen: string;
 }) {
   const now = new Date();
   const queryClient = useQueryClient();
@@ -308,12 +309,15 @@ function IIBBDesglose({
         </div>
       </div>
 
-      {/* Tabla */}
+      {/* Tabla. IIBB es siempre por empresa: no existe la vista «todas». */}
       {!selectedRepId ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           {clients.length === 0
-            ? emptyMessage
-            : 'Seleccioná una empresa para ver el desglose por provincia.'}
+            ? `No hay clientes con ${regimen} configurado.`
+            : clienteGlobal
+              ? // Hay empresa elegida, pero es del otro régimen (o no tiene IIBB).
+                `La empresa elegida no tiene ${regimen} configurado.`
+              : 'Elegí una empresa en el selector de arriba a la derecha para ver el desglose por provincia.'}
         </div>
       ) : isLoading ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
@@ -670,16 +674,13 @@ function RouteComponent() {
         </div>
 
         <TabsContent value="local" className="mt-6">
-          <IIBBDesglose
-            clients={localClients}
-            emptyMessage="No hay clientes con régimen local configurado."
-          />
+          <IIBBDesglose clients={localClients} regimen="régimen local" />
         </TabsContent>
 
         <TabsContent value="multilateral" className="mt-6">
           <IIBBDesglose
             clients={multilateralClients}
-            emptyMessage="No hay clientes con convenio multilateral configurado."
+            regimen="convenio multilateral"
           />
         </TabsContent>
       </Tabs>
