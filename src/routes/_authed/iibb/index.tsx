@@ -89,6 +89,58 @@ const DEFAULT_LIQ: LiqRow = {
 const inputCls =
   'w-[82px] rounded border border-[var(--arca-border)] bg-[var(--arca-surface)] px-1 py-0.5 text-right text-[11.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-accent,#2563eb)] tabular-nums';
 
+/**
+ * Input numérico que no pelea con el usuario. Con type=number controlado y
+ * valor formateado, tipear «3» sobre un «1,00» o escribir 3755223 de corrido
+ * era imposible: cada tecla re-renderizaba el valor parseado y el refetch del
+ * autoguardado pisaba el campo. Mientras está enfocado muestra el borrador
+ * tal cual se tipea (coma o punto decimal); al salir vuelve al canónico.
+ */
+function InputNumero({
+  valor,
+  onValor,
+  placeholder = '0,00',
+  ancho,
+}: {
+  valor: number;
+  onValor: (n: number) => void;
+  placeholder?: string;
+  ancho?: string;
+}) {
+  const [borrador, setBorrador] = useState<string | null>(null);
+
+  const parsear = (raw: string): number | undefined => {
+    // «3.755.223,50» estilo es-AR: si hay coma, los puntos son de miles.
+    const conComa = raw.includes(',');
+    const limpio = (conComa ? raw.replace(/\./g, '') : raw)
+      .trim()
+      .replace(',', '.');
+    if (limpio === '') return 0;
+    const n = Number(limpio);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={borrador ?? (valor === 0 ? '' : String(valor))}
+      placeholder={placeholder}
+      onFocus={(e) => setBorrador(e.target.value)}
+      onChange={(e) => {
+        setBorrador(e.target.value);
+        const n = parsear(e.target.value);
+        if (n !== undefined) onValor(n);
+      }}
+      onBlur={() => setBorrador(null)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+      className={ancho ? inputCls.replace('w-[82px]', ancho) : inputCls}
+    />
+  );
+}
+
 /** Cliente con régimen de IIBB que alimenta el selector. */
 type ClienteIIBB = Awaited<ReturnType<typeof getClientesForIIBB>>[number];
 
@@ -669,16 +721,12 @@ function IIBBDesglose({
                     >
                       {fila.esManual ? (
                         // La base manual resta de la calculada de su provincia.
-                        <input
-                          type="number"
-                          min={0}
-                          step={0.01}
-                          value={base === 0 ? '' : base}
-                          placeholder="0,00"
-                          onChange={(e) =>
-                            handleChange(prov, 'baseManual', e.target.value)
+                        <InputNumero
+                          valor={base}
+                          onValor={(n) =>
+                            handleChange(prov, 'baseManual', String(n))
                           }
-                          className={inputCls}
+                          ancho="w-[110px]"
                         />
                       ) : (
                         formatARS(base)
@@ -686,20 +734,13 @@ function IIBBDesglose({
                     </td>
                     {/* Alícuota editable — ingreso en % (ej. "1" = 1%) */}
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={0.01}
-                        value={(liq.alicuota * 100).toFixed(2)}
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'alicuota',
-                            String(parseFloat(e.target.value || '0') / 100)
-                          )
+                      <InputNumero
+                        valor={liq.alicuota * 100}
+                        onValor={(n) =>
+                          handleChange(prov, 'alicuota', String(n / 100))
                         }
-                        className={inputCls}
+                        placeholder="0"
+                        ancho="w-[64px]"
                       />
                     </td>
                     <td
@@ -710,104 +751,47 @@ function IIBBDesglose({
                     </td>
                     {/* Saldo a favor editable */}
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={liq.saldoAFavor === 0 ? '' : liq.saldoAFavor}
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(prov, 'saldoAFavor', e.target.value)
+                      <InputNumero
+                        valor={liq.saldoAFavor}
+                        onValor={(n) =>
+                          handleChange(prov, 'saldoAFavor', String(n))
                         }
-                        className={inputCls}
                       />
                     </td>
                     {/* Percepciones Agentes */}
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.percepcionesAgentes === 0
-                            ? ''
-                            : liq.percepcionesAgentes
+                      <InputNumero
+                        valor={liq.percepcionesAgentes}
+                        onValor={(n) =>
+                          handleChange(prov, 'percepcionesAgentes', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'percepcionesAgentes',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Percepciones Aduaneras */}
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.percepcionesAduaneras === 0
-                            ? ''
-                            : liq.percepcionesAduaneras
+                      <InputNumero
+                        valor={liq.percepcionesAduaneras}
+                        onValor={(n) =>
+                          handleChange(prov, 'percepcionesAduaneras', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'percepcionesAduaneras',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Retenciones Agentes */}
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.retencionesAgentes === 0
-                            ? ''
-                            : liq.retencionesAgentes
+                      <InputNumero
+                        valor={liq.retencionesAgentes}
+                        onValor={(n) =>
+                          handleChange(prov, 'retencionesAgentes', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'retencionesAgentes',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Retenciones Bancarias */}
                     <td className="px-2 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.retencionesBancarias === 0
-                            ? ''
-                            : liq.retencionesBancarias
+                      <InputNumero
+                        valor={liq.retencionesBancarias}
+                        onValor={(n) =>
+                          handleChange(prov, 'retencionesBancarias', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'retencionesBancarias',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Liquidación final */}
