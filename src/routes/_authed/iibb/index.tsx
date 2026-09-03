@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Globe, MapPin, Plus, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -17,6 +18,7 @@ import {
 import { getClientesForIIBB } from '@/actions/client';
 import {
   deleteLiquidacionIibbFila,
+  renameLiquidacionIibbFila,
   getClienteMultilateralResumen,
   getIibbResumenPorEmpresa,
   getLiquidacionIibb,
@@ -316,6 +318,17 @@ function IIBBDesglose({
     },
   });
 
+  const renombrarFila = useMutation({
+    mutationFn: (v: { id: string; nombre: string }) =>
+      renameLiquidacionIibbFila({ data: v }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['iibb', 'liq', selectedRepId, periodo],
+      });
+    },
+    onError: (e: Error) => toast.error(e.message || 'No se pudo renombrar'),
+  });
+
   const totals = useMemo(() => {
     return filasDisplay.reduce(
       (acc, fila) => {
@@ -594,7 +607,32 @@ function IIBBDesglose({
                     <td className="px-2 py-2 text-[var(--arca-ink)] whitespace-nowrap">
                       {fila.esManual ? (
                         <span className="inline-flex items-center gap-1.5 pl-4 text-[var(--arca-ink-2)]">
-                          {prov}
+                          {/* Nace «Otro …» pero el nombre es libre: la fila
+                              suele ser una actividad («Servicios CABA 3%»). */}
+                          <input
+                            key={fila.id}
+                            type="text"
+                            defaultValue={prov}
+                            aria-label="Nombre de la fila manual"
+                            title="Editable: poné el nombre que quieras (ej. la actividad)"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                              if (e.key === 'Escape') {
+                                e.currentTarget.value = prov;
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const nombre = e.target.value.trim();
+                              if (!nombre || nombre === prov) {
+                                e.target.value = prov;
+                                return;
+                              }
+                              if (fila.id)
+                                renombrarFila.mutate({ id: fila.id, nombre });
+                            }}
+                            className="w-[150px] rounded border border-transparent bg-transparent px-1 py-0.5 text-[11.5px] text-[var(--arca-ink-2)] hover:border-[var(--arca-border)] focus:border-[var(--arca-border-strong)] focus:bg-[var(--arca-surface)] focus:outline-none"
+                          />
                           <button
                             type="button"
                             aria-label={`Quitar ${prov}`}

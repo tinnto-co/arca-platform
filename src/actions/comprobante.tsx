@@ -703,6 +703,51 @@ export const saveLiquidacionIibb = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/**
+ * Renombra una fila MANUAL de la liquidación: nace como «Otro <provincia>»
+ * pero el estudio la llama por la actividad real («Servicios CABA 3%»).
+ * El nombre es la clave visible de la fila, así que debe ser único en el
+ * período del cliente.
+ */
+export const renameLiquidacionIibbFila = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      id: z.string().uuid(),
+      nombre: z
+        .string()
+        .trim()
+        .min(1, 'El nombre no puede quedar vacío')
+        .max(80),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    try {
+      const filas = await db
+        .update(liquidacionIibb)
+        .set({ provincia: ctx.data.nombre, updatedAt: new Date() })
+        .where(
+          and(
+            eq(liquidacionIibb.id, ctx.data.id),
+            eq(liquidacionIibb.orgId, orgId),
+            isNotNull(liquidacionIibb.provinciaPadre)
+          )
+        )
+        .returning({ id: liquidacionIibb.id });
+      if (filas.length === 0) throw new Error('Fila no encontrada');
+    } catch (e) {
+      const code =
+        (e as { cause?: { code?: string }; code?: string }).cause?.code ??
+        (e as { code?: string }).code;
+      if (code === '23505')
+        throw new Error('Ya existe una fila con ese nombre en este período');
+      throw e;
+    }
+    return { ok: true };
+  });
+
 /** Borra una fila MANUAL de la liquidación. Las normales no se borran: su base sale de los comprobantes. */
 export const deleteLiquidacionIibbFila = createServerFn({ method: 'POST' })
   .validator(z.object({ id: z.string().uuid() }))
