@@ -7,7 +7,7 @@
  */
 
 import { useState } from 'react';
-import { Check, CheckCheck, Search, SlidersHorizontal } from 'lucide-react';
+import { Check, CheckCheck, SlidersHorizontal } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,14 +20,6 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
 import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
@@ -60,7 +52,6 @@ interface Props {
   onLimpiar: () => void;
   credenciales: { id: string; nombre: string | null }[];
   categorias: string[];
-  empresas: { id: string; name: string | null }[];
   resumen: { total: number; sinLeer: number; resultados: number };
   ultimaSync: Date | string | null;
   onMarcarTodasLeidas: () => void;
@@ -78,7 +69,6 @@ export function InboxHeader({
   onLimpiar,
   credenciales,
   categorias,
-  empresas,
   resumen,
   ultimaSync,
   onMarcarTodasLeidas,
@@ -87,12 +77,10 @@ export function InboxHeader({
 
   const credencialTxt =
     credenciales.find((c) => c.id === filtros.credencial)?.nombre ?? null;
-  const empresaTxt =
-    empresas.find((e) => e.id === filtros.empresa)?.name ?? null;
 
   // Los del popover se cuentan aparte: el chip `Más filtros` lleva su número.
+  // La empresa no cuenta: se ve en el selector global del header.
   const secundarios = [
-    filtros.empresa,
     filtros.desde,
     filtros.hasta,
     filtros.soloConAdjunto ? '1' : '',
@@ -100,12 +88,8 @@ export function InboxHeader({
 
   const activos =
     secundarios +
-    [
-      filtros.credencial,
-      filtros.categoria,
-      filtros.severidad,
-      filtros.q,
-    ].filter(Boolean).length;
+    [filtros.credencial, filtros.categoria, filtros.severidad].filter(Boolean)
+      .length;
 
   return (
     <PageHeader
@@ -129,19 +113,11 @@ export function InboxHeader({
       }
       actions={
         <>
-          {/* La empresa se elige en el selector global: la elección viaja a
-              las demás vistas. El buscador de texto queda para el asunto. */}
+          {/* El buscador de empresa ES el selector global: reemplaza al input
+              de texto viejo, escribe el query param «empresa» (link
+              compartible, como antes) y la elección viaja a las demás
+              vistas. */}
           <SelectorClienteGlobal />
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-[11px] size-3.5 -translate-y-1/2 text-[var(--arca-ink-3)]" />
-            <input
-              value={filtros.q}
-              onChange={(e) => onFiltro({ q: e.target.value })}
-              placeholder="Buscar por empresa o asunto"
-              aria-label="Buscar notificaciones"
-              className="w-[260px] rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] py-1.5 pr-3 pl-[32px] text-[12.5px] text-[var(--arca-ink)] outline-none placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-navy-600)]"
-            />
-          </div>
 
           <button
             type="button"
@@ -305,47 +281,6 @@ export function InboxHeader({
               align="start"
               className="flex w-[320px] flex-col gap-3 p-3"
             >
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
-                  Empresa
-                </span>
-                <Command className="rounded-[var(--arca-r-md)] border border-[var(--arca-border)]">
-                  <CommandInput
-                    placeholder="Buscar empresa…"
-                    className="text-[12.5px]"
-                  />
-                  <CommandList className="max-h-[160px]">
-                    <CommandEmpty className="py-3 text-center text-[12px] text-[var(--arca-ink-3)]">
-                      Sin resultados
-                    </CommandEmpty>
-                    <CommandGroup>
-                      {empresas.map((e) => (
-                        <CommandItem
-                          key={e.id}
-                          value={e.name ?? e.id}
-                          className="text-[12.5px]"
-                          onSelect={() => onFiltro({ empresa: e.id })}
-                        >
-                          <span className="truncate">{e.name}</span>
-                          {e.id === filtros.empresa && (
-                            <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                          )}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-                {empresaTxt && (
-                  <button
-                    type="button"
-                    onClick={() => onFiltro({ empresa: '' })}
-                    className="self-start text-[11.5px] text-[var(--arca-navy-700)] hover:underline"
-                  >
-                    Quitar {empresaTxt}
-                  </button>
-                )}
-              </div>
-
               <div className="grid grid-cols-2 gap-2">
                 <label className="flex flex-col gap-1">
                   <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">

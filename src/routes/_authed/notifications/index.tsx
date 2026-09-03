@@ -19,7 +19,6 @@ import {
   clasificarPendientes,
 } from '@/actions/notification';
 import { getCredenciales } from '@/actions/client';
-import { listOrgRepresentatives } from '@/actions/tareas';
 
 interface Busqueda {
   estado?: 'sin_leer' | 'todas' | 'resueltas';
@@ -70,8 +69,9 @@ function RouteComponent() {
   const search: Busqueda = Route.useSearch();
   const queryClient = useQueryClient();
 
-  const [clienteGlobal] = useClienteSeleccionado();
+  const [clienteGlobal, setClienteGlobal] = useClienteSeleccionado();
   const [paginas, setPaginas] = useState(1);
+
   const [creandoTarea, setCreandoTarea] = useState(false);
 
   const filtros: FiltrosInbox = {
@@ -107,6 +107,31 @@ function RouteComponent() {
     });
   };
 
+  /**
+   * El buscador de empresa es el selector global del header, pero el filtro
+   * real es el query param `empresa` — como el buscador viejo: la URL queda
+   * compartible y con historial. Al entrar, un link con `empresa` manda (se
+   * adopta al store); de ahí en más, elegir en el selector escribe el param.
+   */
+  const urlAdoptada = useRef(false);
+  useEffect(() => {
+    if (!urlAdoptada.current) {
+      urlAdoptada.current = true;
+      if (search.empresa && search.empresa !== clienteGlobal) {
+        setClienteGlobal(search.empresa);
+        return;
+      }
+    }
+    if ((search.empresa ?? '') !== (clienteGlobal ?? '')) {
+      // Sincroniza sistemas externos (URL y store), no estado de React: el
+      // warning de setState-en-efecto no aplica — setFiltros navega.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFiltros({ empresa: clienteGlobal ?? '' });
+    }
+    // setFiltros navega con replace: no entra en las dependencias a propósito.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteGlobal, search.empresa]);
+
   const seleccionar = (id: string | undefined) =>
     void navigate({
       search: (prev: Busqueda) => ({ ...prev, n: id }),
@@ -125,18 +150,11 @@ function RouteComponent() {
     queryFn: () => getCredenciales(),
   });
 
-  const { data: empresas = [] } = useQuery({
-    queryKey: ['tareas-empresas'],
-    queryFn: () => listOrgRepresentatives(),
-  });
-
   const parametros = {
     limit: POR_PAGINA * paginas,
     page: 1,
     credencialFilter: oQuitar(filtros.credencial),
-    // El selector global de empresa del header manda; el filtro «empresa» de
-    // Más filtros queda como secundario cuando no hay elección global.
-    clienteId: clienteGlobal ?? oQuitar(filtros.empresa),
+    clienteId: oQuitar(filtros.empresa),
     dateFrom: oQuitar(filtros.desde),
     dateTo: oQuitar(filtros.hasta),
     categoria: oQuitar(filtros.categoria),
@@ -299,7 +317,8 @@ function RouteComponent() {
       <InboxHeader
         filtros={filtros}
         onFiltro={setFiltros}
-        onLimpiar={() =>
+        onLimpiar={() => {
+          setClienteGlobal(null);
           setFiltros({
             estado: 'todas',
             credencial: '',
@@ -310,11 +329,10 @@ function RouteComponent() {
             hasta: '',
             soloConAdjunto: false,
             q: '',
-          })
-        }
+          });
+        }}
         credenciales={credenciales}
         categorias={resumen?.categorias ?? []}
-        empresas={empresas}
         resumen={{
           total: resumen?.total ?? 0,
           sinLeer: resumen?.sinLeer ?? 0,
