@@ -81,9 +81,13 @@ function compactar(vencimientos: Vencimiento[]): ItemAgenda[] {
 
 function subDeItem(item: ItemAgenda) {
   const concepto = nombreDeConcepto(item.concepto);
+  // Empresas DISTINTAS, no filas: un cliente con dos obligaciones el mismo
+  // día es una empresa, y el número tiene que coincidir con el checklist de
+  // la tarea que se abre al clickear.
+  const empresas = new Set(item.filas.map((f) => f.clienteId ?? f.cuit)).size;
   if (item.filas.length > 2)
     return {
-      texto: `${concepto} · ${item.filas.length} empresas`,
+      texto: `${concepto} · ${empresas} empresa${empresas !== 1 ? 's' : ''}`,
       mono: false,
     };
   const nombres = item.filas.map((f) => f.clienteNombre ?? f.cuit);

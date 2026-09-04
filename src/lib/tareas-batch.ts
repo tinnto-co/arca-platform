@@ -479,6 +479,10 @@ export async function autoGenerarTareasParaOrg(
     // de abajo fusionaría los sin-cliente con la tarea normal del período.
     const fuente = grupo.sinCliente ? 'automatica_sin_cliente' : 'automatica';
 
+    // La búsqueda tiene que espejar la clave del grupo (tipo + FECHA): si
+    // busca solo por período mensual, la primera tarea del mes absorbe todo
+    // el mes, el título («vence 7/9») miente, y el ítem de la agenda del
+    // Inicio abre una tarea que no se corresponde con el día clickeado.
     const [existing] = await db
       .select({ id: tarea.id })
       .from(tarea)
@@ -487,7 +491,8 @@ export async function autoGenerarTareasParaOrg(
           eq(tarea.orgId, orgId),
           eq(tarea.tipo, grupo.tipo),
           eq(tarea.periodo, grupo.periodo),
-          eq(tarea.fuente, fuente)
+          eq(tarea.fuente, fuente),
+          eq(tarea.venceAt, fechaDate)
         )
       )
       .limit(1);
