@@ -37,8 +37,10 @@ import {
 } from '@/components/ui/collapsible';
 import type { NcAlicuota } from '@/lib/iva-calc';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { updateIvaDeclaracionManual } from '@/actions/iva';
 import { Input } from '@/components/ui/input';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getComprobantesEnRango,
   getComprobanteStats,
@@ -914,6 +916,43 @@ export const RenderIvaResume = React.forwardRef<
     return B6 + B7 + B8 / 1.105 + B9 / 1.21 + B10 / 1.27 + B11;
   }, [debitoRows, ajusteVentas]);
   // Saldos mostrados: base + valores editables (Retenciones, Percepciones, Percepciones Aduaneras)
+  /**
+   * Los dos saldos que son DATO (no cálculo) se editan acá y persisten en la
+   * iva_declaracion del período ANTERIOR al resumen — que es de donde salen:
+   * «per. ant.» significa eso. Saldo técnico y 2° párrafo son derivados y
+   * siguen de solo lectura. La declaración real de AFIP los pisa cuando llega.
+   */
+  const periodoAnteriorMMYYYY = React.useMemo(() => {
+    if (!periodUsedForResumen) return null; // 'MM/YYYY'
+    const [mm, yyyy] = periodUsedForResumen.split('/').map(Number);
+    if (!mm || !yyyy) return null;
+    const d = new Date(Date.UTC(yyyy, mm - 2, 1));
+    return `${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+  }, [periodUsedForResumen]);
+
+  const queryClientSaldos = useQueryClient();
+  const guardarSaldo = useMutation({
+    mutationFn: (v: {
+      campo: 'saldoTecnicoFavor' | 'saldoLibreDisponibilidadFavor';
+      valor: number;
+    }) =>
+      updateIvaDeclaracionManual({
+        data: {
+          clienteId: selectedProfileId!,
+          periodo: periodoAnteriorMMYYYY!,
+          campo: v.campo,
+          valor: Math.abs(v.valor),
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Saldo guardado');
+      void queryClientSaldos.invalidateQueries({ queryKey: ['clientIva'] });
+      void queryClientSaldos.invalidateQueries({ queryKey: ['iva'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'No se pudo guardar'),
+  });
+  const saldosEditables = !!selectedProfileId && !!periodoAnteriorMMYYYY;
+
   const saldosParaTotal = React.useMemo(
     () => ({
       ...saldosYRetenciones,
@@ -1318,21 +1357,55 @@ export const RenderIvaResume = React.forwardRef<
           <div className="grid grid-cols-1 gap-px border-t border-[var(--arca-border)] bg-[var(--arca-border)] lg:grid-cols-3">
             {/* Saldos del período (read-only) */}
             <div className="bg-[var(--arca-surface)] px-7 py-6">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                Saldos del período
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                  Saldos del período
+                </div>
+                {saldosEditables && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--arca-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--arca-ink-3)]">
+                    <Pencil className="h-3 w-3" />
+                    Editable
+                  </span>
+                )}
               </div>
-              <SaldoRow
-                label="Saldo a favor per. ant."
-                value={saldosParaTotal['Saldo a Favor Per. Ant.']}
-              />
+              {saldosEditables ? (
+                <EditableSaldoRow
+                  label="Saldo a favor per. ant."
+                  value={saldosParaTotal['Saldo a Favor Per. Ant.']}
+                  onChange={(v) =>
+                    guardarSaldo.mutate({
+                      campo: 'saldoTecnicoFavor',
+                      valor: v,
+                    })
+                  }
+                />
+              ) : (
+                <SaldoRow
+                  label="Saldo a favor per. ant."
+                  value={saldosParaTotal['Saldo a Favor Per. Ant.']}
+                />
+              )}
               <SaldoRow
                 label="Saldo técnico"
                 value={saldosParaTotal['Saldo Técnico']}
               />
-              <SaldoRow
-                label="Saldo libre disp."
-                value={saldosParaTotal['Saldo Libre Disp.']}
-              />
+              {saldosEditables ? (
+                <EditableSaldoRow
+                  label="Saldo libre disp."
+                  value={saldosParaTotal['Saldo Libre Disp.']}
+                  onChange={(v) =>
+                    guardarSaldo.mutate({
+                      campo: 'saldoLibreDisponibilidadFavor',
+                      valor: v,
+                    })
+                  }
+                />
+              ) : (
+                <SaldoRow
+                  label="Saldo libre disp."
+                  value={saldosParaTotal['Saldo Libre Disp.']}
+                />
+              )}
               <SaldoRow
                 label="Saldo 2° párrafo"
                 value={saldosParaTotal['Saldo 2° Párrafo']}
