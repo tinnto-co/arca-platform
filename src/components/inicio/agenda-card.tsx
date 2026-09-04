@@ -173,7 +173,11 @@ export function AgendaCard({
   const generar = useMutation({
     mutationFn: () => autoGenerarTareas(),
     onSuccess: (r) => {
-      if (r.creadas > 0 || r.itemsAgregados > 0) {
+      if (
+        r.creadas > 0 ||
+        r.itemsAgregados > 0 ||
+        r.notificacionesCubiertas > 0
+      ) {
         const partes = [];
         if (r.creadas > 0)
           partes.push(
@@ -182,6 +186,10 @@ export function AgendaCard({
         if (r.itemsAgregados > 0)
           partes.push(
             `${r.itemsAgregados} vencimiento${r.itemsAgregados !== 1 ? 's' : ''} cubierto${r.itemsAgregados !== 1 ? 's' : ''}`
+          );
+        if (r.notificacionesCubiertas > 0)
+          partes.push(
+            `${r.notificacionesCubiertas} notificación${r.notificacionesCubiertas !== 1 ? 'es' : ''} crítica${r.notificacionesCubiertas !== 1 ? 's' : ''} con tarea`
           );
         toast.success(partes.join(' · '));
       } else {

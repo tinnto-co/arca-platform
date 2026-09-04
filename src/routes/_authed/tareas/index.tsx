@@ -341,7 +341,11 @@ function TareasPage() {
       refrescarCols();
       // Los tres ceros distintos del ticket TIN-1411, cada uno con su mensaje:
       // que «no hay nada» y «está roto» no se vean iguales es el punto.
-      if (r.creadas > 0 || r.itemsAgregados > 0) {
+      if (
+        r.creadas > 0 ||
+        r.itemsAgregados > 0 ||
+        r.notificacionesCubiertas > 0
+      ) {
         const meses = Object.entries(r.porPeriodo)
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([p, n]) => `${n} de ${nombreMes(p)}`)
@@ -355,6 +359,10 @@ function TareasPage() {
         if (r.itemsAgregados > 0)
           partes.push(
             `${r.itemsAgregados} vencimiento${r.itemsAgregados !== 1 ? 's' : ''} cubierto${r.itemsAgregados !== 1 ? 's' : ''}`
+          );
+        if (r.notificacionesCubiertas > 0)
+          partes.push(
+            `${r.notificacionesCubiertas} notificación${r.notificacionesCubiertas !== 1 ? 'es' : ''} crítica${r.notificacionesCubiertas !== 1 ? 's' : ''} con tarea`
           );
         toast.success(
           partes.join(' · ') +
