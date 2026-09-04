@@ -33,6 +33,7 @@ grant usage on schema public to arca_scrapper;
 grant select, insert, update, delete on
   comprobante, comprobante_alicuota,   -- comprobantes + su desglose por alícuota
   iva_declaracion,                     -- F2051
+  libro_iva,                           -- Libro de IVA Digital (job libro_iva)
   deuda, vencimiento,                  -- CCMA y calendario de AFIP
   notificacion, notificacion_adjunto,  -- e-Ventanilla
   documento,                           -- adjuntos (el binario va a R2)
@@ -88,7 +89,7 @@ begin
     'alerta','cliente','comprobante','credencial_afip','deuda','documento',
     'evento','job','notificacion','vencimiento',
     -- org vía cliente
-    'cliente_credencial','iva_declaracion','cliente_monotributo',
+    'cliente_credencial','iva_declaracion','libro_iva','cliente_monotributo',
     -- hijas, heredan del padre
     'comprobante_alicuota','job_log','notificacion_adjunto',
     -- escalas salariales: convenio tiene org_id, categoria y escala cuelgan de él

@@ -11,4 +11,5 @@ export const JOB_TYPE_LABELS: Record<JobType, string> = {
   escalas: 'Escalas salariales',
   tope_imponible: 'Tope imponible',
   monotributo: 'Monotributo',
+  libro_iva: 'Libro de IVA',
 };
