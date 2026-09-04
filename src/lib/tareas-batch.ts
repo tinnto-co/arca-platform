@@ -23,6 +23,7 @@ export type TipoTarea =
   | 'otro';
 
 const TAX_TO_TIPO: Record<string, TipoTarea> = {
+  suss: 'sueldos',
   iva: 'iva',
   'i.v.a': 'iva',
   iibb: 'iibb',
@@ -185,7 +186,11 @@ async function cubrirNotificacionesCriticas(
     .select({ id: tareaColumna.id })
     .from(tareaColumna)
     .where(
-      sql`${tareaColumna.orgId} = ${orgId} and coalesce(${tareaColumna.clave}, '') <> 'archivadas'`
+      // Solo columnas del estudio: las de sistema (Archivadas, Sin cliente)
+      // tienen clave, y su orden puede quedar por debajo del de las comunes
+      // cuando el estudio reordena el tablero — pasó: todo caía en «Sin
+      // cliente» porque «Por empezar» había quedado con orden 10000.
+      sql`${tareaColumna.orgId} = ${orgId} and ${tareaColumna.clave} is null`
     )
     .orderBy(asc(tareaColumna.orden), asc(tareaColumna.createdAt))
     .limit(1);
@@ -422,8 +427,11 @@ export async function autoGenerarTareasParaOrg(
   for (const v of resueltos) {
     const tipo = taxToTipo(v.tax);
     const esSinCliente = v.clienteId === null;
+    // La identidad del grupo es el trámite REAL (impuesto + concepto + día),
+    // no el tipo mapeado: casi todo cae en 'otro' y con esa clave SUSS y
+    // Aportes del mismo día terminaban mezclados en una sola tarea.
     // Los sin cliente se agrupan aparte: son otra tarea, en otra columna.
-    const key = `${tipo}|${v.dueDate}|${esSinCliente ? 'sc' : 'ok'}`;
+    const key = `${v.tax}|${v.concept}|${v.dueDate}|${esSinCliente ? 'sc' : 'ok'}`;
     if (!grupos.has(key)) {
       grupos.set(key, {
         tipo,
@@ -453,7 +461,11 @@ export async function autoGenerarTareasParaOrg(
     .select({ id: tareaColumna.id })
     .from(tareaColumna)
     .where(
-      sql`${tareaColumna.orgId} = ${orgId} and coalesce(${tareaColumna.clave}, '') <> 'archivadas'`
+      // Solo columnas del estudio: las de sistema (Archivadas, Sin cliente)
+      // tienen clave, y su orden puede quedar por debajo del de las comunes
+      // cuando el estudio reordena el tablero — pasó: todo caía en «Sin
+      // cliente» porque «Por empezar» había quedado con orden 10000.
+      sql`${tareaColumna.orgId} = ${orgId} and ${tareaColumna.clave} is null`
     )
     .orderBy(asc(tareaColumna.orden), asc(tareaColumna.createdAt))
     .limit(1);
@@ -479,20 +491,20 @@ export async function autoGenerarTareasParaOrg(
     // de abajo fusionaría los sin-cliente con la tarea normal del período.
     const fuente = grupo.sinCliente ? 'automatica_sin_cliente' : 'automatica';
 
-    // La búsqueda tiene que espejar la clave del grupo (tipo + FECHA): si
-    // busca solo por período mensual, la primera tarea del mes absorbe todo
-    // el mes, el título («vence 7/9») miente, y el ítem de la agenda del
-    // Inicio abre una tarea que no se corresponde con el día clickeado.
+    // La búsqueda tiene que espejar la clave del grupo. El título es la
+    // identidad completa (impuesto + concepto + día) y es determinístico,
+    // así que es la clave de dedup junto con período y fuente. Si buscara
+    // por tipo+período, la primera tarea del mes absorbía todo el mes; si
+    // buscara por tipo+fecha, SUSS y Aportes del mismo día se mezclaban.
     const [existing] = await db
       .select({ id: tarea.id })
       .from(tarea)
       .where(
         and(
           eq(tarea.orgId, orgId),
-          eq(tarea.tipo, grupo.tipo),
           eq(tarea.periodo, grupo.periodo),
           eq(tarea.fuente, fuente),
-          eq(tarea.venceAt, fechaDate)
+          eq(tarea.titulo, titulo)
         )
       )
       .limit(1);
