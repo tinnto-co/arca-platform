@@ -55,6 +55,12 @@ export const getInicio = createServerFn({ method: 'GET' })
     const hoy = new Date();
     const hoyStr = aFecha(hoy);
     const mesDesde = aFecha(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
+    // Vencidos: solo desde el mes pasado. Lo más viejo quedó resuelto fuera
+    // del sistema (mismo criterio que la autogeneración de tareas) y sumarlo
+    // convierte el chip en un número de terror sin acción posible.
+    const vencidosDesde = aFecha(
+      new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1)
+    );
     const mesHasta = aFecha(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0));
 
     // La tarea de un vencimiento se llega por tarea_cliente.vencimiento_id
@@ -86,11 +92,43 @@ export const getInicio = createServerFn({ method: 'GET' })
       )
       .orderBy(asc(vencimiento.venceAt), asc(vencimiento.impuesto));
 
+    // La lista detrás del chip «vencidos»: el chip la despliega en la misma
+    // agenda — mandarte al calendario del mes, donde lo pasado no se ve, era
+    // una promesa rota.
+    const vencidosLista = db
+      .select({
+        id: vencimiento.id,
+        impuesto: vencimiento.impuesto,
+        concepto: vencimiento.concepto,
+        venceAt: vencimiento.venceAt,
+        completado: sql<boolean>`false`,
+        clienteId: vencimiento.clienteId,
+        clienteNombre: cliente.razonSocial,
+        cuit: vencimiento.cuit,
+        tareaId: tareaCliente.tareaId,
+        asignadoNombre: user.name,
+      })
+      .from(vencimiento)
+      .leftJoin(cliente, eq(vencimiento.clienteId, cliente.id))
+      .leftJoin(tareaCliente, eq(tareaCliente.vencimientoId, vencimiento.id))
+      .leftJoin(tarea, eq(tarea.id, tareaCliente.tareaId))
+      .leftJoin(user, eq(user.id, tarea.asignadoA))
+      .where(
+        and(
+          eq(vencimiento.orgId, orgId),
+          gte(vencimiento.venceAt, vencidosDesde),
+          sql`${vencimiento.venceAt} < ${hoyStr}`,
+          isNull(vencimiento.completadoAt)
+        )
+      )
+      .orderBy(desc(vencimiento.venceAt), asc(vencimiento.impuesto))
+      .limit(400);
+
     const resumen = db
       .select({
         delMes: sql<number>`count(*) filter (where ${vencimiento.venceAt} >= ${mesDesde} and ${vencimiento.venceAt} <= ${mesHasta})::int`,
         empresasMes: sql<number>`count(distinct coalesce(${vencimiento.clienteId}::text, ${vencimiento.cuit})) filter (where ${vencimiento.venceAt} >= ${mesDesde} and ${vencimiento.venceAt} <= ${mesHasta})::int`,
-        vencidos: sql<number>`count(*) filter (where ${vencimiento.venceAt} < ${hoyStr} and ${vencimiento.completadoAt} is null)::int`,
+        vencidos: sql<number>`count(*) filter (where ${vencimiento.venceAt} >= ${vencidosDesde} and ${vencimiento.venceAt} < ${hoyStr} and ${vencimiento.completadoAt} is null)::int`,
       })
       .from(vencimiento)
       .where(eq(vencimiento.orgId, orgId));
@@ -150,7 +188,13 @@ export const getInicio = createServerFn({ method: 'GET' })
         and(
           eq(notificacion.orgId, orgId),
           isNull(notificacion.resueltaAt),
-          sql`${notificacion.categoria} in ('intimacion', 'inspeccion', 'requerimiento')`
+          sql`${notificacion.categoria} in ('intimacion', 'inspeccion', 'requerimiento')`,
+          // Lo viejo y leído se presume manejado fuera del sistema (el
+          // estudio no usa «resuelta»: 0 de 1186 en toda la historia). Riesgo
+          // real: lo del mes pasado en adelante, más toda no-leída de
+          // cualquier fecha — una intimación que nadie vio no prescribe.
+          sql`(coalesce(${notificacion.publicadaAt}, ${notificacion.createdAt}) >= ${vencidosDesde}::date
+               or not ${notificacion.leida})`
         )
       )
       .groupBy(notificacion.categoria);
@@ -214,18 +258,27 @@ export const getInicio = createServerFn({ method: 'GET' })
       .groupBy(tarea.asignadoA, user.name)
       .orderBy(desc(sql`count(*)`));
 
-    const [vencs, [res], sinTareaRows, notifs, monos, equipoRows] =
-      await Promise.all([
-        vencimientosPeriodo,
-        resumen,
-        sinTarea,
-        notificacionesRiesgo,
-        monotributistas,
-        equipo,
-      ]);
+    const [
+      vencs,
+      vencidosRows,
+      [res],
+      sinTareaRows,
+      notifs,
+      monos,
+      equipoRows,
+    ] = await Promise.all([
+      vencimientosPeriodo,
+      vencidosLista,
+      resumen,
+      sinTarea,
+      notificacionesRiesgo,
+      monotributistas,
+      equipo,
+    ]);
 
     return {
       vencimientos: vencs,
+      vencidos: vencidosRows,
       resumen: {
         delMes: res?.delMes ?? 0,
         empresasMes: res?.empresasMes ?? 0,
