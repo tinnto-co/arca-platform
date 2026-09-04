@@ -133,18 +133,22 @@ export function AgendaCard({
   filtro: [string, string] | null;
 }) {
   const [porTipo, setPorTipo] = useState(false);
+  // El chip «vencidos» despliega la lista acá mismo, no navega: los vencidos
+  // son fechas pasadas y el calendario abre en el presente — no se veían.
+  const [verVencidos, setVerVencidos] = useState(false);
   const [verTodos, setVerTodos] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const queryClient = useQueryClient();
 
   const items = useMemo(() => {
+    if (verVencidos) return compactar(datos.vencidos);
     const filas = filtro
       ? datos.vencimientos.filter(
           (v) => v.venceAt >= filtro[0] && v.venceAt <= filtro[1]
         )
       : datos.vencimientos;
     return compactar(filas);
-  }, [datos.vencimientos, filtro]);
+  }, [datos.vencimientos, datos.vencidos, filtro, verVencidos]);
 
   // Grupos: por día (default) o por tipo de trámite.
   const grupos = useMemo(() => {
@@ -199,7 +203,8 @@ export function AgendaCard({
       ),
   });
 
-  const limite = verTodos || filtro ? Infinity : VISIBLES_POR_DEFECTO;
+  const limite =
+    verTodos || filtro || verVencidos ? Infinity : VISIBLES_POR_DEFECTO;
   let mostrados = 0;
 
   return (
@@ -220,18 +225,27 @@ export function AgendaCard({
         </h2>
         <div className="flex items-center gap-1.5">
           {datos.resumen.vencidos > 0 && (
-            <Link
-              to="/vencimientos"
-              className="text-[11px] font-medium rounded-[20px]"
+            <button
+              type="button"
+              onClick={() => setVerVencidos((v) => !v)}
+              aria-pressed={verVencidos}
+              title={
+                verVencidos
+                  ? 'Volver a la agenda del período'
+                  : 'Ver los vencimientos vencidos sin completar (desde el mes pasado)'
+              }
+              className="text-[11px] font-medium rounded-[20px] cursor-pointer"
               style={{
-                background: 'var(--arca-accent-neg-bg)',
-                color: 'var(--arca-accent-neg-fg)',
+                background: verVencidos
+                  ? 'var(--arca-accent-neg)'
+                  : 'var(--arca-accent-neg-bg)',
+                color: verVencidos ? '#fff' : 'var(--arca-accent-neg-fg)',
                 padding: '4px 10px',
               }}
             >
               {datos.resumen.vencidos} vencido
               {datos.resumen.vencidos !== 1 ? 's' : ''}
-            </Link>
+            </button>
           )}
           {datos.sinTarea.length > 0 && (
             <span
@@ -284,9 +298,11 @@ export function AgendaCard({
           className="text-[12.5px] text-center"
           style={{ color: 'var(--arca-ink-4)', padding: '32px 20px' }}
         >
-          {filtro
-            ? 'No hay vencimientos ese día'
-            : 'No hay vencimientos en el período'}
+          {verVencidos
+            ? 'No hay vencimientos vencidos sin completar'
+            : filtro
+              ? 'No hay vencimientos ese día'
+              : 'No hay vencimientos en el período'}
         </p>
       ) : (
         grupos.map((grupo) => {
@@ -401,8 +417,8 @@ export function AgendaCard({
         }}
       >
         <span className="text-[11.5px]" style={{ color: 'var(--arca-ink-3)' }}>
-          Mostrando {Math.min(mostrados, items.length)} de {items.length} del
-          período
+          Mostrando {Math.min(mostrados, items.length)} de {items.length}
+          {verVencidos ? ' vencidos (desde el mes pasado)' : ' del período'}
         </span>
         {!verTodos && items.length > VISIBLES_POR_DEFECTO && !filtro ? (
           <button
