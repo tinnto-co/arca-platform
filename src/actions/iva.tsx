@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import {
   cliente,
   ivaDeclaracion,
+  libroIva,
   comprobante,
   comprobanteAlicuota,
   clienteMonotributo,
@@ -371,6 +372,49 @@ export const updateIvaDeclaracionManual = createServerFn({ method: 'POST' })
       });
 
     return { ok: true };
+  });
+
+/**
+ * Libro de IVA Digital del período (lo escribe el scrapper). Es la fuente
+ * autoritativa: incluye importaciones, despachos y no electrónicos que el
+ * estimado de comprobantes («Mis Comprobantes») no ve. Null si el libro del
+ * período todavía no se scrapeó — la ficha cae al estimado.
+ */
+export const getLibroIvaPeriodo = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clienteId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{2}\/\d{4}$/, 'Formato esperado: MM/YYYY'),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const periodo = periodoADate(ctx.data.periodo);
+
+    const [row] = await db
+      .select({
+        periodo: libroIva.periodo,
+        netoGravadoVentas: libroIva.netoGravadoVentas,
+        debitoFiscalVentas: libroIva.debitoFiscalVentas,
+        ncVentasNeto: libroIva.ncVentasNeto,
+        ncVentasIva: libroIva.ncVentasIva,
+        netoGravadoCompras: libroIva.netoGravadoCompras,
+        creditoFiscalCompras: libroIva.creditoFiscalCompras,
+        ncComprasNeto: libroIva.ncComprasNeto,
+        ncComprasIva: libroIva.ncComprasIva,
+      })
+      .from(libroIva)
+      .innerJoin(cliente, eq(cliente.id, libroIva.clienteId))
+      .where(
+        and(
+          eq(libroIva.clienteId, ctx.data.clienteId),
+          eq(cliente.orgId, orgId),
+          eq(libroIva.periodo, periodo)
+        )
+      )
+      .limit(1);
+
+    return row ?? null;
   });
 
 export const getClientesSinClasificar = createServerFn({

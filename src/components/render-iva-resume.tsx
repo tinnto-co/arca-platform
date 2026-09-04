@@ -38,7 +38,7 @@ import {
 import type { NcAlicuota } from '@/lib/iva-calc';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { updateIvaDeclaracionManual } from '@/actions/iva';
+import { getLibroIvaPeriodo, updateIvaDeclaracionManual } from '@/actions/iva';
 import { Input } from '@/components/ui/input';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -743,6 +743,25 @@ export const RenderIvaResume = React.forwardRef<
     enabled: !!representativeId,
   });
 
+  /**
+   * Libro de IVA Digital del período (scrapeado): la fuente AUTORITATIVA.
+   * El estimado de comprobantes solo ve las facturas electrónicas; el Libro
+   * incluye importaciones, despachos y no electrónicos. Cuando existe, las
+   * bandas Ventas/Compras lo prefieren y el estimado queda de contraste.
+   * Nota del scraper: es el borrador del mes en curso (uno abierto por vez).
+   */
+  const { data: libro } = useQuery({
+    queryKey: ['libro-iva', selectedProfileId, periodUsedForResumen],
+    queryFn: () =>
+      getLibroIvaPeriodo({
+        data: {
+          clienteId: selectedProfileId!,
+          periodo: periodUsedForResumen!,
+        },
+      }),
+    enabled: !!selectedProfileId && !!periodUsedForResumen,
+  });
+
   // Débito: Neto A y Total B desde stats (ventas tipo A y tipo B)
   const debitoRows = React.useMemo(() => {
     const netoA21 = invoiceStats?.netoA21 ?? mockData.debito['Neto A 21%'];
@@ -807,8 +826,13 @@ export const RenderIvaResume = React.forwardRef<
   // El IVA de ventas lo suma `calcularIva` desde el dato discriminado de cada
   // comprobante; acá ya no se recalcula desde los netos del desglose, que era
   // de donde salía una desviación de centavos contra AFIP.
-  const debitoVentas = invoiceStats?.debitoFiscalVentas ?? 0;
-  const ncRecibidasIva = invoiceStats?.ncRecibidasIva ?? 0;
+  const debitoVentas = libro
+    ? Number(libro.debitoFiscalVentas ?? 0)
+    : (invoiceStats?.debitoFiscalVentas ?? 0);
+  // NC recibidas (restituyen débito, art. 11): en el Libro viven en Compras.
+  const ncRecibidasIva = libro
+    ? Number(libro.ncComprasIva ?? 0)
+    : (invoiceStats?.ncRecibidasIva ?? 0);
   const debitoFiscalTotal = debitoVentas + ncRecibidasIva + ajusteVentas;
 
   /**
@@ -829,24 +853,34 @@ export const RenderIvaResume = React.forwardRef<
     return filas;
   }, [debitoVentas, ncRecibidasIva, ajusteVentas]);
 
-  const creditoFiscalTotal =
-    invoiceStats != null
+  const creditoFiscalTotal = libro
+    ? Number(libro.creditoFiscalCompras ?? 0) +
+      Number(libro.ncVentasIva ?? 0) -
+      Math.abs(ajusteCompras)
+    : invoiceStats != null
       ? (invoiceStats?.creditoFiscalCompras ?? 0) - Math.abs(ajusteCompras)
       : mockData.resumenCredito['Crédito Fiscal'];
 
   /** Espejo de `debitoOrigen`: las NC emitidas viven en el Libro de Ventas. */
   const creditoOrigen = React.useMemo<OrigenFila[]>(() => {
-    const libro = invoiceStats?.creditoFiscalComprasSinNc ?? 0;
-    const ncEmitidasIva = invoiceStats?.ncEmitidasIva ?? 0;
+    const libroCompras = libro
+      ? Number(libro.creditoFiscalCompras ?? 0)
+      : (invoiceStats?.creditoFiscalComprasSinNc ?? 0);
+    const ncEmitidasIva = libro
+      ? Number(libro.ncVentasIva ?? 0)
+      : (invoiceStats?.ncEmitidasIva ?? 0);
     const ajuste = -Math.abs(ajusteCompras);
-    if (libro === 0 && ncEmitidasIva === 0 && ajuste === 0) return [];
-    const filas: OrigenFila[] = [{ label: 'Libro IVA Compras', value: libro }];
+    if (libroCompras === 0 && ncEmitidasIva === 0 && ajuste === 0) return [];
+    const filas: OrigenFila[] = [
+      { label: 'Libro IVA Compras', value: libroCompras },
+    ];
     if (ncEmitidasIva !== 0)
       filas.push({ label: 'NC emitidas', value: ncEmitidasIva, suma: true });
     if (ajuste !== 0)
       filas.push({ label: 'Ajuste', value: ajuste, suma: true });
     return filas;
   }, [
+    libro,
     invoiceStats?.creditoFiscalComprasSinNc,
     invoiceStats?.ncEmitidasIva,
     ajusteCompras,
@@ -978,12 +1012,14 @@ export const RenderIvaResume = React.forwardRef<
 
   const isStatsLoading = loadingInvoices || loadingInvoiceStats;
 
-  const netoGravadoTotal =
-    invoiceStats != null && !isStatsLoading
+  const netoGravadoTotal = libro
+    ? Number(libro.netoGravadoVentas ?? 0) + ajusteVentas
+    : invoiceStats != null && !isStatsLoading
       ? netoGravadoVentas
       : mockData.resumenDebito['Neto Gravado'];
-  const netoGravadoComprasTotal =
-    invoiceStats != null && !isStatsLoading
+  const netoGravadoComprasTotal = libro
+    ? Number(libro.netoGravadoCompras ?? 0)
+    : invoiceStats != null && !isStatsLoading
       ? (invoiceStats?.netoGravadoCompras ??
         mockData.resumenCredito['Neto Gravado Compras'])
       : mockData.resumenCredito['Neto Gravado Compras'];
@@ -1194,7 +1230,14 @@ export const RenderIvaResume = React.forwardRef<
       <div className="grid grid-cols-1 gap-px bg-[var(--arca-border)] lg:grid-cols-3">
         {/* Ventas */}
         <div className="flex flex-col gap-3.5 bg-[var(--arca-surface)] px-6 py-5">
-          <MicroLabel>Ventas</MicroLabel>
+          <div className="flex items-center justify-between">
+            <MicroLabel>Ventas</MicroLabel>
+            {libro && (
+              <span className="inline-flex items-center rounded-full bg-[var(--arca-accent-pos-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--arca-accent-pos-fg)]">
+                Libro de IVA (AFIP)
+              </span>
+            )}
+          </div>
           <BandRow
             label="Neto gravado"
             value={netoGravadoTotal}
@@ -1212,7 +1255,14 @@ export const RenderIvaResume = React.forwardRef<
 
         {/* Compras */}
         <div className="flex flex-col gap-3.5 bg-[var(--arca-surface)] px-6 py-5">
-          <MicroLabel>Compras</MicroLabel>
+          <div className="flex items-center justify-between">
+            <MicroLabel>Compras</MicroLabel>
+            {libro && (
+              <span className="inline-flex items-center rounded-full bg-[var(--arca-accent-pos-bg)] px-2 py-0.5 text-[10px] font-medium text-[var(--arca-accent-pos-fg)]">
+                Libro de IVA (AFIP)
+              </span>
+            )}
+          </div>
           <BandRow
             label="Neto gravado"
             value={netoGravadoComprasTotal}
