@@ -188,7 +188,13 @@ export const getInicio = createServerFn({ method: 'GET' })
         and(
           eq(notificacion.orgId, orgId),
           isNull(notificacion.resueltaAt),
-          sql`${notificacion.categoria} in ('intimacion', 'inspeccion', 'requerimiento')`
+          sql`${notificacion.categoria} in ('intimacion', 'inspeccion', 'requerimiento')`,
+          // Lo viejo y leído se presume manejado fuera del sistema (el
+          // estudio no usa «resuelta»: 0 de 1186 en toda la historia). Riesgo
+          // real: lo del mes pasado en adelante, más toda no-leída de
+          // cualquier fecha — una intimación que nadie vio no prescribe.
+          sql`(coalesce(${notificacion.publicadaAt}, ${notificacion.createdAt}) >= ${vencidosDesde}::date
+               or not ${notificacion.leida})`
         )
       )
       .groupBy(notificacion.categoria);

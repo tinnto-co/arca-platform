@@ -163,8 +163,9 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
           borderColor: 'var(--arca-border)',
         }}
       >
-        Crítico: intimación sin responder hace +{DIAS_CRITICO} d, o monotributo
-        sobre el {UMBRAL_CRITICO * 100}% del tope
+        Crítico: intimación del mes pasado en adelante (o sin leer) sin
+        responder hace +{DIAS_CRITICO} d, o monotributo sobre el{' '}
+        {UMBRAL_CRITICO * 100}% del tope
       </p>
 
       {filas.length > 0 && (
