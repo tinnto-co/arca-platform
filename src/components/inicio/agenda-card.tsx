@@ -45,6 +45,8 @@ interface ItemAgenda {
   asignados: string[];
   sinTarea: boolean;
   completado: boolean;
+  /** La tarea del tablero que cubre estos vencimientos (para el click). */
+  tareaId: string | null;
 }
 
 /** Un trámite que vence el mismo día para varias empresas es UN ítem. */
@@ -63,6 +65,7 @@ function compactar(vencimientos: Vencimiento[]): ItemAgenda[] {
         asignados: [],
         sinTarea: false,
         completado: true,
+        tareaId: null,
       };
       porClave.set(clave, item);
     }
@@ -71,6 +74,7 @@ function compactar(vencimientos: Vencimiento[]): ItemAgenda[] {
       item.asignados.push(v.asignadoNombre);
     if (!v.tareaId && !v.completado) item.sinTarea = true;
     if (!v.completado) item.completado = false;
+    if (v.tareaId && !item.tareaId) item.tareaId = v.tareaId;
   }
   return [...porClave.values()];
 }
@@ -353,16 +357,15 @@ export function AgendaCard({
               {visibles.map((item) => {
                 const tile = tileDeImpuesto(item.impuesto);
                 const sub = subDeItem(item);
-                return (
-                  <div
-                    key={item.clave}
-                    className="flex items-center justify-between gap-4 border-b transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
-                    style={{
-                      padding: '14px 20px',
-                      borderColor: 'var(--arca-border)',
-                      opacity: item.completado ? 0.55 : 1,
-                    }}
-                  >
+                const claseFila =
+                  'flex items-center justify-between gap-4 border-b transition-colors duration-150 hover:bg-[var(--arca-surface-2)]';
+                const estiloFila = {
+                  padding: '14px 20px',
+                  borderColor: 'var(--arca-border)',
+                  opacity: item.completado ? 0.55 : 1,
+                };
+                const contenido = (
+                  <>
                     <div className="flex items-center gap-3 min-w-0">
                       <span
                         className="size-7 rounded-[7px] text-[10px] font-semibold flex items-center justify-center shrink-0"
@@ -406,6 +409,28 @@ export function AgendaCard({
                         {enDias(item.venceAt, hoy)}
                       </span>
                     </div>
+                  </>
+                );
+                // Con tarea, el ítem abre su tarea en el tablero; sin ella,
+                // no hay adónde ir (el chip Autogenerar la crea).
+                return item.tareaId ? (
+                  <Link
+                    key={item.clave}
+                    to="/tareas"
+                    search={{ tarea: item.tareaId }}
+                    title="Abrir la tarea en el tablero"
+                    className={claseFila}
+                    style={estiloFila}
+                  >
+                    {contenido}
+                  </Link>
+                ) : (
+                  <div
+                    key={item.clave}
+                    className={claseFila}
+                    style={estiloFila}
+                  >
+                    {contenido}
                   </div>
                 );
               })}
