@@ -636,6 +636,7 @@ interface RenderIvaResumeProps {
   /** Si hubo error al cargar la info de IVA ARCA. */
   clientIvaError?: unknown;
   /** Período fiscal del scrape (mes anterior) para resaltar coincidencia con ARCA. */
+  /** «MM/YYYY» del mes que se mira (período de operaciones), igual que dateRange. */
   periodUsedForResumen?: string | null;
 }
 
@@ -1219,10 +1220,12 @@ export const RenderIvaResume = React.forwardRef<
             className: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
           };
 
+  // La DDJJ presentada es a mes vencido: para el resumen de agosto, la
+  // declaración «que coincide» es la de julio (el período anterior).
   const arcaMatches =
     !!clientIvaCredit?.data &&
-    !!periodUsedForResumen &&
-    clientIvaCredit.data.periodoFiscal === periodUsedForResumen;
+    !!periodoAnteriorMMYYYY &&
+    clientIvaCredit.data.periodoFiscal === periodoAnteriorMMYYYY;
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--arca-border-strong)] bg-[var(--arca-surface)]">

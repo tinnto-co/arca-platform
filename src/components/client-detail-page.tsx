@@ -250,16 +250,6 @@ const MetricDelta = ({
   );
 };
 
-/** Período "MM/YYYY" del scrape que alimenta el resumen (mes anterior al elegido). Ej: usuario elige dic/25 → "11/2025". */
-function getPeriodUsedForResumen(from: Date | undefined): string | null {
-  if (!from) return null;
-  const d = new Date(from.getFullYear(), from.getMonth(), 1);
-  const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
-  const mm = String(prev.getMonth() + 1).padStart(2, '0');
-  const yyyy = prev.getFullYear();
-  return `${mm}/${yyyy}`;
-}
-
 /** Período "MM/YYYY" del mes que representa la fecha (ej. 1 feb 2026 → "02/2026"). Es el período del resumen que ve el usuario. */
 function getResumenPeriodMMYYYY(from: Date | undefined): string | null {
   if (!from) return null;
@@ -616,9 +606,16 @@ export function RepresentativeDetailPage({
     return getMonthBounds(y, m);
   }, [multilateralPeriod, multilateralSelectedYear, multilateralSelectedMonth]);
 
-  /** Período fiscal del scrape que alimenta el resumen (mes anterior al elegido en el calendario). */
+  /**
+   * Período del resumen = el MES ELEGIDO en el picker (período de
+   * operaciones): en agosto se ven los movimientos de agosto. Antes restaba
+   * un mes y la etiqueta «Septiembre» mostraba el libro de agosto — el
+   * estudio lo marcó apenas entró el Libro de IVA. La DDJJ presentada sigue
+   * siendo a mes vencido, pero ese corrimiento lo aplica getClienteIvaCredit
+   * por su cuenta: acá va el mes que se mira.
+   */
   const periodUsedForResumen = useMemo(
-    () => getPeriodUsedForResumen(ivaResumenDateRange.from),
+    () => getResumenPeriodMMYYYY(ivaResumenDateRange.from),
     [ivaResumenDateRange.from]
   );
 
