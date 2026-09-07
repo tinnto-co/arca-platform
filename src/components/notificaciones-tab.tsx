@@ -1,5 +1,6 @@
 import { Loader2, Info, Lock } from 'lucide-react';
 import { toast } from 'sonner';
+import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import { useQueryClient } from '@tanstack/react-query';
 import { scrapSingleJob } from '@/actions/client';
 import { cn } from '@/lib/utils';
@@ -23,12 +24,15 @@ interface NotificacionesTabProps {
   setScrapingSection: (
     s: 'iva' | 'deudas' | 'vencimientos' | 'facturas' | 'notificaciones' | null
   ) => void;
-  lastNotificacionesJob: {
-    createdAt?: string | Date;
-    success?: boolean;
-    failedReason?: string | null;
-    notificationFetchWarning?: string | null;
-  } | null | undefined;
+  lastNotificacionesJob:
+    | {
+        createdAt?: string | Date;
+        success?: boolean;
+        failedReason?: string | null;
+        notificationFetchWarning?: string | null;
+      }
+    | null
+    | undefined;
 }
 
 export function NotificacionesTab({
@@ -84,7 +88,7 @@ export function NotificacionesTab({
             <span className="relative group">
               <Info className="h-4 w-4 text-[#c0392b] cursor-help" />
               <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
-                {lastNotificacionesJob!.failedReason}
+                {friendlyFailedReason(lastNotificacionesJob.failedReason)}
               </span>
             </span>
           )}
@@ -112,7 +116,10 @@ export function NotificacionesTab({
             setScrapingSection('notificaciones');
             try {
               await scrapSingleJob({
-                data: { credencialId: representativeId, jobType: 'notificaciones' },
+                data: {
+                  credencialId: representativeId,
+                  jobType: 'notificaciones',
+                },
               });
               await queryClient.invalidateQueries({
                 queryKey: ['clientNotifications', orgKey, representativeId],

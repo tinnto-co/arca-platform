@@ -10,6 +10,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import {
   Select,
   SelectContent,
@@ -159,11 +160,8 @@ export function DeudasTab({
 
   // ── Mutation ──
   const updateMutation = useMutation({
-    mutationFn: (vars: {
-      id: string;
-      estado: DebtStatus;
-      intimada: boolean;
-    }) => updateDeudaEstado({ data: vars }),
+    mutationFn: (vars: { id: string; estado: DebtStatus; intimada: boolean }) =>
+      updateDeudaEstado({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['representativeDebts', representativeId],
@@ -452,14 +450,16 @@ export function DeudasTab({
             lastDeudaJob.failedReason && (
               <span
                 className="relative group flex items-center gap-1"
-                title={lastDeudaJob.failedReason}
+                title={
+                  friendlyFailedReason(lastDeudaJob.failedReason) ?? undefined
+                }
               >
                 <AlertTriangle className="h-4 w-4 text-[#c0392b] cursor-help" />
                 <span className="text-[12px] text-[#c0392b] max-w-[280px] truncate hidden sm:block">
-                  {lastDeudaJob.failedReason}
+                  {friendlyFailedReason(lastDeudaJob.failedReason)}
                 </span>
                 <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
-                  {lastDeudaJob.failedReason}
+                  {friendlyFailedReason(lastDeudaJob.failedReason)}
                 </span>
               </span>
             )}
@@ -548,7 +548,7 @@ export function DeudasTab({
         <span className="font-semibold text-[#12131A]">
           {filteredDebts.length} mostradas
         </span>{' '}
-        · {(debts as Debt[]).length} totales
+        · {debts.length} totales
       </div>
 
       {/* ── Table ── */}

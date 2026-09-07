@@ -82,6 +82,7 @@ import {
 } from '@/actions/client-portal';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
+import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import {
   Clock,
   CalendarCheck,
@@ -2545,7 +2546,10 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-destructive'
                         )}
-                        title={lastDeudaJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(lastDeudaJob.failedReason) ??
+                          undefined
+                        }
                       >
                         {formatLastUpdateAt(lastDeudaJob.createdAt)}
                       </span>
@@ -2559,7 +2563,7 @@ export function RepresentativeDetailPage({
                     !lastDeudaJob.success &&
                     lastDeudaJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastDeudaJob.failedReason}
+                        {friendlyFailedReason(lastDeudaJob.failedReason)}
                       </p>
                     )}
                 </div>
@@ -3137,7 +3141,11 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)] font-medium'
                             : 'text-destructive'
                         }
-                        title={lastVencimientosJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(
+                            lastVencimientosJob.failedReason
+                          ) ?? undefined
+                        }
                       >
                         {formatLastUpdateAt(lastVencimientosJob.createdAt)}
                       </span>
@@ -3149,7 +3157,7 @@ export function RepresentativeDetailPage({
                     !lastVencimientosJob.success &&
                     lastVencimientosJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastVencimientosJob.failedReason}
+                        {friendlyFailedReason(lastVencimientosJob.failedReason)}
                       </p>
                     )}
                 </div>
@@ -3401,7 +3409,11 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)] font-medium'
                             : 'text-destructive'
                         }
-                        title={lastNotificacionesJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(
+                            lastNotificacionesJob.failedReason
+                          ) ?? undefined
+                        }
                       >
                         {formatLastUpdateAt(lastNotificacionesJob.createdAt)}
                       </span>
@@ -3413,7 +3425,9 @@ export function RepresentativeDetailPage({
                     !lastNotificacionesJob.success &&
                     lastNotificacionesJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastNotificacionesJob.failedReason}
+                        {friendlyFailedReason(
+                          lastNotificacionesJob.failedReason
+                        )}
                       </p>
                     )}
                   {lastNotificacionesJob?.notificationFetchWarning && (
@@ -3531,7 +3545,11 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)] font-medium'
                             : 'text-destructive'
                         }
-                        title={lastComprobantesJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(
+                            lastComprobantesJob.failedReason
+                          ) ?? undefined
+                        }
                       >
                         {formatLastUpdateAt(lastComprobantesJob.createdAt)}
                       </span>
@@ -3543,7 +3561,7 @@ export function RepresentativeDetailPage({
                     !lastComprobantesJob.success &&
                     lastComprobantesJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastComprobantesJob.failedReason}
+                        {friendlyFailedReason(lastComprobantesJob.failedReason)}
                       </p>
                     )}
                 </div>
@@ -4485,7 +4503,10 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)] font-medium'
                             : 'text-destructive'
                         }
-                        title={lastIvaJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(lastIvaJob.failedReason) ??
+                          undefined
+                        }
                       >
                         {formatLastUpdateAt(lastIvaJob.createdAt)}
                       </span>
@@ -4497,7 +4518,7 @@ export function RepresentativeDetailPage({
                     !lastIvaJob.success &&
                     lastIvaJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastIvaJob.failedReason}
+                        {friendlyFailedReason(lastIvaJob.failedReason)}
                       </p>
                     )}
                 </div>

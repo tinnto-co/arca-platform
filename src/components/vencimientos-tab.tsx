@@ -13,16 +13,14 @@ import {
   ListFilter,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
 } from '@/components/ui/select';
-import {
-  getCredencialVencimientos,
-  scrapSingleJob,
-} from '@/actions/client';
+import { getCredencialVencimientos, scrapSingleJob } from '@/actions/client';
 import { cn } from '@/lib/utils';
 import { periodoLegible } from '@/lib/periodo';
 
@@ -148,7 +146,13 @@ export function VencimientosTab({
       }
     }
 
-    return { futureCount, overdueCount, next30Count, nextDueDateValue, nextDueDateTax };
+    return {
+      futureCount,
+      overdueCount,
+      next30Count,
+      nextDueDateValue,
+      nextDueDateTax,
+    };
   }, [dueDates]);
 
   // ── Unique impuesto options ──
@@ -219,7 +223,9 @@ export function VencimientosTab({
       ]);
       toast.success('Vencimientos actualizados correctamente');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error al actualizar vencimientos');
+      toast.error(
+        err instanceof Error ? err.message : 'Error al actualizar vencimientos'
+      );
       queryClient.invalidateQueries({ queryKey: ['lastVencimientosJob'] });
     } finally {
       setScrapingSection(null);
@@ -278,7 +284,8 @@ export function VencimientosTab({
     <div
       className="bg-[#F7F6F2] border border-[#DFDCD3] rounded-2xl overflow-hidden"
       style={{
-        boxShadow: '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)',
+        boxShadow:
+          '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)',
       }}
     >
       {/* ── Toolbar ── */}
@@ -290,7 +297,9 @@ export function VencimientosTab({
               <span
                 className={cn(
                   'font-bold',
-                  lastVencimientosJob.success ? 'text-[#2f7d55]' : 'text-destructive'
+                  lastVencimientosJob.success
+                    ? 'text-[#2f7d55]'
+                    : 'text-destructive'
                 )}
               >
                 {formatLastUpdateAt(lastVencimientosJob.createdAt)}
@@ -304,11 +313,14 @@ export function VencimientosTab({
             lastVencimientosJob.failedReason && (
               <span
                 className="relative group"
-                title={lastVencimientosJob.failedReason}
+                title={
+                  friendlyFailedReason(lastVencimientosJob.failedReason) ??
+                  undefined
+                }
               >
                 <Info className="h-4 w-4 text-destructive cursor-help" />
                 <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
-                  {lastVencimientosJob.failedReason}
+                  {friendlyFailedReason(lastVencimientosJob.failedReason)}
                 </span>
               </span>
             )}
@@ -337,7 +349,12 @@ export function VencimientosTab({
           <div className="flex items-center gap-[7px] mb-[14px]">
             <Calendar
               className="shrink-0"
-              style={{ width: 15, height: 15, stroke: '#3E404A', strokeWidth: 1.8 }}
+              style={{
+                width: 15,
+                height: 15,
+                stroke: '#3E404A',
+                strokeWidth: 1.8,
+              }}
             />
             <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
               Vencimientos Futuros
@@ -349,7 +366,9 @@ export function VencimientosTab({
           >
             {isLoading ? '—' : dueDateStats.futureCount}
           </div>
-          <div className="text-[12px] text-[#9B9CA3] mt-[6px]">Próximos vencimientos</div>
+          <div className="text-[12px] text-[#9B9CA3] mt-[6px]">
+            Próximos vencimientos
+          </div>
         </div>
 
         {/* 2. Vencimientos vencidos */}
@@ -357,7 +376,12 @@ export function VencimientosTab({
           <div className="flex items-center gap-[7px] mb-[14px]">
             <CalendarX2
               className="shrink-0"
-              style={{ width: 15, height: 15, stroke: '#3E404A', strokeWidth: 1.8 }}
+              style={{
+                width: 15,
+                height: 15,
+                stroke: '#3E404A',
+                strokeWidth: 1.8,
+              }}
             />
             <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
               Vencimientos Vencidos
@@ -369,7 +393,9 @@ export function VencimientosTab({
           >
             {isLoading ? '—' : dueDateStats.overdueCount}
           </div>
-          <div className="text-[12px] text-[#c0392b] mt-[6px]">Requieren atención</div>
+          <div className="text-[12px] text-[#c0392b] mt-[6px]">
+            Requieren atención
+          </div>
         </div>
 
         {/* 3. Próximo vencimiento */}
@@ -377,7 +403,12 @@ export function VencimientosTab({
           <div className="flex items-center gap-[7px] mb-[14px]">
             <Clock
               className="shrink-0"
-              style={{ width: 15, height: 15, stroke: '#3E404A', strokeWidth: 1.8 }}
+              style={{
+                width: 15,
+                height: 15,
+                stroke: '#3E404A',
+                strokeWidth: 1.8,
+              }}
             />
             <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
               Próximo Vencimiento
@@ -403,7 +434,12 @@ export function VencimientosTab({
           <div className="flex items-center gap-[7px] mb-[14px]">
             <Activity
               className="shrink-0"
-              style={{ width: 15, height: 15, stroke: '#3E404A', strokeWidth: 1.8 }}
+              style={{
+                width: 15,
+                height: 15,
+                stroke: '#3E404A',
+                strokeWidth: 1.8,
+              }}
             />
             <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
               Próximos 30 Días
@@ -415,7 +451,9 @@ export function VencimientosTab({
           >
             {isLoading ? '—' : dueDateStats.next30Count}
           </div>
-          <div className="text-[12px] text-[#9B9CA3] mt-[6px]">Vencimientos del mes</div>
+          <div className="text-[12px] text-[#9B9CA3] mt-[6px]">
+            Vencimientos del mes
+          </div>
         </div>
       </div>
 
@@ -490,7 +528,8 @@ export function VencimientosTab({
         <div
           className="grid items-center px-6 h-12 bg-[#0B1730] text-[#E7EAF2] text-[12px] font-semibold tracking-[0.04em] uppercase"
           style={{
-            gridTemplateColumns: '150px 1.1fr 130px 96px 70px 118px 1.5fr 110px',
+            gridTemplateColumns:
+              '150px 1.1fr 130px 96px 70px 118px 1.5fr 110px',
           }}
         >
           <div>Impuesto</div>
@@ -521,7 +560,8 @@ export function VencimientosTab({
                 key={dd.id}
                 className="grid items-center px-6 py-[13px] border-b border-[#ECEAE3] hover:bg-[#FBFAF6] transition-[background] duration-[120ms]"
                 style={{
-                  gridTemplateColumns: '150px 1.1fr 130px 96px 70px 118px 1.5fr 110px',
+                  gridTemplateColumns:
+                    '150px 1.1fr 130px 96px 70px 118px 1.5fr 110px',
                 }}
               >
                 {/* Impuesto */}
@@ -550,7 +590,12 @@ export function VencimientosTab({
                 </div>
 
                 {/* Vencimiento */}
-                <div className={cn('text-[13.5px] tabular-nums truncate pr-2', getDueDateColor(dd))}>
+                <div
+                  className={cn(
+                    'text-[13.5px] tabular-nums truncate pr-2',
+                    getDueDateColor(dd)
+                  )}
+                >
                   {formatDueDate(dd.venceAt)}
                 </div>
 
@@ -639,7 +684,9 @@ export function VencimientosTab({
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'
             )}
-            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+            onClick={() =>
+              setCurrentPage(Math.min(totalPages, currentPage + 1))
+            }
             disabled={currentPage === totalPages}
           >
             Siguiente

@@ -38,6 +38,7 @@ import {
 import type { NcAlicuota } from '@/lib/iva-calc';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import { getLibroIvaPeriodo, updateIvaDeclaracionManual } from '@/actions/iva';
 import { estadoLibroIva } from '@/lib/libro-iva-estado';
 import { Input } from '@/components/ui/input';
@@ -1415,7 +1416,9 @@ export const RenderIvaResume = React.forwardRef<
                     ? 'font-medium text-[var(--arca-accent-pos-fg)]'
                     : 'font-medium text-[var(--arca-accent-neg-fg)]'
                 }
-                title={lastScrapeJob.failedReason ?? undefined}
+                title={
+                  friendlyFailedReason(lastScrapeJob.failedReason) ?? undefined
+                }
               >
                 {new Date(lastScrapeJob.createdAt).toLocaleDateString('es-AR', {
                   day: '2-digit',
