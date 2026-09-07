@@ -9,7 +9,8 @@ create type job_type as enum (
   'iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch',
   'escalas',
   'tope_imponible',
-  'monotributo'
+  'monotributo',
+  'libro_iva'
 );
 create type job_status as enum ('pending', 'running', 'failed', 'finished');
 create type job_log_level as enum ('debug', 'info', 'warn', 'error');

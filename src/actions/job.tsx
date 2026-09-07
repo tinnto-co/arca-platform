@@ -45,6 +45,7 @@ const jobTypeEnum = z.enum([
   'escalas',
   'tope_imponible',
   'monotributo',
+  'libro_iva',
 ]);
 
 export type JobStatus = z.infer<typeof jobStatusEnum>;

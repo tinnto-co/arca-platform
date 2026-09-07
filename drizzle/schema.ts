@@ -56,7 +56,7 @@ export const impuesto = pgEnum("impuesto", ['iva', 'ganancias', 'ingresos_brutos
 export const indiceInflacionFuente = pgEnum("indice_inflacion_fuente", ['facpce_rt6', 'indec_ipc', 'manual'])
 export const jobLogLevel = pgEnum("job_log_level", ['debug', 'info', 'warn', 'error'])
 export const jobStatus = pgEnum("job_status", ['pending', 'running', 'failed', 'finished'])
-export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas', 'tope_imponible', 'monotributo'])
+export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas', 'tope_imponible', 'monotributo', 'libro_iva'])
 export const marcoContable = pgEnum("marco_contable", ['rt54', 'rt6'])
 export const movimientoDireccion = pgEnum("movimiento_direccion", ['ingreso', 'egreso'])
 export const notificacionSeveridad = pgEnum("notificacion_severidad", ['sin_clasificar', 'informativa', 'accion_requerida', 'urgente'])
@@ -1017,6 +1017,33 @@ export const notificacion = pgTable("notificacion", {
 		}).onDelete("set null"),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 	pgPolicy("portal", { as: "permissive", for: "all", to: ["arca_portal"] }),
+]);
+
+export const libroIva = pgTable("libro_iva", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	clienteId: uuid("cliente_id").notNull(),
+	periodo: date().notNull(),
+	netoGravadoVentas: numeric("neto_gravado_ventas", { precision: 15, scale:  2 }),
+	debitoFiscalVentas: numeric("debito_fiscal_ventas", { precision: 15, scale:  2 }),
+	ncVentasNeto: numeric("nc_ventas_neto", { precision: 15, scale:  2 }),
+	ncVentasIva: numeric("nc_ventas_iva", { precision: 15, scale:  2 }),
+	netoGravadoCompras: numeric("neto_gravado_compras", { precision: 15, scale:  2 }),
+	creditoFiscalCompras: numeric("credito_fiscal_compras", { precision: 15, scale:  2 }),
+	ncComprasNeto: numeric("nc_compras_neto", { precision: 15, scale:  2 }),
+	ncComprasIva: numeric("nc_compras_iva", { precision: 15, scale:  2 }),
+	fuente: datoFuente().default('scraper').notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.clienteId],
+			foreignColumns: [cliente.id],
+			name: "libro_iva_cliente_id_fkey"
+		}).onDelete("cascade"),
+	unique("libro_iva_cliente_id_periodo_key").on(table.clienteId, table.periodo),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app", "arca_scrapper"], using: sql`(EXISTS ( SELECT 1
+   FROM cliente c
+  WHERE ((c.id = libro_iva.cliente_id) AND (c.org_id = current_setting('app.org_id'::text, true)))))` }),
 ]);
 
 export const documento = pgTable("documento", {

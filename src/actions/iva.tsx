@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import {
   cliente,
   ivaDeclaracion,
+  libroIva,
   comprobante,
   comprobanteAlicuota,
   clienteMonotributo,
@@ -16,7 +17,7 @@ import {
   assertCanWrite,
 } from '@/actions/helpers';
 import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
-import { and, eq, asc, desc, isNull, sql } from 'drizzle-orm';
+import { and, eq, asc, desc, isNull, isNotNull, sql } from 'drizzle-orm';
 
 export const FISCAL_CONDITIONS = condicionIva.enumValues;
 
@@ -371,6 +372,74 @@ export const updateIvaDeclaracionManual = createServerFn({ method: 'POST' })
       });
 
     return { ok: true };
+  });
+
+/**
+ * Libro de IVA Digital del período (lo escribe el scrapper). Es la fuente
+ * autoritativa: incluye importaciones, despachos y no electrónicos que el
+ * estimado de comprobantes («Mis Comprobantes») no ve. Null si el libro del
+ * período todavía no se scrapeó — la ficha cae al estimado.
+ */
+export const getLibroIvaPeriodo = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clienteId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{2}\/\d{4}$/, 'Formato esperado: MM/YYYY'),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const periodo = periodoADate(ctx.data.periodo);
+
+    // El libro del período y, si existe, la DDJJ PRESENTADA del mismo
+    // período: cuando está presentada, manda sobre el libro y el estimado.
+    const [libroRows, declRows] = await Promise.all([
+      db
+        .select({
+          periodo: libroIva.periodo,
+          actualizadoAt: libroIva.updatedAt,
+          netoGravadoVentas: libroIva.netoGravadoVentas,
+          debitoFiscalVentas: libroIva.debitoFiscalVentas,
+          ncVentasNeto: libroIva.ncVentasNeto,
+          ncVentasIva: libroIva.ncVentasIva,
+          netoGravadoCompras: libroIva.netoGravadoCompras,
+          creditoFiscalCompras: libroIva.creditoFiscalCompras,
+          ncComprasNeto: libroIva.ncComprasNeto,
+          ncComprasIva: libroIva.ncComprasIva,
+        })
+        .from(libroIva)
+        .innerJoin(cliente, eq(cliente.id, libroIva.clienteId))
+        .where(
+          and(
+            eq(libroIva.clienteId, ctx.data.clienteId),
+            eq(cliente.orgId, orgId),
+            eq(libroIva.periodo, periodo)
+          )
+        )
+        .limit(1),
+      db
+        .select({
+          presentadaAt: ivaDeclaracion.presentadaAt,
+          debitoFiscal: ivaDeclaracion.debitoFiscal,
+          creditoFiscal: ivaDeclaracion.creditoFiscal,
+        })
+        .from(ivaDeclaracion)
+        .innerJoin(cliente, eq(cliente.id, ivaDeclaracion.clienteId))
+        .where(
+          and(
+            eq(ivaDeclaracion.clienteId, ctx.data.clienteId),
+            eq(cliente.orgId, orgId),
+            eq(ivaDeclaracion.periodo, periodo),
+            isNotNull(ivaDeclaracion.presentadaAt)
+          )
+        )
+        .limit(1),
+    ]);
+
+    return {
+      libro: libroRows[0] ?? null,
+      declaracion: declRows[0] ?? null,
+    };
   });
 
 export const getClientesSinClasificar = createServerFn({

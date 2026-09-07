@@ -176,6 +176,35 @@ comment on table iva_declaracion is
   'F2051 de AFIP (la DDJJ de IVA tal como la presentó el cliente). Es el dato de VERDAD contra el que se contrasta el IVA calculado desde comprobante — nunca se calcula ni se corrige acá.';
 comment on column iva_declaracion.periodo is 'Primer día del mes declarado.';
 
+-- El Libro de IVA Digital del período, tal como lo muestra AFIP. NO se mezcla
+-- con iva_declaracion: esa es la DDJJ presentada (F2051); esto es el Libro,
+-- que existe durante el mes. Totales sin desglose por alícuota, mapeo 1:1 de
+-- la Vista Previa del Portal IVA (validado contra el caso Artzeinu 08/2026).
+create table libro_iva (
+  id uuid primary key default gen_random_uuid(),
+  cliente_id uuid not null references cliente(id) on delete cascade,
+  periodo date not null,                    -- primer día del mes
+  -- Ventas (Libro IVA Ventas)
+  neto_gravado_ventas numeric(15,2),
+  debito_fiscal_ventas numeric(15,2),       -- "Débito Fiscal" del libro, sin restitución de NC
+  nc_ventas_neto numeric(15,2),             -- notas de crédito emitidas
+  nc_ventas_iva numeric(15,2),
+  -- Compras (Libro IVA Compras)
+  neto_gravado_compras numeric(15,2),
+  credito_fiscal_compras numeric(15,2),     -- "Crédito Fiscal" del libro, sin las NC recibidas
+  nc_compras_neto numeric(15,2),            -- notas de crédito recibidas
+  nc_compras_iva numeric(15,2),
+  fuente dato_fuente not null default 'scraper',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (cliente_id, periodo)
+);
+create trigger trg_set_updated_at before update on libro_iva
+  for each row execute function set_updated_at();
+
+comment on table libro_iva is
+  'Libro de IVA Digital de AFIP: los libros de Ventas y Compras consolidados del período, tal como los muestra AFIP. A diferencia de iva_declaracion (F2051 presentado), existe durante el mes y es la fuente autoritativa para conciliar contra el IVA calculado de comprobantes, que solo ve las facturas electrónicas.';
+
 -- ============================================================================
 -- OBLIGACIONES FISCALES (deuda y vencimientos)
 -- ============================================================================

@@ -70,13 +70,13 @@ begin
 end
 $do$;
 
--- ---------- Nivel 2: la org se resuelve por el cliente (10 tablas) ----------
+-- ---------- Nivel 2: la org se resuelve por el cliente (11 tablas) ----------
 do $do$
 declare t text;
 begin
   foreach t in array array[
     'acceso_usuario_cliente','cliente_credencial','cliente_cuenta','cliente_eecc_config',
-    'cliente_empleador_config','cliente_monotributo','iva_declaracion','periodo_contable',
+    'cliente_empleador_config','cliente_monotributo','iva_declaracion','libro_iva','periodo_contable',
     'proyeccion_impuesto','riesgo_snapshot'
   ] loop
     execute format('alter table %I enable row level security', t);

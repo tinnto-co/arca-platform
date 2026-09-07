@@ -37,8 +37,11 @@ import {
 } from '@/components/ui/collapsible';
 import type { NcAlicuota } from '@/lib/iva-calc';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { getLibroIvaPeriodo, updateIvaDeclaracionManual } from '@/actions/iva';
+import { estadoLibroIva } from '@/lib/libro-iva-estado';
 import { Input } from '@/components/ui/input';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getComprobantesEnRango,
   getComprobanteStats,
@@ -346,6 +349,41 @@ function DesgloseNcRow({
   );
 }
 
+/**
+ * Indicador de estado del Libro de IVA Digital, pedido explícito del estudio:
+ * de un vistazo se ve si el libro está vacío, cargando, completo o si ya
+ * manda la DDJJ presentada.
+ */
+function ChipLibro({ estado }: { estado: string }) {
+  const meta =
+    estado === 'definitivo'
+      ? {
+          texto: 'DDJJ presentada (AFIP)',
+          cls: 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]',
+        }
+      : estado === 'completo'
+        ? {
+            texto: 'Libro de IVA (AFIP)',
+            cls: 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]',
+          }
+        : estado === 'preliminar'
+          ? {
+              texto: 'Libro IVA: en carga',
+              cls: 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+            }
+          : {
+              texto: 'Libro IVA: no disponible',
+              cls: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-4)]',
+            };
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${meta.cls}`}
+    >
+      {meta.texto}
+    </span>
+  );
+}
+
 /** Fila read-only de la sección Saldos. */
 function SaldoRow({
   label,
@@ -634,6 +672,7 @@ interface RenderIvaResumeProps {
   /** Si hubo error al cargar la info de IVA ARCA. */
   clientIvaError?: unknown;
   /** Período fiscal del scrape (mes anterior) para resaltar coincidencia con ARCA. */
+  /** «MM/YYYY» del mes que se mira (período de operaciones), igual que dateRange. */
   periodUsedForResumen?: string | null;
 }
 
@@ -741,6 +780,25 @@ export const RenderIvaResume = React.forwardRef<
     enabled: !!representativeId,
   });
 
+  /**
+   * Libro de IVA Digital del período (scrapeado): la fuente AUTORITATIVA.
+   * El estimado de comprobantes solo ve las facturas electrónicas; el Libro
+   * incluye importaciones, despachos y no electrónicos. Cuando existe, las
+   * bandas Ventas/Compras lo prefieren y el estimado queda de contraste.
+   * Nota del scraper: es el borrador del mes en curso (uno abierto por vez).
+   */
+  const { data: libroInfo } = useQuery({
+    queryKey: ['libro-iva', selectedProfileId, periodUsedForResumen],
+    queryFn: () =>
+      getLibroIvaPeriodo({
+        data: {
+          clienteId: selectedProfileId!,
+          periodo: periodUsedForResumen!,
+        },
+      }),
+    enabled: !!selectedProfileId && !!periodUsedForResumen,
+  });
+
   // Débito: Neto A y Total B desde stats (ventas tipo A y tipo B)
   const debitoRows = React.useMemo(() => {
     const netoA21 = invoiceStats?.netoA21 ?? mockData.debito['Neto A 21%'];
@@ -800,13 +858,55 @@ export const RenderIvaResume = React.forwardRef<
     invoiceStats?.ncEmitidasNeto,
   ]);
 
+  /**
+   * Estado del Libro respecto del estimado. El libro es un borrador vivo:
+   * uno a medio cargar NO pisa el estimado de comprobantes (base confiable);
+   * se muestra como preview hasta estar completo. Con la DDJJ presentada,
+   * manda la DDJJ. La comparación es neto contra neto, sin ajustes manuales.
+   */
+  const libroRow = libroInfo?.libro ?? null;
+  const ddjjPresentada = libroInfo?.declaracion ?? null;
+  const estimadoVentasNeto = React.useMemo(() => {
+    const B6 = debitoRows['Neto A 21%'];
+    const B7 = debitoRows['Neto A 10,5%'];
+    const B8 = debitoRows['Total B 10,50%'];
+    const B9 = debitoRows['Total B 21%'];
+    const B10 = debitoRows['Total B 27%'];
+    return B6 + B7 + B8 / 1.105 + B9 / 1.21 + B10 / 1.27;
+  }, [debitoRows]);
+  const estadoLibro = estadoLibroIva({
+    libro: libroRow
+      ? {
+          netoVentas: Number(libroRow.netoGravadoVentas ?? 0),
+          netoCompras: Number(libroRow.netoGravadoCompras ?? 0),
+          debito: Number(libroRow.debitoFiscalVentas ?? 0),
+          credito: Number(libroRow.creditoFiscalCompras ?? 0),
+        }
+      : null,
+    ddjjPresentada: !!ddjjPresentada,
+    estimadoVentas: estimadoVentasNeto,
+    estimadoCompras: invoiceStats?.netoGravadoCompras ?? 0,
+  });
+  // Solo el libro COMPLETO reemplaza al estimado en las bandas.
+  const libro = estadoLibro === 'completo' ? libroRow : null;
+
   // Débito fiscal = IVA de ventas + restitución de NC recibidas + ajuste.
   //
   // El IVA de ventas lo suma `calcularIva` desde el dato discriminado de cada
   // comprobante; acá ya no se recalcula desde los netos del desglose, que era
   // de donde salía una desviación de centavos contra AFIP.
-  const debitoVentas = invoiceStats?.debitoFiscalVentas ?? 0;
-  const ncRecibidasIva = invoiceStats?.ncRecibidasIva ?? 0;
+  const debitoVentas = ddjjPresentada
+    ? Number(ddjjPresentada.debitoFiscal ?? 0)
+    : libro
+      ? Number(libro.debitoFiscalVentas ?? 0)
+      : (invoiceStats?.debitoFiscalVentas ?? 0);
+  // NC recibidas (restituyen débito, art. 11): en el Libro viven en Compras.
+  // La DDJJ ya las trae adentro de su débito.
+  const ncRecibidasIva = ddjjPresentada
+    ? 0
+    : libro
+      ? Number(libro.ncComprasIva ?? 0)
+      : (invoiceStats?.ncRecibidasIva ?? 0);
   const debitoFiscalTotal = debitoVentas + ncRecibidasIva + ajusteVentas;
 
   /**
@@ -818,7 +918,10 @@ export const RenderIvaResume = React.forwardRef<
     if (debitoVentas === 0 && ncRecibidasIva === 0 && ajusteVentas === 0)
       return [];
     const filas: OrigenFila[] = [
-      { label: 'Libro IVA Ventas', value: debitoVentas },
+      {
+        label: ddjjPresentada ? 'DDJJ presentada (F2051)' : 'Libro IVA Ventas',
+        value: debitoVentas,
+      },
     ];
     if (ncRecibidasIva !== 0)
       filas.push({ label: 'NC recibidas', value: ncRecibidasIva, suma: true });
@@ -827,24 +930,43 @@ export const RenderIvaResume = React.forwardRef<
     return filas;
   }, [debitoVentas, ncRecibidasIva, ajusteVentas]);
 
-  const creditoFiscalTotal =
-    invoiceStats != null
-      ? (invoiceStats?.creditoFiscalCompras ?? 0) - Math.abs(ajusteCompras)
-      : mockData.resumenCredito['Crédito Fiscal'];
+  const creditoFiscalTotal = ddjjPresentada
+    ? Number(ddjjPresentada.creditoFiscal ?? 0) - Math.abs(ajusteCompras)
+    : libro
+      ? Number(libro.creditoFiscalCompras ?? 0) +
+        Number(libro.ncVentasIva ?? 0) -
+        Math.abs(ajusteCompras)
+      : invoiceStats != null
+        ? (invoiceStats?.creditoFiscalCompras ?? 0) - Math.abs(ajusteCompras)
+        : mockData.resumenCredito['Crédito Fiscal'];
 
   /** Espejo de `debitoOrigen`: las NC emitidas viven en el Libro de Ventas. */
   const creditoOrigen = React.useMemo<OrigenFila[]>(() => {
-    const libro = invoiceStats?.creditoFiscalComprasSinNc ?? 0;
-    const ncEmitidasIva = invoiceStats?.ncEmitidasIva ?? 0;
+    const libroCompras = ddjjPresentada
+      ? Number(ddjjPresentada.creditoFiscal ?? 0)
+      : libro
+        ? Number(libro.creditoFiscalCompras ?? 0)
+        : (invoiceStats?.creditoFiscalComprasSinNc ?? 0);
+    const ncEmitidasIva = ddjjPresentada
+      ? 0
+      : libro
+        ? Number(libro.ncVentasIva ?? 0)
+        : (invoiceStats?.ncEmitidasIva ?? 0);
     const ajuste = -Math.abs(ajusteCompras);
-    if (libro === 0 && ncEmitidasIva === 0 && ajuste === 0) return [];
-    const filas: OrigenFila[] = [{ label: 'Libro IVA Compras', value: libro }];
+    if (libroCompras === 0 && ncEmitidasIva === 0 && ajuste === 0) return [];
+    const filas: OrigenFila[] = [
+      {
+        label: ddjjPresentada ? 'DDJJ presentada (F2051)' : 'Libro IVA Compras',
+        value: libroCompras,
+      },
+    ];
     if (ncEmitidasIva !== 0)
       filas.push({ label: 'NC emitidas', value: ncEmitidasIva, suma: true });
     if (ajuste !== 0)
       filas.push({ label: 'Ajuste', value: ajuste, suma: true });
     return filas;
   }, [
+    libro,
     invoiceStats?.creditoFiscalComprasSinNc,
     invoiceStats?.ncEmitidasIva,
     ajusteCompras,
@@ -914,6 +1036,43 @@ export const RenderIvaResume = React.forwardRef<
     return B6 + B7 + B8 / 1.105 + B9 / 1.21 + B10 / 1.27 + B11;
   }, [debitoRows, ajusteVentas]);
   // Saldos mostrados: base + valores editables (Retenciones, Percepciones, Percepciones Aduaneras)
+  /**
+   * Los dos saldos que son DATO (no cálculo) se editan acá y persisten en la
+   * iva_declaracion del período ANTERIOR al resumen — que es de donde salen:
+   * «per. ant.» significa eso. Saldo técnico y 2° párrafo son derivados y
+   * siguen de solo lectura. La declaración real de AFIP los pisa cuando llega.
+   */
+  const periodoAnteriorMMYYYY = React.useMemo(() => {
+    if (!periodUsedForResumen) return null; // 'MM/YYYY'
+    const [mm, yyyy] = periodUsedForResumen.split('/').map(Number);
+    if (!mm || !yyyy) return null;
+    const d = new Date(Date.UTC(yyyy, mm - 2, 1));
+    return `${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+  }, [periodUsedForResumen]);
+
+  const queryClientSaldos = useQueryClient();
+  const guardarSaldo = useMutation({
+    mutationFn: (v: {
+      campo: 'saldoTecnicoFavor' | 'saldoLibreDisponibilidadFavor';
+      valor: number;
+    }) =>
+      updateIvaDeclaracionManual({
+        data: {
+          clienteId: selectedProfileId!,
+          periodo: periodoAnteriorMMYYYY!,
+          campo: v.campo,
+          valor: Math.abs(v.valor),
+        },
+      }),
+    onSuccess: () => {
+      toast.success('Saldo guardado');
+      void queryClientSaldos.invalidateQueries({ queryKey: ['clientIva'] });
+      void queryClientSaldos.invalidateQueries({ queryKey: ['iva'] });
+    },
+    onError: (e: Error) => toast.error(e.message || 'No se pudo guardar'),
+  });
+  const saldosEditables = !!selectedProfileId && !!periodoAnteriorMMYYYY;
+
   const saldosParaTotal = React.useMemo(
     () => ({
       ...saldosYRetenciones,
@@ -939,12 +1098,17 @@ export const RenderIvaResume = React.forwardRef<
 
   const isStatsLoading = loadingInvoices || loadingInvoiceStats;
 
-  const netoGravadoTotal =
-    invoiceStats != null && !isStatsLoading
+  // En definitivo la DDJJ trae débito/crédito pero no netos: el libro (si
+  // hay) sigue siendo el mejor neto disponible.
+  const libroParaNetos = ddjjPresentada ? libroRow : libro;
+  const netoGravadoTotal = libroParaNetos
+    ? Number(libroParaNetos.netoGravadoVentas ?? 0) + ajusteVentas
+    : invoiceStats != null && !isStatsLoading
       ? netoGravadoVentas
       : mockData.resumenDebito['Neto Gravado'];
-  const netoGravadoComprasTotal =
-    invoiceStats != null && !isStatsLoading
+  const netoGravadoComprasTotal = libroParaNetos
+    ? Number(libroParaNetos.netoGravadoCompras ?? 0)
+    : invoiceStats != null && !isStatsLoading
       ? (invoiceStats?.netoGravadoCompras ??
         mockData.resumenCredito['Neto Gravado Compras'])
       : mockData.resumenCredito['Neto Gravado Compras'];
@@ -1144,10 +1308,12 @@ export const RenderIvaResume = React.forwardRef<
             className: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
           };
 
+  // La DDJJ presentada es a mes vencido: para el resumen de agosto, la
+  // declaración «que coincide» es la de julio (el período anterior).
   const arcaMatches =
     !!clientIvaCredit?.data &&
-    !!periodUsedForResumen &&
-    clientIvaCredit.data.periodoFiscal === periodUsedForResumen;
+    !!periodoAnteriorMMYYYY &&
+    clientIvaCredit.data.periodoFiscal === periodoAnteriorMMYYYY;
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--arca-border-strong)] bg-[var(--arca-surface)]">
@@ -1155,7 +1321,10 @@ export const RenderIvaResume = React.forwardRef<
       <div className="grid grid-cols-1 gap-px bg-[var(--arca-border)] lg:grid-cols-3">
         {/* Ventas */}
         <div className="flex flex-col gap-3.5 bg-[var(--arca-surface)] px-6 py-5">
-          <MicroLabel>Ventas</MicroLabel>
+          <div className="flex items-center justify-between">
+            <MicroLabel>Ventas</MicroLabel>
+            <ChipLibro estado={estadoLibro} />
+          </div>
           <BandRow
             label="Neto gravado"
             value={netoGravadoTotal}
@@ -1168,12 +1337,23 @@ export const RenderIvaResume = React.forwardRef<
               loading={isStatsLoading}
             />
             <OrigenBloque filas={debitoOrigen} loading={isStatsLoading} />
+            {estadoLibro === 'preliminar' && libroRow && (
+              <p className="text-[11px]" style={{ color: 'var(--arca-ink-4)' }}>
+                Libro IVA en carga: neto{' '}
+                {fmtCurrency(Number(libroRow.netoGravadoVentas ?? 0))} · débito{' '}
+                {fmtCurrency(Number(libroRow.debitoFiscalVentas ?? 0))} — no
+                reemplaza al estimado hasta estar completo
+              </p>
+            )}
           </div>
         </div>
 
         {/* Compras */}
         <div className="flex flex-col gap-3.5 bg-[var(--arca-surface)] px-6 py-5">
-          <MicroLabel>Compras</MicroLabel>
+          <div className="flex items-center justify-between">
+            <MicroLabel>Compras</MicroLabel>
+            <ChipLibro estado={estadoLibro} />
+          </div>
           <BandRow
             label="Neto gravado"
             value={netoGravadoComprasTotal}
@@ -1186,6 +1366,15 @@ export const RenderIvaResume = React.forwardRef<
               loading={isStatsLoading}
             />
             <OrigenBloque filas={creditoOrigen} loading={isStatsLoading} />
+            {estadoLibro === 'preliminar' && libroRow && (
+              <p className="text-[11px]" style={{ color: 'var(--arca-ink-4)' }}>
+                Libro IVA en carga: neto{' '}
+                {fmtCurrency(Number(libroRow.netoGravadoCompras ?? 0))} ·
+                crédito{' '}
+                {fmtCurrency(Number(libroRow.creditoFiscalCompras ?? 0))} — no
+                reemplaza al estimado hasta estar completo
+              </p>
+            )}
           </div>
         </div>
 
@@ -1318,21 +1507,55 @@ export const RenderIvaResume = React.forwardRef<
           <div className="grid grid-cols-1 gap-px border-t border-[var(--arca-border)] bg-[var(--arca-border)] lg:grid-cols-3">
             {/* Saldos del período (read-only) */}
             <div className="bg-[var(--arca-surface)] px-7 py-6">
-              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                Saldos del período
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                  Saldos del período
+                </div>
+                {saldosEditables && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--arca-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--arca-ink-3)]">
+                    <Pencil className="h-3 w-3" />
+                    Editable
+                  </span>
+                )}
               </div>
-              <SaldoRow
-                label="Saldo a favor per. ant."
-                value={saldosParaTotal['Saldo a Favor Per. Ant.']}
-              />
+              {saldosEditables ? (
+                <EditableSaldoRow
+                  label="Saldo a favor per. ant."
+                  value={saldosParaTotal['Saldo a Favor Per. Ant.']}
+                  onChange={(v) =>
+                    guardarSaldo.mutate({
+                      campo: 'saldoTecnicoFavor',
+                      valor: v,
+                    })
+                  }
+                />
+              ) : (
+                <SaldoRow
+                  label="Saldo a favor per. ant."
+                  value={saldosParaTotal['Saldo a Favor Per. Ant.']}
+                />
+              )}
               <SaldoRow
                 label="Saldo técnico"
                 value={saldosParaTotal['Saldo Técnico']}
               />
-              <SaldoRow
-                label="Saldo libre disp."
-                value={saldosParaTotal['Saldo Libre Disp.']}
-              />
+              {saldosEditables ? (
+                <EditableSaldoRow
+                  label="Saldo libre disp."
+                  value={saldosParaTotal['Saldo Libre Disp.']}
+                  onChange={(v) =>
+                    guardarSaldo.mutate({
+                      campo: 'saldoLibreDisponibilidadFavor',
+                      valor: v,
+                    })
+                  }
+                />
+              ) : (
+                <SaldoRow
+                  label="Saldo libre disp."
+                  value={saldosParaTotal['Saldo Libre Disp.']}
+                />
+              )}
               <SaldoRow
                 label="Saldo 2° párrafo"
                 value={saldosParaTotal['Saldo 2° Párrafo']}
