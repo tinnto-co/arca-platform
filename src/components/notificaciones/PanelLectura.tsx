@@ -47,6 +47,7 @@ import {
   asuntoYPreview,
   fechaHoraLarga,
   iniciales,
+  categoriaLabel,
 } from './utils';
 
 interface Props {
@@ -321,7 +322,8 @@ export function PanelLectura({
             </h2>
 
             <p className="mt-1 text-[11.5px] text-[var(--arca-ink-3)]">
-              {n.categoria ?? 'AFIP'} · Domicilio fiscal electrónico · login{' '}
+              {n.categoria ? categoriaLabel(n.categoria) : 'AFIP'} · Domicilio
+              fiscal electrónico · login{' '}
               <span className="[font-family:var(--ff-mono)]">
                 {n.credencialNombre}
               </span>{' '}

@@ -31,12 +31,11 @@ import {
   chipFiltro,
   chipMasFiltros,
 } from '@/components/shared/filtros';
-import { SEVERIDAD_LABEL, haceCuanto } from './utils';
+import { SEVERIDAD_LABEL, categoriaLabel, haceCuanto } from './utils';
 import { cn } from '@/lib/utils';
 
 export interface FiltrosInbox {
   estado: 'sin_leer' | 'todas' | 'resueltas';
-  credencial: string;
   categoria: string;
   severidad: string;
   empresa: string;
@@ -50,7 +49,6 @@ interface Props {
   filtros: FiltrosInbox;
   onFiltro: (p: Partial<FiltrosInbox>) => void;
   onLimpiar: () => void;
-  credenciales: { id: string; nombre: string | null }[];
   categorias: string[];
   resumen: { total: number; sinLeer: number; resultados: number };
   ultimaSync: Date | string | null;
@@ -67,16 +65,12 @@ export function InboxHeader({
   filtros,
   onFiltro,
   onLimpiar,
-  credenciales,
   categorias,
   resumen,
   ultimaSync,
   onMarcarTodasLeidas,
 }: Props) {
   const [masFiltros, setMasFiltros] = useState(false);
-
-  const credencialTxt =
-    credenciales.find((c) => c.id === filtros.credencial)?.nombre ?? null;
 
   // Los del popover se cuentan aparte: el chip `Más filtros` lleva su número.
   // La empresa no cuenta: se ve en el selector global del header.
@@ -87,9 +81,7 @@ export function InboxHeader({
   ].filter(Boolean).length;
 
   const activos =
-    secundarios +
-    [filtros.credencial, filtros.categoria, filtros.severidad].filter(Boolean)
-      .length;
+    secundarios + [filtros.categoria, filtros.severidad].filter(Boolean).length;
 
   return (
     <PageHeader
@@ -165,43 +157,13 @@ export function InboxHeader({
             aria-hidden="true"
           />
 
-          {/* Login */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={chipFiltro(filtros.credencial !== '')}
-            >
-              Login: {credencialTxt ?? 'todos'}
-              {filtros.credencial ? (
-                <QuitarFiltro onQuitar={() => onFiltro({ credencial: '' })} />
-              ) : (
-                <ChevronChip />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="max-h-[320px] min-w-[200px] overflow-y-auto"
-            >
-              {credenciales.map((c) => (
-                <DropdownMenuItem
-                  key={c.id}
-                  className="text-[12.5px]"
-                  onSelect={() => onFiltro({ credencial: c.id })}
-                >
-                  <span className="truncate">{c.nombre}</span>
-                  {c.id === filtros.credencial && (
-                    <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           {/* Categoría */}
           <DropdownMenu>
             <DropdownMenuTrigger
               className={chipFiltro(filtros.categoria !== '')}
             >
-              Categoría: {filtros.categoria || 'todas'}
+              Categoría:{' '}
+              {filtros.categoria ? categoriaLabel(filtros.categoria) : 'todas'}
               {filtros.categoria ? (
                 <QuitarFiltro onQuitar={() => onFiltro({ categoria: '' })} />
               ) : (
@@ -223,7 +185,7 @@ export function InboxHeader({
                   className="text-[12.5px]"
                   onSelect={() => onFiltro({ categoria: c })}
                 >
-                  {c}
+                  {categoriaLabel(c)}
                   {c === filtros.categoria && (
                     <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
                   )}
