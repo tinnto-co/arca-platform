@@ -369,11 +369,11 @@ function ChipLibro({ estado }: { estado: string }) {
           }
         : estado === 'preliminar'
           ? {
-              texto: 'Libro IVA: en carga',
+              texto: 'Estimado · Libro IVA en carga',
               cls: 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
             }
           : {
-              texto: 'Libro IVA: no disponible',
+              texto: 'Estimado por comprobantes',
               cls: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-4)]',
             };
   return (
