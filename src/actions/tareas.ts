@@ -598,7 +598,10 @@ export const toggleTareaCliente = createServerFn({ method: 'POST' })
 
     // Obtener la tarea para validar org
     const [tc] = await db
-      .select({ tareaId: tareaCliente.tareaId })
+      .select({
+        tareaId: tareaCliente.tareaId,
+        clienteId: tareaCliente.clienteId,
+      })
       .from(tareaCliente)
       .where(eq(tareaCliente.id, ctx.data.tareaClienteId))
       .limit(1);
@@ -621,7 +624,37 @@ export const toggleTareaCliente = createServerFn({ method: 'POST' })
       })
       .where(eq(tareaCliente.id, ctx.data.tareaClienteId));
 
-    return { ok: true };
+    // Tildar una empresa en una tarea con notificaciones vinculadas (las de
+    // Intimaciones/Fiscalización) también marca resueltas las notificaciones
+    // de ESA empresa: es el único momento en que el estudio registra que se
+    // ocupó, y así Riesgos baja solo. Destildar las reabre — simétrico.
+    let notificacionesResueltas = 0;
+    if (tc.clienteId) {
+      const vinculadas = db
+        .select({ id: tareaNotificacion.notificacionId })
+        .from(tareaNotificacion)
+        .where(eq(tareaNotificacion.tareaId, tc.tareaId));
+      const filtro = and(
+        inArray(notificacion.id, vinculadas),
+        eq(notificacion.clienteId, tc.clienteId),
+        eq(notificacion.orgId, orgId),
+        ctx.data.completado
+          ? isNull(notificacion.resueltaAt)
+          : isNotNull(notificacion.resueltaAt)
+      );
+      const marcadas = await db
+        .update(notificacion)
+        .set(
+          ctx.data.completado
+            ? { resueltaAt: new Date(), resueltaPor: userId }
+            : { resueltaAt: null, resueltaPor: null }
+        )
+        .where(filtro)
+        .returning({ id: notificacion.id });
+      notificacionesResueltas = ctx.data.completado ? marcadas.length : 0;
+    }
+
+    return { ok: true, notificacionesResueltas };
   });
 
 // ─── Comentarios ─────────────────────────────────────────────────────────────

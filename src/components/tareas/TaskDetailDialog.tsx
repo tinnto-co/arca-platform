@@ -264,11 +264,27 @@ export function TaskDetailDialog({
   const toggleMutation = useMutation({
     mutationFn: (vars: { tareaClienteId: string; completado: boolean }) =>
       toggleTareaCliente({ data: vars }),
-    onSuccess: () =>
+    onSuccess: (result) => {
       void queryClient.invalidateQueries({
         queryKey: ['tareas'],
         exact: false,
-      }),
+      });
+      if (result.notificacionesResueltas > 0) {
+        toast.success(
+          result.notificacionesResueltas === 1
+            ? 'Se marcó resuelta la notificación de esa empresa'
+            : `Se marcaron resueltas ${result.notificacionesResueltas} notificaciones de esa empresa`
+        );
+        void queryClient.invalidateQueries({
+          queryKey: ['notifications'],
+          exact: false,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: ['inicio'],
+          exact: false,
+        });
+      }
+    },
     onError: () => toast.error('No se pudo actualizar la empresa'),
   });
 
