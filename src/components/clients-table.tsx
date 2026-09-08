@@ -109,7 +109,12 @@ const ESTADO_META: Record<EstadoValue, { label: string; className: string }> = {
   },
 };
 
-export function RepresentativesTable() {
+export function RepresentativesTable({
+  soloClavesInvalidas = false,
+}: {
+  /** Muestra solo las empresas cuyo login de AFIP tiene la clave rechazada. */
+  soloClavesInvalidas?: boolean;
+} = {}) {
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   /**
@@ -154,6 +159,7 @@ export function RepresentativesTable() {
   const [clienteGlobal] = useClienteSeleccionado();
   const clientsTyped: ClientRow[] = clients
     .filter((c) => !clienteGlobal || c.id === clienteGlobal)
+    .filter((c) => !soloClavesInvalidas || c.credentialError)
     .map((c) => {
       const cred = c.credenciales[0];
       return {
@@ -416,6 +422,29 @@ export function RepresentativesTable() {
           }}
         />
       )}
+      {soloClavesInvalidas && (
+        <div
+          className="mb-3 flex items-center justify-between rounded-[10px] border px-4 py-2.5 text-[12.5px]"
+          style={{
+            background: 'var(--arca-accent-neg-bg)',
+            borderColor: 'var(--arca-border-strong)',
+            color: 'var(--arca-accent-neg-fg)',
+          }}
+        >
+          <span>
+            Mostrando solo las empresas con clave inválida (
+            {clientsTyped.length}) — sus datos no se actualizan hasta corregir
+            la clave.
+          </span>
+          <button
+            type="button"
+            onClick={() => void navigate({ to: '/clients', search: {} })}
+            className="shrink-0 underline cursor-pointer hover:opacity-80"
+          >
+            Ver todas
+          </button>
+        </div>
+      )}
       <DataTable
         columns={columns}
         data={clientsTyped}
@@ -468,8 +497,8 @@ export function RepresentativesTable() {
                   <DialogDescription>
                     Se van a encolar los módulos seleccionados para{' '}
                     {selectedRepresentativeIds.length} cliente
-                    {selectedRepresentativeIds.length > 1 ? 's' : ''}. El
-                    scraping corre en segundo plano.
+                    {selectedRepresentativeIds.length > 1 ? 's' : ''}. La
+                    actualización corre en segundo plano.
                   </DialogDescription>
                 </DialogHeader>
                 {runningSelected.length > 0 && (

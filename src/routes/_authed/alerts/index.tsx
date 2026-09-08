@@ -103,7 +103,7 @@ const CATEGORY_BADGE: Record<string, { bg: string; fg: string }> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  error_scraping: 'Error de scraping',
+  error_scraping: 'Error de actualización',
 };
 
 /* ─── Helpers ─── */
@@ -446,7 +446,7 @@ function AlertsPage() {
         <SearchableSelect
           options={[
             { value: 'all', label: 'Todos los tipos' },
-            { value: 'error_scraping', label: 'Error de scraping' },
+            { value: 'error_scraping', label: 'Error de actualización' },
           ]}
           value={typeFilter}
           onValueChange={setTypeFilter}

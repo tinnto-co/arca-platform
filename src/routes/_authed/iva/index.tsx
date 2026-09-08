@@ -526,8 +526,8 @@ function IvaResumenRI({ search }: { search: string }) {
         Débito, crédito y saldo técnico se calculan sobre los comprobantes
         cargados del período — los mismos números que la ficha de cada empresa.
         Saldo libre disponibilidad y retenciones/percepciones vienen de la
-        declaración de AFIP: no se pueden derivar de comprobantes — si el
-        scrapeo todavía no los trajo, se pueden cargar a mano haciendo click en
+        declaración de AFIP: no se pueden derivar de comprobantes — si la
+        actualización todavía no los trajo, se pueden cargar a mano haciendo click en
         la celda (la declaración real los pisa cuando llega). El saldo técnico
         es débito menos crédito: positivo es a pagar.
       </p>

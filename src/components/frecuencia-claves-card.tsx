@@ -67,11 +67,11 @@ export function FrecuenciaClavesCard() {
         <Gauge className="h-4 w-4 mt-0.5 shrink-0 text-[var(--arca-ink-3)]" />
         <div>
           <h2 className="text-[15px] font-semibold text-[var(--arca-ink)] [font-family:var(--ff-display)]">
-            Claves que scrapean y vuelven vacías
+            Claves que siempre vuelven vacías
           </h2>
           <p className="text-[12px] text-[var(--arca-ink-3)] mt-0.5 max-w-[75ch]">
             Ninguna de sus empresas activas tiene comprobantes: espaciar su
-            scrapeo ahorra proxy sin perder datos. <strong>Semanal</strong> es
+            actualización ahorra recursos sin perder datos. <strong>Semanal</strong> es
             la opción segura (si empiezan a facturar, te enterás el lunes);{' '}
             <strong>pausada</strong> es para claves que el estudio sabe
             inactivas — pausada no hay forma de enterarse de que volvieron a
@@ -94,7 +94,7 @@ export function FrecuenciaClavesCard() {
               Con comprobantes
             </th>
             <th className="px-3 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
-              Scrapeos OK
+              Consultas OK
             </th>
             <th className="px-5 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
               Frecuencia
@@ -130,7 +130,7 @@ export function FrecuenciaClavesCard() {
                       background: 'var(--arca-accent-warn-bg)',
                       color: 'var(--arca-accent-warn-fg)',
                     }}
-                    title="Pocos scrapeos: el «vacía» todavía no es confiable. Puede ser una clave recién agregada."
+                    title="Pocas consultas: el «vacía» todavía no es confiable. Puede ser una clave recién agregada."
                   >
                     historial corto
                   </span>

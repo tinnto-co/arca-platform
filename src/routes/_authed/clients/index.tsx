@@ -23,6 +23,10 @@ import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 import { dispatchAllJobs } from '@/actions/job';
 
 export const Route = createFileRoute('/_authed/clients/')({
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { filtro?: 'claves_invalidas' } =>
+    search.filtro === 'claves_invalidas' ? { filtro: 'claves_invalidas' } : {},
   component: RouteComponent,
 });
 
@@ -100,6 +104,7 @@ function UpdateAllButton() {
 }
 
 function RouteComponent() {
+  const { filtro } = Route.useSearch();
   return (
     <PageShell>
       <PageHeader
@@ -122,7 +127,9 @@ function RouteComponent() {
           </>
         }
       />
-      <RepresentativesTable />
+      <RepresentativesTable
+        soloClavesInvalidas={filtro === 'claves_invalidas'}
+      />
       <FrecuenciaClavesCard />
     </PageShell>
   );

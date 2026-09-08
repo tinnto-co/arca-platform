@@ -69,10 +69,11 @@ export function FranjaInfra() {
           {alertas.length} credencial{alertas.length !== 1 ? 'es' : ''} con
           clave inválida
         </span>
-        {' · no se scrapean hasta actualizarlas'}
+        {' · sus datos no se actualizan hasta corregir la clave'}
       </p>
       <Link
         to="/clients"
+        search={{ filtro: 'claves_invalidas' }}
         className="text-[12px] shrink-0 hover:underline"
         style={{ color: 'var(--arca-accent-neg-fg)' }}
       >
@@ -105,7 +106,8 @@ export function FranjaInfra() {
           <DialogHeader>
             <DialogTitle>Credenciales con clave inválida</DialogTitle>
             <DialogDescription>
-              AFIP rechaza el login: no se scrapean hasta cargar la clave nueva.
+              AFIP rechaza el login: los datos no se actualizan hasta cargar la
+              clave nueva.
             </DialogDescription>
           </DialogHeader>
           <div className="divide-y divide-[var(--arca-border)] max-h-[50vh] overflow-y-auto">

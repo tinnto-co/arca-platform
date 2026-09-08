@@ -85,7 +85,7 @@ export const Route = createFileRoute('/api/afip/discover-profiles')({
         if (!upstream.body) {
           const text = await upstream.text().catch(() => '');
           return Response.json(
-            { error: text || 'El scrapper no devolvió respuesta' },
+            { error: text || 'El servicio de actualización no respondió' },
             { status: upstream.status || 502 }
           );
         }

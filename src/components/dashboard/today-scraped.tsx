@@ -16,10 +16,10 @@ export function TodayScrapedCard() {
         <div>
           <div className="font-display text-[15px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)] flex items-center gap-2">
             <RefreshCw className="w-3.5 h-3.5" />
-            Scraping del día
+            Actualizaciones del día
           </div>
           <p className="text-[11px] text-[var(--arca-ink-4)] mt-0.5">
-            Credenciales scrapeadas hoy
+            Credenciales actualizadas hoy
           </p>
         </div>
       </ArcaCardHead>
@@ -32,7 +32,7 @@ export function TodayScrapedCard() {
           </div>
         ) : reps.length === 0 ? (
           <div className="flex items-center justify-center h-24 text-[13px] text-[var(--arca-ink-4)]">
-            No hay scrapes programados para hoy
+            No hay actualizaciones programadas para hoy
           </div>
         ) : (
           <table className="w-full text-[12.5px]">
