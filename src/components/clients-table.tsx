@@ -112,7 +112,7 @@ const ESTADO_META: Record<EstadoValue, { label: string; className: string }> = {
 export function RepresentativesTable({
   soloClavesInvalidas = false,
 }: {
-  /** Muestra solo las empresas cuyo login de AFIP tiene la clave rechazada. */
+  /** Arranca con el filtro Estado en «Credenciales inválidas» (viene por URL). */
   soloClavesInvalidas?: boolean;
 } = {}) {
   const navigate = useNavigate();
@@ -159,7 +159,6 @@ export function RepresentativesTable({
   const [clienteGlobal] = useClienteSeleccionado();
   const clientsTyped: ClientRow[] = clients
     .filter((c) => !clienteGlobal || c.id === clienteGlobal)
-    .filter((c) => !soloClavesInvalidas || c.credentialError)
     .map((c) => {
       const cred = c.credenciales[0];
       return {
@@ -422,33 +421,13 @@ export function RepresentativesTable({
           }}
         />
       )}
-      {soloClavesInvalidas && (
-        <div
-          className="mb-3 flex items-center justify-between rounded-[10px] border px-4 py-2.5 text-[12.5px]"
-          style={{
-            background: 'var(--arca-accent-neg-bg)',
-            borderColor: 'var(--arca-border-strong)',
-            color: 'var(--arca-accent-neg-fg)',
-          }}
-        >
-          <span>
-            Mostrando solo las empresas con clave inválida (
-            {clientsTyped.length}) — sus datos no se actualizan hasta corregir
-            la clave.
-          </span>
-          <button
-            type="button"
-            onClick={() => void navigate({ to: '/clients', search: {} })}
-            className="shrink-0 underline cursor-pointer hover:opacity-80"
-          >
-            Ver todas
-          </button>
-        </div>
-      )}
       <DataTable
         columns={columns}
         data={clientsTyped}
         isLoading={isLoading}
+        initialColumnFilters={
+          soloClavesInvalidas ? [{ id: 'estado', value: 'error' }] : undefined
+        }
         filters={[
           {
             columnId: 'estado',

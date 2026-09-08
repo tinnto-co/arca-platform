@@ -66,6 +66,8 @@ interface DataTableProps<TData, TValue> {
   isLoading?: boolean;
   toolbar?: React.ReactNode;
   emptyMessage?: string;
+  /** Filtros de columna con los que arranca la tabla (ej. preseteados por URL). */
+  initialColumnFilters?: ColumnFiltersState;
 }
 
 export function DataTable<TData, TValue>({
@@ -84,10 +86,11 @@ export function DataTable<TData, TValue>({
   isLoading = false,
   toolbar,
   emptyMessage = 'Sin resultados.',
+  initialColumnFilters,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    []
+    initialColumnFilters ?? []
   );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
