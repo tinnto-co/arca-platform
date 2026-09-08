@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link } from '@tanstack/react-router';
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarIcon,
   Edit,
@@ -1790,6 +1791,19 @@ export function RepresentativeDetailPage({
                         selectedProfile?.razonSocial ?? client.nombre
                       )}
                     </h1>
+                  )}
+                  {selectedProfile?.estadoAfip === 'irregularidades' && (
+                    <span
+                      className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
+                      title={`AFIP bloquea la consulta de esta empresa: debe presentarse en la dependencia donde está inscripta para regularizar su situación. Hasta entonces no se pueden traer comprobantes ni IVA.${
+                        selectedProfile.estadoAfipAt
+                          ? ` Detectado el ${new Date(selectedProfile.estadoAfipAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}.`
+                          : ''
+                      }`}
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      Irregularidades en AFIP
+                    </span>
                   )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">

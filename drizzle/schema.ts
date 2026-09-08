@@ -28,6 +28,7 @@ export const bienUsoEstado = pgEnum("bien_uso_estado", ['activo', 'vendido', 'ba
 export const bienUsoMetodo = pgEnum("bien_uso_metodo", ['lineal'])
 export const bienUsoMotivoBaja = pgEnum("bien_uso_motivo_baja", ['venta', 'desuso', 'destruccion'])
 export const clienteEstado = pgEnum("cliente_estado", ['activo', 'pausado', 'baja'])
+export const estadoAfipCliente = pgEnum("estado_afip_cliente", ['ok', 'irregularidades'])
 export const comprobanteClase = pgEnum("comprobante_clase", ['factura', 'nota_credito', 'nota_debito', 'recibo', 'tique'])
 export const comprobanteDireccion = pgEnum("comprobante_direccion", ['emitido', 'recibido'])
 export const conceptoModoCalculo = pgEnum("concepto_modo_calculo", ['importe_manual', 'pct_sobre_base', 'pct_sobre_concepto', 'sueldo_basico', 'valor_hora', 'sac', 'sac_proporcional', 'dia_vacaciones', 'promedio_anual_concepto'])
@@ -1774,6 +1775,8 @@ export const cliente = pgTable("cliente", {
 	telefono: text(),
 	domicilio: text(),
 	notas: text(),
+	estadoAfip: estadoAfipCliente("estado_afip"),
+	estadoAfipAt: timestamp("estado_afip_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 	marcoContable: marcoContable("marco_contable").default('rt54').notNull(),

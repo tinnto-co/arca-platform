@@ -17,6 +17,10 @@ $$ language plpgsql;
 create type tipo_persona as enum ('fisica', 'juridica');
 create type condicion_iva as enum ('responsable_inscripto', 'monotributista', 'exento', 'no_alcanzado');
 create type cliente_estado as enum ('activo', 'pausado', 'baja');
+-- Estado del servicio ante AFIP, lo detecta el scrapper de comprobantes:
+-- 'irregularidades' = AFIP bloquea el servicio (Err: 001, debe regularizar en
+-- la dependencia) y no se pueden traer comprobantes ni IVA de esa empresa.
+create type estado_afip_cliente as enum ('ok', 'irregularidades');
 create type iibb_regimen as enum ('local', 'convenio_multilateral');
 create type credencial_estado as enum ('activa', 'clave_invalida', 'bloqueada');
 create type relacion_fuente as enum ('discovery', 'manual');
@@ -141,6 +145,8 @@ create table cliente (
   telefono text,
   domicilio text,
   notas text,
+  estado_afip estado_afip_cliente,
+  estado_afip_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (org_id, cuit)
@@ -155,6 +161,9 @@ comment on column cliente.condicion_iva is 'Condición frente al IVA. null = sin
 comment on column cliente.iibb_regimen is
   'Régimen de Ingresos Brutos. null = no liquida IIBB (habilita el módulo IIBB cuando no es null).';
 comment on column cliente.estado is 'Relación comercial con el estudio (activo/pausado/baja), NO estado ante AFIP.';
+comment on column cliente.estado_afip is
+  'Estado del servicio ante AFIP, escrito por el scrapper de comprobantes: irregularidades = AFIP bloquea la consulta (el contribuyente debe regularizar en su dependencia) y los comprobantes/IVA quedan sin traer. ok = el último scrapeo entró bien (se autolimpia al regularizar). null = sin determinar.';
+comment on column cliente.estado_afip_at is 'Cuándo se determinó estado_afip por última vez.';
 
 create table credencial_afip (
   id uuid primary key default gen_random_uuid(),

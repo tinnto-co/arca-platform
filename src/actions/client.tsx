@@ -66,6 +66,8 @@ const clienteBaseSelect = {
   email: cliente.email,
   telefono: cliente.telefono,
   domicilio: cliente.domicilio,
+  estadoAfip: cliente.estadoAfip,
+  estadoAfipAt: cliente.estadoAfipAt,
   createdAt: cliente.createdAt,
   updatedAt: cliente.updatedAt,
 };
