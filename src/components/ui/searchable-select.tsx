@@ -50,7 +50,9 @@ export function SearchableSelect({
   const selected = options.find((o) => o.value === value);
 
   return (
-    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+    // modal: sin esto, dentro de un Dialog el bloqueo de scroll de Radix se
+    // come la rueda del mouse sobre la lista (la barra andaba, la rueda no).
+    <Popover modal open={open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
         <button
           disabled={disabled}
