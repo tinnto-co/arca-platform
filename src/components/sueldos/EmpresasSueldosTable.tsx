@@ -79,9 +79,9 @@ export function EmpresasSueldosTable({
     queryFn: () => listEmpresasSueldos(),
   });
 
-  // La tabla muestra solo las que liquidan; las demás entran por «Agregar».
+  // La tabla muestra solo las que liquidan; las demás entran por el «+»
+  // del header (AgregarEmpresaDialog).
   const liquidan = empresas.filter((e) => e.liquidaSueldos);
-  const candidatas = empresas.filter((e) => !e.liquidaSueldos);
 
   const invalidar = () => {
     queryClient.invalidateQueries({ queryKey: ['empresasSueldos'] });
@@ -213,19 +213,8 @@ export function EmpresasSueldosTable({
       // global del header.
       pagination
       pageSize={20}
-      emptyMessage="Ninguna empresa liquida sueldos todavía — agregá la primera con el botón de arriba"
+      emptyMessage="Ninguna empresa liquida sueldos todavía — agregá la primera con el + de arriba"
       onRowClick={(row) => onSelect(row.id)}
-      toolbar={
-        <div className="ml-auto">
-          <AgregarEmpresaDialog
-            candidatas={candidatas}
-            onAgregar={(clientId) =>
-              togglear.mutate({ clientId, liquidaSueldos: true })
-            }
-            agregando={togglear.isPending}
-          />
-        </div>
-      }
     />
   );
 }
@@ -233,19 +222,32 @@ export function EmpresasSueldosTable({
 /**
  * Alta de una empresa en el módulo: elige entre las del padrón que todavía no
  * liquidan y prende su `liquidaSueldos`. No crea clientes — para eso está la
- * pantalla de Clientes.
+ * pantalla de Clientes. Autónomo (query y mutación propias) para poder vivir
+ * en el header de la portada, al lado del selector global.
  */
-function AgregarEmpresaDialog({
-  candidatas,
-  onAgregar,
-  agregando,
-}: {
-  candidatas: Empresa[];
-  onAgregar: (clientId: string) => void;
-  agregando: boolean;
-}) {
+export function AgregarEmpresaDialog() {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [elegida, setElegida] = useState('');
+
+  const { data: empresas = [] } = useQuery({
+    queryKey: ['empresasSueldos'],
+    queryFn: () => listEmpresasSueldos(),
+  });
+  const candidatas = empresas.filter((e) => !e.liquidaSueldos);
+
+  const agregar = useMutation({
+    mutationFn: (clientId: string) =>
+      toggleLiquidaSueldos({ data: { clientId, liquidaSueldos: true } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['empresasSueldos'] });
+      void queryClient.invalidateQueries({ queryKey: ['clientesSueldos'] });
+      void queryClient.invalidateQueries({ queryKey: ['clients', 'sueldos'] });
+      toast.success('Sueldos habilitado');
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'No se pudo agregar'),
+  });
 
   return (
     <Dialog
@@ -256,9 +258,12 @@ function AgregarEmpresaDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button size="sm">
+        <Button
+          size="icon"
+          aria-label="Agregar empresa a Sueldos"
+          title="Agregar empresa a Sueldos"
+        >
           <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-          Agregar empresa
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[440px]">
@@ -296,9 +301,9 @@ function AgregarEmpresaDialog({
           </Button>
           <Button
             type="button"
-            disabled={!elegida || agregando}
+            disabled={!elegida || agregar.isPending}
             onClick={() => {
-              onAgregar(elegida);
+              agregar.mutate(elegida);
               setOpen(false);
               setElegida('');
             }}

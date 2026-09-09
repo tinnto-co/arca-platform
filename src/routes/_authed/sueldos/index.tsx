@@ -12,7 +12,10 @@ import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { getClientes, getClientesForSueldos } from '@/actions/client';
-import { EmpresasSueldosTable } from '@/components/sueldos/EmpresasSueldosTable';
+import {
+  AgregarEmpresaDialog,
+  EmpresasSueldosTable,
+} from '@/components/sueldos/EmpresasSueldosTable';
 
 export const Route = createFileRoute('/_authed/sueldos/')({
   component: RouteComponent,
@@ -51,7 +54,12 @@ function RouteComponent() {
         <PageHeader
           title="Liquidación de sueldos"
           subtitle="Elegí una empresa para gestionar sus sueldos"
-          actions={<SelectorClienteGlobal />}
+          actions={
+            <div className="flex items-center gap-2">
+              <SelectorClienteGlobal />
+              <AgregarEmpresaDialog />
+            </div>
+          }
         />
       </div>
 
