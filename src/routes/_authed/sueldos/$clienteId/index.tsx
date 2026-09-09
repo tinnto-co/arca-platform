@@ -240,29 +240,28 @@ function RouteComponent() {
             }}
           />
         )}
-        <PageHeader
-          title={selectedOption?.name ?? '…'}
-          subtitle="Convenios, empleados, conceptos y liquidaciones"
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => {
-                  // Limpia la selección global ANTES de navegar: si quedara
-                  // puesta, la portada ofrecería volver a entrar.
-                  setClienteGlobal(null);
-                  void navigate({ to: '/sueldos' });
-                }}
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Todas las empresas
-              </Button>
-              <SelectorClienteGlobal />
-            </div>
-          }
-        />
+        {/* Como la ficha de clientes: flecha de vuelta al listado a la
+            izquierda del nombre, sin selector — la empresa se cambia desde
+            la portada. */}
+        <div className="mb-5 flex items-start gap-[14px]">
+          <button
+            type="button"
+            onClick={() => void navigate({ to: '/sueldos' })}
+            title="Volver al listado"
+            aria-label="Volver al listado"
+            className="mt-[2px] w-[30px] h-[30px] shrink-0 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
+          >
+            <ArrowLeft className="h-[14px] w-[14px]" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-[30px] leading-none font-semibold tracking-[-0.025em] text-[var(--arca-ink)] [font-family:var(--ff-display)] truncate">
+              {selectedOption?.name ?? '…'}
+            </h1>
+            <p className="mt-1.5 text-[12px] text-[var(--arca-ink-3)]">
+              Convenios, empleados, conceptos y liquidaciones
+            </p>
+          </div>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setTab} className="flex flex-col">
