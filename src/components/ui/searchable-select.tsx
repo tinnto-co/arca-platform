@@ -76,7 +76,12 @@ export function SearchableSelect({
             placeholder={searchPlaceholder}
             className="text-[13px]"
           />
-          <CommandList className="max-h-[220px]">
+          {/* maxHeight inline: dentro de un Dialog la clase max-h se pierde
+              en la cascada y la lista se desborda sin scroll. */}
+          <CommandList
+            className="max-h-[220px]"
+            style={{ maxHeight: 220, overflowY: 'auto' }}
+          >
             <CommandEmpty className="py-6 text-center text-[12.5px] text-[var(--arca-ink-3)]">
               {emptyMessage}
             </CommandEmpty>
