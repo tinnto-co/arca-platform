@@ -2,23 +2,30 @@
  * Portada de Sueldos: tabla de empresas.
  *
  * Reemplaza al estado vacío "Seleccioná una empresa", que obligaba a saber de
- * antemano qué empresa buscabas. Acá se ve el padrón entero con las señales que
- * importan para decidir por dónde empezar el mes.
- *
- * Muestra TODAS las empresas, no sólo las que liquidan: la tabla es también el
- * lugar donde se habilita el módulo para una empresa nueva.
+ * antemano qué empresa buscabas. Acá se ven las empresas QUE LIQUIDAN sueldos
+ * con las señales que importan para decidir por dónde empezar el mes; el resto
+ * del padrón entra por «Agregar empresa».
  */
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Check, Pencil, Users, X } from 'lucide-react';
+import { Check, Pencil, Plus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
+import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   listEmpresasSueldos,
   toggleLiquidaSueldos,
@@ -79,6 +86,10 @@ export function EmpresasSueldosTable({
     queryKey: ['empresasSueldos'],
     queryFn: () => listEmpresasSueldos(),
   });
+
+  // La tabla muestra solo las que liquidan; las demás entran por «Agregar».
+  const liquidan = empresas.filter((e) => e.liquidaSueldos);
+  const candidatas = empresas.filter((e) => !e.liquidaSueldos);
 
   const invalidar = () => {
     queryClient.invalidateQueries({ queryKey: ['empresasSueldos'] });
@@ -234,26 +245,6 @@ export function EmpresasSueldosTable({
       },
     },
     {
-      id: 'liquidaSueldos',
-      accessorFn: (r) => (r.liquidaSueldos ? 'si' : 'no'),
-      header: 'Liquida sueldos',
-      cell: ({ row }) => {
-        const e = row.original;
-        return (
-          <div onClick={(ev) => ev.stopPropagation()}>
-            <Switch
-              checked={e.liquidaSueldos}
-              disabled={togglear.isPending}
-              onCheckedChange={(v) =>
-                togglear.mutate({ clientId: e.id, liquidaSueldos: v })
-              }
-              aria-label={`Liquida sueldos: ${e.razonSocial}`}
-            />
-          </div>
-        );
-      },
-    },
-    {
       accessorKey: 'estado',
       header: 'Estado',
       cell: ({ row }) =>
@@ -263,19 +254,135 @@ export function EmpresasSueldosTable({
           <Badge variant="secondary">{row.original.estado}</Badge>
         ),
     },
+    {
+      id: 'quitar',
+      header: '',
+      cell: ({ row }) => {
+        const e = row.original;
+        return (
+          <div onClick={(ev) => ev.stopPropagation()} className="text-right">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              disabled={togglear.isPending}
+              title={`Quitar ${e.razonSocial} de Sueldos (no borra nada; se re-agrega cuando quieras)`}
+              aria-label={`Quitar ${e.razonSocial} de Sueldos`}
+              onClick={() =>
+                togglear.mutate({ clientId: e.id, liquidaSueldos: false })
+              }
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        );
+      },
+    },
   ];
 
   return (
     <DataTable
       columns={columns}
-      data={empresas}
+      data={liquidan}
       isLoading={isLoading}
       // Sin buscador ni filtro propios: la empresa se busca en el selector
-      // global del header, y quién liquida se ve ordenando por la columna.
+      // global del header.
       pagination
       pageSize={20}
-      emptyMessage="No hay empresas cargadas"
+      emptyMessage="Ninguna empresa liquida sueldos todavía — agregá la primera con el botón de arriba"
       onRowClick={(row) => onSelect(row.id)}
+      toolbar={
+        <div className="ml-auto">
+          <AgregarEmpresaDialog
+            candidatas={candidatas}
+            onAgregar={(clientId) =>
+              togglear.mutate({ clientId, liquidaSueldos: true })
+            }
+            agregando={togglear.isPending}
+          />
+        </div>
+      }
     />
+  );
+}
+
+/**
+ * Alta de una empresa en el módulo: elige entre las del padrón que todavía no
+ * liquidan y prende su `liquidaSueldos`. No crea clientes — para eso está la
+ * pantalla de Clientes.
+ */
+function AgregarEmpresaDialog({
+  candidatas,
+  onAgregar,
+  agregando,
+}: {
+  candidatas: Empresa[];
+  onAgregar: (clientId: string) => void;
+  agregando: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [elegida, setElegida] = useState('');
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setElegida('');
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button size="sm">
+          <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+          Agregar empresa
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Agregar empresa a Sueldos</DialogTitle>
+          <DialogDescription>
+            La empresa pasa a liquidar sueldos y aparece en la tabla. No crea
+            clientes nuevos: son las empresas ya cargadas en la plataforma.
+          </DialogDescription>
+        </DialogHeader>
+        {candidatas.length === 0 ? (
+          <p className="text-[13px] text-[var(--arca-ink-3)]">
+            Todas las empresas del padrón ya liquidan sueldos.
+          </p>
+        ) : (
+          <SearchableSelect
+            options={candidatas.map((c) => ({
+              value: c.id,
+              label: `${c.razonSocial} · ${c.cuit}`,
+            }))}
+            value={elegida}
+            onValueChange={setElegida}
+            placeholder="Elegí la empresa"
+            searchPlaceholder="Buscar por nombre o CUIT…"
+            emptyMessage="No se encontraron empresas"
+          />
+        )}
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            disabled={!elegida || agregando}
+            onClick={() => {
+              onAgregar(elegida);
+              setOpen(false);
+              setElegida('');
+            }}
+          >
+            Agregar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
