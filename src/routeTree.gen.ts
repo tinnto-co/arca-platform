@@ -47,6 +47,7 @@ import { Route as ClientPortalSolicitudesIndexRouteImport } from './routes/_clie
 import { Route as ClientPortalNotificacionesIndexRouteImport } from './routes/_client/portal/notificaciones/index'
 import { Route as ClientPortalDeudasIndexRouteImport } from './routes/_client/portal/deudas/index'
 import { Route as AuthedSueldosProfileIdIndexRouteImport } from './routes/_authed/sueldos/$profileId/index'
+import { Route as AuthedSueldosClienteIdIndexRouteImport } from './routes/_authed/sueldos/$clienteId/index'
 import { Route as AuthedClientsClientIdIndexRouteImport } from './routes/_authed/clients/$clientId/index'
 import { Route as ApiOrgLogoFileRouteImport } from './routes/api/org/logo.$file'
 
@@ -244,6 +245,12 @@ const AuthedSueldosProfileIdIndexRoute =
     path: '/sueldos/$profileId/',
     getParentRoute: () => AuthedRouteRoute,
   } as any)
+const AuthedSueldosClienteIdIndexRoute =
+  AuthedSueldosClienteIdIndexRouteImport.update({
+    id: '/sueldos/$clienteId/',
+    path: '/sueldos/$clienteId/',
+    getParentRoute: () => AuthedRouteRoute,
+  } as any)
 const AuthedClientsClientIdIndexRoute =
   AuthedClientsClientIdIndexRouteImport.update({
     id: '/clients/$clientId/',
@@ -290,6 +297,7 @@ export interface FileRoutesByFullPath {
   '/portal/': typeof ClientPortalIndexRoute
   '/api/org/logo/$file': typeof ApiOrgLogoFileRoute
   '/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/sueldos/$clienteId/': typeof AuthedSueldosClienteIdIndexRoute
   '/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/portal/deudas/': typeof ClientPortalDeudasIndexRoute
   '/portal/notificaciones/': typeof ClientPortalNotificacionesIndexRoute
@@ -330,6 +338,7 @@ export interface FileRoutesByTo {
   '/portal': typeof ClientPortalIndexRoute
   '/api/org/logo/$file': typeof ApiOrgLogoFileRoute
   '/clients/$clientId': typeof AuthedClientsClientIdIndexRoute
+  '/sueldos/$clienteId': typeof AuthedSueldosClienteIdIndexRoute
   '/sueldos/$profileId': typeof AuthedSueldosProfileIdIndexRoute
   '/portal/deudas': typeof ClientPortalDeudasIndexRoute
   '/portal/notificaciones': typeof ClientPortalNotificacionesIndexRoute
@@ -373,6 +382,7 @@ export interface FileRoutesById {
   '/_client/portal/': typeof ClientPortalIndexRoute
   '/api/org/logo/$file': typeof ApiOrgLogoFileRoute
   '/_authed/clients/$clientId/': typeof AuthedClientsClientIdIndexRoute
+  '/_authed/sueldos/$clienteId/': typeof AuthedSueldosClienteIdIndexRoute
   '/_authed/sueldos/$profileId/': typeof AuthedSueldosProfileIdIndexRoute
   '/_client/portal/deudas/': typeof ClientPortalDeudasIndexRoute
   '/_client/portal/notificaciones/': typeof ClientPortalNotificacionesIndexRoute
@@ -415,6 +425,7 @@ export interface FileRouteTypes {
     | '/portal/'
     | '/api/org/logo/$file'
     | '/clients/$clientId/'
+    | '/sueldos/$clienteId/'
     | '/sueldos/$profileId/'
     | '/portal/deudas/'
     | '/portal/notificaciones/'
@@ -455,6 +466,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/api/org/logo/$file'
     | '/clients/$clientId'
+    | '/sueldos/$clienteId'
     | '/sueldos/$profileId'
     | '/portal/deudas'
     | '/portal/notificaciones'
@@ -497,6 +509,7 @@ export interface FileRouteTypes {
     | '/_client/portal/'
     | '/api/org/logo/$file'
     | '/_authed/clients/$clientId/'
+    | '/_authed/sueldos/$clienteId/'
     | '/_authed/sueldos/$profileId/'
     | '/_client/portal/deudas/'
     | '/_client/portal/notificaciones/'
@@ -786,6 +799,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSueldosProfileIdIndexRouteImport
       parentRoute: typeof AuthedRouteRoute
     }
+    '/_authed/sueldos/$clienteId/': {
+      id: '/_authed/sueldos/$clienteId/'
+      path: '/sueldos/$clienteId'
+      fullPath: '/sueldos/$clienteId/'
+      preLoaderRoute: typeof AuthedSueldosClienteIdIndexRouteImport
+      parentRoute: typeof AuthedRouteRoute
+    }
     '/_authed/clients/$clientId/': {
       id: '/_authed/clients/$clientId/'
       path: '/clients/$clientId'
@@ -826,6 +846,7 @@ interface AuthedRouteRouteChildren {
   AuthedTareasIndexRoute: typeof AuthedTareasIndexRoute
   AuthedVencimientosIndexRoute: typeof AuthedVencimientosIndexRoute
   AuthedClientsClientIdIndexRoute: typeof AuthedClientsClientIdIndexRoute
+  AuthedSueldosClienteIdIndexRoute: typeof AuthedSueldosClienteIdIndexRoute
   AuthedSueldosProfileIdIndexRoute: typeof AuthedSueldosProfileIdIndexRoute
 }
 
@@ -852,6 +873,7 @@ const AuthedRouteRouteChildren: AuthedRouteRouteChildren = {
   AuthedTareasIndexRoute: AuthedTareasIndexRoute,
   AuthedVencimientosIndexRoute: AuthedVencimientosIndexRoute,
   AuthedClientsClientIdIndexRoute: AuthedClientsClientIdIndexRoute,
+  AuthedSueldosClienteIdIndexRoute: AuthedSueldosClienteIdIndexRoute,
   AuthedSueldosProfileIdIndexRoute: AuthedSueldosProfileIdIndexRoute,
 }
 
