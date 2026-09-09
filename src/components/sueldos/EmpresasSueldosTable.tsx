@@ -262,6 +262,7 @@ export function AgregarEmpresaDialog() {
           size="icon"
           aria-label="Agregar empresa a Sueldos"
           title="Agregar empresa a Sueldos"
+          className="bg-[var(--arca-navy-900)] text-white hover:bg-[var(--arca-navy-800)]"
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
         </Button>
