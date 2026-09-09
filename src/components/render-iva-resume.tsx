@@ -1102,6 +1102,24 @@ export const RenderIvaResume = React.forwardRef<
   // En definitivo la DDJJ trae débito/crédito pero no netos: el libro (si
   // hay) sigue siendo el mejor neto disponible.
   const libroParaNetos = ddjjPresentada ? libroRow : libro;
+
+  // Lo que el Libro ve y Mis Comprobantes no (típicamente controlador
+  // fiscal). El desglose por alícuota sale de los comprobantes porque el
+  // libro no trae apertura por alícuota: cuando el libro manda en la banda,
+  // sin esta fila el desglose no cierra contra los números de arriba y la
+  // diferencia hay que buscarla a mano. Se compara total contra total
+  // (neto + IVA de ventas propias, sin NC).
+  const ventasFueraDeComprobantes = React.useMemo(() => {
+    if (!libroParaNetos) return 0;
+    const libroTotal =
+      Number(libroParaNetos.netoGravadoVentas ?? 0) +
+      Number(libroParaNetos.debitoFiscalVentas ?? 0);
+    const comprobantesTotal =
+      estimadoVentasNeto + (invoiceStats?.debitoFiscalVentas ?? 0);
+    const dif = libroTotal - comprobantesTotal;
+    // Menos de un peso es redondeo, no una venta que falte.
+    return Math.abs(dif) > 1 ? dif : 0;
+  }, [libroParaNetos, estimadoVentasNeto, invoiceStats?.debitoFiscalVentas]);
   const netoGravadoTotal = libroParaNetos
     ? Number(libroParaNetos.netoGravadoVentas ?? 0) + ajusteVentas
     : invoiceStats != null && !isStatsLoading
@@ -1440,30 +1458,55 @@ export const RenderIvaResume = React.forwardRef<
           <div className="mt-2">
             {(() => {
               const entries = Object.entries(debitoRows);
-              return entries.map(([label, value], i) => {
+              const filas: React.ReactNode[] = [];
+              entries.forEach(([label, value], i) => {
+                const esNc = label === 'NC recibidas';
+                // Antes de las NC, la diferencia contra el Libro: sin ella el
+                // desglose (que sale de los comprobantes) no suma lo que la
+                // banda muestra desde el Libro de IVA.
+                if (esNc && ventasFueraDeComprobantes !== 0) {
+                  filas.push(
+                    <DesgloseRow
+                      key="fuera-comprobantes"
+                      label="Ventas fuera de Mis Comprobantes (IVA incl.)"
+                      value={ventasFueraDeComprobantes}
+                    />
+                  );
+                }
                 const last = i === entries.length - 1;
                 // La NC recibida devuelve crédito fiscal ya computado, por eso
                 // suma al débito y su detalle se rotula "a restituir".
-                return label === 'NC recibidas' ? (
-                  <DesgloseNcRow
-                    key={label}
-                    label={label}
-                    value={value}
-                    detalle={invoiceStats?.ncRecibidasPorAlicuota ?? []}
-                    columnaImpuesto="Créd. fiscal a restituir"
-                    last={last}
-                  />
-                ) : (
-                  <DesgloseRow
-                    key={label}
-                    label={label}
-                    value={value}
-                    last={last}
-                  />
+                filas.push(
+                  esNc ? (
+                    <DesgloseNcRow
+                      key={label}
+                      label={label}
+                      value={value}
+                      detalle={invoiceStats?.ncRecibidasPorAlicuota ?? []}
+                      columnaImpuesto="Créd. fiscal a restituir"
+                      last={last}
+                    />
+                  ) : (
+                    <DesgloseRow
+                      key={label}
+                      label={label}
+                      value={value}
+                      last={last}
+                    />
+                  )
                 );
               });
+              return filas;
             })()}
           </div>
+          {ventasFueraDeComprobantes !== 0 && (
+            <p className="mt-3 text-[11px] leading-relaxed text-[var(--arca-ink-4)]">
+              El desglose por alícuota sale de los comprobantes del portal; el
+              Libro de IVA no trae apertura por alícuota. «Ventas fuera de Mis
+              Comprobantes» cierra la diferencia contra el Libro — suelen ser
+              ventas por controlador fiscal.
+            </p>
+          )}
         </div>
         <div className="bg-[var(--arca-surface)] px-7 py-6">
           <MicroLabel>Compras — desglose</MicroLabel>
