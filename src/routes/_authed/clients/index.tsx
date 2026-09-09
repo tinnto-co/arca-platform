@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
-import { FrecuenciaClavesCard } from '@/components/frecuencia-claves-card';
 import { PageShell } from '@/components/shared/page-shell';
 import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 import { dispatchAllJobs } from '@/actions/job';
@@ -130,7 +129,6 @@ function RouteComponent() {
       <RepresentativesTable
         soloClavesInvalidas={filtro === 'claves_invalidas'}
       />
-      <FrecuenciaClavesCard />
     </PageShell>
   );
 }
