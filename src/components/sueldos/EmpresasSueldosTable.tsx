@@ -9,13 +9,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Check, Pencil, Plus, Users, X } from 'lucide-react';
+import { Plus, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { DataTable } from '@/components/ui/data-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog,
@@ -26,11 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import {
-  listEmpresasSueldos,
-  toggleLiquidaSueldos,
-  updateRazonSocial,
-} from '@/actions/sueldos';
+import { listEmpresasSueldos, toggleLiquidaSueldos } from '@/actions/sueldos';
 
 interface Empresa {
   id: string;
@@ -79,9 +74,6 @@ export function EmpresasSueldosTable({
   onSelect: (clienteId: string) => void;
 }) {
   const queryClient = useQueryClient();
-  const [editando, setEditando] = useState<string | null>(null);
-  const [borrador, setBorrador] = useState('');
-
   const { data: empresas = [], isLoading } = useQuery({
     queryKey: ['empresasSueldos'],
     queryFn: () => listEmpresasSueldos(),
@@ -95,18 +87,6 @@ export function EmpresasSueldosTable({
     queryClient.invalidateQueries({ queryKey: ['empresasSueldos'] });
     queryClient.invalidateQueries({ queryKey: ['clientesSueldos'] });
   };
-
-  const renombrar = useMutation({
-    mutationFn: (v: { clientId: string; razonSocial: string }) =>
-      updateRazonSocial({ data: v }),
-    onSuccess: () => {
-      setEditando(null);
-      invalidar();
-      toast.success('Nombre actualizado');
-    },
-    onError: (e) =>
-      toast.error(e instanceof Error ? e.message : 'No se pudo renombrar'),
-  });
 
   const togglear = useMutation({
     mutationFn: (v: { clientId: string; liquidaSueldos: boolean }) =>
@@ -127,65 +107,9 @@ export function EmpresasSueldosTable({
     {
       accessorKey: 'razonSocial',
       header: 'Empresa',
-      cell: ({ row }) => {
-        const e = row.original;
-        if (editando === e.id) {
-          return (
-            // stopPropagation: sin esto, editar abre la ficha de la empresa.
-            <div
-              className="flex items-center gap-1.5"
-              onClick={(ev) => ev.stopPropagation()}
-            >
-              <Input
-                autoFocus
-                value={borrador}
-                onChange={(ev) => setBorrador(ev.target.value)}
-                onKeyDown={(ev) => {
-                  if (ev.key === 'Enter' && borrador.trim())
-                    renombrar.mutate({ clientId: e.id, razonSocial: borrador });
-                  if (ev.key === 'Escape') setEditando(null);
-                }}
-                className="h-8 text-[13px]"
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 shrink-0"
-                disabled={!borrador.trim() || renombrar.isPending}
-                onClick={() =>
-                  renombrar.mutate({ clientId: e.id, razonSocial: borrador })
-                }
-              >
-                <Check className="h-3.5 w-3.5" />
-              </Button>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 shrink-0"
-                onClick={() => setEditando(null)}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          );
-        }
-        return (
-          <div className="flex items-center gap-2 group/nombre min-w-0">
-            <span className="font-medium truncate">{e.razonSocial}</span>
-            <button
-              aria-label={`Renombrar ${e.razonSocial}`}
-              className="opacity-0 group-hover/nombre:opacity-100 transition-opacity shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)]"
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setEditando(e.id);
-                setBorrador(e.razonSocial);
-              }}
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        );
-      },
+      cell: ({ row }) => (
+        <span className="font-medium truncate">{row.original.razonSocial}</span>
+      ),
     },
     {
       accessorKey: 'cuit',
