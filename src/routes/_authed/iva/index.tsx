@@ -523,7 +523,7 @@ function IvaResumenRI({ search }: { search: string }) {
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           {allRows.length > 0
             ? 'La empresa elegida en el header no es Responsable Inscripto.'
-            : 'No hay empresas clasificadas como Responsable Inscripto. Asignales una condición fiscal desde el bloque “Sin clasificar”.'}
+            : 'No hay empresas clasificadas como Responsable Inscripto. Asignales una condición fiscal desde la tab “Otras empresas”.'}
         </div>
       ) : (
         <div
