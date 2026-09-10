@@ -54,8 +54,8 @@ export const Route = createFileRoute('/_authed/notifications/')({
   component: RouteComponent,
 });
 
-/** Cuántas trae cada tanda. */
-const POR_PAGINA = 50;
+/** Cuántas entran en una página de la bandeja. */
+const POR_PAGINA = 20;
 
 /** Un filtro vacío no viaja en la URL. */
 const oQuitar = (v: string) => (v === '' ? undefined : v);
