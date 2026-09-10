@@ -604,7 +604,7 @@ function TareasPage() {
                   venceHasta: '',
                 })
               }
-              className="text-[11.5px] font-medium text-[var(--arca-navy-700)] hover:underline"
+              className="text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
             >
               Limpiar filtros
             </button>

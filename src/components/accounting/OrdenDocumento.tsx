@@ -127,7 +127,7 @@ export function OrdenDocumento({
             <button
               onClick={() => save.mutate()}
               disabled={!dirty || save.isPending}
-              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white disabled:opacity-40"
+              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white disabled:opacity-40"
             >
               {save.isPending ? 'Guardando…' : 'Guardar'}
             </button>
@@ -162,7 +162,7 @@ export function OrdenDocumento({
                     : undefined,
                 boxShadow:
                   overIdx === idx && dragIdx !== null && dragIdx !== idx
-                    ? 'inset 0 2px 0 var(--arca-navy-900)'
+                    ? 'inset 0 2px 0 var(--arca-accent)'
                     : undefined,
               }}
             >

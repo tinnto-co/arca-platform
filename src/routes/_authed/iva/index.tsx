@@ -542,7 +542,7 @@ function IvaResumenRI({ search }: { search: string }) {
             }}
           >
             <thead>
-              <tr className="bg-[var(--arca-navy-900)] text-white">
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                 <SortableTh
                   label="Cliente"
                   colKey="empresa"
@@ -675,9 +675,9 @@ function IvaResumenRI({ search }: { search: string }) {
                       ...monoStyle,
                       color:
                         r.calcSaldoTecnico > 0
-                          ? 'var(--arca-accent-neg-fg, #b91c1c)'
+                          ? 'var(--arca-accent-neg-fg, var(--arca-accent-neg-fg))'
                           : r.calcSaldoTecnico < 0
-                            ? 'var(--arca-green, #16a34a)'
+                            ? 'var(--arca-green, var(--arca-accent-pos))'
                             : 'var(--arca-ink)',
                     }}
                     title={
@@ -712,9 +712,9 @@ function IvaResumenRI({ search }: { search: string }) {
                       ...monoStyle,
                       color:
                         saldoFinalDe(r) > 0
-                          ? 'var(--arca-accent-neg-fg, #b91c1c)'
+                          ? 'var(--arca-accent-neg-fg, var(--arca-accent-neg-fg))'
                           : saldoFinalDe(r) < 0
-                            ? 'var(--arca-green, #16a34a)'
+                            ? 'var(--arca-green, var(--arca-accent-pos))'
                             : 'var(--arca-ink)',
                     }}
                     title={
@@ -883,7 +883,7 @@ function MonotributistasTab({ search }: { search: string }) {
             style={{ minWidth: 940, width: '100%', borderCollapse: 'collapse' }}
           >
             <thead>
-              <tr className="bg-[var(--arca-navy-900)] text-white">
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                 <SortableTh
                   label="Cliente"
                   colKey="empresa"
@@ -1080,7 +1080,7 @@ function TablaOtras({ rows }: { rows: FilaOtras[] }) {
         style={{ width: '100%', borderCollapse: 'collapse' }}
       >
         <thead>
-          <tr className="bg-[var(--arca-navy-900)] text-white">
+          <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
             <th className={cn(thCls, 'text-left')}>Cliente</th>
             <th className={cn(thCls, 'text-left')}>CUIT</th>
             <th className={cn(thCls, 'text-left')}>Login ARCA</th>
@@ -1098,7 +1098,7 @@ function TablaOtras({ rows }: { rows: FilaOtras[] }) {
               <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
                 {r.razonSocial}
               </td>
-              <td className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums whitespace-nowrap">
+              <td className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap">
                 {r.cuit}
               </td>
               <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">

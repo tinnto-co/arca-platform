@@ -57,24 +57,24 @@ export function NotificacionesTab({
 
   return (
     <div
-      className="bg-[#F7F6F2] border border-[#DFDCD3] rounded-2xl overflow-hidden"
+      className="bg-[var(--arca-bg)] border border-[var(--arca-border-strong)] rounded-2xl overflow-hidden"
       style={{
         boxShadow:
           '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)',
       }}
     >
       {/* ── Toolbar ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[#ECEAE3]">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--arca-border)]">
         <div className="flex items-center gap-3 flex-wrap">
-          <p className="text-[12.5px] text-[#6E7079]">
+          <p className="text-[12.5px] text-[var(--arca-ink-3)]">
             Últ. actualización{' '}
             {lastNotificacionesJob?.createdAt ? (
               <span
                 className={cn(
                   'font-bold',
                   lastNotificacionesJob.success
-                    ? 'text-[#2f7d55]'
-                    : 'text-[#c0392b]'
+                    ? 'text-[var(--arca-accent-pos-fg)]'
+                    : 'text-[var(--arca-accent-neg)]'
                 )}
               >
                 {formatLastUpdateAt(lastNotificacionesJob.createdAt)}
@@ -86,15 +86,15 @@ export function NotificacionesTab({
 
           {hasError && (
             <span className="relative group">
-              <Info className="h-4 w-4 text-[#c0392b] cursor-help" />
-              <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
+              <Info className="h-4 w-4 text-[var(--arca-accent-neg)] cursor-help" />
+              <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[var(--arca-ink)] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
                 {friendlyFailedReason(lastNotificacionesJob.failedReason)}
               </span>
             </span>
           )}
 
           {hasSecurityWarning && (
-            <div className="flex items-center gap-2 text-[12.5px] text-[#c0392b]">
+            <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-accent-neg)]">
               <Lock className="h-3.5 w-3.5" />
               <span>
                 Por medidas de seguridad tenés que cambiar tu contraseña.
@@ -103,14 +103,14 @@ export function NotificacionesTab({
           )}
 
           {lastNotificacionesJob?.notificationFetchWarning && (
-            <span className="text-[11px] text-[#8a6d00]">
+            <span className="text-[11px] text-[var(--arca-accent-warn-fg)]">
               {lastNotificacionesJob.notificationFetchWarning}
             </span>
           )}
         </div>
 
         <button
-          className="inline-flex items-center gap-2 bg-[#12131A] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-black transition-colors disabled:opacity-50 shrink-0"
+          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 shrink-0"
           disabled={!!scrapingSection}
           onClick={async () => {
             setScrapingSection('notificaciones');

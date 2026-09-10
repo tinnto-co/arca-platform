@@ -144,7 +144,7 @@ export function Paginador({
                   className={cn(
                     BOTON,
                     p === pagina
-                      ? 'bg-[var(--arca-ink)] font-semibold text-white'
+                      ? 'bg-[var(--arca-accent-bg)] font-semibold text-[var(--arca-accent-hover)]'
                       : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
                   )}
                 >

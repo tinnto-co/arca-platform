@@ -97,7 +97,7 @@ const RISK_CONFIG: Record<
   },
   medio: {
     label: 'Medio',
-    color: '#F59E0B',
+    color: 'var(--arca-accent-warn)',
     bg: 'var(--arca-accent-warn-bg)',
     fg: 'var(--arca-accent-warn-fg)',
   },

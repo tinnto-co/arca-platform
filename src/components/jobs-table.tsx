@@ -280,7 +280,7 @@ export function JobsTable() {
       case 'running':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]`}
           >
             <Loader2 className="h-3 w-3 animate-spin" />
             En progreso
@@ -327,7 +327,7 @@ export function JobsTable() {
       case 'iva':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]`}
           >
             <FileWarning className="h-3 w-3" />
             IVA
@@ -354,7 +354,7 @@ export function JobsTable() {
       case 'notificaciones':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent)]`}
           >
             <Bell className="h-3 w-3" />
             Notificaciones
@@ -621,7 +621,7 @@ export function JobsTable() {
               <TableHead className="w-10">
                 <input
                   type="checkbox"
-                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                   checked={
                     jobs.length > 0 &&
                     jobs.every((j: JobRow) => selectedIds.has(j.id))
@@ -666,7 +666,7 @@ export function JobsTable() {
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                       checked={selectedIds.has(job.id)}
                       onChange={() => toggleRow(job.id)}
                     />

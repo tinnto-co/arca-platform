@@ -66,7 +66,7 @@ export function TodayScrapedCard() {
                         {rep.cuit}
                       </div>
                     </td>
-                    <td className="text-center tabular-nums text-[var(--arca-ink-3)]">
+                    <td className="text-center tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-3)]">
                       {rep.jobs}
                     </td>
                     <td className="text-center">

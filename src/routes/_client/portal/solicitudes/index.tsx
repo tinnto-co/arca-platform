@@ -213,12 +213,12 @@ function PortalSolicitudes() {
             style={{
               background:
                 statusFilter === f.value
-                  ? 'var(--arca-navy-900)'
+                  ? 'var(--arca-accent)'
                   : 'var(--arca-surface)',
               color: statusFilter === f.value ? '#fff' : 'var(--arca-ink-3)',
               borderColor:
                 statusFilter === f.value
-                  ? 'var(--arca-navy-900)'
+                  ? 'var(--arca-accent)'
                   : 'var(--arca-border)',
             }}
           >

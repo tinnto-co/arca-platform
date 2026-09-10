@@ -17,7 +17,6 @@ import {
   Check,
   Building,
   User,
-  Bot,
   AlertTriangle,
   Landmark,
   BookOpen,
@@ -25,9 +24,17 @@ import {
   Percent,
   Database,
   ClipboardList,
+  ChevronRight,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
+import { OrbeAsistente } from '@/components/agent/orbe';
+import { useAtajo } from '@/lib/tecla-modificador';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import {
   Tooltip,
   TooltipContent,
@@ -76,6 +83,7 @@ function useShellSidebar() {
 /** Abre y cierra el panel. Visible en los dos estados. */
 function BotonColapsar() {
   const { colapsado, toggleSidebar } = useShellSidebar();
+  const atajo = useAtajo('B');
 
   const boton = (
     <button
@@ -83,9 +91,9 @@ function BotonColapsar() {
       onClick={toggleSidebar}
       aria-label={colapsado ? 'Abrir el menú' : 'Cerrar el menú'}
       className={cn(
-        'grid place-items-center rounded-[8px] text-[#8A8F9E] transition-colors duration-[150ms]',
-        'hover:bg-[rgba(255,255,255,0.06)] hover:text-[#F2F3F7]',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F2F3F7]',
+        'grid place-items-center rounded-lg text-[var(--arca-sidebar-muted)] transition-colors duration-[150ms]',
+        'hover:bg-[rgba(255,255,255,0.06)] hover:text-white',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-accent-light)]',
         colapsado ? 'size-9 mx-auto' : 'size-7 shrink-0'
       )}
     >
@@ -98,7 +106,7 @@ function BotonColapsar() {
     <Tooltip>
       <TooltipTrigger asChild>{boton}</TooltipTrigger>
       <TooltipContent side="right" className="text-[12.5px]">
-        Abrir el menú · ⌘B
+        Abrir el menú · {atajo}
       </TooltipContent>
     </Tooltip>
   );
@@ -109,6 +117,11 @@ interface ListedOrg {
   name: string;
   slug?: string | null;
   logo?: string | null;
+}
+
+/** El orbe hace de ícono de "Chats": es la firma del asistente. */
+function IconoOrbe({ className }: { className?: string }) {
+  return <OrbeAsistente size={13} className={className} />;
 }
 
 /* ─── Nav item ─── */
@@ -141,26 +154,29 @@ function NavItem({
       to={to}
       aria-label={colapsado ? label : undefined}
       className={cn(
-        'flex items-center rounded-[10px] relative text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none',
-        colapsado ? 'justify-center size-9 mx-auto' : 'gap-2.5 px-2.5 py-[7px]',
+        'flex items-center rounded-lg relative text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none',
+        colapsado ? 'justify-center size-9 mx-auto' : 'h-[34px] gap-2.5 px-2.5',
         isActive
-          ? 'bg-[rgba(255,255,255,0.06)] text-white'
-          : 'text-[#C6C9D3] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F2F3F7]'
+          ? 'bg-[var(--arca-sidebar-active)] text-white'
+          : 'text-[var(--arca-sidebar-fg)] hover:bg-[rgba(255,255,255,0.04)] hover:text-white'
       )}
     >
       {/* Riel izquierdo del activo: el detalle más distintivo del sistema.
           Colapsado no hay margen donde ponerlo. */}
       {isActive && !colapsado && (
-        <span className="absolute left-[-12px] top-2 bottom-2 w-0.5 rounded-sm bg-[#F7F6F2]" />
+        <span className="absolute left-[-12px] top-1.5 bottom-1.5 w-[3px] rounded-sm bg-[var(--arca-sidebar-active-rail)]" />
       )}
 
       <span className="relative shrink-0">
-        <Icon className="w-[15px] h-[15px]" strokeWidth={2} />
+        <Icon
+          className={cn(
+            'w-[15px] h-[15px]',
+            isActive && 'text-[var(--arca-sidebar-active-icon)]'
+          )}
+          strokeWidth={2}
+        />
         {colapsado && hayUrgentes && (
-          <span
-            className="absolute -top-1 -right-1 size-2 rounded-full ring-2 ring-[var(--arca-navy-900)]"
-            style={{ background: 'oklch(0.60 0.15 25)' }}
-          />
+          <span className="absolute -top-1 -right-1 size-2 rounded-full bg-[var(--arca-accent-neg)] ring-2 ring-[var(--arca-sidebar)]" />
         )}
       </span>
 
@@ -168,15 +184,12 @@ function NavItem({
         <>
           <span className="flex-1 min-w-0 truncate">{label}</span>
           {hayUrgentes && (
-            <span
-              className="inline-flex items-center h-4 px-1.5 rounded-lg text-white text-[10px] font-semibold leading-none"
-              style={{ background: 'oklch(0.60 0.15 25)' }}
-            >
+            <span className="inline-flex h-[18px] items-center rounded-full bg-[var(--arca-accent-neg)] px-1.5 text-[10.5px] leading-none font-semibold tabular-nums text-white [font-family:var(--ff-mono)]">
               {urgentCount}
             </span>
           )}
           {count != null && !hayUrgentes && (
-            <span className="font-mono text-[11px] text-[#8A8F9E]">
+            <span className="text-[11px] tabular-nums text-[var(--arca-sidebar-muted)] [font-family:var(--ff-mono)]">
               {count}
             </span>
           )}
@@ -239,13 +252,13 @@ function FuentesDatosItem() {
           aria-label={colapsado ? 'Fuentes de datos' : undefined}
           title={colapsado ? 'Fuentes de datos' : undefined}
           className={cn(
-            'flex items-center rounded-[10px] text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none text-left',
+            'flex items-center rounded-lg text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none text-left',
             colapsado
               ? 'justify-center size-9 mx-auto'
-              : 'gap-2.5 px-2.5 py-[7px] w-full',
+              : 'h-[34px] gap-2.5 px-2.5 w-full',
             open
-              ? 'bg-[rgba(255,255,255,0.06)] text-white'
-              : 'text-[#C6C9D3] hover:bg-[rgba(255,255,255,0.04)] hover:text-[#F2F3F7]'
+              ? 'bg-[var(--arca-sidebar-active)] text-white'
+              : 'text-[var(--arca-sidebar-fg)] hover:bg-[rgba(255,255,255,0.04)] hover:text-white'
           )}
         >
           <Database className="w-[15px] h-[15px] shrink-0" strokeWidth={2} />
@@ -297,32 +310,110 @@ function FuentesDatosItem() {
   );
 }
 
-/* ─── Nav group label ─── */
-function NavGroupLabel({ children }: { children: React.ReactNode }) {
-  const { colapsado } = useShellSidebar();
+/* ─── Grupos de navegación ─── */
 
-  // Colapsado el texto no entra, pero el corte entre grupos sí importa: pasa a
-  // ser una línea.
+/**
+ * Qué grupos están abiertos se guarda por grupo en localStorage, no en la
+ * sesión: la nav es memoria muscular y tiene que estar como uno la dejó.
+ *
+ * Se lee con `useSyncExternalStore` en vez de un `useEffect`: en SSR no hay
+ * localStorage, y el snapshot de servidor devuelve el default sin provocar
+ * un mismatch de hidratación.
+ */
+const CLAVE_GRUPO = 'arca-sidebar-grupo:';
+const oyentes = new Set<() => void>();
+
+function suscribirGrupos(cb: () => void) {
+  oyentes.add(cb);
+  window.addEventListener('storage', cb);
+  return () => {
+    oyentes.delete(cb);
+    window.removeEventListener('storage', cb);
+  };
+}
+
+function leerGrupo(id: string) {
+  try {
+    return window.localStorage.getItem(CLAVE_GRUPO + id) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function guardarGrupo(id: string, abierto: boolean) {
+  try {
+    window.localStorage.setItem(CLAVE_GRUPO + id, abierto ? '1' : '0');
+  } catch {
+    /* modo privado: el grupo se abre igual, sólo no se recuerda */
+  }
+  oyentes.forEach((cb) => cb());
+}
+
+function useGrupoAbierto(id: string, porDefecto: boolean) {
+  const guardado = React.useSyncExternalStore(
+    suscribirGrupos,
+    () => leerGrupo(id),
+    () => ''
+  );
+  const abierto = guardado === '' ? porDefecto : guardado === '1';
+  return [abierto, (v: boolean) => guardarGrupo(id, v)] as const;
+}
+
+/**
+ * Grupo con encabezado plegable. Colapsado el sidebar no hay lugar para el
+ * label ni sentido en plegar —los ítems son sólo íconos—, así que el grupo se
+ * reduce a un divisor y su contenido queda siempre visible.
+ */
+function NavGroup({
+  id,
+  label,
+  porDefecto = false,
+  children,
+}: {
+  id: string;
+  label: string;
+  porDefecto?: boolean;
+  children: React.ReactNode;
+}) {
+  const { colapsado } = useShellSidebar();
+  const [abierto, setAbierto] = useGrupoAbierto(id, porDefecto);
+
   if (colapsado) {
     return (
-      <div
-        role="separator"
-        aria-label={typeof children === 'string' ? children : undefined}
-        className="mx-auto my-2 h-px w-6 bg-[rgba(255,255,255,0.10)]"
-      />
+      <>
+        <div
+          role="separator"
+          aria-label={label}
+          className="mx-auto my-2 h-px w-5 bg-[rgba(255,255,255,0.10)]"
+        />
+        {children}
+      </>
     );
   }
 
   return (
-    <div className="text-[10.5px] font-semibold text-[#6E7283] uppercase tracking-[0.08em] px-2.5 pt-3.5 pb-1.5">
-      {children}
-    </div>
+    <Collapsible open={abierto} onOpenChange={setAbierto}>
+      <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-lg px-2.5 pt-3 pb-1 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--arca-sidebar-label)] uppercase transition-colors duration-[120ms] hover:text-[var(--arca-sidebar-fg)]">
+        <span className="flex-1 text-left">{label}</span>
+        <ChevronRight
+          className={cn(
+            'size-3 shrink-0 transition-transform duration-150',
+            abierto && 'rotate-90'
+          )}
+          strokeWidth={2.5}
+        />
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-0.5 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+        {children}
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
 /* ─── Main sidebar ─── */
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isMobile } = useSidebar();
+  const atajoBuscar = useAtajo('K');
   const { colapsado } = useShellSidebar();
   const { data: user } = useQuery(userQuery);
   const { data: activeOrg } = authClient.useActiveOrganization();
@@ -360,6 +451,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     (orgModules as { module: string; enabled: boolean }[]).find(
       (m) => m.module === mod
     )?.enabled ?? false;
+  const hayContabilidad =
+    isEnabled('contabilidad') ||
+    isEnabled('banco') ||
+    isEnabled('analytics') ||
+    isEnabled('ai_agent');
 
   const displayName = user?.organizationName ?? activeOrg?.name ?? 'Workspace';
   const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? '';
@@ -412,7 +508,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           'flex flex-col h-full py-3.5 gap-1',
           colapsado ? 'px-2' : 'px-3'
         )}
-        style={{ background: 'var(--arca-navy-900)', color: '#E8E9EE' }}
+        style={{
+          background: 'var(--arca-sidebar)',
+          color: 'var(--arca-sidebar-fg)',
+        }}
       >
         {/* Workspace switcher + botón de colapsar */}
         <div
@@ -435,10 +534,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               >
                 {/* Logo tile */}
                 <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[13px] font-bold shrink-0"
+                  className="w-[30px] h-[30px] rounded-lg flex items-center justify-center text-[12px] font-bold shrink-0 bg-[var(--arca-accent)] text-white"
                   style={{
-                    background: 'linear-gradient(135deg, #F7F6F2, #E8E4D6)',
-                    color: 'var(--arca-navy-900)',
                     letterSpacing: '-0.02em',
                     fontFamily: 'var(--ff-display)',
                   }}
@@ -451,7 +548,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       // ícono de imagen rota en el rincón de la app. Mejor las
                       // iniciales.
                       onError={() => setLogoRoto(true)}
-                      className="w-8 h-8 rounded-lg object-cover"
+                      className="w-[30px] h-[30px] rounded-lg object-cover"
                     />
                   ) : (
                     initials || <Building className="w-4 h-4" />
@@ -460,17 +557,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 {!colapsado && (
                   <>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-semibold text-[#F2F3F7] tracking-[-0.01em] truncate">
+                      <div className="text-[13px] font-semibold text-white tracking-[-0.01em] truncate">
                         {displayName}
                       </div>
                       <div
-                        className="text-[11.5px] text-[#8A8F9E] truncate"
+                        className="text-[11.5px] text-[var(--arca-sidebar-muted)] truncate"
                         style={{ fontFamily: 'var(--ff-mono)' }}
                       >
                         {displaySlug}
                       </div>
                     </div>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[#8A8F9E] shrink-0" />
+                    <ChevronsUpDown className="w-3.5 h-3.5 text-[var(--arca-sidebar-muted)] shrink-0" />
                   </>
                 )}
               </button>
@@ -518,15 +615,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {/* Search */}
         <div
           className={cn(
-            'flex items-center rounded-[10px] text-[12.5px] text-[#8A8F9E] mt-2.5 mb-1.5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-colors duration-[120ms]',
-            colapsado
-              ? 'justify-center size-9 mx-auto'
-              : 'gap-2 px-2.5 py-[7px]'
+            'flex items-center rounded-lg text-[12.5px] text-[var(--arca-sidebar-muted)] mt-2.5 mb-1.5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-colors duration-[120ms]',
+            colapsado ? 'justify-center size-9 mx-auto' : 'h-8 gap-2 px-2.5'
           )}
-          title={colapsado ? 'Buscar · ⌘K' : undefined}
+          title={colapsado ? `Buscar · ${atajoBuscar}` : undefined}
           style={{
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.07)',
           }}
         >
           <Search className="w-[13px] h-[13px] shrink-0" strokeWidth={2} />
@@ -534,14 +629,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <>
               <span className="flex-1">Buscar</span>
               <kbd
-                className="text-[10.5px] text-[#B3B7C2] rounded px-[5px] py-px"
+                className="text-[10.5px] text-[var(--arca-sidebar-muted)] rounded px-[5px] py-px"
                 style={{
                   fontFamily: 'var(--ff-mono)',
                   background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.08)',
                 }}
               >
-                ⌘K
+                {atajoBuscar}
               </kbd>
             </>
           )}
@@ -554,16 +649,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               aria-label={colapsado ? 'Crear nuevo' : undefined}
               title={colapsado ? 'Crear nuevo' : undefined}
               className={cn(
-                'flex items-center rounded-[10px] text-[13px] font-semibold mb-3 transition-colors duration-[120ms]',
+                'flex items-center rounded-lg text-[13px] font-semibold mb-3 transition-colors duration-[120ms]',
+                'bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]',
                 colapsado
                   ? 'justify-center size-9 mx-auto'
-                  : 'gap-2 px-3 py-[9px] w-full'
+                  : 'h-9 gap-2 px-3 w-full'
               )}
-              style={{ background: '#F7F6F2', color: 'var(--arca-navy-900)' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = '#fff')}
-              onMouseLeave={(e) =>
-                (e.currentTarget.style.background = '#F7F6F2')
-              }
             >
               <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
               {!colapsado && 'Crear nuevo'}
@@ -575,37 +666,50 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <nav className="flex flex-col gap-0.5 flex-1 overflow-y-auto overflow-x-visible min-h-0">
           <NavItem to="/" icon={Home} label="Inicio" />
 
-          <NavGroupLabel>Plataforma</NavGroupLabel>
+          <NavGroup id="clientes" label="Clientes" porDefecto>
+            <NavItem to="/clients" icon={Users} label="Clientes" />
+            <NavItem
+              to="/notifications"
+              icon={Bell}
+              label="Notificaciones"
+              urgentCount={notifCount}
+            />
+            <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
+            <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
+            <NavItem to="/invoices" icon={FileText} label="Facturas" />
+          </NavGroup>
 
-          <NavItem to="/clients" icon={Users} label="Clientes" />
-          <NavItem
-            to="/notifications"
-            icon={Bell}
-            label="Notificaciones"
-            urgentCount={notifCount}
-          />
-          <NavItem to="/invoices" icon={FileText} label="Facturas" />
-          <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
-          <NavItem to="/iibb" icon={Globe} label="IIBB" />
-          <NavItem to="/iva" icon={Percent} label="IVA" />
-          <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
-          <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
-          {isEnabled('banco') && (
-            <NavItem to="/bank" icon={Landmark} label="Banco" />
-          )}
-          {isEnabled('contabilidad') && (
-            <NavItem to="/accounting" icon={BookOpen} label="Contabilidad" />
-          )}
-          {isEnabled('analytics') && (
-            <NavItem to="/analytics" icon={BarChart2} label="Analytics" />
-          )}
-          {isEnabled('ai_agent') && (
-            <NavItem to="/chat" icon={Bot} label="Chats" />
+          <NavGroup id="impuestos" label="Impuestos" porDefecto>
+            <NavItem to="/iva" icon={Percent} label="IVA" />
+            <NavItem to="/iibb" icon={Globe} label="IIBB" />
+            <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
+          </NavGroup>
+
+          {/* Todo el grupo depende de módulos: si no hay ninguno habilitado no
+              se dibuja ni el encabezado. */}
+          {hayContabilidad && (
+            <NavGroup id="contabilidad" label="Contabilidad">
+              {isEnabled('contabilidad') && (
+                <NavItem
+                  to="/accounting"
+                  icon={BookOpen}
+                  label="Contabilidad"
+                />
+              )}
+              {isEnabled('banco') && (
+                <NavItem to="/bank" icon={Landmark} label="Banco" />
+              )}
+              {isEnabled('analytics') && (
+                <NavItem to="/analytics" icon={BarChart2} label="Analytics" />
+              )}
+              {isEnabled('ai_agent') && (
+                <NavItem to="/chat" icon={IconoOrbe} label="Chats" />
+              )}
+            </NavGroup>
           )}
 
           {isOwner && (
-            <>
-              <NavGroupLabel>Operaciones</NavGroupLabel>
+            <NavGroup id="operaciones" label="Operaciones">
               <NavItem to="/jobs" icon={Clock} label="Jobs" />
               <FuentesDatosItem />
               <NavItem
@@ -615,14 +719,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 urgentCount={openAlertsCount}
               />
               <NavItem to="/admin" icon={Settings} label="Administración" />
-            </>
+            </NavGroup>
           )}
         </nav>
 
         {/* ─── Footer: user card ─── */}
         <div
           className="mt-auto pt-2.5"
-          style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}
+          style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
         >
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -638,10 +742,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               >
                 {/* User avatar */}
                 <div
-                  className="w-[30px] h-[30px] rounded-full flex items-center justify-center text-[11px] font-bold shrink-0"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 text-white"
                   style={{
-                    background: 'linear-gradient(135deg, #2A4680, #C2A878)',
-                    color: '#F7F6F2',
+                    background: 'linear-gradient(135deg, #1F7A86, #4FB3BC)',
                   }}
                 >
                   {user?.image ? (
@@ -657,14 +760,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 {!colapsado && (
                   <>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12.5px] font-semibold text-[#F2F3F7] truncate">
+                      <div className="text-[12.5px] font-semibold text-white truncate">
                         {user?.name}
                       </div>
-                      <div className="text-[11px] text-[#8A8F9E] truncate">
+                      <div className="text-[11px] text-[var(--arca-sidebar-muted)] truncate">
                         {user?.email}
                       </div>
                     </div>
-                    <ChevronDown className="w-3.5 h-3.5 text-[#8A8F9E] shrink-0" />
+                    <ChevronDown className="w-3.5 h-3.5 text-[var(--arca-sidebar-muted)] shrink-0" />
                   </>
                 )}
               </button>

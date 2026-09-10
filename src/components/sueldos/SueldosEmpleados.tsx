@@ -1919,7 +1919,7 @@ export function SueldosEmpleados({
       <div className="flex items-center justify-between gap-2">
         <p
           className="break-words"
-          style={{ fontSize: '13.5px', color: '#9B9CA3' }}
+          style={{ fontSize: '13.5px', color: 'var(--arca-ink-4)' }}
         >
           Empleados del perfil fiscal (importados desde LSD o creados
           manualmente).
@@ -1929,8 +1929,8 @@ export function SueldosEmpleados({
             type="button"
             onClick={() => sincronizar.mutate()}
             disabled={sincronizar.isPending}
-            className="inline-flex items-center gap-2 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[#FBFAF6] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ color: '#3E404A' }}
+            className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ color: 'var(--arca-ink-2)' }}
           >
             <RefreshCw
               style={{ width: 14, height: 14 }}
@@ -1941,7 +1941,7 @@ export function SueldosEmpleados({
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-2 bg-[#12131A] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-black transition-colors"
+            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors"
           >
             <Plus style={{ width: 14, height: 14 }} />
             Nuevo empleado
@@ -1954,19 +1954,24 @@ export function SueldosEmpleados({
         <div className="relative" style={{ width: 320 }}>
           <Search
             className="absolute top-1/2 -translate-y-1/2"
-            style={{ left: 13, width: 14, height: 14, color: '#9B9CA3' }}
+            style={{
+              left: 13,
+              width: 14,
+              height: 14,
+              color: 'var(--arca-ink-4)',
+            }}
           />
           <Input
             placeholder="Buscar por nombre, CUIL o legajo…"
             value={busqueda}
             onChange={(e) => handleBusqueda(e.target.value)}
-            className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             style={{ paddingLeft: 36 }}
           />
         </div>
         <label
           className="flex cursor-pointer items-center gap-2 select-none"
-          style={{ fontSize: '13.5px', color: '#6E7079' }}
+          style={{ fontSize: '13.5px', color: 'var(--arca-ink-3)' }}
         >
           <span
             className="relative flex items-center justify-center shrink-0"
@@ -1986,8 +1991,10 @@ export function SueldosEmpleados({
               style={{
                 width: 19,
                 height: 19,
-                backgroundColor: ocultarBajas ? '#12131A' : '#FFFFFF',
-                border: ocultarBajas ? 'none' : '1px solid #DFDCD3',
+                backgroundColor: ocultarBajas ? 'var(--arca-ink)' : '#FFFFFF',
+                border: ocultarBajas
+                  ? 'none'
+                  : '1px solid var(--arca-border-strong)',
               }}
             >
               {ocultarBajas && (
@@ -2011,7 +2018,7 @@ export function SueldosEmpleados({
       <div className="w-full min-w-0 max-w-full overflow-x-auto">
         {/* Header */}
         <div
-          className="grid items-center bg-[var(--arca-navy-900)] text-white rounded-t-[10px] px-5"
+          className="grid items-center bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] rounded-t-[10px] px-5"
           style={{
             height: 44,
             gridTemplateColumns: '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
@@ -2032,18 +2039,18 @@ export function SueldosEmpleados({
         </div>
 
         {/* Body */}
-        <div className="border border-t-0 border-[#ECEAE3] rounded-b-[10px] overflow-hidden">
+        <div className="border border-t-0 border-[var(--arca-border)] rounded-b-[10px] overflow-hidden">
           {isLoading ? (
             <div
               className="flex items-center justify-center py-8"
-              style={{ color: '#9B9CA3', fontSize: 13 }}
+              style={{ color: 'var(--arca-ink-4)', fontSize: 13 }}
             >
               Cargando…
             </div>
           ) : filtrados.length === 0 ? (
             <div
               className="flex items-center justify-center py-8 px-5 text-center"
-              style={{ color: '#9B9CA3', fontSize: 13 }}
+              style={{ color: 'var(--arca-ink-4)', fontSize: 13 }}
             >
               {busqueda
                 ? 'Sin resultados para la búsqueda.'
@@ -2059,7 +2066,7 @@ export function SueldosEmpleados({
               return (
                 <div
                   key={e.id}
-                  className="grid items-center px-5 border-b border-[#ECEAE3] hover:bg-[#FBFAF6] transition-[background] duration-[120ms] cursor-pointer last:border-b-0"
+                  className="grid items-center px-5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-[background] duration-[120ms] cursor-pointer last:border-b-0"
                   style={{
                     gridTemplateColumns:
                       '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
@@ -2074,7 +2081,7 @@ export function SueldosEmpleados({
                     style={{
                       fontSize: '13.5px',
                       fontWeight: 600,
-                      color: '#12131A',
+                      color: 'var(--arca-ink)',
                     }}
                   >
                     {formatTitleCaseDisplay(e.nombre)}
@@ -2083,7 +2090,7 @@ export function SueldosEmpleados({
                   {/* CUIL */}
                   <span
                     className="font-[family-name:var(--ff-mono)] whitespace-nowrap"
-                    style={{ fontSize: '12.5px', color: '#3E404A' }}
+                    style={{ fontSize: '12.5px', color: 'var(--arca-ink-2)' }}
                   >
                     {e.cuil}
                   </span>
@@ -2091,7 +2098,7 @@ export function SueldosEmpleados({
                   {/* Legajo */}
                   <span
                     className="tabular-nums whitespace-nowrap"
-                    style={{ fontSize: 13, color: '#3E404A' }}
+                    style={{ fontSize: 13, color: 'var(--arca-ink-2)' }}
                   >
                     {legajoParaMostrar(e.legajo)}
                   </span>
@@ -2099,7 +2106,7 @@ export function SueldosEmpleados({
                   {/* Fecha alta */}
                   <span
                     className="tabular-nums whitespace-nowrap"
-                    style={{ fontSize: 13, color: '#3E404A' }}
+                    style={{ fontSize: 13, color: 'var(--arca-ink-2)' }}
                   >
                     {formatDate(e.fechaAlta ?? undefined)}
                   </span>
@@ -2107,7 +2114,7 @@ export function SueldosEmpleados({
                   {/* Categoría */}
                   <span
                     className="min-w-0 break-words pr-3"
-                    style={{ fontSize: 13, color: '#3E404A' }}
+                    style={{ fontSize: 13, color: 'var(--arca-ink-2)' }}
                   >
                     {r.categoriaNombre
                       ? formatTitleCaseDisplay(r.categoriaNombre)
@@ -2183,8 +2190,12 @@ export function SueldosEmpleados({
                         type="button"
                         title="Ver recibos del empleado"
                         onClick={() => onVerRecibos(e.id)}
-                        className="flex items-center justify-center rounded-md hover:bg-[#F1EFE8] transition-colors"
-                        style={{ width: 28, height: 28, color: '#9B9CA3' }}
+                        className="flex items-center justify-center rounded-md hover:bg-[var(--arca-surface-2)] transition-colors"
+                        style={{
+                          width: 28,
+                          height: 28,
+                          color: 'var(--arca-ink-4)',
+                        }}
                       >
                         <FileText style={{ width: 15, height: 15 }} />
                       </button>
@@ -2202,12 +2213,14 @@ export function SueldosEmpleados({
                           plantillaEmpleadoId === e.id ? null : e.id
                         )
                       }
-                      className="flex items-center justify-center rounded-md hover:bg-[#F1EFE8] transition-colors disabled:opacity-40"
+                      className="flex items-center justify-center rounded-md hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40"
                       style={{
                         width: 28,
                         height: 28,
                         color:
-                          plantillaEmpleadoId === e.id ? '#d97706' : '#9B9CA3',
+                          plantillaEmpleadoId === e.id
+                            ? '#d97706'
+                            : 'var(--arca-ink-4)',
                       }}
                     >
                       {plantillaEmpleadoId === e.id ? (
@@ -2226,7 +2239,11 @@ export function SueldosEmpleados({
                         disabled={eliminar.isPending}
                         onClick={() => eliminar.mutate(e.id)}
                         className="flex items-center justify-center rounded-md hover:bg-[#FEF2F2] transition-colors disabled:opacity-40"
-                        style={{ width: 28, height: 28, color: '#c0392b' }}
+                        style={{
+                          width: 28,
+                          height: 28,
+                          color: 'var(--arca-accent-neg)',
+                        }}
                       >
                         <Trash2 style={{ width: 14, height: 14 }} />
                       </button>
@@ -2242,7 +2259,7 @@ export function SueldosEmpleados({
       {/* Pagination */}
       {!isLoading && filtrados.length > 0 && (
         <div className="flex items-center justify-between py-4 px-[2px]">
-          <span style={{ fontSize: '12.5px', color: '#9B9CA3' }}>
+          <span style={{ fontSize: '12.5px', color: 'var(--arca-ink-4)' }}>
             {filtrados.length === rows.length
               ? `${rows.length} empleados`
               : `${filtrados.length} de ${rows.length} empleados`}
@@ -2253,9 +2270,12 @@ export function SueldosEmpleados({
               type="button"
               onClick={() => setPagina((p) => Math.max(1, p - 1))}
               disabled={paginaActual === 1}
-              className="inline-flex items-center gap-1.5 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[#FBFAF6] transition-colors"
+              className="inline-flex items-center gap-1.5 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
               style={{
-                color: paginaActual === 1 ? '#9B9CA3' : '#3E404A',
+                color:
+                  paginaActual === 1
+                    ? 'var(--arca-ink-4)'
+                    : 'var(--arca-ink-2)',
                 opacity: paginaActual === 1 ? 0.6 : 1,
                 cursor: paginaActual === 1 ? 'default' : 'pointer',
               }}
@@ -2267,9 +2287,12 @@ export function SueldosEmpleados({
               type="button"
               onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
               disabled={paginaActual === totalPaginas}
-              className="inline-flex items-center gap-1.5 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[#FBFAF6] transition-colors"
+              className="inline-flex items-center gap-1.5 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
               style={{
-                color: paginaActual === totalPaginas ? '#9B9CA3' : '#3E404A',
+                color:
+                  paginaActual === totalPaginas
+                    ? 'var(--arca-ink-4)'
+                    : 'var(--arca-ink-2)',
                 opacity: paginaActual === totalPaginas ? 0.6 : 1,
                 cursor: paginaActual === totalPaginas ? 'default' : 'pointer',
               }}

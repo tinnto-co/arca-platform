@@ -22,13 +22,13 @@ export interface CeldaDia {
   rango: [string, string];
 }
 
-// Rampa dorado → navy. El tramo bajo es un dorado aguado y no el token de
-// borde: `--arca-border-strong` es un gris de 1px, sobre blanco una barra
-// pintada con él no se lee como dato.
+// Rampa de carga: gris frío → ámbar → rojo. El tramo bajo usa su propio
+// token y no `--arca-border-strong`: ese es un gris de 1px y una barra
+// pintada con él no se lee como dato sobre blanco.
 const NIVELES = [
-  { label: 'baja', color: 'color-mix(in srgb, var(--arca-chart-3) 50%, #fff)' },
-  { label: 'media', color: 'var(--arca-chart-3)' },
-  { label: 'alta', color: 'var(--arca-navy-700)' },
+  { label: 'baja', color: 'var(--arca-cal-low)' },
+  { label: 'media', color: 'var(--arca-accent-warn)' },
+  { label: 'alta', color: 'var(--arca-accent-neg)' },
 ] as const;
 
 /** Cortes de la escala: [hasta baja, hasta media]. El resto es alta. */
@@ -138,7 +138,7 @@ function Leyenda({ pico, unidad }: { pico: number; unidad: 'día' | 'semana' }) 
             style={{
               width: 12,
               height: 2,
-              background: 'var(--arca-navy-700)',
+              background: 'var(--arca-accent)',
             }}
           />
           <span
@@ -199,10 +199,12 @@ export function FranjaDias({
                     ? '1px solid var(--arca-border)'
                     : undefined,
                 background: activa
-                  ? 'var(--arca-border)'
-                  : c.esHoy || c.esFinde
-                    ? 'var(--arca-surface-2)'
-                    : undefined,
+                  ? 'var(--arca-accent-bg)'
+                  : c.esHoy
+                    ? 'var(--arca-accent-bg)'
+                    : c.esFinde
+                      ? 'var(--arca-surface-hover)'
+                      : undefined,
               }}
               aria-pressed={activa}
               title={`${c.labelArriba} ${c.labelNumero}${c.esHoy ? ' (hoy)' : ''} · ${etiqueta}`}
@@ -212,7 +214,9 @@ export function FranjaDias({
                 className="text-[9.5px] font-semibold uppercase"
                 style={{
                   letterSpacing: '0.1em',
-                  color: c.esHoy ? 'var(--arca-navy-700)' : 'var(--arca-ink-4)',
+                  color: c.esHoy
+                    ? 'var(--arca-accent-hover)'
+                    : 'var(--arca-ink-4)',
                 }}
               >
                 {c.labelArriba}
@@ -238,15 +242,16 @@ export function FranjaDias({
                 )}
               </span>
               <span
-                className="text-[10.5px] tabular-nums"
+                className="text-[10.5px] tabular-nums [font-family:var(--ff-mono)]"
                 style={{
                   color:
                     c.cantidad === 0
-                      ? 'var(--arca-border-strong)'
-                      : c.cantidad === pico
-                        ? 'var(--arca-ink)'
+                      ? 'var(--arca-ink-4)'
+                      : nivelDe(c.cantidad, pico) === 2
+                        ? 'var(--arca-accent-neg-fg)'
                         : 'var(--arca-ink-3)',
-                  fontWeight: c.esHoy || c.cantidad === pico ? 600 : 400,
+                  fontWeight:
+                    nivelDe(c.cantidad, pico) >= 1 || c.esHoy ? 600 : 400,
                 }}
               >
                 {c.cantidad === 0 ? '—' : c.cantidad}
@@ -256,8 +261,8 @@ export function FranjaDias({
               {c.esHoy && (
                 <span
                   aria-hidden
-                  className="absolute left-0 right-0 bottom-0"
-                  style={{ height: 2, background: 'var(--arca-navy-700)' }}
+                  className="absolute top-0 right-0 left-0"
+                  style={{ height: 3, background: 'var(--arca-accent)' }}
                 />
               )}
             </button>

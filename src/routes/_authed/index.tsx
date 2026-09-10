@@ -9,6 +9,7 @@ import { useMemo, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { getInicio } from '@/actions/inicio';
+import { cn } from '@/lib/utils';
 import { FranjaInfra } from '@/components/inicio/franja-infra';
 import { FranjaDias, type CeldaDia } from '@/components/inicio/franja-dias';
 import { AgendaCard } from '@/components/inicio/agenda-card';
@@ -184,10 +185,7 @@ function InicioPage() {
               {sub || ' '}
             </p>
           </div>
-          <div
-            className="flex bg-white border rounded-[10px] shrink-0"
-            style={{ borderColor: 'var(--arca-border-strong)', padding: 3 }}
-          >
+          <div className="flex shrink-0 rounded-lg bg-[var(--arca-surface-2)] p-[3px]">
             {PERIODOS.map((p) => (
               <button
                 key={p.clave}
@@ -197,13 +195,12 @@ function InicioPage() {
                   setSeleccion(null);
                 }}
                 aria-pressed={periodo === p.clave}
-                className="text-[12px] font-medium rounded-[7px] cursor-pointer transition-colors duration-150"
-                style={{
-                  padding: '6px 12px',
-                  background:
-                    periodo === p.clave ? 'var(--arca-ink)' : undefined,
-                  color: periodo === p.clave ? '#fff' : 'var(--arca-ink-3)',
-                }}
+                className={cn(
+                  'cursor-pointer rounded-md px-3 py-[5px] text-[12.5px] font-medium transition-colors duration-150',
+                  periodo === p.clave
+                    ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                    : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                )}
               >
                 {p.label}
               </button>

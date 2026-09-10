@@ -219,7 +219,7 @@ function fmtArsSign(n: number): string {
   return `$\u202f${fmtArs(n)}`;
 }
 
-const DASH = <span className="text-slate-300">—</span>;
+const DASH = <span className="text-[var(--arca-ink-4)]">—</span>;
 const MAX_PCT_WARN = 500;
 
 // ---------------------------------------------------------------------------
@@ -634,7 +634,7 @@ function EditableCell({
           e.preventDefault();
         }
       }}
-      className="w-full bg-white border border-slate-200 rounded px-1 py-1 text-[10px] text-right focus:bg-yellow-50 focus:ring-1 focus:ring-yellow-300 focus:border-yellow-300 outline-none"
+      className="w-full bg-white border border-[var(--arca-border)] rounded px-1 py-1 text-[10px] text-right focus:bg-[var(--arca-accent-warn-bg)] focus:ring-1 focus:ring-[var(--arca-accent-warn)] focus:border-[var(--arca-accent-warn)] outline-none"
     />
   );
 }
@@ -694,13 +694,13 @@ function ResultOverrideCell({
               e.preventDefault();
             }
           }}
-          className="w-full bg-amber-50 border border-amber-300 rounded px-1 py-0.5 text-[10px] text-right focus:ring-1 focus:ring-amber-400 outline-none"
+          className="w-full bg-[var(--arca-accent-warn-bg)] border border-[var(--arca-accent-warn)] rounded px-1 py-0.5 text-[10px] text-right focus:ring-1 focus:ring-[var(--arca-accent-warn)] outline-none"
         />
         <button
           type="button"
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => setEditing(false)}
-          className="text-slate-400 hover:text-slate-600 shrink-0 p-0.5"
+          className="text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-3)] shrink-0 p-0.5"
         >
           <X className="h-2.5 w-2.5" />
         </button>
@@ -712,13 +712,13 @@ function ResultOverrideCell({
     <div className="flex items-center justify-end gap-0.5">
       {isOverridden ? (
         <>
-          <span className="text-amber-700 tabular-nums whitespace-nowrap">
+          <span className="text-[var(--arca-accent-warn-fg)] tabular-nums whitespace-nowrap">
             {fmtArs(num)}
           </span>
           <button
             type="button"
             onClick={() => onOverride('')}
-            className="text-amber-400 hover:text-red-500 shrink-0"
+            className="text-[var(--arca-accent-warn)] hover:text-[var(--arca-accent-neg)] shrink-0"
             title="Quitar override"
           >
             <X className="h-2.5 w-2.5" />
@@ -732,7 +732,7 @@ function ResultOverrideCell({
           <button
             type="button"
             onClick={startEdit}
-            className="text-slate-300 hover:text-slate-500 shrink-0 ml-0.5"
+            className="text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-3)] shrink-0 ml-0.5"
             title="Override manual (solo esta sesión)"
           >
             <Pencil className="h-2.5 w-2.5" />
@@ -811,7 +811,7 @@ function AgregarConceptoButton({
         <button
           type="button"
           tabIndex={-1}
-          className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+          className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-bg)] hover:text-[var(--arca-ink-2)] transition-colors"
         >
           <Plus className="h-3 w-3" />
           Agregar concepto
@@ -823,7 +823,7 @@ function AgregarConceptoButton({
           placeholder="Buscar por nombre o número…"
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
-          className="mb-2 w-full rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-slate-300"
+          className="mb-2 w-full rounded border px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-[var(--arca-border)]"
           autoFocus
         />
         <div className="max-h-52 overflow-y-auto">
@@ -839,7 +839,7 @@ function AgregarConceptoButton({
               return (
                 <label
                   key={c.codigo}
-                  className={`flex w-full items-start gap-2 rounded px-2 py-1 text-left text-xs ${excluido ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:bg-slate-100'}`}
+                  className={`flex w-full items-start gap-2 rounded px-2 py-1 text-left text-xs ${excluido ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:bg-[var(--arca-bg)]'}`}
                   title={
                     excluido
                       ? 'Excluyente con un concepto ya agregado'
@@ -848,12 +848,12 @@ function AgregarConceptoButton({
                 >
                   <input
                     type="checkbox"
-                    className="mt-0.5 shrink-0 accent-slate-600"
+                    className="mt-0.5 shrink-0 accent-[var(--arca-accent)]"
                     disabled={excluido}
                     checked={seleccionados.has(c.codigo)}
                     onChange={() => !excluido && toggleSeleccion(c.codigo)}
                   />
-                  <span className="w-6 shrink-0 tabular-nums text-slate-400">
+                  <span className="w-6 shrink-0 tabular-nums text-[var(--arca-ink-4)]">
                     {c.codigo}
                   </span>
                   <span className="flex-1">
@@ -866,7 +866,7 @@ function AgregarConceptoButton({
         </div>
         {disponibles.length > 0 && (
           <div className="mt-2 flex items-center justify-between gap-2 border-t pt-2">
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[10px] text-[var(--arca-ink-3)]">
               {seleccionados.size > 0
                 ? `${seleccionados.size} seleccionado${seleccionados.size > 1 ? 's' : ''}`
                 : 'Seleccioná uno o más'}
@@ -875,7 +875,7 @@ function AgregarConceptoButton({
               type="button"
               disabled={seleccionados.size === 0}
               onClick={confirmar}
-              className="rounded bg-slate-700 px-3 py-1 text-[10px] font-medium text-white hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="rounded bg-[var(--arca-ink-2)] px-3 py-1 text-[10px] font-medium text-white hover:bg-[var(--arca-ink)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Agregar ({seleccionados.size})
             </button>
@@ -929,10 +929,10 @@ function TableSection({
   return (
     <>
       {/* Section header row */}
-      <tr className="bg-slate-200 border-b border-t">
+      <tr className="bg-[var(--arca-surface-2)] border-b border-t">
         <td
           colSpan={12}
-          className="px-2 py-1 font-semibold text-slate-700 text-[11px] uppercase tracking-wide"
+          className="px-2 py-1 font-semibold text-[var(--arca-ink-2)] text-[11px] uppercase tracking-wide"
         >
           {cfg.label}
         </td>
@@ -944,8 +944,8 @@ function TableSection({
 
         return (
           <Fragment key={c.codigo}>
-            <tr className="border-b hover:bg-slate-50 divide-x divide-slate-200">
-              <td className="px-2 py-1.5 text-center text-slate-400 tabular-nums">
+            <tr className="border-b hover:bg-[var(--arca-surface-hover)] divide-x divide-[var(--arca-border-row)]">
+              <td className="px-2 py-1.5 text-center text-[var(--arca-ink-4)] tabular-nums [font-family:var(--ff-mono)]">
                 {c.codigo}
               </td>
               <td className="px-2 py-1.5 font-medium">
@@ -954,7 +954,7 @@ function TableSection({
                     <span>
                       {c.nombre ?? `Concepto ${c.codigo}`}
                       {c.codigoAfip && c.codigoAfip !== '0' && (
-                        <span className="ml-1 text-slate-400 font-normal">
+                        <span className="ml-1 text-[var(--arca-ink-4)] font-normal">
                           [{c.codigoAfip}]
                         </span>
                       )}
@@ -967,12 +967,12 @@ function TableSection({
                         onChange={(ev) =>
                           setField(c.codigo, 'memo', ev.target.value)
                         }
-                        className="w-full rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] font-normal text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                        className="w-full rounded border border-[var(--arca-border)] bg-white px-1.5 py-0.5 text-[11px] font-normal text-[var(--arca-ink-2)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-sky-400"
                       />
                     )}
                     {(c.codigo === '51' || c.codigo === '401') &&
                       brutoMesAnterior === 0 && (
-                        <span className="text-amber-700 text-[10px] italic leading-tight">
+                        <span className="text-[var(--arca-accent-warn-fg)] text-[10px] italic leading-tight">
                           No se ha cargado el recibo del período anterior para
                           calcular automáticamente este concepto
                         </span>
@@ -983,7 +983,7 @@ function TableSection({
                       type="button"
                       tabIndex={-1}
                       onClick={() => onRemoveConcepto(c.codigo)}
-                      className="ml-1 shrink-0 opacity-0 group-hover/row:opacity-100 text-slate-300 hover:text-red-500 transition-opacity"
+                      className="ml-1 shrink-0 opacity-0 group-hover/row:opacity-100 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)] transition-opacity"
                       title="Eliminar concepto"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -991,7 +991,7 @@ function TableSection({
                   )}
                 </div>
               </td>
-              <td className="px-1 py-1.5 !border-l-2 !border-l-slate-400">
+              <td className="px-1 py-1.5 !border-l-2 !border-l-[var(--arca-border-strong)]">
                 {/* Para SAC (41/42): Cantidad = base manual opcional (no se auto-rellena) */}
                 {c.tieneCantidad !== false ? (
                   <EditableCell
@@ -1073,7 +1073,7 @@ function TableSection({
                   DASH
                 )}
               </td>
-              <td className="px-2 py-1.5 !border-l-2 !border-l-slate-600">
+              <td className="px-2 py-1.5 !border-l-2 !border-l-[var(--arca-border-strong)]">
                 {isHaberes ? (
                   <ResultOverrideCell
                     monto={edit?.monto ?? ''}
@@ -1127,7 +1127,10 @@ function TableSection({
       {/* Add concept row */}
       {onAddConcepto && catalogoCompleto && codigosActivos && (
         <tr>
-          <td colSpan={12} className="px-2 py-0.5 bg-slate-50">
+          <td
+            colSpan={12}
+            className="px-2 py-0.5 bg-[var(--arca-surface-hover)]"
+          >
             <AgregarConceptoButton
               seccion={seccion}
               catalogo={catalogoCompleto}
@@ -1146,33 +1149,33 @@ function TableSection({
       )}
 
       {/* Section total row */}
-      <tr className="border-b border-t-2 border-t-slate-300 bg-slate-100 divide-x divide-slate-300">
+      <tr className="border-b border-t-2 border-t-[var(--arca-border)] bg-[var(--arca-bg)] divide-x divide-[var(--arca-border)]">
         <td className="px-2 py-1.5" />
         <td
-          className="px-2 py-1.5 text-right font-semibold text-slate-600 text-[10px] italic"
+          className="px-2 py-1.5 text-right font-semibold text-[var(--arca-ink-3)] text-[10px] italic"
           colSpan={7}
         >
           Total {cfg.label}
         </td>
         <td
-          className={`px-2 py-1.5 text-right font-semibold !border-l-2 !border-l-slate-600 ${
-            isHaberes ? 'text-slate-800' : 'text-slate-300'
+          className={`px-2 py-1.5 text-right font-semibold !border-l-2 !border-l-[var(--arca-border-strong)] ${
+            isHaberes ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-4)]'
           }`}
         >
           {isHaberes ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
         <td
-          className={`px-2 py-1.5 text-right font-semibold ${isDesc ? 'text-slate-800' : 'text-slate-300'}`}
+          className={`px-2 py-1.5 text-right font-semibold ${isDesc ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-4)]'}`}
         >
           {isDesc ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
         <td
-          className={`px-2 py-1.5 text-right font-semibold ${isReten ? 'text-slate-800' : 'text-slate-300'}`}
+          className={`px-2 py-1.5 text-right font-semibold ${isReten ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-4)]'}`}
         >
           {isReten ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
         <td
-          className={`px-2 py-1.5 text-right font-semibold ${isNoRem ? 'text-slate-800' : 'text-slate-300'}`}
+          className={`px-2 py-1.5 text-right font-semibold ${isNoRem ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-4)]'}`}
         >
           {isNoRem ? fmtArsSign(sectionTotal(seccion)) : '—'}
         </td>
@@ -1832,14 +1835,14 @@ export function TablaReciboSos({
         <strong>{tipoReciboLabel(recibo.tipo)}</strong> · {pieNota}
       </p>
       {guardrails.errors.length > 0 && (
-        <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800">
+        <div className="rounded-md border border-[var(--arca-accent-neg)] bg-[var(--arca-accent-neg-bg)] px-3 py-2 text-xs text-[var(--arca-accent-neg-fg)]">
           {guardrails.errors.slice(0, 4).map((msg) => (
             <p key={`err-${msg}`}>{msg}</p>
           ))}
         </div>
       )}
       {guardrails.warnings.length > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="rounded-md border border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] px-3 py-2 text-xs text-[var(--arca-accent-warn-fg)]">
           {guardrails.warnings.slice(0, 4).map((msg) => (
             <p key={`warn-${msg}`}>{msg}</p>
           ))}
@@ -1849,41 +1852,41 @@ export function TablaReciboSos({
       <div className="rounded-md border text-[10px]">
         <table className="w-full border-collapse table-fixed">
           <thead>
-            <tr className="text-slate-600 text-[10px] divide-x divide-slate-300">
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-center w-[4%]">
+            <tr className="text-[var(--arca-ink-3)] text-[10px] uppercase tracking-[0.06em] divide-x divide-[var(--arca-border)]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-center w-[4%]">
                 #
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-left w-[16%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-left w-[16%]">
                 Concepto
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[6%] !border-l-2 !border-l-slate-400">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[6%] !border-l-2 !border-l-[var(--arca-border-strong)]">
                 Cantidad
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[5%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[5%]">
                 %
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[7%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[7%]">
                 Imp.&nbsp;N
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[8%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[8%]">
                 Importe
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[6%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[6%]">
                 Imp.&nbsp;mín.
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[6%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[6%]">
                 Imp.&nbsp;máx.
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%] !border-l-2 !border-l-slate-600">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[10.5%] !border-l-2 !border-l-[var(--arca-border-strong)]">
                 Haberes
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">
                 Desc.
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">
                 Reten.
               </th>
-              <th className="sticky top-0 z-20 bg-slate-100 border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">
+              <th className="sticky top-0 z-20 bg-[var(--arca-bg)] border-b shadow-sm px-1 py-1.5 text-right w-[10.5%]">
                 No&nbsp;Rem.
               </th>
             </tr>
@@ -1908,50 +1911,50 @@ export function TablaReciboSos({
           </tbody>
 
           <tfoot>
-            <tr className="bg-slate-200 border-t-2 border-slate-500 font-bold text-[10px] divide-x divide-slate-400">
+            <tr className="bg-[var(--arca-surface-2)] border-t-2 border-[var(--arca-border-strong)] font-bold text-[10px] divide-x divide-[var(--arca-border-strong)]">
               <td className="px-2 py-1.5" />
               <td
-                className="px-2 py-1.5 text-right text-slate-700 uppercase tracking-wide"
+                className="px-2 py-1.5 text-right text-[var(--arca-ink-2)] uppercase tracking-wide"
                 colSpan={7}
               >
                 Totales
               </td>
-              <td className="px-2 py-1.5 text-right text-slate-900 !border-l-2 !border-l-slate-600">
+              <td className="px-2 py-1.5 text-right text-[var(--arca-ink)] !border-l-2 !border-l-[var(--arca-border-strong)]">
                 {fmtArsSign(totales.haberes)}
               </td>
-              <td className="px-2 py-1.5 text-right text-slate-900">
+              <td className="px-2 py-1.5 text-right text-[var(--arca-ink)]">
                 {fmtArsSign(totales.descuentos)}
               </td>
-              <td className="px-2 py-1.5 text-right text-slate-900">
+              <td className="px-2 py-1.5 text-right text-[var(--arca-ink)]">
                 {fmtArsSign(totales.retenciones)}
               </td>
-              <td className="px-2 py-1.5 text-right text-slate-900">
+              <td className="px-2 py-1.5 text-right text-[var(--arca-ink)]">
                 {fmtArsSign(totales.noRemunerativo)}
               </td>
             </tr>
             {totales.redondeo > 0 && (
-              <tr className="bg-amber-50 border-t border-amber-300 text-[10px]">
+              <tr className="bg-[var(--arca-accent-warn-bg)] border-t border-[var(--arca-accent-warn)] text-[10px]">
                 <td className="px-2 py-1" />
                 <td
                   colSpan={7}
-                  className="px-2 py-1 text-right text-amber-800 italic"
+                  className="px-2 py-1 text-right text-[var(--arca-accent-warn-fg)] italic"
                 >
                   Redondeo ↑ entero
                 </td>
                 <td
                   colSpan={3}
-                  className="px-2 py-1 !border-l-2 !border-l-slate-600"
+                  className="px-2 py-1 !border-l-2 !border-l-[var(--arca-border-strong)]"
                 />
-                <td className="px-2 py-1 text-right text-amber-800 font-medium">
+                <td className="px-2 py-1 text-right text-[var(--arca-accent-warn-fg)] font-medium">
                   +{fmtArs(totales.redondeo)}
                 </td>
               </tr>
             )}
-            <tr className="bg-slate-300 font-bold">
+            <tr className="bg-[var(--arca-border-strong)] font-bold">
               <td colSpan={8} className="px-2 py-1.5" />
               <td
                 colSpan={4}
-                className="px-2 py-1.5 text-right text-sm text-slate-900 border-l-2 border-l-slate-600"
+                className="px-2 py-1.5 text-right text-sm text-[var(--arca-ink)] border-l-2 border-l-[var(--arca-border-strong)]"
               >
                 Neto a cobrar: ${'\u202f'}
                 {fmtArs(totales.netoRedondeado)}
@@ -1971,12 +1974,12 @@ export function TablaReciboSos({
               className="h-16 max-w-[200px] object-contain mb-2"
             />
           )}
-          <div className="mt-auto border-t border-slate-400 pt-1 font-medium text-slate-600">
+          <div className="mt-auto border-t border-[var(--arca-border-strong)] pt-1 font-medium text-[var(--arca-ink-3)]">
             Firma y sello del empleador
           </div>
         </div>
         <div className="flex flex-col">
-          <div className="mt-auto border-t border-slate-400 pt-1 font-medium text-slate-600">
+          <div className="mt-auto border-t border-[var(--arca-border-strong)] pt-1 font-medium text-[var(--arca-ink-3)]">
             Firma del trabajador / Acuse de recibo
           </div>
         </div>

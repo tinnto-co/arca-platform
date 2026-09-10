@@ -77,10 +77,10 @@ export function TaskCard({ tarea, seleccionada, onAbrir }: TaskCardProps) {
       className={cn(
         'flex w-full flex-col gap-2 rounded-[var(--arca-r-md)] border p-[11px] text-left',
         'bg-[var(--arca-surface)] transition-colors duration-[120ms] ease-[ease]',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-navy-700)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-accent)]',
         cerrada ? 'shadow-none' : 'shadow-[var(--arca-shadow-sm)]',
         seleccionada
-          ? 'border-[var(--arca-navy-700)] shadow-[var(--arca-shadow-md)]'
+          ? 'border-[var(--arca-accent)] shadow-[var(--arca-shadow-md)]'
           : 'border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)]'
       )}
     >

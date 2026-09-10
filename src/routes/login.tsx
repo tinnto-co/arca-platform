@@ -38,7 +38,7 @@ export default function LoginPage() {
       </div>
 
       {/* Right — full-bleed image */}
-      <div className="relative hidden min-w-0 flex-1 overflow-hidden bg-[var(--arca-navy-900)] lg:block lg:basis-1/2">
+      <div className="relative hidden min-w-0 flex-1 overflow-hidden bg-[var(--arca-sidebar)] lg:block lg:basis-1/2">
         <img
           src="/login-hero.png"
           alt=""

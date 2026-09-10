@@ -318,7 +318,10 @@ export function AjustePorInflacion({
                     className="text-[9.5px] px-1.5 py-px rounded-full font-semibold uppercase tracking-wide"
                     style={
                       applied && preview.stale
-                        ? { background: '#fef3c7', color: '#b45309' }
+                        ? {
+                            background: 'var(--arca-accent-warn-bg)',
+                            color: 'var(--arca-accent-warn-fg)',
+                          }
                         : applied
                           ? { background: '#dcfce7', color: '#15803d' }
                           : { background: '#f1f5f9', color: '#475569' }
@@ -381,7 +384,7 @@ export function AjustePorInflacion({
                 <button
                   disabled={preview.entryLines.length === 0}
                   onClick={() => setConfirmApply(true)}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-40"
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-40"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} />
                   Generar asiento
@@ -598,7 +601,7 @@ export function AjustePorInflacion({
                     type="checkbox"
                     checked={onlyAdjusted}
                     onChange={(e) => setOnlyAdjusted(e.target.checked)}
-                    className="accent-[var(--arca-navy-900)]"
+                    className="accent-[var(--arca-accent)]"
                   />
                   Solo cuentas ajustadas
                 </label>
@@ -898,7 +901,7 @@ function CoeficientesTable({
             <div className="text-[var(--arca-ink)] flex items-center gap-1.5">
               {periodLabel(c.year, c.month)}
               {isClosing && (
-                <span className="text-[9px] px-1.5 py-px rounded-full bg-[var(--arca-navy-900)] text-white font-semibold">
+                <span className="text-[9px] px-1.5 py-px rounded-full bg-[var(--arca-accent)] text-white font-semibold">
                   cierre
                 </span>
               )}
@@ -997,9 +1000,13 @@ function Banner({
 }) {
   const styles =
     tone === 'error'
-      ? { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' }
+      ? { bg: '#fef2f2', border: '#fecaca', fg: 'var(--arca-accent-neg-fg)' }
       : tone === 'warn'
-        ? { bg: '#fffbeb', border: '#fde68a', fg: '#b45309' }
+        ? {
+            bg: 'var(--arca-accent-warn-bg)',
+            border: '#fde68a',
+            fg: 'var(--arca-accent-warn-fg)',
+          }
         : {
             bg: 'var(--arca-surface-2)',
             border: 'var(--arca-border)',

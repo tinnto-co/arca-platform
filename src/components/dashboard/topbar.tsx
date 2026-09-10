@@ -118,7 +118,7 @@ export function DashboardTopbar({
                   ? 'border-r border-[var(--arca-border)]'
                   : '',
                 activePeriod === p
-                  ? 'bg-[var(--arca-ink)] text-white'
+                  ? 'bg-[var(--arca-accent-bg)] font-medium text-[var(--arca-accent-hover)]'
                   : 'text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)]',
               ].join(' ')}
             >

@@ -100,7 +100,7 @@ function AccionIcono({
           className={cn(
             'grid size-7 place-items-center rounded-[var(--arca-r-md)] transition-colors duration-[120ms] disabled:opacity-40',
             destacada
-              ? 'bg-[var(--arca-ink)] text-white hover:bg-black'
+              ? 'bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]'
               : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-border)]'
           )}
         >
@@ -189,7 +189,7 @@ function Adjunto({
           <button
             type="button"
             onClick={() => setAbierto((v) => !v)}
-            className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+            className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
           >
             {abierto ? (
               <>
@@ -207,7 +207,7 @@ function Adjunto({
 
         <a
           href={`${url}?download=1`}
-          className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+          className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
         >
           <Download className="size-3" />
           Descargar
@@ -232,7 +232,7 @@ function Adjunto({
             href={url}
             target="_blank"
             rel="noreferrer"
-            className="block border-t border-[var(--arca-border)] px-3 py-2 text-[11.5px] text-[var(--arca-navy-700)] hover:underline"
+            className="block border-t border-[var(--arca-border)] px-3 py-2 text-[11.5px] text-[var(--arca-accent)] hover:underline"
           >
             Abrir en una pestaña nueva
           </a>
@@ -538,7 +538,7 @@ export function PanelLectura({
               <button
                 type="button"
                 onClick={() => setAsuntoExpandido((v) => !v)}
-                className="mt-0.5 text-[11.5px] font-medium text-[var(--arca-navy-700)] hover:underline"
+                className="mt-0.5 text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
               >
                 {asuntoExpandido ? 'Ver menos' : 'Ver asunto completo'}
               </button>
@@ -582,7 +582,7 @@ export function PanelLectura({
               <button
                 type="button"
                 onClick={() => onIrATarea(t.id)}
-                className="shrink-0 font-medium text-[var(--arca-navy-700)] hover:underline"
+                className="shrink-0 font-medium text-[var(--arca-accent)] hover:underline"
               >
                 Ver tarea
               </button>

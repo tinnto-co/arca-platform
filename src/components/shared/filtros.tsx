@@ -101,7 +101,7 @@ export function LimpiarFiltros({ onLimpiar }: { onLimpiar: () => void }) {
     <button
       type="button"
       onClick={onLimpiar}
-      className="text-[11.5px] font-medium text-[var(--arca-navy-700)] hover:underline"
+      className="text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
     >
       Limpiar
     </button>

@@ -128,19 +128,19 @@ function RouteComponent() {
 
   if (!isLoading && !selectedOption) {
     return (
-      <div className="overflow-x-hidden bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px]">
+      <div className="overflow-x-hidden bg-[var(--arca-bg)] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px]">
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <h2 className="text-lg font-semibold mb-2 text-[#12131A]">
+          <h2 className="text-lg font-semibold mb-2 text-[var(--arca-ink)]">
             Perfil no encontrado
           </h2>
-          <p className="text-[#9B9CA3] max-w-md">
+          <p className="text-[var(--arca-ink-4)] max-w-md">
             No encontramos un perfil con ese identificador habilitado para
             sueldos.
           </p>
           <Link
             to="/sueldos"
             onClick={() => guardarClienteSeleccionado(null)}
-            className="mt-4 text-[13.5px] font-medium text-[#2A4680] hover:underline"
+            className="mt-4 text-[13.5px] font-medium text-[var(--arca-accent)] hover:underline"
           >
             Volver al listado
           </Link>
@@ -151,7 +151,7 @@ function RouteComponent() {
 
   return (
     // overflow-x-clip (no -hidden): clip no crea scroll container y deja funcionar los sticky headers internos
-    <div className="overflow-x-clip bg-[#F7F6F2] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px] space-y-6">
+    <div className="overflow-x-clip bg-[var(--arca-bg)] min-h-screen max-w-[1380px] mx-auto px-[44px] pt-[34px] pb-[72px] space-y-6">
       {aiAgentEnabled && selectedOption && (
         <CopilotReadableEntity
           description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
@@ -178,7 +178,7 @@ function RouteComponent() {
               // Sin esto "volver al listado" reabre la misma empresa: en
               // Sueldos el listado es justamente la vista sin empresa elegida.
               onClick={() => guardarClienteSeleccionado(null)}
-              className="w-[30px] h-[30px] shrink-0 rounded-[10px] border border-[#DFDCD3] bg-white text-[#6E7079] inline-flex items-center justify-center hover:bg-[#FBFAF6] transition-[background] duration-[120ms]"
+              className="w-[30px] h-[30px] shrink-0 rounded-[10px] border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-[background] duration-[120ms]"
               title="Volver al listado"
             >
               <ChevronLeft className="h-[15px] w-[15px]" />
@@ -188,19 +188,21 @@ function RouteComponent() {
             </h1>
           </div>
           {/* Meta line */}
-          <div className="mt-2 ml-[40px] flex flex-wrap items-center gap-x-[9px] gap-y-[2px] text-[13px] text-[#9B9CA3]">
+          <div className="mt-2 ml-[40px] flex flex-wrap items-center gap-x-[9px] gap-y-[2px] text-[13px] text-[var(--arca-ink-4)]">
             {selectedOption?.label && (
               <>
                 <span>
                   CUIT{' '}
-                  <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[#6E7079] tabular-nums">
+                  <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[var(--arca-ink-3)] tabular-nums">
                     {/\((\d+)\)/.exec(selectedOption.label)?.[1] ?? ''}
                   </span>
                 </span>
                 <span>·</span>
               </>
             )}
-            <span className="text-[#9B9CA3]">Sueldos del cliente</span>
+            <span className="text-[var(--arca-ink-4)]">
+              Sueldos del cliente
+            </span>
           </div>
         </div>
       </div>
@@ -211,7 +213,7 @@ function RouteComponent() {
           onValueChange={(v) => setTab(v as SueldosTab)}
           className="w-full min-w-0 max-w-full"
         >
-          <div className="border-b border-[#ECEAE3] mb-[30px]">
+          <div className="border-b border-[var(--arca-border)] mb-[30px]">
             <TabsList className="flex h-auto w-full bg-transparent p-0 rounded-none gap-0 overflow-x-auto justify-start [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {(
                 [
@@ -262,8 +264,8 @@ function RouteComponent() {
                   value={tab.value}
                   className={cn(
                     'relative h-auto flex-none px-[14px] py-[10px] text-[13.5px] font-medium rounded-[10px_10px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-                    'border-transparent text-[#6E7079] font-medium hover:bg-transparent hover:text-[#12131A]',
-                    'data-[state=active]:bg-white data-[state=active]:border-[#ECEAE3] data-[state=active]:[border-bottom-color:#F7F6F2] data-[state=active]:text-[#12131A] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+                    'border-transparent text-[var(--arca-ink-3)] font-medium hover:bg-transparent hover:text-[var(--arca-ink)]',
+                    'data-[state=active]:bg-white data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
                   )}
                 >
                   {tab.icon}

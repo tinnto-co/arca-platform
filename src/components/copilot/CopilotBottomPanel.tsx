@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CopilotChat } from '@copilotkit/react-ui';
 import { useCopilotChat } from '@copilotkit/react-core';
 import { TextMessage, Role } from '@copilotkit/runtime-client-gql';
-import { Sparkles, X } from 'lucide-react';
+import { X } from 'lucide-react';
+import { OrbeAsistente } from '@/components/agent/orbe';
 import { cn } from '@/lib/utils';
 import {
   registerCopilotControl,
@@ -182,11 +183,11 @@ export function CopilotBottomPanel() {
         onPointerDown={handleResizeStart}
         className="absolute top-0 left-0 right-0 h-1.5 -translate-y-1/2 cursor-ns-resize group"
       >
-        <div className="h-full w-full transition-colors group-hover:bg-[#139ed9]/40" />
+        <div className="h-full w-full transition-colors group-hover:bg-[var(--arca-accent)]/40" />
       </div>
-      <header className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted/30">
+      <header className="flex items-center justify-between border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-[#139ed9]" />
+          <OrbeAsistente size={16} />
           <h2 className="text-sm font-semibold">Asistente Arca</h2>
         </div>
         <button

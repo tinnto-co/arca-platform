@@ -39,16 +39,16 @@ function OrgMini({
       <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--arca-ink-3)]">
         {label}
       </span>
-      <div className="flex size-16 items-center justify-center overflow-hidden rounded-xl border-2 border-white bg-white shadow-md ring-2 ring-[var(--arca-navy-700)]/15">
+      <div className="flex size-16 items-center justify-center overflow-hidden rounded-xl border-2 border-white bg-white shadow-md ring-2 ring-[var(--arca-accent)]/15">
         {logo ? (
           <Avatar className="size-16 rounded-lg">
             <AvatarImage src={logo} alt="" className="object-cover" />
-            <AvatarFallback className="rounded-lg text-base font-semibold text-[var(--arca-navy-700)]">
+            <AvatarFallback className="rounded-lg text-base font-semibold text-[var(--arca-accent)]">
               {initial}
             </AvatarFallback>
           </Avatar>
         ) : (
-          <Building className="size-8 text-[var(--arca-navy-700)]" />
+          <Building className="size-8 text-[var(--arca-accent)]" />
         )}
       </div>
       <span className="w-full truncate text-center text-xs font-medium text-[var(--arca-ink)]">
@@ -76,9 +76,9 @@ function OrgSwitchOverlay({ visual }: { visual: OrgSwitchVisual }) {
 
           <div className="flex flex-col items-center gap-3 px-1 pt-6 sm:px-2">
             <div className="flex items-center gap-1">
-              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-navy-700)] [animation-delay:-0.25s]" />
-              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-navy-700)] [animation-delay:-0.12s]" />
-              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-navy-700)]" />
+              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-accent)] [animation-delay:-0.25s]" />
+              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-accent)] [animation-delay:-0.12s]" />
+              <span className="inline-block size-2 animate-bounce rounded-full bg-[var(--arca-accent)]" />
             </div>
           </div>
 

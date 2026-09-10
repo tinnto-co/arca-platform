@@ -136,10 +136,10 @@ export function ScheduleCard() {
                           {rep.cuit}
                         </div>
                       </td>
-                      <td className="text-center text-[11px] text-[var(--arca-ink-3)] tabular-nums">
+                      <td className="text-center text-[11px] text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)]">
                         {formatDate(lastScrape)}
                       </td>
-                      <td className="text-center text-[11px] text-[var(--arca-ink-3)] tabular-nums">
+                      <td className="text-center text-[11px] text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)]">
                         {formatDate(nextDate)}
                       </td>
                       <td className="text-right py-2">

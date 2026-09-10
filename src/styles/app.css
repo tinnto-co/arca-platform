@@ -52,78 +52,137 @@
 }
 
 :root {
-  --radius: 0.75rem;
-  --background: #F7F6F2;
-  --foreground: #12131A;
-  --card: #ffffff;
-  --card-foreground: #12131A;
-  --popover: #ffffff;
-  --popover-foreground: #12131A;
-  --primary: #0B1730;
-  --primary-foreground: #ffffff;
-  --secondary: #2A4680;
-  --secondary-foreground: #ffffff;
-  --muted: #FBFAF6;
-  --muted-foreground: #6E7079;
-  --accent: #FBFAF6;
-  --accent-foreground: #12131A;
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: #ECEAE3;
-  --input: #DFDCD3;
-  --ring: #2A4680;
-  --chart-1: #1E3460;
+  --radius: 0.5rem;
+  --background: #F4F6F7;
+  --foreground: #101720;
+  --card: #FFFFFF;
+  --card-foreground: #101720;
+  --popover: #FFFFFF;
+  --popover-foreground: #101720;
+  --primary: #1F7A86;
+  --primary-foreground: #FFFFFF;
+  --secondary: #E9EDF0;
+  --secondary-foreground: #101720;
+  --muted: #E9EDF0;
+  --muted-foreground: #6B7683;
+  --accent: #F8FAFB;
+  --accent-foreground: #101720;
+  --destructive: oklch(0.58 0.16 25);
+  --border: #E3E7EA;
+  --input: #CBD2D8;
+  --ring: #1F7A86;
+  --chart-1: #1F7A86;
   --chart-2: #7AA2C8;
   --chart-3: #C2A878;
   --chart-4: #8FB39F;
-  --chart-5: oklch(0.60 0.15 25);
-  --sidebar: #0B1730;
-  --sidebar-foreground: #E8E9EE;
-  --sidebar-primary: #F7F6F2;
-  --sidebar-primary-foreground: #0B1730;
-  --sidebar-accent: rgba(255, 255, 255, 0.06);
-  --sidebar-accent-foreground: #F2F3F7;
-  --sidebar-border: rgba(255, 255, 255, 0.06);
-  --sidebar-ring: #2A4680;
+  --chart-5: oklch(0.58 0.16 25);
+  --sidebar: #0E1A2B;
+  --sidebar-foreground: #D8DDE4;
+  --sidebar-primary: #1F7A86;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: rgba(31, 122, 134, 0.22);
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: rgba(255, 255, 255, 0.07);
+  --sidebar-ring: #1F7A86;
 
-  /* Arca design tokens */
-  --arca-bg: #F7F6F2;
+  /* ══ Arca design tokens — "1a Petróleo" ══════════════════════════════════
+     El énfasis de la plataforma es UN acento petróleo. Nada de navy/negro
+     como color de botón, header de tabla o tab activa. El rojo sólido queda
+     reservado para vencido / crítico / destructivo. */
+
+  /* Acento — acciones principales y foco */
+  --arca-accent: #1F7A86;
+  --arca-accent-hover: #165E68;
+  --arca-accent-bg: #DDF0F0;
+  --arca-accent-ring: #B8DEDF;
+  --arca-accent-light: #7FD1CF;
+
+  /* Neutros fríos */
+  --arca-bg: #F4F6F7;
   --arca-surface: #FFFFFF;
-  --arca-surface-2: #FBFAF6;
-  --arca-border: #ECEAE3;
-  --arca-border-strong: #DFDCD3;
-  --arca-ink: #12131A;
-  --arca-ink-2: #3E404A;
-  --arca-ink-3: #6E7079;
-  --arca-ink-4: #9B9CA3;
-  --arca-navy-900: #0B1730;
-  --arca-navy-800: #142447;
-  --arca-navy-700: #1E3460;
-  --arca-navy-600: #2A4680;
-  --arca-accent-pos: oklch(0.62 0.13 160);
-  --arca-accent-pos-bg: oklch(0.94 0.04 160);
-  --arca-accent-pos-fg: oklch(0.45 0.13 160);
-  --arca-accent-neg: oklch(0.60 0.15 25);
-  --arca-accent-neg-bg: oklch(0.94 0.04 25);
-  --arca-accent-neg-fg: oklch(0.45 0.15 25);
+  --arca-surface-2: #E9EDF0;
+  --arca-surface-hover: #F8FAFB;
+  /* hover del botón terciario tonal */
+  --arca-surface-2-hover: #DDE3E7;
+  --arca-border: #E3E7EA;
+  --arca-border-row: #EDF0F2;
+  --arca-border-strong: #CBD2D8;
+
+  /* Tinta */
+  --arca-ink: #101720;
+  --arca-ink-2: #3B4552;
+  --arca-ink-3: #6B7683;
+  --arca-ink-4: #9AA3AD;
+
+  /* Sidebar */
+  --arca-sidebar: #0E1A2B;
+  --arca-sidebar-fg: #D8DDE4;
+  --arca-sidebar-muted: #7E8A99;
+  --arca-sidebar-label: #6B7A8C;
+  --arca-sidebar-active: rgba(31, 122, 134, 0.22);
+  --arca-sidebar-active-rail: #4FB3BC;
+  --arca-sidebar-active-icon: #7FD1CF;
+
+  /* Estados. El texto sobre fondo tonal usa siempre el `-fg` (≥4.5:1),
+     nunca el color del punto. */
+  --arca-accent-pos: oklch(0.60 0.13 155);
+  --arca-accent-pos-bg: oklch(0.94 0.04 155);
+  --arca-accent-pos-fg: oklch(0.40 0.13 155);
   --arca-accent-warn: oklch(0.72 0.13 75);
-  --arca-accent-warn-bg: oklch(0.95 0.04 75);
-  --arca-accent-warn-fg: oklch(0.50 0.13 75);
-  --arca-accent-info: oklch(0.60 0.12 240);
-  --arca-accent-info-bg: oklch(0.94 0.04 240);
-  --arca-accent-info-fg: oklch(0.45 0.12 240);
-  --arca-chart-1: #1E3460;
+  --arca-accent-warn-bg: oklch(0.95 0.05 75);
+  --arca-accent-warn-fg: oklch(0.45 0.13 75);
+  --arca-accent-neg: oklch(0.58 0.16 25);
+  --arca-accent-neg-bg: oklch(0.94 0.04 25);
+  --arca-accent-neg-fg: oklch(0.42 0.16 25);
+  --arca-accent-neg-hover: oklch(0.52 0.16 25);
+  /* "Info" deja de ser azul: en este sistema informar es el propio acento. */
+  --arca-accent-info: #1F7A86;
+  --arca-accent-info-bg: #DDF0F0;
+  --arca-accent-info-fg: #165E68;
+
+  /* Calendario de vencimientos: carga baja */
+  --arca-cal-low: #C9D6D8;
+
+  /* Orbe del asistente. Es su firma visual y el ÚNICO degradado de la UI:
+     barra flotante, FAB, avatar de las respuestas del agente e ícono de
+     "Chats". No usarlo en ningún otro componente. */
+  --arca-orb: linear-gradient(135deg, #1F7A86, #7FD1CF);
+
+  /* Alias heredados. `--arca-navy-*` era el color de énfasis del sistema
+     anterior y quedó regado por ~50 archivos; en vez de tocarlos todos de
+     una, los nombres siguen existiendo apuntados a la escala nueva. Para
+     código nuevo usar `--arca-accent*` y `--arca-sidebar`. */
+  --arca-navy-900: #0E1A2B;
+  --arca-navy-800: #123847;
+  --arca-navy-700: #165E68;
+  --arca-navy-600: #1F7A86;
+
+  /* Charts */
+  --arca-chart-1: #1F7A86;
   --arca-chart-2: #7AA2C8;
   --arca-chart-3: #C2A878;
   --arca-chart-4: #8FB39F;
-  --arca-shadow-sm: 0 1px 2px rgba(18,19,26,0.04);
-  --arca-shadow-md: 0 1px 3px rgba(18,19,26,0.04), 0 4px 12px rgba(18,19,26,0.04);
+
+  /* Sombras */
+  --arca-shadow-sm: 0 1px 2px rgba(16, 23, 32, 0.05);
+  --arca-shadow-md: 0 1px 3px rgba(16, 23, 32, 0.06);
+  --arca-shadow-card: 0 1px 3px rgba(16, 23, 32, 0.06);
+  --arca-shadow-popover: 0 8px 24px rgba(16, 23, 32, 0.08);
+  --arca-shadow-float:
+    0 10px 30px rgba(16, 23, 32, 0.12), 0 1px 3px rgba(16, 23, 32, 0.06);
+  --arca-shadow-modal: 0 24px 60px rgba(16, 23, 32, 0.3);
+
+  /* Radios */
   --arca-r-sm: 6px;
-  --arca-r-md: 10px;
-  --arca-r-lg: 14px;
-  --arca-r-pill: 20px;
-  --ff-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --ff-display: 'Inter Tight', 'Inter', sans-serif;
-  --ff-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --arca-r-md: 8px;
+  --arca-r-lg: 12px;
+  --arca-r-modal: 14px;
+  --arca-r-pill: 999px;
+
+  /* Tipografía */
+  --ff-sans: 'Geist', system-ui, -apple-system, sans-serif;
+  --ff-display: 'Geist', system-ui, -apple-system, sans-serif;
+  --ff-mono: 'Geist Mono', ui-monospace, monospace;
 }
 
 .dark {
@@ -163,16 +222,16 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--ff-sans);
   }
   html {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--ff-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: var(--ff-sans);
     font-size: 14px;
     line-height: 1.5;
   }
@@ -304,6 +363,25 @@
   display: block;
   overflow-x: auto;
   max-width: 100%;
+}
+
+/* Avatar de las respuestas del agente: el orbe. CopilotKit no renderiza un
+   elemento de avatar, así que lo ponemos como pseudo-elemento — es el mismo
+   orbe de la barra y del FAB, y así la respuesta se lee como suya. */
+.copilot-bottom-panel .copilotKitAssistantMessage {
+  position: relative;
+  padding-left: 26px;
+}
+
+.copilot-bottom-panel .copilotKitAssistantMessage::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--arca-orb);
 }
 
 /* Compact chat typography — defaults are too large for our context */

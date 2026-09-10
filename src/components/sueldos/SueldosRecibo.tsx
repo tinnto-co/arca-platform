@@ -580,17 +580,17 @@ export function SueldosRecibo({
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
       {/* ── Filtros ───────────────────────────────────────────────────────── */}
-      <div className="bg-white border border-[#ECEAE3] rounded-[12px] px-6 pt-5 pb-6">
+      <div className="bg-white border border-[var(--arca-border)] rounded-[12px] px-6 pt-5 pb-6">
         {/* Filter header */}
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-2">
-              <FileText style={{ width: 15, height: 15, color: '#3E404A' }} />
-              <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[#12131A]">
+              <FileText style={{ width: 15, height: 15, color: 'var(--arca-ink-2)' }} />
+              <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[var(--arca-ink)]">
                 Recibos liquidados
               </span>
             </div>
-            <p className="mt-1 text-[13px] text-[#9B9CA3]">
+            <p className="mt-1 text-[13px] text-[var(--arca-ink-4)]">
               Filtrá por año, período y/o empleado...
             </p>
           </div>
@@ -620,7 +620,7 @@ export function SueldosRecibo({
             <button
               type="button"
               onClick={() => setShowImprimir(true)}
-              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[#3E404A] text-[13.5px] font-semibold hover:bg-[#FBFAF6] px-[17px] py-[10px] flex items-center gap-2 shrink-0"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2 shrink-0"
             >
               <Printer style={{ width: 15, height: 15 }} />
               Imprimir PDF
@@ -629,10 +629,10 @@ export function SueldosRecibo({
         </div>
 
         {/* Filter grid */}
-        <div className="grid grid-cols-5 gap-[14px] border-b border-[#ECEAE3] pb-5 mb-[26px]">
+        <div className="grid grid-cols-5 gap-[14px] border-b border-[var(--arca-border)] pb-5 mb-[26px]">
           {/* Año */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--arca-ink-3)]">
               Año
             </label>
             <Select
@@ -643,7 +643,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -659,7 +659,7 @@ export function SueldosRecibo({
 
           {/* Período */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--arca-ink-3)]">
               Período
             </label>
             <Select
@@ -670,7 +670,7 @@ export function SueldosRecibo({
               }}
               disabled={!ano}
             >
-              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -692,7 +692,7 @@ export function SueldosRecibo({
 
           {/* Quincena */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--arca-ink-3)]">
               Quincena
             </label>
             <Select
@@ -702,7 +702,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -715,7 +715,7 @@ export function SueldosRecibo({
 
           {/* Tipo */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--arca-ink-3)]">
               Tipo
             </label>
             <Select
@@ -725,7 +725,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -749,7 +749,7 @@ export function SueldosRecibo({
 
           {/* Empleado */}
           <div>
-            <label className="mb-1.5 block text-[12px] font-medium text-[#6E7079]">
+            <label className="mb-1.5 block text-[12px] font-medium text-[var(--arca-ink-3)]">
               Empleado
             </label>
             <Select
@@ -759,7 +759,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -786,7 +786,7 @@ export function SueldosRecibo({
           <button
             type="button"
             onClick={resetFiltros}
-            className="text-[13px] text-[#6E7079] underline underline-offset-2 hover:text-[#3E404A]"
+            className="text-[13px] text-[var(--arca-ink-3)] underline underline-offset-2 hover:text-[var(--arca-ink-2)]"
           >
             Limpiar filtros
           </button>
@@ -798,7 +798,7 @@ export function SueldosRecibo({
         <div>
           {/* Results heading */}
           <div className="mb-4">
-            <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[#12131A]">
+            <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[var(--arca-ink)]">
               {loadingList
                 ? 'Buscando…'
                 : recibos.length === 0
@@ -806,7 +806,7 @@ export function SueldosRecibo({
                   : `${recibos.length} recibo${recibos.length !== 1 ? 's' : ''} encontrado${recibos.length !== 1 ? 's' : ''}`}
             </span>
             {!loadingList && recibos.length > 0 && periodo && (
-              <p className="mt-0.5 text-[12.5px] text-[#9B9CA3]">
+              <p className="mt-0.5 text-[12.5px] text-[var(--arca-ink-4)]">
                 Período: {periodo}
               </p>
             )}
@@ -816,7 +816,7 @@ export function SueldosRecibo({
             <div className="overflow-x-auto rounded-[10px]">
               {/* Navy header */}
               <div
-                className="bg-[var(--arca-navy-900)] text-white h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
+                className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
                 style={{
                   gridTemplateColumns:
                     'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
@@ -834,7 +834,7 @@ export function SueldosRecibo({
                 <span></span>
               </div>
               {/* Data rows */}
-              <div className="border border-t-0 border-[#ECEAE3] rounded-b-[10px]">
+              <div className="border border-t-0 border-[var(--arca-border)] rounded-b-[10px]">
                 {recibos.map((r) => {
                   const isSelected = r.liquidacion.id === reciboId;
                   const haberes = Number(r.liquidacion.haberes ?? 0);
@@ -849,7 +849,7 @@ export function SueldosRecibo({
                       onClick={() =>
                         setReciboId(isSelected ? '' : r.liquidacion.id)
                       }
-                      className={`cursor-pointer border-b border-[#ECEAE3] last:border-b-0 hover:bg-[#FBFAF6] transition-colors grid items-center px-5 py-[13px] ${isSelected ? 'bg-[#FBFAF6]' : ''}`}
+                      className={`cursor-pointer border-b border-[var(--arca-border)] last:border-b-0 hover:bg-[var(--arca-surface-2)] transition-colors grid items-center px-5 py-[13px] ${isSelected ? 'bg-[var(--arca-surface-2)]' : ''}`}
                       style={{
                         gridTemplateColumns:
                           'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
@@ -858,17 +858,17 @@ export function SueldosRecibo({
                     >
                       <div className="min-w-0">
                         <span
-                          className={`text-[13px] text-[#12131A] whitespace-nowrap${isSelected ? ' font-semibold' : ' font-semibold'}`}
+                          className={`text-[13px] text-[var(--arca-ink)] whitespace-nowrap${isSelected ? ' font-semibold' : ' font-semibold'}`}
                         >
                           {toTitleCase(r.empleado.nombre)}
                         </span>
                         {r.empleado.legajo && (
-                          <div className="text-[11.5px] text-[#9B9CA3]">
+                          <div className="text-[11.5px] text-[var(--arca-ink-4)]">
                             Leg. {legajoParaMostrar(r.empleado.legajo)}
                           </div>
                         )}
                       </div>
-                      <div className="font-[family-name:var(--ff-mono)] text-[12px] text-[#9B9CA3] whitespace-nowrap">
+                      <div className="font-[family-name:var(--ff-mono)] text-[12px] text-[var(--arca-ink-4)] whitespace-nowrap">
                         {dateAPeriodo(r.liquidacion.periodo)}
                         {r.liquidacion.tipo &&
                         r.liquidacion.tipo !== 'mensual' ? (
@@ -882,38 +882,38 @@ export function SueldosRecibo({
                           </div>
                         ) : null}
                       </div>
-                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                      <div className="text-right tabular-nums text-[13px] text-[var(--arca-ink-2)] whitespace-nowrap">
                         {haberes === 0 ? (
-                          <span className="text-[#B7B8BD]">—</span>
+                          <span className="text-[var(--arca-ink-4)]">—</span>
                         ) : (
                           moneyFmt(haberes)
                         )}
                       </div>
-                      <div className="text-right tabular-nums text-[13px] text-[#B7B8BD] whitespace-nowrap">
+                      <div className="text-right tabular-nums text-[13px] text-[var(--arca-ink-4)] whitespace-nowrap">
                         {descuentos === 0 ? '—' : moneyFmt(descuentos)}
                       </div>
-                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                      <div className="text-right tabular-nums text-[13px] text-[var(--arca-ink-2)] whitespace-nowrap">
                         {retenciones === 0 ? (
-                          <span className="text-[#B7B8BD]">—</span>
+                          <span className="text-[var(--arca-ink-4)]">—</span>
                         ) : (
                           moneyFmt(retenciones)
                         )}
                       </div>
-                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                      <div className="text-right tabular-nums text-[13px] text-[var(--arca-ink-2)] whitespace-nowrap">
                         {noRem === 0 ? (
-                          <span className="text-[#B7B8BD]">—</span>
+                          <span className="text-[var(--arca-ink-4)]">—</span>
                         ) : (
                           moneyFmt(noRem)
                         )}
                       </div>
-                      <div className="text-right tabular-nums text-[13px] text-[#3E404A] whitespace-nowrap">
+                      <div className="text-right tabular-nums text-[13px] text-[var(--arca-ink-2)] whitespace-nowrap">
                         {neto === 0 ? (
-                          <span className="text-[#B7B8BD]">—</span>
+                          <span className="text-[var(--arca-ink-4)]">—</span>
                         ) : (
                           moneyFmt(neto)
                         )}
                       </div>
-                      <div className="text-right tabular-nums text-[13px] font-bold text-[#12131A] whitespace-nowrap">
+                      <div className="text-right tabular-nums text-[13px] font-bold text-[var(--arca-ink)] whitespace-nowrap">
                         {moneyFmt(redondeado)}
                       </div>
                       <div className="flex items-center gap-2 justify-end">
@@ -966,7 +966,7 @@ export function SueldosRecibo({
                                   r.liquidacion.importeMaternidadArt13,
                               });
                             }}
-                            className="rounded p-1 text-[#9B9CA3] hover:bg-[#F2F1EB] hover:text-[#3E404A] transition-colors"
+                            className="rounded p-1 text-[var(--arca-ink-4)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink-2)] transition-colors"
                             title="Editar recibo"
                           >
                             <Pencil className="h-3.5 w-3.5" />
@@ -984,13 +984,13 @@ export function SueldosRecibo({
                             });
                             setRevertirBaja(true);
                           }}
-                          className="rounded p-1 text-[#9B9CA3] hover:bg-[#F2F1EB] hover:text-[#C0392B] transition-colors"
+                          className="rounded p-1 text-[var(--arca-ink-4)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-accent-neg)] transition-colors"
                           title="Eliminar recibo"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                         <ChevronRight
-                          className={`h-4 w-4 text-[#9B9CA3] transition-transform ${isSelected ? 'rotate-90' : ''}`}
+                          className={`h-4 w-4 text-[var(--arca-ink-4)] transition-transform ${isSelected ? 'rotate-90' : ''}`}
                         />
                       </div>
                     </div>
@@ -1078,7 +1078,7 @@ export function SueldosRecibo({
                       revertirBaja,
                   });
               }}
-              className="bg-[#C0392B] hover:bg-[#A93226]"
+              className="bg-[var(--arca-accent-neg)] hover:bg-[#A93226]"
             >
               {borrandoRecibo ? 'Eliminando…' : 'Eliminar'}
             </AlertDialogAction>
@@ -1100,12 +1100,12 @@ export function SueldosRecibo({
       {reciboId && (
         <>
           {loadingDetalle ? (
-            <div className="bg-white border border-[#ECEAE3] rounded-[12px] px-6 py-8">
-              <p className="text-[#9B9CA3] text-[13px]">Cargando…</p>
+            <div className="bg-white border border-[var(--arca-border)] rounded-[12px] px-6 py-8">
+              <p className="text-[var(--arca-ink-4)] text-[13px]">Cargando…</p>
             </div>
           ) : !detalle ? (
-            <div className="bg-white border border-[#ECEAE3] rounded-[12px] px-6 py-8">
-              <p className="text-[#9B9CA3] text-[13px]">
+            <div className="bg-white border border-[var(--arca-border)] rounded-[12px] px-6 py-8">
+              <p className="text-[var(--arca-ink-4)] text-[13px]">
                 No se encontró el recibo.
               </p>
             </div>
@@ -1333,7 +1333,7 @@ function GenerarSacDialog({
                           </span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-center tabular-nums">
+                      <td className="py-2 pr-3 text-center tabular-nums [font-family:var(--ff-mono)]">
                         {p.antiguedadAnios != null ? (
                           <span>
                             {p.antiguedadAnios}{' '}
@@ -1936,22 +1936,22 @@ function ReciboDocumento({
                           conceptoSos?.nombre ??
                           det.codigo)}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    <td className="px-2 py-1 text-right tabular-nums [font-family:var(--ff-mono)] text-muted-foreground">
                       {det.cantidad ? moneyFmt(det.cantidad) : '—'}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-muted-foreground">
+                    <td className="px-2 py-1 text-right tabular-nums [font-family:var(--ff-mono)] text-muted-foreground">
                       {det.porcentaje ? moneyFmt(det.porcentaje) : '—'}
                     </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums [font-family:var(--ff-mono)]">
                       {col === 'hab' ? moneyFmt(det.monto) : ''}
                     </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums [font-family:var(--ff-mono)]">
                       {col === 'desc' ? moneyFmt(det.monto) : ''}
                     </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums [font-family:var(--ff-mono)]">
                       {col === 'ret' ? moneyFmt(det.monto) : ''}
                     </td>
-                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums">
+                    <td className="border-l border-border/50 px-2 py-1 text-right tabular-nums [font-family:var(--ff-mono)]">
                       {col === 'noRem' ? moneyFmt(det.monto) : ''}
                     </td>
                   </tr>
@@ -1968,16 +1968,16 @@ function ReciboDocumento({
               >
                 Totales
               </td>
-              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums [font-family:var(--ff-mono)]">
                 {moneyFmt(totalHaberes)}
               </td>
-              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums [font-family:var(--ff-mono)]">
                 {moneyFmt(totalDescuentos)}
               </td>
-              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums [font-family:var(--ff-mono)]">
                 {moneyFmt(totalRetenciones)}
               </td>
-              <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+              <td className="border-l border-border px-2 py-2 text-right tabular-nums [font-family:var(--ff-mono)]">
                 {moneyFmt(totalNoRemunerativo)}
               </td>
             </tr>
@@ -1987,7 +1987,7 @@ function ReciboDocumento({
                   <td colSpan={7} className="px-2 py-1.5 text-right">
                     Neto sin redondeo
                   </td>
-                  <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
+                  <td className="border-l border-border px-2 py-1.5 text-right tabular-nums [font-family:var(--ff-mono)] font-medium">
                     {moneyFmt(netoRaw)}
                   </td>
                 </tr>
@@ -1995,7 +1995,7 @@ function ReciboDocumento({
                   <td colSpan={7} className="px-2 py-1.5 text-right">
                     Redondeo
                   </td>
-                  <td className="border-l border-border px-2 py-1.5 text-right tabular-nums font-medium">
+                  <td className="border-l border-border px-2 py-1.5 text-right tabular-nums [font-family:var(--ff-mono)] font-medium">
                     +{moneyFmt(redondeo)}
                   </td>
                 </tr>
@@ -2006,7 +2006,7 @@ function ReciboDocumento({
                   >
                     Total neto
                   </td>
-                  <td className="border-l border-border px-2 py-2 text-right tabular-nums">
+                  <td className="border-l border-border px-2 py-2 text-right tabular-nums [font-family:var(--ff-mono)]">
                     {moneyFmt(neto)}
                   </td>
                 </tr>

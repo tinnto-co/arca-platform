@@ -214,7 +214,7 @@ function Planilla({
       <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
         <table className="w-full text-[12.5px]">
           <thead className="sticky top-0 z-10">
-            <tr className="bg-[var(--arca-navy-900)] text-white">
+            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
               <th className="text-left font-semibold px-4 py-2">Cuenta</th>
               <th className="text-left font-semibold px-3 py-2">Rubro</th>
               <th className="text-right font-semibold px-3 py-2 w-40">
@@ -285,7 +285,7 @@ function Planilla({
           <button
             disabled={!cuadra || save.isPending || totals.cargadas === 0}
             onClick={() => save.mutate()}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-40"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-40"
           >
             {save.isPending ? 'Guardando…' : 'Guardar saldos'}
           </button>
@@ -311,7 +311,7 @@ function BalanceRow({
   onChange: (field: 'inicio' | 'cierre', value: string) => void;
 }) {
   const cell =
-    'h-8 w-full px-2 text-right tabular-nums text-[12.5px] rounded-[6px] border border-[var(--arca-border)] bg-transparent focus:border-[var(--arca-navy-900)] outline-none';
+    'h-8 w-full px-2 text-right tabular-nums text-[12.5px] rounded-[6px] border border-[var(--arca-border)] bg-transparent focus:border-[var(--arca-accent)] outline-none';
   return (
     <tr className="border-t border-[var(--arca-border)]">
       <td className="px-4 py-1.5">

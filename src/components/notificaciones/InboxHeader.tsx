@@ -127,7 +127,7 @@ export function InboxHeader({
           {/* Tabs de estado */}
           <div
             role="tablist"
-            className="flex items-center gap-0.5 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] p-[2px]"
+            className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
           >
             {TABS.map((t) => (
               <button
@@ -137,10 +137,10 @@ export function InboxHeader({
                 aria-selected={filtros.estado === t.valor}
                 onClick={() => onFiltro({ estado: t.valor })}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-[12px] transition-colors duration-[120ms]',
+                  'flex items-center gap-1.5 rounded-md px-3 py-[5px] text-[12.5px] font-medium transition-colors duration-[120ms]',
                   filtros.estado === t.valor
-                    ? 'bg-[var(--arca-ink)] font-medium text-white'
-                    : 'text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)]'
+                    ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                    : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
                 )}
               >
                 {t.label}
@@ -251,7 +251,7 @@ export function InboxHeader({
                 <button
                   type="button"
                   onClick={() => setMasFiltros(false)}
-                  className="rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-1 text-[12px] font-medium text-white hover:bg-black"
+                  className="rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] px-3 py-1 text-[12px] font-medium text-white hover:bg-[var(--arca-accent-hover)]"
                 >
                   Aplicar
                 </button>

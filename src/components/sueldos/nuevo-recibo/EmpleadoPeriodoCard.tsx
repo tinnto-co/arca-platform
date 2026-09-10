@@ -30,7 +30,7 @@ function chipCls(active: boolean): string {
   return cn(
     'h-[30px] px-3 rounded-[10px] text-[12.5px] font-medium whitespace-nowrap border transition-colors duration-120 motion-reduce:transition-none cursor-pointer',
     active
-      ? 'border-[var(--arca-ink)] bg-[var(--arca-ink)] text-white'
+      ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
       : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
   );
 }
@@ -195,7 +195,7 @@ export function EmpleadoPeriodoCard({
         {emp && (
           <div className="border border-[var(--arca-border)] rounded-[12px] bg-[var(--arca-surface-2)] px-4 py-3.5">
             <div className="flex items-center flex-wrap gap-x-3 gap-y-2 border-b border-[var(--arca-border)] pb-3">
-              <span className="h-[38px] w-[38px] rounded-[10px] bg-[var(--arca-surface)] border border-[var(--arca-border)] flex items-center justify-center font-display text-[13px] font-semibold text-[var(--arca-navy-700)]">
+              <span className="h-[38px] w-[38px] rounded-[10px] bg-[var(--arca-surface)] border border-[var(--arca-border)] flex items-center justify-center font-display text-[13px] font-semibold text-[var(--arca-accent)]">
                 {iniciales(emp.nombre)}
               </span>
               <span className="min-w-0">
@@ -318,7 +318,7 @@ export function EmpleadoPeriodoCard({
                   className={cn(
                     'h-[30px] rounded-[9px] text-[12px] capitalize border transition-colors duration-120 motion-reduce:transition-none cursor-pointer',
                     activo
-                      ? 'border-[var(--arca-navy-700)] bg-[var(--arca-navy-700)] text-white font-semibold'
+                      ? 'border-[var(--arca-accent)] bg-[var(--arca-accent)] text-white font-semibold'
                       : liquidable
                         ? 'border-[var(--arca-border)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)]'
                         : 'border-[var(--arca-border)] bg-[var(--arca-surface)] text-[var(--arca-ink-4)] opacity-50'

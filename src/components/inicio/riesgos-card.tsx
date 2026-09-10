@@ -266,7 +266,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
               </div>
               <div
                 className="h-1.5 rounded-[3px] overflow-hidden"
-                style={{ background: '#F7F6F2' }}
+                style={{ background: 'var(--arca-bg)' }}
               >
                 <div
                   className="h-full rounded-[3px]"

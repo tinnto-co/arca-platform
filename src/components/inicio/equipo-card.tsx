@@ -168,7 +168,7 @@ export function EquipoCard({ datos }: { datos: Datos }) {
               abiertas={e.abiertas}
               vencidas={e.vencidas}
               parte={e.abiertas / pico}
-              tono="var(--arca-navy-700)"
+              tono="var(--arca-accent)"
               ultima={i === conNombre.length - 1 && sinAsignar === 0}
             >
               <span className="flex items-center gap-2.5 min-w-0">

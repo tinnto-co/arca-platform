@@ -65,14 +65,15 @@ function SeverityBadge({ severity }: { severity: string | null }) {
   const styles: Record<string, string> = {
     urgente: 'bg-red-100 text-red-700',
     accion_requerida: 'bg-orange-100 text-orange-700',
-    informativa: 'bg-gray-100 text-gray-600',
+    informativa: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
   };
   const labels: Record<string, string> = {
     urgente: 'Urgente',
     accion_requerida: 'Acción requerida',
     informativa: 'Info',
   };
-  const cls = styles[severity] ?? 'bg-gray-100 text-gray-500';
+  const cls =
+    styles[severity] ?? 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]';
   return (
     <span
       className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0 ${cls}`}

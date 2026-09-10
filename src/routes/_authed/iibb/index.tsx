@@ -453,7 +453,7 @@ function IIBBDesglose({
                 style={{ width: '100%', borderCollapse: 'collapse' }}
               >
                 <thead>
-                  <tr className="bg-[var(--arca-navy-900)] text-white">
+                  <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                     <th className="px-3 py-2.5 text-left text-[11px] font-semibold whitespace-nowrap">
                       Empresa
                     </th>
@@ -494,16 +494,16 @@ function IIBBDesglose({
                       >
                         {r.cuit}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--arca-ink-2)]">
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
                         {r.comprobantes}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--arca-ink-2)]">
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
                         {r.provincias}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium text-[var(--arca-ink)]">
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] font-medium text-[var(--arca-ink)]">
                         {formatARS(r.totalBase)}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums text-[var(--arca-ink-2)]">
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
                         {formatARS(r.totalIva)}
                       </td>
                     </tr>
@@ -538,7 +538,7 @@ function IIBBDesglose({
             }}
           >
             <thead>
-              <tr className="bg-[var(--arca-navy-900)] text-white">
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                 <th className="text-left px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Provincia
                 </th>
@@ -652,7 +652,7 @@ function IIBBDesglose({
                         </span>
                       )}
                     </td>
-                    <td className="px-2 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
+                    <td className="px-2 py-2 text-right text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)]">
                       {fila.cantidad ?? '—'}
                     </td>
                     <td
@@ -742,7 +742,7 @@ function IIBBDesglose({
                         color:
                           liquidacion >= 0
                             ? 'var(--arca-ink)'
-                            : 'var(--arca-green, #16a34a)',
+                            : 'var(--arca-green, var(--arca-accent-pos))',
                       }}
                     >
                       {formatARS(liquidacion)}
@@ -761,7 +761,7 @@ function IIBBDesglose({
                 <td className="px-2 py-2 font-semibold text-[var(--arca-ink)]">
                   Total
                 </td>
-                <td className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums">
+                <td className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums [font-family:var(--ff-mono)]">
                   {totals.count}
                 </td>
                 <td
@@ -814,7 +814,7 @@ function IIBBDesglose({
                     color:
                       totals.liquidacion >= 0
                         ? 'var(--arca-ink)'
-                        : 'var(--arca-green, #16a34a)',
+                        : 'var(--arca-green, var(--arca-accent-pos))',
                   }}
                 >
                   {formatARS(totals.liquidacion)}

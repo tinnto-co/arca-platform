@@ -870,7 +870,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
-              className="font-medium text-[var(--arca-navy-700)] hover:underline"
+              className="font-medium text-[var(--arca-accent)] hover:underline"
             >
               Limpiar selección
             </button>
@@ -884,7 +884,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               <TableHead className="w-10 px-2">
                 <input
                   type="checkbox"
-                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                   checked={
                     (invoicesData?.comprobantes ?? []).length > 0 &&
                     (invoicesData?.comprobantes ?? []).every((inv) =>
@@ -922,7 +922,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               </TableHead>
               <TableHead className="w-[9%] px-2 py-2 align-middle">
                 <button
-                  className="flex items-center gap-1 group text-white text-[11px] font-semibold"
+                  className="group flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase"
                   onClick={handleSortByDate}
                 >
                   Fecha
@@ -937,7 +937,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               </TableHead>
               <TableHead className="w-[14%] px-2 py-2 align-middle">
                 <button
-                  className="flex items-center gap-1 group text-white text-[11px] font-semibold"
+                  className="group flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase"
                   onClick={handleSortByAmount}
                 >
                   Monto
@@ -984,7 +984,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   >
                     <input
                       type="checkbox"
-                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                       checked={selectedIds.has(invoice.id)}
                       onChange={() => toggleInvoiceRow(invoice.id)}
                     />
@@ -1025,7 +1025,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="w-[12%] px-2 py-2 align-top whitespace-nowrap tabular-nums">
+                  <TableCell className="w-[12%] px-2 py-2 align-top whitespace-nowrap tabular-nums [font-family:var(--ff-mono)]">
                     {formatNumero(invoice.puntoVenta, invoice.numero)}
                   </TableCell>
                   <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
@@ -1158,7 +1158,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     {d.alicuotas.length > 0 && (
                       <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)]">
                         <table className="w-full text-[12.5px]">
-                          <thead className="bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]">
+                          <thead className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                             <tr>
                               <th className="px-3 py-2 text-left font-semibold">
                                 Alícuota IVA
@@ -1177,13 +1177,13 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                                 key={i}
                                 className="border-t border-[var(--arca-border)]"
                               >
-                                <td className="px-3 py-2 tabular-nums">
+                                <td className="px-3 py-2 tabular-nums [font-family:var(--ff-mono)]">
                                   {a.alicuota ? `${a.alicuota}%` : '—'}
                                 </td>
-                                <td className="px-3 py-2 text-right tabular-nums">
+                                <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)]">
                                   {monto(a.neto)}
                                 </td>
-                                <td className="px-3 py-2 text-right tabular-nums">
+                                <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)]">
                                   {monto(a.iva)}
                                 </td>
                               </tr>

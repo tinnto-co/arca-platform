@@ -147,9 +147,9 @@ export function ListaNotificaciones({
                         className={cn(
                           'flex w-full gap-[11px] border-b border-[var(--arca-border)] px-[18px] py-3 text-left',
                           'transition-colors duration-[120ms] ease-[ease]',
-                          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--arca-navy-700)]',
+                          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--arca-accent)]',
                           activa
-                            ? 'bg-[var(--arca-surface-2)] shadow-[inset_2px_0_0_var(--arca-navy-900)]'
+                            ? 'bg-[var(--arca-accent-bg)] shadow-[inset_3px_0_0_var(--arca-accent)]'
                             : 'hover:bg-[var(--arca-surface-2)]'
                         )}
                       >
@@ -170,7 +170,7 @@ export function ListaNotificaciones({
                             'mt-1.5 size-2 shrink-0 rounded-full',
                             n.leida
                               ? 'bg-transparent'
-                              : 'bg-[var(--arca-navy-700)]'
+                              : 'bg-[var(--arca-accent)]'
                           )}
                         />
 

@@ -83,7 +83,7 @@ export function FrecuenciaClavesCard() {
 
       <table className="w-full text-[12.5px]">
         <thead>
-          <tr className="bg-[var(--arca-navy-900)] text-white">
+          <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
             <th className="px-5 py-2 text-left font-semibold">Clave</th>
             <th className="px-3 py-2 text-right font-semibold">Empresas</th>
             <th className="px-3 py-2 text-right font-semibold">
@@ -107,13 +107,13 @@ export function FrecuenciaClavesCard() {
                   {c.cuit}
                 </div>
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-[var(--arca-ink-2)]">
+              <td className="px-3 py-2.5 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
                 {c.empresas}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-[var(--arca-ink-2)]">
+              <td className="px-3 py-2.5 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
                 {c.conComprobantes}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums">
+              <td className="px-3 py-2.5 text-right tabular-nums [font-family:var(--ff-mono)]">
                 <span className="text-[var(--arca-ink-2)]">{c.scrapeosOk}</span>
                 {c.scrapeosOk < SCRAPEOS_MINIMOS && (
                   <span

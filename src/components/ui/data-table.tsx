@@ -99,7 +99,7 @@ export function DataTable<TData, TValue>({
     header: ({ table: t }) => (
       <input
         type="checkbox"
-        className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+        className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
         checked={t.getIsAllPageRowsSelected()}
         ref={(el) => {
           if (el) el.indeterminate = t.getIsSomePageRowsSelected();
@@ -111,7 +111,7 @@ export function DataTable<TData, TValue>({
     cell: ({ row }) => (
       <input
         type="checkbox"
-        className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+        className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
         checked={row.getIsSelected()}
         onChange={row.getToggleSelectedHandler()}
         onClick={(e) => e.stopPropagation()}
@@ -209,7 +209,10 @@ export function DataTable<TData, TValue>({
                   <TableHead key={header.id}>
                     {header.isPlaceholder ? null : canSort ? (
                       <button
-                        className="flex items-center gap-1 group"
+                        // Los controles de formulario no heredan
+                        // `text-transform`: sin esto el header ordenable
+                        // pierde las mayúsculas que trae el <th>.
+                        className="group flex items-center gap-1 uppercase tracking-[0.06em]"
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {flexRender(
@@ -317,7 +320,7 @@ export function DataTable<TData, TValue>({
                   className={cn(
                     'h-7 w-7 rounded-md text-[11.5px] font-medium transition-colors duration-[120ms]',
                     table.getState().pagination.pageIndex === Number(page) - 1
-                      ? 'bg-[var(--arca-ink)] text-white'
+                      ? 'bg-[var(--arca-accent-bg)] font-semibold text-[var(--arca-accent-hover)]'
                       : 'text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)]'
                   )}
                 >

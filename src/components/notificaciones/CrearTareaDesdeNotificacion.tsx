@@ -75,7 +75,7 @@ function tipoDesdeCategoria(categoria: string | null): TipoTarea {
 }
 
 const CAMPO =
-  'w-full rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[9px] py-[5px] text-left text-[12.5px] text-[var(--arca-ink)] outline-none transition-colors duration-[120ms] hover:border-[var(--arca-border-strong)] focus:border-[var(--arca-navy-600)]';
+  'w-full rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[9px] py-[5px] text-left text-[12.5px] text-[var(--arca-ink)] outline-none transition-colors duration-[120ms] hover:border-[var(--arca-border-strong)] focus:border-[var(--arca-accent)]';
 const LABEL =
   'text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase';
 
@@ -357,7 +357,7 @@ function Formulario({
             type="button"
             disabled={!titulo.trim() || crear.isPending}
             onClick={() => crear.mutate()}
-            className="rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors duration-[120ms] hover:bg-black disabled:opacity-40"
+            className="rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors duration-[120ms] hover:bg-[var(--arca-accent-hover)] disabled:opacity-40"
           >
             Crear tarea
           </button>
