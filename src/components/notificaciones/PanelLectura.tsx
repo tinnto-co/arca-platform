@@ -8,7 +8,7 @@
  * del trabajo.
  */
 
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -58,8 +58,6 @@ interface Props {
   onSiguiente: () => void;
   hayAnterior: boolean;
   haySiguiente: boolean;
-  /** Se marcó como no leída a mano: la bandeja no debe volver a marcarla. */
-  onNoLeidaManual: (id: string) => void;
 }
 
 const BOTON =
@@ -200,7 +198,6 @@ export function PanelLectura({
   onSiguiente,
   hayAnterior,
   haySiguiente,
-  onNoLeidaManual,
 }: Props) {
   const queryClient = useQueryClient();
 
@@ -252,6 +249,26 @@ export function PanelLectura({
     },
     onError: () => toast.error('No se pudo cambiar el estado'),
   });
+
+  /**
+   * Se marca leída tras 1,5 s de tenerla abierta: pasar por encima navegando
+   * con el teclado no debería contar como leída.
+   *
+   * Vive acá y no en la bandeja porque la bandeja sólo conoce lo que entra en
+   * la página visible de la lista: abrir por link directo, o con un filtro que
+   * deja la notificación afuera, no marcaba nada.
+   *
+   * Depende sólo del id. Con `leida` en las dependencias el efecto se
+   * re-disparaba con el propio cambio del usuario y deshacía su "marcar como
+   * no leída" 1,5 s después.
+   */
+  useEffect(() => {
+    if (!n || n.leida) return;
+    const t = setTimeout(() => marcarLeida.mutate(true), 1500);
+    return () => clearTimeout(t);
+    // `n.leida` a propósito fuera: ver arriba.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [n?.id]);
 
   const asignar = useMutation({
     mutationFn: (userId: string | null) =>
@@ -408,10 +425,7 @@ export function PanelLectura({
 
         <button
           type="button"
-          onClick={() => {
-            if (leida && notificacionId) onNoLeidaManual(notificacionId);
-            marcarLeida.mutate(!leida);
-          }}
+          onClick={() => marcarLeida.mutate(!leida)}
           disabled={marcarLeida.isPending}
           className={BOTON}
         >

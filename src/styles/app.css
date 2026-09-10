@@ -176,6 +176,35 @@
     font-size: 14px;
     line-height: 1.5;
   }
+
+  /*
+   * Cursor de mano en lo que se clickea.
+   *
+   * Tailwind 4 sacó del reset el `cursor: pointer` de los botones y adoptó el
+   * default del navegador, que es la flecha. De ahí venían los 131
+   * `cursor-pointer` sueltos por los componentes: cada uno parcheaba el mismo
+   * agujero donde se acordaba. Resuelto acá, vale para toda la plataforma,
+   * incluidos los controles de Radix que no son <button>.
+   *
+   * Deshabilitado queda con la flecha: la mano invita a clickear algo que no
+   * responde.
+   */
+  button:not(:disabled),
+  select:not(:disabled),
+  summary,
+  label[for],
+  [role='button']:not([aria-disabled='true']),
+  [role='tab']:not([aria-disabled='true']),
+  [role='menuitem']:not([aria-disabled='true']),
+  [role='menuitemcheckbox']:not([aria-disabled='true']),
+  [role='menuitemradio']:not([aria-disabled='true']),
+  [role='option']:not([aria-disabled='true']),
+  [role='switch']:not([aria-disabled='true']),
+  [role='checkbox']:not([aria-disabled='true']),
+  [role='radio']:not([aria-disabled='true']),
+  [role='combobox']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
 }
 
 /* Al imprimir desde Recibo (body.recibo-print-mode): solo se muestran los cuadros de recibo */
