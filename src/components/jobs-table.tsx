@@ -752,7 +752,7 @@ export function JobsTable() {
       </div>
 
       {totalPages > 1 && (
-        <div className="flex justify-center">
+        <div className="w-full">
           <Paginador
             pagina={currentPage}
             totalPaginas={totalPages}

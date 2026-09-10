@@ -1045,7 +1045,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex justify-center w-full min-w-0">
+          <div className="w-full min-w-0">
             <Paginador
               pagina={currentPage}
               totalPaginas={totalPages}

@@ -74,9 +74,16 @@ export function Paginador({
   const ir = (p: number) => onPagina(Math.min(totalPaginas, Math.max(1, p)));
 
   return (
+    // Container query y no breakpoint de pantalla: el mismo paginador va en el
+    // pie de la lista de notificaciones (392px) y a lo ancho de una tabla. Lo
+    // que manda es el espacio del contenedor, no el de la ventana.
     <div
       className={cn(
-        'flex flex-wrap items-center justify-between gap-3',
+        // `w-full` no es decorativo: `container-type: inline-size` aplica
+        // contención en el eje inline, así que el elemento deja de tomar su
+        // ancho del contenido. Sin esto medía 0 dentro de un flex y la query
+        // caía siempre en el modo angosto.
+        '@container flex w-full flex-wrap items-center justify-between gap-3',
         className
       )}
     >
@@ -90,8 +97,14 @@ export function Paginador({
         )}
         {totalPaginas > 1 && (
           <>
-            Página <span className="tabular-nums">{pagina}</span> de{' '}
-            <span className="tabular-nums">{totalPaginas}</span>
+            {/* Angosto: "5 / 24" alcanza y deja lugar a las flechas. */}
+            <span className="@min-[26rem]:hidden tabular-nums">
+              {pagina} / {totalPaginas}
+            </span>
+            <span className="hidden @min-[26rem]:inline">
+              Página <span className="tabular-nums">{pagina}</span> de{' '}
+              <span className="tabular-nums">{totalPaginas}</span>
+            </span>
           </>
         )}
       </span>
@@ -109,35 +122,37 @@ export function Paginador({
             )}
           >
             <ChevronLeft className="size-3.5" />
-            Anterior
+            <span className="hidden @min-[26rem]:inline">Anterior</span>
           </button>
 
-          {paginasVisibles(pagina, totalPaginas).map((p, i) =>
-            p === null ? (
-              <span
-                key={`gap-${i}`}
-                className="px-1 text-[12px] text-[var(--arca-ink-4)]"
-                aria-hidden
-              >
-                …
-              </span>
-            ) : (
-              <button
-                key={p}
-                type="button"
-                onClick={() => ir(p)}
-                aria-current={p === pagina ? 'page' : undefined}
-                className={cn(
-                  BOTON,
-                  p === pagina
-                    ? 'bg-[var(--arca-ink)] font-semibold text-white'
-                    : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
-                )}
-              >
-                {p}
-              </button>
-            )
-          )}
+          <span className="hidden items-center gap-1 @min-[26rem]:flex">
+            {paginasVisibles(pagina, totalPaginas).map((p, i) =>
+              p === null ? (
+                <span
+                  key={`gap-${i}`}
+                  className="px-1 text-[12px] text-[var(--arca-ink-4)]"
+                  aria-hidden
+                >
+                  …
+                </span>
+              ) : (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => ir(p)}
+                  aria-current={p === pagina ? 'page' : undefined}
+                  className={cn(
+                    BOTON,
+                    p === pagina
+                      ? 'bg-[var(--arca-ink)] font-semibold text-white'
+                      : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
+                  )}
+                >
+                  {p}
+                </button>
+              )
+            )}
+          </span>
 
           <button
             type="button"
@@ -149,7 +164,7 @@ export function Paginador({
               'gap-1 text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
             )}
           >
-            Siguiente
+            <span className="hidden @min-[26rem]:inline">Siguiente</span>
             <ChevronRight className="size-3.5" />
           </button>
         </nav>

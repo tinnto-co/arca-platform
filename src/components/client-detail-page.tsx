@@ -3209,7 +3209,7 @@ export function RepresentativeDetailPage({
                       </Table>
                     </div>
                     {dueDateTotalPages > 1 && (
-                      <div className="flex justify-center w-full min-w-0">
+                      <div className="w-full min-w-0">
                         <Paginador
                           pagina={dueDatePage}
                           totalPaginas={dueDateTotalPages}

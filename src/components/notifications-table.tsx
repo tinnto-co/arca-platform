@@ -317,7 +317,7 @@ export function NotificationsTable() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex justify-center">
+        <div className="w-full">
           <Paginador
             pagina={currentPage}
             totalPaginas={totalPages}
