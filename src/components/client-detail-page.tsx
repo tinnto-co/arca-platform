@@ -2449,7 +2449,7 @@ export function RepresentativeDetailPage({
               if (!open) setNotifAbierta(null);
             }}
           >
-            <DialogContent className="max-w-3xl p-0 overflow-hidden gap-0">
+            <DialogContent className="!max-w-5xl w-[92vw] p-0 overflow-hidden gap-0">
               <DialogHeader className="sr-only">
                 <DialogTitle>Notificación</DialogTitle>
               </DialogHeader>
