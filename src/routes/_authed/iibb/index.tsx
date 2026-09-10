@@ -453,28 +453,23 @@ function IIBBDesglose({
                 style={{ width: '100%', borderCollapse: 'collapse' }}
               >
                 <thead>
-                  <tr
-                    style={{
-                      borderBottom: '1px solid var(--arca-border)',
-                      background: 'var(--arca-surface-2)',
-                    }}
-                  >
-                    <th className="px-3 py-2.5 text-left font-semibold text-[var(--arca-ink-2)]">
+                  <tr className="bg-[var(--arca-navy-900)] text-white">
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold whitespace-nowrap">
                       Empresa
                     </th>
-                    <th className="px-3 py-2.5 text-left font-semibold text-[var(--arca-ink-2)]">
+                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold whitespace-nowrap">
                       CUIT
                     </th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
                       Comprobantes
                     </th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
                       Provincias
                     </th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
                       Base imponible
                     </th>
-                    <th className="px-3 py-2.5 text-right font-semibold text-[var(--arca-ink-2)]">
+                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
                       IVA
                     </th>
                   </tr>
@@ -543,43 +538,38 @@ function IIBBDesglose({
             }}
           >
             <thead>
-              <tr
-                style={{
-                  borderBottom: '1px solid var(--arca-border)',
-                  background: 'var(--arca-surface-2)',
-                }}
-              >
-                <th className="text-left px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+              <tr className="bg-[var(--arca-navy-900)] text-white">
+                <th className="text-left px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Provincia
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Comp.
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Base imponible
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Alícuota %
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Imp. determ.
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Saldo a favor
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Perc. Agentes
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Perc. Aduan.
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Ret. Agentes
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Ret. Banc.
                 </th>
-                <th className="text-right px-2 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
                   Liquidación
                 </th>
               </tr>

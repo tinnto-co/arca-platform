@@ -241,7 +241,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] tabular-nums">
               <thead>
-                <tr className="text-left text-[11.5px] uppercase tracking-wide text-[#9B9CA3]">
+                <tr className="bg-[var(--arca-navy-900)] text-white">
                   <th className="py-1.5 pr-3 font-medium">Cuenta</th>
                   <th className="py-1.5 pr-3 font-medium">Detalle</th>
                   <th className="py-1.5 pl-3 font-medium text-right">Debe</th>

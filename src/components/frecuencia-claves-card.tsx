@@ -83,22 +83,14 @@ export function FrecuenciaClavesCard() {
 
       <table className="w-full text-[12.5px]">
         <thead>
-          <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-            <th className="px-5 py-2 text-left font-semibold text-[var(--arca-ink-2)]">
-              Clave
-            </th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
-              Empresas
-            </th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
+          <tr className="bg-[var(--arca-navy-900)] text-white">
+            <th className="px-5 py-2 text-left font-semibold">Clave</th>
+            <th className="px-3 py-2 text-right font-semibold">Empresas</th>
+            <th className="px-3 py-2 text-right font-semibold">
               Con comprobantes
             </th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
-              Scrapeos OK
-            </th>
-            <th className="px-5 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
-              Frecuencia
-            </th>
+            <th className="px-3 py-2 text-right font-semibold">Scrapeos OK</th>
+            <th className="px-5 py-2 text-right font-semibold">Frecuencia</th>
           </tr>
         </thead>
         <tbody>

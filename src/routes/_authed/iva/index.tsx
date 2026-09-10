@@ -530,12 +530,7 @@ function IvaResumenRI({ search }: { search: string }) {
             }}
           >
             <thead>
-              <tr
-                style={{
-                  borderBottom: '1px solid var(--arca-border)',
-                  background: 'var(--arca-surface-2)',
-                }}
-              >
+              <tr className="bg-[var(--arca-navy-900)] text-white">
                 <SortableTh
                   label="Cliente"
                   colKey="empresa"
@@ -874,12 +869,7 @@ function MonotributistasTab({ search }: { search: string }) {
             style={{ minWidth: 940, width: '100%', borderCollapse: 'collapse' }}
           >
             <thead>
-              <tr
-                style={{
-                  borderBottom: '1px solid var(--arca-border)',
-                  background: 'var(--arca-surface-2)',
-                }}
-              >
+              <tr className="bg-[var(--arca-navy-900)] text-white">
                 <SortableTh
                   label="Cliente"
                   colKey="empresa"
@@ -1015,12 +1005,7 @@ function SinClasificarBlock({ search }: { search: string }) {
           style={{ width: '100%', borderCollapse: 'collapse' }}
         >
           <thead>
-            <tr
-              style={{
-                borderBottom: '1px solid var(--arca-border)',
-                background: 'var(--arca-surface-2)',
-              }}
-            >
+            <tr className="bg-[var(--arca-navy-900)] text-white">
               <th className={cn(thCls, 'text-left')}>Cliente</th>
               <th className={cn(thCls, 'text-left')}>CUIT</th>
               <th className={cn(thCls, 'text-left')}>Login ARCA</th>

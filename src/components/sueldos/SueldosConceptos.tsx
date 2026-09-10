@@ -413,8 +413,8 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
         <div
           className="grid h-[44px] items-center px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase"
           style={{
-            background: '#0B1730',
-            color: '#E7EAF2',
+            background: 'var(--arca-navy-900)',
+            color: '#FFFFFF',
             gridTemplateColumns: '120px 140px 1fr 96px',
           }}
         >

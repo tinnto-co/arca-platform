@@ -526,7 +526,7 @@ export function VencimientosTab({
       <div>
         {/* Navy header row */}
         <div
-          className="grid items-center px-6 h-12 bg-[#0B1730] text-[#E7EAF2] text-[12px] font-semibold tracking-[0.04em] uppercase"
+          className="grid items-center px-6 h-12 bg-[var(--arca-navy-900)] text-white text-[12px] font-semibold tracking-[0.04em] uppercase"
           style={{
             gridTemplateColumns:
               '150px 1.1fr 130px 96px 70px 118px 1.5fr 110px',

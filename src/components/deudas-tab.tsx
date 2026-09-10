@@ -555,7 +555,7 @@ export function DeudasTab({
       <div className="border-t border-[#ECEAE3]">
         {/* Navy header */}
         <div
-          className="grid items-center px-6 h-12 bg-[#0B1730] text-[#E7EAF2] text-[12px] font-semibold"
+          className="grid items-center px-6 h-12 bg-[var(--arca-navy-900)] text-white text-[12px] font-semibold"
           style={{ gridTemplateColumns: GRID_COLS }}
         >
           <ColHeader label="IMPUESTO" field="tax" />

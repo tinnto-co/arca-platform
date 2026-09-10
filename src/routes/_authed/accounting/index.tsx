@@ -2776,7 +2776,7 @@ function EditableEntryTable({
   return (
     <table className="w-full text-[12px]">
       <thead>
-        <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+        <tr className="bg-[var(--arca-navy-900)] text-white">
           <th className="py-1.5">Cuenta</th>
           <th className="py-1.5 text-right w-32">Debe</th>
           <th className="py-1.5 text-right w-32">Haber</th>
@@ -3456,7 +3456,8 @@ function CreateFiscalYearDialog({
               </label>
               <SelectorFecha
                 value={start}
-                onChange={(v) => setStart(v)} className="w-full"
+                onChange={(v) => setStart(v)}
+                className="w-full"
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -3870,24 +3871,26 @@ function Asientos({
               Desde
             </label>
             <SelectorFecha
-                value={from}
-                onChange={(v) => {
+              value={from}
+              onChange={(v) => {
                 setFrom(v);
                 setPage(1);
-              }} className="w-32"
-              />
+              }}
+              className="w-32"
+            />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Hasta
             </label>
             <SelectorFecha
-                value={to}
-                onChange={(v) => {
+              value={to}
+              onChange={(v) => {
                 setTo(v);
                 setPage(1);
-              }} className="w-32"
-              />
+              }}
+              className="w-32"
+            />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
@@ -4030,7 +4033,7 @@ function Asientos({
         </div>
 
         {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[11px] font-semibold uppercase tracking-wide text-white">
           <div className="w-4 shrink-0" />
           <div className="w-12 shrink-0">N°</div>
           <div className="w-24 shrink-0">Fecha</div>
@@ -4240,7 +4243,7 @@ function AsientoEditor({
           // coincidir y el error salía recién del servidor.
           lineas: lineasParaTemplate().map(({ linea, lado }) => ({
             cuentaId: linea.accountId,
-            lado: lado as 'debe' | 'haber',
+            lado: lado!,
             descripcion: linea.description || undefined,
           })),
         },
@@ -4474,9 +4477,10 @@ function AsientoEditor({
                   Fecha *
                 </label>
                 <SelectorFecha
-                value={entryDate}
-                onChange={(v) => setEntryDate(v)} className="w-full"
-              />
+                  value={entryDate}
+                  onChange={(v) => setEntryDate(v)}
+                  className="w-full"
+                />
               </div>
               <div className="flex flex-col gap-1 flex-1">
                 <label className="text-[11px] text-[var(--arca-ink-3)]">
@@ -4662,7 +4666,7 @@ function AsientoEditor({
 
             {/* Líneas */}
             <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-navy-900)] text-[10px] font-semibold uppercase tracking-wide text-white">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-40">Detalle</div>
                 <div className="w-24 text-right">Debe</div>
@@ -4980,7 +4984,7 @@ function EntryDetailBody({
 
       {/* Líneas */}
       <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden bg-[var(--arca-surface)]">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-navy-900)] text-[10px] font-semibold uppercase tracking-wide text-white">
           <div className="flex-1">Cuenta</div>
           <div className="w-28 text-right">Debe</div>
           <div className="w-28 text-right">Haber</div>
@@ -5491,18 +5495,20 @@ function Mayor({
               Desde
             </label>
             <SelectorFecha
-                value={from}
-                onChange={(v) => setFrom(v)} className="w-36"
-              />
+              value={from}
+              onChange={(v) => setFrom(v)}
+              className="w-36"
+            />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Hasta
             </label>
             <SelectorFecha
-                value={to}
-                onChange={(v) => setTo(v)} className="w-36"
-              />
+              value={to}
+              onChange={(v) => setTo(v)}
+              className="w-36"
+            />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
@@ -5592,7 +5598,7 @@ function Mayor({
           <div>
             {/* Sin encabezado, las tres columnas de plata no decían cuál era
                 el Debe, cuál el Haber y cuál el saldo. */}
-            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[10.5px] font-semibold uppercase tracking-wide text-white">
               <span className="w-4 shrink-0" aria-hidden />
               <span className={MAYOR_COL_CODE}>Código</span>
               <span className="flex-1 min-w-0">Cuenta</span>
@@ -5658,7 +5664,7 @@ function LedgerTable({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[11px] font-semibold uppercase tracking-wide text-white">
         <div className="w-24 shrink-0">Fecha</div>
         <div className="w-12 shrink-0">N°</div>
         <div className="flex-1 min-w-0">Descripción</div>
@@ -5915,9 +5921,10 @@ function Balance({
               Fecha de corte
             </label>
             <SelectorFecha
-                value={asOf}
-                onChange={(v) => setAsOf(v)} className="w-40"
-              />
+              value={asOf}
+              onChange={(v) => setAsOf(v)}
+              className="w-40"
+            />
           </div>
           {data && (
             <span className="text-[12px] text-[var(--arca-ink-3)] self-end pb-1.5">
@@ -5961,7 +5968,7 @@ function Balance({
         )}
 
         {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[11px] font-semibold uppercase tracking-wide text-white">
           <div className="w-24 shrink-0">Código</div>
           <div className="flex-1 min-w-0">Cuenta</div>
           <div className={BALANCE_COL_MONEY}>Suma Debe</div>
@@ -6281,7 +6288,7 @@ function Reglas({
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[11px] font-semibold uppercase tracking-wide text-white">
           <div className="w-14 shrink-0 text-center">Prior.</div>
           <div className="flex-1 min-w-0">Nombre</div>
           <div className="w-24 shrink-0">Módulo</div>
@@ -6860,7 +6867,7 @@ function RuleEditorDialog({
 
         {/* Líneas-plantilla */}
         <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-navy-900)] text-[10px] font-semibold uppercase tracking-wide text-white">
             <div className="flex-1">Cuenta</div>
             <div className="w-20 flex items-center gap-1">
               Lado
@@ -7057,7 +7064,7 @@ function RuleDetailDialog({
             )}
 
             <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-navy-900)] text-[10px] font-semibold uppercase tracking-wide text-white">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-16">Lado</div>
                 <div className="w-48">Base del monto</div>
@@ -7422,7 +7429,7 @@ function Contabilizar({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+              <tr className="bg-[var(--arca-navy-900)] text-white">
                 <th className="w-9 py-2 pl-4">
                   {canWrite && selectable.length > 0 && (
                     <button
@@ -7436,10 +7443,7 @@ function Contabilizar({
                           strokeWidth={2}
                         />
                       ) : (
-                        <Square
-                          className="w-4 h-4 text-[var(--arca-ink-3)]"
-                          strokeWidth={2}
-                        />
+                        <Square className="w-4 h-4" strokeWidth={2} />
                       )}
                     </button>
                   )}
@@ -7682,7 +7686,7 @@ function Pendientes({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+              <tr className="bg-[var(--arca-navy-900)] text-white">
                 <th className="py-2 pl-4">N°</th>
                 <th className="py-2">Fecha</th>
                 <th className="py-2">Período</th>
@@ -7917,7 +7921,7 @@ function BienesDeUso({
           ) : (
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-navy-900)] text-white">
                   <th className="py-2 pl-4">Nombre</th>
                   <th className="py-2">Categoría</th>
                   <th className="py-2">Fecha adq.</th>
@@ -8155,9 +8159,9 @@ function FixedAssetEditor({
 
           <Field label="Fecha de adquisición *">
             <SelectorFecha
-                value={acquisitionDate}
-                onChange={(v) => setAcquisitionDate(v)}
-              />
+              value={acquisitionDate}
+              onChange={(v) => setAcquisitionDate(v)}
+            />
           </Field>
 
           <Field
@@ -8333,9 +8337,9 @@ function DisposeAssetDialog({
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fecha de baja *">
             <SelectorFecha
-                value={disposalDate}
-                onChange={(v) => setDisposalDate(v)}
-              />
+              value={disposalDate}
+              onChange={(v) => setDisposalDate(v)}
+            />
           </Field>
           <Field label="Motivo *">
             <Select
@@ -8621,7 +8625,7 @@ function AnexoIView({
               className={`w-full min-w-[1000px] text-[11.5px] ${COL_FIJA}`}
             >
               <thead>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface)]">
+                <tr className="bg-[var(--arca-navy-900)] text-white">
                   <th
                     className="py-2 pl-4 text-left align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
@@ -8681,7 +8685,7 @@ function AnexoIView({
                     </th>
                   )}
                 </tr>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)]">
+                <tr className="text-[9.5px] uppercase tracking-wide bg-[var(--arca-surface-2)]">
                   <th
                     className="px-3 py-1.5 text-right align-bottom border-l border-b border-[var(--arca-border)]"
                     rowSpan={2}
@@ -8701,7 +8705,7 @@ function AnexoIView({
                     Del ejercicio
                   </th>
                 </tr>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
+                <tr className="text-[9.5px] uppercase tracking-wide bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
                   <th className="px-3 py-1.5 text-right">%</th>
                   <th className="px-3 py-1.5 text-right">Monto</th>
                 </tr>
@@ -8781,7 +8785,7 @@ function AnexoIView({
             </p>
             <table className="w-full text-[12.5px] mb-3">
               <thead>
-                <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-navy-900)] text-white">
                   <th className="py-1.5">Cuenta</th>
                   <th className="py-1.5 text-right">Debe</th>
                   <th className="py-1.5 text-right">Haber</th>
@@ -9601,7 +9605,7 @@ function EspView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-navy-900)] text-white">
                   <th className="py-2 pl-3 text-left">Rubro</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -9881,7 +9885,7 @@ function InventarioView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+            <tr className="bg-[var(--arca-navy-900)] text-white">
               <th className="text-left font-semibold px-4 py-1.5">Conceptos</th>
               {[1, 2, 3, 4].map((n) => (
                 <th
@@ -10086,7 +10090,7 @@ function Nota3View({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[11px] font-semibold uppercase tracking-wide text-white">
             <div>Nota</div>
             <div>Concepto</div>
             <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
@@ -10292,7 +10296,7 @@ function EfeView({
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[11px] font-semibold uppercase tracking-wide text-white">
         <div>Concepto</div>
         <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
         <div className="text-right">
@@ -10319,7 +10323,7 @@ function EfeView({
         hasPrior={data.hasPrior}
       />
 
-      <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-y border-[var(--arca-border)]">
+      <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold bg-[var(--arca-navy-900)] border-y border-[var(--arca-border)] text-white">
         Causas de las variaciones del efectivo
       </div>
 
@@ -10501,7 +10505,7 @@ function EepnView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+            <tr className="bg-[var(--arca-navy-900)] text-white">
               <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
                 Concepto
               </th>
@@ -10529,14 +10533,12 @@ function EepnView({
                 </th>
               )}
             </tr>
-            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] text-[var(--arca-ink-3)]">
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px]">
               {data.columns.map((c) => (
                 <th
                   key={c.accountId}
                   className={`text-right px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap ${
-                    c.isSubtotal
-                      ? 'font-semibold text-[var(--arca-ink-2)]'
-                      : 'font-medium'
+                    c.isSubtotal ? 'font-semibold' : 'font-medium'
                   }`}
                   title={c.isSubtotal ? c.groupLabel : `${c.code} · ${c.name}`}
                 >
@@ -10728,7 +10730,7 @@ function ErView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-navy-900)] text-white">
                   <th className="py-2 pl-3 text-left">Concepto</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -11149,7 +11151,7 @@ function AnexoIIView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-navy-900)] text-white">
                   <th className="py-2 pl-3 text-left">Función / cuenta</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}

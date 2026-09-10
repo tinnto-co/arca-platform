@@ -2011,7 +2011,7 @@ export function SueldosEmpleados({
       <div className="w-full min-w-0 max-w-full overflow-x-auto">
         {/* Header */}
         <div
-          className="grid items-center bg-[#0B1730] text-[#E7EAF2] rounded-t-[10px] px-5"
+          className="grid items-center bg-[var(--arca-navy-900)] text-white rounded-t-[10px] px-5"
           style={{
             height: 44,
             gridTemplateColumns: '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',

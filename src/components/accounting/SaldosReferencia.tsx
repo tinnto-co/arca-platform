@@ -213,8 +213,8 @@ function Planilla({
 
       <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
         <table className="w-full text-[12.5px]">
-          <thead className="sticky top-0 bg-[var(--arca-surface-2)] z-10">
-            <tr className="text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[var(--arca-navy-900)] text-white">
               <th className="text-left font-semibold px-4 py-2">Cuenta</th>
               <th className="text-left font-semibold px-3 py-2">Rubro</th>
               <th className="text-right font-semibold px-3 py-2 w-40">

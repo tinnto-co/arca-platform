@@ -816,7 +816,7 @@ export function SueldosRecibo({
             <div className="overflow-x-auto rounded-[10px]">
               {/* Navy header */}
               <div
-                className="bg-[#0B1730] text-[#E7EAF2] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
+                className="bg-[var(--arca-navy-900)] text-white h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
                 style={{
                   gridTemplateColumns:
                     'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
