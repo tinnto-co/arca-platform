@@ -702,6 +702,7 @@ export const credencialAfip = pgTable("credencial_afip", {
 	ultimoLoginOk: timestamp("ultimo_login_ok", { withTimezone: true }),
 	verificadaAt: timestamp("verificada_at", { withTimezone: true }),
 	comprobantesFrecuencia: text("comprobantes_frecuencia").default('estandar').notNull(),
+	claveActualizadaAt: timestamp("clave_actualizada_at", { withTimezone: true }),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

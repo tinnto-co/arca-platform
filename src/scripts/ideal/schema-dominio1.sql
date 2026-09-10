@@ -182,11 +182,33 @@ create table credencial_afip (
   -- La decide una persona desde la pantalla de clientes, no un automatismo.
   comprobantes_frecuencia text not null default 'estandar'
     check (comprobantes_frecuencia in ('estandar', 'semanal', 'pausada')),
+  clave_actualizada_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index idx_credencial_afip_org on credencial_afip(org_id);
 create trigger trg_set_updated_at before update on credencial_afip for each row execute function set_updated_at();
+
+-- Cuándo se cambió la CLAVE (updated_at no sirve: se pisa en cada login OK).
+-- Vive en un trigger y no en el handler a propósito: cualquier edición de la
+-- clave —UI, script— queda registrada. Y cierra el loop con el scraper: si el
+-- scraper la marcó clave_invalida, corregir la clave la re-activa sola y el
+-- cron la retoma ('bloqueada' NO se toca: esa la levanta una persona).
+create or replace function trg_credencial_clave_cambiada() returns trigger as $$
+begin
+  if new.clave is distinct from old.clave then
+    new.clave_actualizada_at := now();
+    if old.estado = 'clave_invalida' then
+      new.estado := 'activa';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger trg_credencial_clave_cambiada
+  before update on credencial_afip
+  for each row execute function trg_credencial_clave_cambiada();
 
 comment on table credencial_afip is
   'Login de AFIP (clave fiscal): un medio de acceso para scrapear, NO una entidad de negocio. La clave está cifrada AES-256-GCM. nombre/email/telefono = contacto opcional de la persona del login (sin crear un cliente fantasma).';
@@ -195,6 +217,8 @@ comment on column credencial_afip.comprobantes_frecuencia is
   'Con qué frecuencia se scrapean los comprobantes de esta clave. estandar = el cron normal; semanal = solo los lunes; pausada = no se scrapean. Para claves cuyas empresas no facturan y vuelven vacías — ojo: pausada implica no enterarse si empiezan a facturar, semanal es la opción segura. Solo afecta comprobantes; notificaciones/deuda/IVA siguen normal.';
 comment on column credencial_afip.estado is
   'Juicio DERIVADO, no un hecho: se pasa a clave_invalida/bloqueada tras N logins fallidos seguidos, nunca por uno solo — AFIP responde "Clave o usuario incorrecto" también cuando lo que falló fue el captcha. Los hechos son ultimo_login_ok y verificada_at.';
+comment on column credencial_afip.clave_actualizada_at is
+  'Cuándo se cambió por última vez la clave (contraseña) de esta credencial. Distinto de updated_at, que se pisa en cada login exitoso. La setea el trigger trg_credencial_clave_cambiada, que además re-activa la credencial si estaba clave_invalida.';
 comment on column credencial_afip.ultimo_login_ok is 'Hecho: último login exitoso en AFIP con esta clave.';
 comment on column credencial_afip.verificada_at is 'Hecho: última vez que se verificó la clave explícitamente (chequeo puntual, no un scrapeo).';
 

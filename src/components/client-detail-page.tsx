@@ -1792,6 +1792,15 @@ export function RepresentativeDetailPage({
                       )}
                     </h1>
                   )}
+                  {client.estado === 'clave_invalida' && (
+                    <span
+                      className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)] cursor-help"
+                      title="AFIP rechaza la clave de este login: los datos de sus empresas no se actualizan. Cargá la clave nueva (desde el Inicio o editando la credencial) y la actualización se reanuda sola."
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      Clave de AFIP desactualizada
+                    </span>
+                  )}
                   {selectedProfile?.estadoAfip === 'irregularidades' && (
                     <span
                       className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
@@ -1844,6 +1853,18 @@ export function RepresentativeDetailPage({
                       year: 'numeric',
                     })}
                   </span>
+                  {client.claveActualizadaAt && (
+                    <>
+                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                      <span title="Última vez que se cambió la clave fiscal de este login">
+                        Clave actualizada{' '}
+                        {new Date(client.claveActualizadaAt).toLocaleDateString(
+                          'es-AR',
+                          { day: 'numeric', month: 'short', year: 'numeric' }
+                        )}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
               {/* Actions */}
