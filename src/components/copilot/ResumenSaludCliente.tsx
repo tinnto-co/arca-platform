@@ -24,7 +24,7 @@ interface ResumenSaludClienteProps {
 const TIPO_LABEL: Record<string, string> = {
   iva: 'IVA',
   comprobantes: 'Facturas',
-  notificaciones: 'Notif. AFIP',
+  notificaciones: 'Notif. ARCA',
   deuda: 'Deudas',
   vencimientos: 'Vencimientos',
 };
@@ -126,7 +126,7 @@ export function ResumenSaludCliente({ result }: ResumenSaludClienteProps) {
       {/* Estado de scrapes por tipo */}
       <div className="rounded-md border bg-card overflow-hidden">
         <div className="px-3 py-2 border-b text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Último scrape por tipo
+          Última actualización por tipo
         </div>
         <div className="divide-y">
           {ultimoScrapePorTipo.map((s) => {
@@ -210,7 +210,9 @@ function KpiCell({
         {icon}
         <span className="truncate">{label}</span>
       </div>
-      <div className={`text-sm font-semibold tabular-nums truncate ${toneClass}`}>
+      <div
+        className={`text-sm font-semibold tabular-nums truncate ${toneClass}`}
+      >
         {value}
       </div>
       {sub && (

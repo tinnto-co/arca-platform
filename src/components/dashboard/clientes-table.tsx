@@ -10,7 +10,13 @@ import {
   relativeTime,
 } from './shared';
 
-const AVATAR_COLORS = ['#1E3460', '#8FB39F', '#C2A878', '#2A4680', '#7AA2C8'];
+const AVATAR_COLORS = [
+  'var(--arca-chart-1)',
+  '#8FB39F',
+  'var(--arca-chart-3)',
+  'var(--arca-accent)',
+  'var(--arca-chart-2)',
+];
 
 function getInitials(name: string): string {
   return name
@@ -127,7 +133,7 @@ export function ClientesTable({ from, to }: ClientesTableProps) {
                 <td className="px-5 py-3 text-[var(--arca-ink-2)]">
                   {c.ultimaActividad ? relativeTime(c.ultimaActividad) : '-'}
                 </td>
-                <td className="px-5 py-3 text-right tabular-nums font-medium text-[var(--arca-ink)]">
+                <td className="px-5 py-3 text-right tabular-nums [font-family:var(--ff-mono)] font-medium text-[var(--arca-ink)]">
                   {formatArs(c.total)}
                 </td>
               </tr>

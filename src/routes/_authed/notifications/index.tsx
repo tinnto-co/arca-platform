@@ -13,14 +13,13 @@ import { PageShell } from '@/components/shared/page-shell';
 import {
   getNotifications,
   getInboxResumen,
-  markNotificationOpened,
   markAllNotificationsRead,
   resolveNotification,
   clasificarPendientes,
 } from '@/actions/notification';
 
 interface Busqueda {
-  estado?: 'sin_leer' | 'todas' | 'resueltas';
+  estado?: 'sin_leer' | 'todas' | 'leidas';
   categoria?: string;
   importancia?: string;
   empresa?: string;
@@ -29,15 +28,13 @@ interface Busqueda {
   adjunto?: boolean;
   q?: string;
   n?: string;
+  orden?: 'prioridad';
 }
 
 // Cada campo con su `.catch`: un parámetro raro en la URL no puede tumbar la
 // bandeja, simplemente no filtra.
 const esquema = z.object({
-  estado: z
-    .enum(['sin_leer', 'todas', 'resueltas'])
-    .optional()
-    .catch(undefined),
+  estado: z.enum(['sin_leer', 'todas', 'leidas']).optional().catch(undefined),
   categoria: z.string().optional().catch(undefined),
   importancia: z.string().optional().catch(undefined),
   empresa: z.string().optional().catch(undefined),
@@ -46,6 +43,8 @@ const esquema = z.object({
   adjunto: z.boolean().optional().catch(undefined),
   q: z.string().optional().catch(undefined),
   n: z.string().uuid().optional().catch(undefined),
+  // Sólo viaja cuando no es el orden por defecto.
+  orden: z.literal('prioridad').optional().catch(undefined),
 });
 
 export const Route = createFileRoute('/_authed/notifications/')({
@@ -55,8 +54,8 @@ export const Route = createFileRoute('/_authed/notifications/')({
   component: RouteComponent,
 });
 
-/** Cuántas trae cada tanda. */
-const POR_PAGINA = 50;
+/** Cuántas entran en una página de la bandeja. */
+const POR_PAGINA = 20;
 
 /** Un filtro vacío no viaja en la URL. */
 const oQuitar = (v: string) => (v === '' ? undefined : v);
@@ -67,7 +66,9 @@ function RouteComponent() {
   const queryClient = useQueryClient();
 
   const [clienteGlobal, setClienteGlobal] = useClienteSeleccionado();
-  const [paginas, setPaginas] = useState(1);
+  // Paginado real: se pide una página, no un `limit` que crece. Con "cargar
+  // más" no había forma de volver ni de saber dónde estabas.
+  const [pagina, setPagina] = useState(1);
 
   const [creandoTarea, setCreandoTarea] = useState(false);
 
@@ -80,10 +81,11 @@ function RouteComponent() {
     hasta: search.hasta ?? '',
     soloConAdjunto: search.adjunto ?? false,
     q: search.q ?? '',
+    orden: search.orden ?? 'fecha',
   };
 
   const setFiltros = (p: Partial<FiltrosInbox>) => {
-    setPaginas(1);
+    setPagina(1);
     void navigate({
       search: (prev: Busqueda) => ({
         ...prev,
@@ -97,6 +99,9 @@ function RouteComponent() {
           adjunto: p.soloConAdjunto || undefined,
         }),
         ...(p.q !== undefined && { q: oQuitar(p.q) }),
+        ...(p.orden !== undefined && {
+          orden: p.orden === 'prioridad' ? ('prioridad' as const) : undefined,
+        }),
       }),
       replace: true,
     });
@@ -136,13 +141,14 @@ function RouteComponent() {
   // ─── Datos ────────────────────────────────────────────────────────────────
 
   const { data: resumen } = useQuery({
-    queryKey: ['inbox-resumen'],
-    queryFn: () => getInboxResumen(),
+    queryKey: ['inbox-resumen', filtros.empresa],
+    queryFn: () =>
+      getInboxResumen({ data: { clienteId: oQuitar(filtros.empresa) } }),
   });
 
   const parametros = {
-    limit: POR_PAGINA * paginas,
-    page: 1,
+    limit: POR_PAGINA,
+    page: pagina,
     clienteId: oQuitar(filtros.empresa),
     dateFrom: oQuitar(filtros.desde),
     dateTo: oQuitar(filtros.hasta),
@@ -151,9 +157,13 @@ function RouteComponent() {
     search: oQuitar(filtros.q),
     // Los tabs se traducen a filtros del servidor. Recortar en el cliente
     // haría mentir al contador y a la paginación.
-    leida: filtros.estado === 'sin_leer' ? false : undefined,
-    onlyUnresolved: filtros.estado === 'sin_leer' ? true : undefined,
-    soloResueltas: filtros.estado === 'resueltas' ? true : undefined,
+    leida:
+      filtros.estado === 'sin_leer'
+        ? false
+        : filtros.estado === 'leidas'
+          ? true
+          : undefined,
+    orden: filtros.orden,
   };
 
   const { data, isLoading } = useQuery({
@@ -182,11 +192,6 @@ function RouteComponent() {
     void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
   };
 
-  const marcarLeida = useMutation({
-    mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
-    onSuccess: refrescar,
-  });
-
   const marcarTodas = useMutation({
     mutationFn: (ids: string[]) => markAllNotificationsRead({ data: { ids } }),
     onSuccess: (r) => {
@@ -204,7 +209,7 @@ function RouteComponent() {
       refrescar();
       void queryClient.invalidateQueries({ queryKey: ['notificacion'] });
     },
-    onError: () => toast.error('No se pudo marcar como resuelta'),
+    onError: () => toast.error('No se pudo marcar como leída'),
   });
 
   /**
@@ -245,16 +250,8 @@ function RouteComponent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendientesDeClasificar]);
 
-  // Se marca leída tras 1,5 s de lectura: abrir de paso mientras se navega con
-  // el teclado no debería contar como leída.
-  useEffect(() => {
-    if (!abierta || abierta.leida) return;
-    const id = abierta.id;
-    const t = setTimeout(() => marcarLeida.mutate(id), 1500);
-    return () => clearTimeout(t);
-    // `marcarLeida` es estable entre renders; incluirla reinicia el timer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [abierta?.id, abierta?.leida]);
+  // El auto-marcado vive en el panel: depende de tener la notificación
+  // abierta, no de que además aparezca en la página visible de la lista.
 
   // ─── Teclado ──────────────────────────────────────────────────────────────
 
@@ -299,7 +296,7 @@ function RouteComponent() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   const total = data?.totalCount ?? 0;
-  const hayMas = notificaciones.length < total;
+  const totalPaginas = data?.totalPages ?? 1;
 
   return (
     <PageShell variant="panel">
@@ -336,22 +333,24 @@ function RouteComponent() {
         }}
       />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden border">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)]">
         <ListaNotificaciones
           notificaciones={notificaciones}
           seleccionada={seleccionada}
           onSeleccionar={(id) => seleccionar(id)}
           cargando={isLoading}
           total={total}
+          orden={filtros.orden}
           vacio={
             filtros.estado === 'sin_leer'
               ? 'Estás al día'
-              : filtros.estado === 'resueltas'
-                ? 'Todavía no hay notificaciones resueltas'
+              : filtros.estado === 'leidas'
+                ? 'Todavía no hay notificaciones leídas'
                 : 'No hay notificaciones con estos filtros'
           }
-          hayMas={hayMas}
-          onCargarMas={() => setPaginas((p) => p + 1)}
+          pagina={pagina}
+          totalPaginas={totalPaginas}
+          onPagina={setPagina}
         />
 
         <PanelLectura

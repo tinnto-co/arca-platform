@@ -189,7 +189,7 @@ export function ComposerTarea({
           type="button"
           onClick={guardar}
           disabled={!titulo.trim()}
-          className="rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-[5px] text-[12px] font-medium text-white transition-colors duration-[120ms] hover:bg-black disabled:opacity-40"
+          className="rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] px-3 py-[5px] text-[12px] font-medium text-white transition-colors duration-[120ms] hover:bg-[var(--arca-accent-hover)] disabled:opacity-40"
         >
           Añadir
         </button>

@@ -66,7 +66,7 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
       {/* Legend */}
       <div className="flex gap-4 px-5 py-2.5 text-[11.5px] text-[var(--arca-ink-3)]">
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--arca-navy-700)]" />{' '}
+          <span className="w-2.5 h-2.5 rounded-[3px] bg-[var(--arca-accent)]" />{' '}
           Ventas
         </span>
         <span className="flex items-center gap-1.5">
@@ -98,20 +98,20 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
               <CartesianGrid
                 vertical={false}
                 strokeDasharray="3 4"
-                stroke="#ECEAE3"
+                stroke="var(--arca-border)"
               />
               <XAxis
                 dataKey="mes"
                 tickLine={false}
                 axisLine={false}
                 fontSize={11}
-                tick={{ fill: '#6E7079' }}
+                tick={{ fill: 'var(--arca-ink-3)' }}
               />
               <YAxis
                 tickLine={false}
                 axisLine={false}
                 fontSize={10}
-                tick={{ fill: '#9B9CA3' }}
+                tick={{ fill: 'var(--arca-ink-4)' }}
                 tickFormatter={(v) =>
                   v >= 1_000_000_000
                     ? `${(v / 1_000_000_000).toFixed(1)}B`
@@ -125,7 +125,7 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
               />
               <Tooltip
                 contentStyle={{
-                  background: '#12131A',
+                  background: 'var(--arca-ink)',
                   border: 'none',
                   borderRadius: 8,
                   fontSize: 12,
@@ -133,19 +133,19 @@ export function EvolucionChart({ from, to }: EvolucionChartProps) {
                   padding: '8px 12px',
                 }}
                 itemStyle={{ color: '#fff' }}
-                labelStyle={{ color: '#9B9CA3', marginBottom: 4 }}
+                labelStyle={{ color: 'var(--arca-ink-4)', marginBottom: 4 }}
                 formatter={(value: number) => [formatArs(value), '']}
               />
               <Bar
                 dataKey="emitido"
-                fill="#1E3460"
+                fill="var(--arca-chart-1)"
                 radius={[5, 5, 0, 0]}
                 maxBarSize={36}
                 name="Ventas"
               />
               <Bar
                 dataKey="recibido"
-                fill="#7AA2C8"
+                fill="var(--arca-chart-2)"
                 radius={[5, 5, 0, 0]}
                 maxBarSize={36}
                 name="Compras"

@@ -3336,6 +3336,25 @@ export const getMappingRule = createServerFn({ method: 'GET' })
   });
 
 /** Crea una regla de mapeo con sus líneas-plantilla. (US 3.1.1) */
+/** Último lugar de la cola de ese módulo, para una regla nueva. */
+async function siguientePrioridad(
+  orgId: string,
+  clienteId: string,
+  modulo: 'comprobante' | 'recibo' | 'movimiento_bancario'
+): Promise<number> {
+  const [row] = await db
+    .select({ max: sql<number | null>`max(${reglaMapeo.prioridad})` })
+    .from(reglaMapeo)
+    .where(
+      and(
+        eq(reglaMapeo.orgId, orgId),
+        eq(reglaMapeo.clienteId, clienteId),
+        eq(reglaMapeo.modulo, modulo)
+      )
+    );
+  return (row?.max ?? 0) + 10;
+}
+
 export const createMappingRule = createServerFn({ method: 'POST' })
   .validator(
     z.object({
@@ -3344,7 +3363,11 @@ export const createMappingRule = createServerFn({ method: 'POST' })
       sourceModule: z.enum(['comprobante', 'recibo', 'movimiento_bancario']),
       ruleType: z.enum(['default', 'condicional']).default('default'),
       condition: z.any().optional(),
-      priority: z.number().int().default(100),
+      /**
+       * Sin prioridad, la regla se va al final de la cola de su módulo. El
+       * orden se cambia arrastrando en la lista, no escribiendo un número.
+       */
+      priority: z.number().int().optional(),
       lines: z.array(mappingLineSchema).min(2),
     })
   )
@@ -3372,7 +3395,9 @@ export const createMappingRule = createServerFn({ method: 'POST' })
           tipo: d.ruleType,
           condicion:
             d.ruleType === 'condicional' ? (d.condition ?? null) : null,
-          prioridad: d.priority,
+          prioridad:
+            d.priority ??
+            (await siguientePrioridad(orgId, d.clientId, d.sourceModule)),
           activa: true,
         })
         .returning();
@@ -3406,7 +3431,8 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
       sourceModule: z.enum(['comprobante', 'recibo', 'movimiento_bancario']),
       ruleType: z.enum(['default', 'condicional']).default('default'),
       condition: z.any().optional(),
-      priority: z.number().int().default(100),
+      /** Sin prioridad, la regla se queda donde está en la cola. */
+      priority: z.number().int().optional(),
       lines: z.array(mappingLineSchema).min(2),
     })
   )
@@ -3432,7 +3458,7 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
           tipo: d.ruleType,
           condicion:
             d.ruleType === 'condicional' ? (d.condition ?? null) : null,
-          prioridad: d.priority,
+          ...(d.priority != null ? { prioridad: d.priority } : {}),
         })
         .where(eq(reglaMapeo.id, rule.id));
       await tx
@@ -3469,6 +3495,89 @@ export const setMappingRuleActive = createServerFn({ method: 'POST' })
       .update(reglaMapeo)
       .set({ activa: ctx.data.isActive })
       .where(eq(reglaMapeo.id, rule.id));
+    return { ok: true };
+  });
+
+/**
+ * Empresas de la org que sirven como origen para importar reglas: las que
+ * tienen al menos una regla activa.
+ *
+ * El selector de importar listaba las 130 empresas de la cartera, y casi
+ * ninguna tiene reglas: elegir era adivinar, y equivocarse costaba abrir el
+ * diálogo de nuevo. Acá se listan sólo las que tienen algo para copiar.
+ */
+export const listClientesConReglasActivas = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  return await db
+    .select({
+      clienteId: reglaMapeo.clienteId,
+      activas: sql<number>`count(*)::int`,
+    })
+    .from(reglaMapeo)
+    .where(and(eq(reglaMapeo.orgId, orgId), eq(reglaMapeo.activa, true)))
+    .groupBy(reglaMapeo.clienteId);
+});
+
+/**
+ * Reescribe la prioridad de las reglas de un módulo según el orden recibido.
+ *
+ * La prioridad sólo importa dentro de un módulo —el motor toma la primera
+ * regla aplicable de ese módulo—, así que el orden se reescribe módulo por
+ * módulo y la llamada trae los ids de uno solo.
+ *
+ * Se numera de 10 en 10 para que quede aire entre reglas: una regla creada a
+ * mano con una prioridad intermedia entra sin obligar a renumerar todo.
+ */
+export const reorderMappingRules = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      sourceModule: z.enum(['comprobante', 'recibo', 'movimiento_bancario']),
+      orderedIds: z.array(z.string().uuid()).min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    // Las reglas que llegan tienen que ser exactamente las de ese módulo: si
+    // faltan o sobran, el orden que mandó la pantalla ya no describe lo que
+    // hay en la base y renumerar dejaría huecos o pisaría reglas ajenas.
+    const actuales = await db
+      .select({ id: reglaMapeo.id })
+      .from(reglaMapeo)
+      .where(
+        and(
+          eq(reglaMapeo.orgId, orgId),
+          eq(reglaMapeo.clienteId, ctx.data.clientId),
+          eq(reglaMapeo.modulo, ctx.data.sourceModule)
+        )
+      );
+    const enBase = new Set(actuales.map((r) => r.id));
+    const recibidas = new Set(ctx.data.orderedIds);
+    if (
+      enBase.size !== recibidas.size ||
+      ctx.data.orderedIds.some((id) => !enBase.has(id))
+    ) {
+      throw new Error(
+        'La lista cambió mientras la ordenabas. Recargá y probá de nuevo.'
+      );
+    }
+
+    await db.transaction(async (tx) => {
+      for (const [i, id] of ctx.data.orderedIds.entries()) {
+        await tx
+          .update(reglaMapeo)
+          .set({ prioridad: (i + 1) * 10 })
+          .where(eq(reglaMapeo.id, id));
+      }
+    });
+
     return { ok: true };
   });
 

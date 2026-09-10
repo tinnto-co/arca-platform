@@ -76,7 +76,7 @@ interface EditRepresentativeDialogProps {
 }
 
 const inputClass =
-  'h-12 rounded-[12px] border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-4 text-[15px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] transition-[border-color,box-shadow] duration-[120ms] focus-visible:border-[var(--arca-navy-600)] focus-visible:ring-[3px] focus-visible:ring-[rgba(42,70,128,0.12)]';
+  'h-12 rounded-[12px] border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-4 text-[15px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] transition-[border-color,box-shadow] duration-[120ms] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[rgba(42,70,128,0.12)]';
 
 const labelClass = 'text-[14px] font-semibold text-[var(--arca-ink)]';
 
@@ -260,7 +260,7 @@ export function EditRepresentativeDialog({
               Editar
             </DialogTitle>
             <DialogDescription className="mt-2 max-w-[340px] text-[14px] leading-[1.45] text-[var(--arca-ink-3)]">
-              Modifica los datos del cliente y la credencial de AFIP del
+              Modifica los datos del cliente y la credencial de ARCA del
               representante.
             </DialogDescription>
           </div>
@@ -292,7 +292,7 @@ export function EditRepresentativeDialog({
                   icon={
                     <Users
                       className="h-[15px] w-[15px]"
-                      style={{ color: 'var(--arca-navy-600)' }}
+                      style={{ color: 'var(--arca-accent)' }}
                       strokeWidth={2}
                     />
                   }
@@ -439,7 +439,7 @@ export function EditRepresentativeDialog({
                   />
                 </SectionCard>
 
-                {/* SECTION: Credencial de AFIP */}
+                {/* SECTION: Credencial de ARCA */}
                 {credencialId && (
                   <SectionCard
                     icon={
@@ -449,7 +449,7 @@ export function EditRepresentativeDialog({
                         strokeWidth={2}
                       />
                     }
-                    label="Credencial de AFIP"
+                    label="Credencial de ARCA"
                   >
                     <FormField
                       control={form.control}
@@ -520,7 +520,7 @@ export function EditRepresentativeDialog({
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className={labelClass}>
-                            Actualizar contraseña en AFIP
+                            Actualizar contraseña en ARCA
                           </FormLabel>
                           <FormControl>
                             <div className="relative">
@@ -575,7 +575,7 @@ export function EditRepresentativeDialog({
                 <button
                   type="submit"
                   disabled={loading}
-                  className="h-[46px] px-[22px] rounded-[12px] text-[15px] font-semibold text-white bg-[var(--arca-ink)] border border-[var(--arca-ink)] hover:bg-black transition-colors duration-[120ms] cursor-pointer inline-flex items-center gap-2 disabled:opacity-60"
+                  className="h-[46px] px-[22px] rounded-[12px] text-[15px] font-semibold text-white bg-[var(--arca-accent)] border border-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] transition-colors duration-[120ms] cursor-pointer inline-flex items-center gap-2 disabled:opacity-60"
                 >
                   {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                   Actualizar

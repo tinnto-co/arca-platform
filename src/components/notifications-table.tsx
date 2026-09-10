@@ -34,6 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -50,18 +51,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
-import {
   getNotifications,
   deleteNotification,
   getNotification,
 } from '@/actions/notification';
+import { Paginador } from '@/components/shared/paginador';
 import { getCredenciales } from '@/actions/client';
 import { userQuery } from '../lib/user-query';
 
@@ -207,7 +201,7 @@ export function NotificationsTable() {
 
           <Select value={credencialFilter} onValueChange={setCredencialFilter}>
             <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder="Filtrar por login AFIP" />
+              <SelectValue placeholder="Filtrar por login ARCA" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los logins</SelectItem>
@@ -220,18 +214,16 @@ export function NotificationsTable() {
           </Select>
 
           <div className="flex gap-2">
-            <Input
-              type="date"
-              placeholder="Fecha desde"
+            <SelectorFecha
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={setDateFrom}
+              placeholder="Fecha desde"
               className="w-full md:w-40"
             />
-            <Input
-              type="date"
-              placeholder="Fecha hasta"
+            <SelectorFecha
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={setDateTo}
+              placeholder="Fecha hasta"
               className="w-full md:w-40"
             />
           </div>
@@ -267,8 +259,8 @@ export function NotificationsTable() {
               notificationsData?.notifications.map((notification) => (
                 <TableRow key={notification.id}>
                   <TableCell>
-                    {notification.clienteRazonSocial ??
-                    notification.credencialNombre ? (
+                    {(notification.clienteRazonSocial ??
+                    notification.credencialNombre) ? (
                       <div>
                         <div className="font-medium">
                           {notification.clienteRazonSocial ??
@@ -324,48 +316,12 @@ export function NotificationsTable() {
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex justify-center">
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                  className={
-                    currentPage === 1
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                (page) => (
-                  <PaginationItem key={page}>
-                    <PaginationLink
-                      onClick={() => setCurrentPage(page)}
-                      isActive={currentPage === page}
-                      className="cursor-pointer"
-                    >
-                      {page}
-                    </PaginationLink>
-                  </PaginationItem>
-                )
-              )}
-
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() =>
-                    setCurrentPage(Math.min(totalPages, currentPage + 1))
-                  }
-                  className={
-                    currentPage === totalPages
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+        <div className="w-full">
+          <Paginador
+            pagina={currentPage}
+            totalPaginas={totalPages}
+            onPagina={setCurrentPage}
+          />
         </div>
       )}
 

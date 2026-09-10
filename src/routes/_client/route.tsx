@@ -59,7 +59,7 @@ function ClientPortalLayout() {
                 className="size-[26px] rounded-[7px] flex items-center justify-center text-[10px] font-semibold text-white"
                 style={{
                   background:
-                    'linear-gradient(140deg, var(--arca-navy-700), #C2A878)',
+                    'linear-gradient(140deg, var(--arca-accent), var(--arca-chart-3))',
                 }}
               >
                 {iniciales(estudio ?? 'Estudio')}

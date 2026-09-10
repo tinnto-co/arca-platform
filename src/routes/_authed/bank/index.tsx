@@ -300,7 +300,7 @@ function CreateAccountForm({
         <button
           onClick={() => createMutation.mutate()}
           disabled={!banco || createMutation.isPending}
-          className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+          className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
           {createMutation.isPending ? 'Guardando...' : 'Guardar'}
         </button>
@@ -412,7 +412,7 @@ function BankPage() {
           <button
             onClick={() => autoMatchMutation.mutate()}
             disabled={autoMatchMutation.isPending || unmatchedCount === 0}
-            className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity ml-auto"
+            className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity ml-auto"
           >
             <Zap className="w-3.5 h-3.5" strokeWidth={2} />
             {autoMatchMutation.isPending

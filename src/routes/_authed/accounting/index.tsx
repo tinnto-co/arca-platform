@@ -61,7 +61,24 @@ import {
   BookmarkPlus,
   Eye,
   Loader2,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -156,6 +173,9 @@ import {
   updateMappingRule,
   setMappingRuleActive,
   importMappingRules,
+  listClientesConReglasActivas,
+  reorderMappingRules,
+  type MappingRuleListRow,
   getInvoicePostingPreview,
   generateInvoiceEntries,
   regenerateInvoiceEntry,
@@ -364,7 +384,7 @@ const TOOLBAR_BTN =
 const TOOLBAR_ICON_BTN =
   'flex items-center justify-center h-7 w-7 rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors';
 const TOOLBAR_BTN_PRIMARIO =
-  'flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity';
+  'flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity';
 
 /* ─── Badges ─── */
 function TypeBadge({ type }: { type: 'imputable' | 'grupo' }) {
@@ -1314,7 +1334,7 @@ function PlanDeCuentas({
               type="checkbox"
               checked={onlyActive}
               onChange={(e) => setOnlyActive(e.target.checked)}
-              className="accent-[var(--arca-navy-900)]"
+              className="accent-[var(--arca-accent)]"
             />
             Solo activas
           </label>
@@ -1613,7 +1633,7 @@ function RenameDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!name.trim() || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             Guardar
           </button>
@@ -2045,7 +2065,7 @@ function AccountFormDialog({
               (type === 'imputable' && (!accountGroup || !expectedBalance)) ||
               mut.isPending
             }
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Guardando…' : 'Guardar'}
           </button>
@@ -2082,7 +2102,7 @@ function HelpTip({ text }: { text: string }) {
         <button
           type="button"
           onClick={(e) => e.preventDefault()}
-          className="cursor-help text-[var(--arca-ink-3)] hover:text-[var(--arca-navy-900)] inline-flex transition-colors"
+          className="cursor-help text-[var(--arca-ink-3)] hover:text-[var(--arca-accent)] inline-flex transition-colors"
           aria-label="Ayuda"
         >
           <HelpCircle className="w-3.5 h-3.5" strokeWidth={1.8} />
@@ -2224,7 +2244,7 @@ function Ejercicios({
             {isOwner && (
               <button
                 onClick={() => setShowCreate(true)}
-                className="inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                className="inline-flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
               >
                 <CalendarPlus className="w-3.5 h-3.5" strokeWidth={2} />
                 Crear ejercicio
@@ -2574,7 +2594,7 @@ function PeriodCard({
                   <span className="block cursor-not-allowed">
                     <button
                       disabled
-                      className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white opacity-40 cursor-not-allowed pointer-events-none"
+                      className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white opacity-40 cursor-not-allowed pointer-events-none"
                     >
                       Cerrar período (bloqueado)
                     </button>
@@ -2591,7 +2611,7 @@ function PeriodCard({
             ) : (
               <button
                 onClick={onClose}
-                className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                className="w-full h-7 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
               >
                 Cerrar período
               </button>
@@ -2703,7 +2723,7 @@ function CierreChecklist({
           <button
             disabled={!data.canClose}
             onClick={() => setWizardOpen(true)}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-40 disabled:cursor-not-allowed"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-40 disabled:cursor-not-allowed"
             title={data.canClose ? undefined : 'Hay validaciones sin cumplir'}
           >
             Iniciar cierre
@@ -2775,7 +2795,7 @@ function EditableEntryTable({
   return (
     <table className="w-full text-[12px]">
       <thead>
-        <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+        <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
           <th className="py-1.5">Cuenta</th>
           <th className="py-1.5 text-right w-32">Debe</th>
           <th className="py-1.5 text-right w-32">Haber</th>
@@ -2829,10 +2849,10 @@ function EditableEntryTable({
               <span className="text-red-600">Descuadrado</span>
             )}
           </td>
-          <td className="py-1.5 text-right tabular-nums">
+          <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
             $ {fmtMoney(totalD)}
           </td>
-          <td className="py-1.5 text-right tabular-nums">
+          <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
             $ {fmtMoney(totalC)}
           </td>
         </tr>
@@ -3000,7 +3020,7 @@ function ClosingWizard({
                     strokeWidth={2}
                   />
                 ) : st === 'en curso' ? (
-                  <span className="w-3.5 h-3.5 rounded-full border-2 border-[var(--arca-navy-900)] inline-block" />
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-[var(--arca-accent)] inline-block" />
                 ) : (
                   <span className="w-3.5 h-3.5 rounded-full border border-[var(--arca-ink-3)] inline-block" />
                 )}
@@ -3058,7 +3078,7 @@ function ClosingWizard({
                 <button
                   disabled={!checklist.canClose}
                   onClick={() => setStage('ajustes')}
-                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-40"
+                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-40"
                 >
                   Continuar
                 </button>
@@ -3086,7 +3106,7 @@ function ClosingWizard({
                     setAjustesAck(true);
                     setStage('refundicion');
                   }}
-                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white"
                 >
                   Ya cargué los ajustes · Continuar
                 </button>
@@ -3100,9 +3120,9 @@ function ClosingWizard({
               <div
                 className="flex items-start gap-2.5 px-4 py-3 mb-3 rounded-[12px] border text-[12.5px]"
                 style={{
-                  background: '#fffbeb',
+                  background: 'var(--arca-accent-warn-bg)',
                   borderColor: '#fde68a',
-                  color: '#b45309',
+                  color: 'var(--arca-accent-warn-fg)',
                 }}
               >
                 <AlertTriangle
@@ -3265,7 +3285,7 @@ function ClosingWizard({
             <button
               onClick={() => sealMut.mutate()}
               disabled={sealMut.isPending || !done.cierre}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
             >
               {sealMut.isPending ? 'Sellando…' : 'Finalizar y sellar ejercicio'}
             </button>
@@ -3341,7 +3361,7 @@ function StageEntry({
               </button>
               <button
                 onClick={onContinue}
-                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white"
               >
                 Continuar
               </button>
@@ -3374,7 +3394,7 @@ function StageEntry({
                 blockedReason ??
                 (balanced ? undefined : 'El asiento no balancea')
               }
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
             >
               {pending ? 'Registrando…' : 'Aprobar y registrar'}
             </button>
@@ -3453,11 +3473,10 @@ function CreateFiscalYearDialog({
               <label className="text-[11px] text-[var(--arca-ink-3)]">
                 Mes de inicio *
               </label>
-              <input
-                type="date"
+              <SelectorFecha
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className={`${INPUT_CLASS} w-full h-9`}
+                onChange={(v) => setStart(v)}
+                className="w-full"
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -3495,7 +3514,7 @@ function CreateFiscalYearDialog({
                 type="checkbox"
                 checked={referenceOnly}
                 onChange={(e) => setReferenceOnly(e.target.checked)}
-                className="mt-0.5 accent-[var(--arca-navy-900)]"
+                className="mt-0.5 accent-[var(--arca-accent)]"
               />
               <span>
                 <span className="text-[12.5px] font-medium text-[var(--arca-ink)]">
@@ -3515,7 +3534,7 @@ function CreateFiscalYearDialog({
                   type="checkbox"
                   checked={statementsAdjusted}
                   onChange={(e) => setStatementsAdjusted(e.target.checked)}
-                  className="mt-0.5 accent-[var(--arca-navy-900)]"
+                  className="mt-0.5 accent-[var(--arca-accent)]"
                 />
                 <span>
                   <span className="text-[12.5px] text-[var(--arca-ink)]">
@@ -3542,7 +3561,7 @@ function CreateFiscalYearDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!startFirst || !end || !monthsValid || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Creando…' : 'Crear ejercicio'}
           </button>
@@ -3608,7 +3627,7 @@ function ReopenPeriodDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!reason.trim() || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Reabriendo…' : 'Reabrir período'}
           </button>
@@ -3870,28 +3889,26 @@ function Asientos({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Desde
             </label>
-            <input
-              type="date"
+            <SelectorFecha
               value={from}
-              onChange={(e) => {
-                setFrom(e.target.value);
+              onChange={(v) => {
+                setFrom(v);
                 setPage(1);
               }}
-              className={`${INPUT_CLASS} w-32`}
+              className="w-32"
             />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Hasta
             </label>
-            <input
-              type="date"
+            <SelectorFecha
               value={to}
-              onChange={(e) => {
-                setTo(e.target.value);
+              onChange={(v) => {
+                setTo(v);
                 setPage(1);
               }}
-              className={`${INPUT_CLASS} w-32`}
+              className="w-32"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -3950,7 +3967,7 @@ function Asientos({
                 setIncludeVoided(e.target.checked);
                 setPage(1);
               }}
-              className="accent-[var(--arca-navy-900)]"
+              className="accent-[var(--arca-accent)]"
             />
             Incluir anulados
           </label>
@@ -4035,7 +4052,7 @@ function Asientos({
         </div>
 
         {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
           <div className="w-4 shrink-0" />
           <div className="w-12 shrink-0">N°</div>
           <div className="w-24 shrink-0">Fecha</div>
@@ -4245,7 +4262,7 @@ function AsientoEditor({
           // coincidir y el error salía recién del servidor.
           lineas: lineasParaTemplate().map(({ linea, lado }) => ({
             cuentaId: linea.accountId,
-            lado: lado as 'debe' | 'haber',
+            lado: lado!,
             descripcion: linea.description || undefined,
           })),
         },
@@ -4478,11 +4495,10 @@ function AsientoEditor({
                 <label className="text-[11px] text-[var(--arca-ink-3)]">
                   Fecha *
                 </label>
-                <input
-                  type="date"
+                <SelectorFecha
                   value={entryDate}
-                  onChange={(e) => setEntryDate(e.target.value)}
-                  className={`${INPUT_CLASS} w-full h-9`}
+                  onChange={(v) => setEntryDate(v)}
+                  className="w-full"
                 />
               </div>
               <div className="flex flex-col gap-1 flex-1">
@@ -4615,7 +4631,7 @@ function AsientoEditor({
                     disabled={
                       !saveTemplateName.trim() || saveTemplateMut.isPending
                     }
-                    className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+                    className="h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
                   >
                     {saveTemplateMut.isPending
                       ? '…'
@@ -4669,7 +4685,7 @@ function AsientoEditor({
 
             {/* Líneas */}
             <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-40">Detalle</div>
                 <div className="w-24 text-right">Debe</div>
@@ -4778,7 +4794,7 @@ function AsientoEditor({
                 mut.mutate();
               }}
               disabled={!canSave || mut.isPending}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
             >
               {mut.isPending ? 'Guardando…' : 'Guardar asiento'}
             </button>
@@ -4965,7 +4981,7 @@ function EntryDetailBody({
               <Link
                 to="/invoices"
                 search={{ open: data.source.id }}
-                className="font-medium text-[var(--arca-navy-900)] underline underline-offset-2 hover:opacity-80"
+                className="font-medium text-[var(--arca-accent)] underline underline-offset-2 hover:opacity-80"
               >
                 {data.source.label}
               </Link>
@@ -4987,7 +5003,7 @@ function EntryDetailBody({
 
       {/* Líneas */}
       <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden bg-[var(--arca-surface)]">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
           <div className="flex-1">Cuenta</div>
           <div className="w-28 text-right">Debe</div>
           <div className="w-28 text-right">Haber</div>
@@ -5058,7 +5074,7 @@ function EntryDetailBody({
               </button>
               <button
                 onClick={() => onAction('edit', toInitial())}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
               >
                 <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Editar
               </button>
@@ -5441,7 +5457,7 @@ function Mayor({
                 className="px-3 text-[12px] font-medium transition-colors"
                 style={{
                   background:
-                    mode === m ? 'var(--arca-navy-900)' : 'transparent',
+                    mode === m ? 'var(--arca-accent)' : 'transparent',
                   color: mode === m ? 'white' : 'var(--arca-ink-2)',
                 }}
               >
@@ -5497,22 +5513,20 @@ function Mayor({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Desde
             </label>
-            <input
-              type="date"
+            <SelectorFecha
               value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className={`${INPUT_CLASS} w-36`}
+              onChange={(v) => setFrom(v)}
+              className="w-36"
             />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Hasta
             </label>
-            <input
-              type="date"
+            <SelectorFecha
               value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className={`${INPUT_CLASS} w-36`}
+              onChange={(v) => setTo(v)}
+              className="w-36"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -5546,7 +5560,7 @@ function Mayor({
                   type="checkbox"
                   checked={sheetPerAccount}
                   onChange={(e) => setSheetPerAccount(e.target.checked)}
-                  className="accent-[var(--arca-navy-900)]"
+                  className="accent-[var(--arca-accent)]"
                 />
                 Excel: hoja por cuenta
               </label>
@@ -5603,7 +5617,7 @@ function Mayor({
           <div>
             {/* Sin encabezado, las tres columnas de plata no decían cuál era
                 el Debe, cuál el Haber y cuál el saldo. */}
-            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10.5px] font-semibold uppercase tracking-wide text-white">
               <span className="w-4 shrink-0" aria-hidden />
               <span className={MAYOR_COL_CODE}>Código</span>
               <span className="flex-1 min-w-0">Cuenta</span>
@@ -5669,7 +5683,7 @@ function LedgerTable({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
         <div className="w-24 shrink-0">Fecha</div>
         <div className="w-12 shrink-0">N°</div>
         <div className="flex-1 min-w-0">Descripción</div>
@@ -5925,11 +5939,10 @@ function Balance({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Fecha de corte
             </label>
-            <input
-              type="date"
+            <SelectorFecha
               value={asOf}
-              onChange={(e) => setAsOf(e.target.value)}
-              className={`${INPUT_CLASS} w-40`}
+              onChange={(v) => setAsOf(v)}
+              className="w-40"
             />
           </div>
           {data && (
@@ -5974,7 +5987,7 @@ function Balance({
         )}
 
         {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
           <div className="w-24 shrink-0">Código</div>
           <div className="flex-1 min-w-0">Cuenta</div>
           <div className={BALANCE_COL_MONEY}>Suma Debe</div>
@@ -6211,6 +6224,122 @@ function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
   };
 }
 
+type ModuloRegla = 'comprobante' | 'recibo' | 'movimiento_bancario';
+
+/**
+ * Una regla en la lista, arrastrable para cambiar su lugar en la cola.
+ *
+ * El orden es la prioridad: el motor toma la primera regla aplicable del
+ * módulo, así que arriba es "se prueba antes". Antes eso se editaba escribiendo
+ * un número —100, 200, 150 para meter una en el medio— y para saber qué corría
+ * primero había que leer la columna y ordenar mentalmente.
+ *
+ * El agarre es una manija aparte y no la fila entera: la fila abre el detalle,
+ * y si arrastrar y abrir compartieran el mismo gesto uno de los dos perdería.
+ */
+function FilaRegla({
+  r,
+  isOwner,
+  ordenable,
+  onAbrir,
+  onToggle,
+}: {
+  r: MappingRuleListRow;
+  isOwner: boolean;
+  /** Con una sola regla en el módulo no hay nada que ordenar. */
+  ordenable: boolean;
+  onAbrir: () => void;
+  onToggle: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: r.id, disabled: !ordenable });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      onClick={onAbrir}
+      role="button"
+      tabIndex={0}
+      className={cn(
+        'flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-[12.5px] cursor-pointer',
+        isDragging &&
+          'relative z-10 bg-[var(--arca-surface)] shadow-[var(--arca-shadow-2,0_6px_16px_rgba(0,0,0,0.10))]'
+      )}
+    >
+      <div className="w-8 shrink-0 flex justify-center">
+        {ordenable ? (
+          <button
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Mover ${r.name} en el orden`}
+            title="Arrastrar para cambiar el orden en que se prueba"
+            className="grid size-6 touch-none place-items-center rounded-[6px] text-[var(--arca-ink-4)] hover:bg-[var(--arca-border)] hover:text-[var(--arca-ink-2)] cursor-grab active:cursor-grabbing"
+          >
+            <GripVertical className="size-3.5" />
+          </button>
+        ) : (
+          <span
+            className="block size-6"
+            aria-hidden
+            title={
+              isOwner
+                ? 'Única regla del módulo: no hay orden que cambiar'
+                : undefined
+            }
+          />
+        )}
+      </div>
+      <div className="flex-1 min-w-0 truncate font-medium text-[var(--arca-ink)]">
+        {r.name}
+      </div>
+      <div className="w-24 shrink-0">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+          {MAPPING_SOURCE_LABELS[r.sourceModule as ModuloRegla]}
+        </span>
+      </div>
+      <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
+        {MAPPING_RULE_TYPE_LABELS[r.ruleType as 'default' | 'condicional']}
+      </div>
+      <div className="w-16 shrink-0 text-center text-[var(--arca-ink-2)]">
+        {r.lineCount}
+      </div>
+      <div className="w-24 shrink-0 flex justify-center">
+        {isOwner ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+            title={r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
+            style={{
+              background: r.isActive
+                ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
+                : 'var(--arca-surface-2)',
+              color: r.isActive ? 'oklch(0.40 0.14 145)' : 'var(--arca-ink-3)',
+            }}
+          >
+            <Power className="w-2.5 h-2.5" strokeWidth={2} />
+            {r.isActive ? 'Activa' : 'Inactiva'}
+          </button>
+        ) : (
+          <span className="text-[10.5px] text-[var(--arca-ink-3)]">
+            {r.isActive ? 'Activa' : 'Inactiva'}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Reglas({
   clientId,
   isOwner,
@@ -6246,6 +6375,72 @@ function Reglas({
     onSuccess: invalidate,
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // ─── Orden manual ─────────────────────────────────────────────────────────
+
+  /**
+   * La prioridad sólo ordena dentro de un módulo: el motor busca la primera
+   * regla aplicable de ese módulo y nunca compara una de facturas contra una
+   * de sueldos. Por eso la lista va agrupada y se arrastra dentro del grupo:
+   * mover una regla de facturas debajo de una de sueldos no significaría nada.
+   */
+  const grupos = useMemo(() => {
+    const porModulo = new Map<ModuloRegla, MappingRuleListRow[]>();
+    for (const r of rules) {
+      const m = r.sourceModule as ModuloRegla;
+      const lista = porModulo.get(m) ?? [];
+      lista.push(r);
+      porModulo.set(m, lista);
+    }
+    return [...porModulo.entries()];
+  }, [rules]);
+
+  const reorderMut = useMutation({
+    mutationFn: (args: { sourceModule: ModuloRegla; orderedIds: string[] }) =>
+      reorderMappingRules({ data: { clientId, ...args } }),
+    onError: (e: Error) => {
+      toast.error(e.message);
+      // El orden optimista ya no vale: que la lista vuelva a lo que hay guardado.
+      invalidate();
+    },
+    onSuccess: invalidate,
+  });
+
+  const sensors = useSensors(
+    // 6px de umbral: sin esto, un clic sobre la manija empieza un arrastre
+    // fantasma y la fila tiembla cada vez que la tocás.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+
+    const grupo = grupos.find(([, rs]) => rs.some((r) => r.id === active.id));
+    if (!grupo) return;
+    const [modulo, delModulo] = grupo;
+
+    const desde = delModulo.findIndex((r) => r.id === active.id);
+    const hasta = delModulo.findIndex((r) => r.id === over.id);
+    // `over` de otro grupo: el arrastre cruzó módulos y no hay nada que hacer.
+    if (desde === -1 || hasta === -1) return;
+
+    const ordenadas = arrayMove(delModulo, desde, hasta);
+    const orderedIds = ordenadas.map((r) => r.id);
+
+    // Optimista: la fila se queda donde la soltaste mientras el servidor
+    // renumera. Sin esto pega un salto al lugar viejo y vuelve.
+    qc.setQueryData<MappingRuleListRow[]>(queryKey, (prev) => {
+      if (!prev) return prev;
+      const nuevas = new Map(ordenadas.map((r, i) => [r.id, (i + 1) * 10]));
+      return prev
+        .map((r) => ({ ...r, priority: nuevas.get(r.id) ?? r.priority }))
+        .sort(
+          (x, y) => x.priority - y.priority || x.name.localeCompare(y.name)
+        );
+    });
+
+    reorderMut.mutate({ sourceModule: modulo, orderedIds });
+  };
 
   return (
     <>
@@ -6286,7 +6481,7 @@ function Reglas({
               </button>
               <button
                 onClick={() => setEditor({ mode: 'create' })}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
               >
                 <Plus className="w-3 h-3" strokeWidth={2.5} /> Nueva regla
               </button>
@@ -6294,8 +6489,8 @@ function Reglas({
           )}
         </div>
 
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
-          <div className="w-14 shrink-0 text-center">Prior.</div>
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+          <div className="w-8 shrink-0" aria-hidden />
           <div className="flex-1 min-w-0">Nombre</div>
           <div className="w-24 shrink-0">Módulo</div>
           <div className="w-28 shrink-0">Tipo</div>
@@ -6303,93 +6498,60 @@ function Reglas({
           <div className="w-24 shrink-0 text-center">Estado</div>
         </div>
 
-        {isLoading ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-            Cargando…
-          </div>
-        ) : rules.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <Workflow
-              className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
-              strokeWidth={1.5}
-            />
-            <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
-              No hay reglas de mapeo configuradas.
-            </p>
-            <p className="text-[12px] text-[var(--arca-ink-3)]">
-              Las reglas le enseñan al sistema cómo armar los asientos
-              automáticos desde facturas y sueldos.
-            </p>
-          </div>
-        ) : (
-          rules.map((r) => (
-            <div
-              key={r.id}
-              onClick={() => setDetailId(r.id)}
-              role="button"
-              tabIndex={0}
-              className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-[12.5px] cursor-pointer"
-            >
-              <div className="w-14 shrink-0 text-center font-mono text-[var(--arca-ink-3)]">
-                {r.priority}
-              </div>
-              <div className="flex-1 min-w-0 truncate font-medium text-[var(--arca-ink)]">
-                {r.name}
-              </div>
-              <div className="w-24 shrink-0">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                  {
-                    MAPPING_SOURCE_LABELS[
-                      r.sourceModule as
-                        | 'comprobante'
-                        | 'recibo'
-                        | 'movimiento_bancario'
-                    ]
-                  }
-                </span>
-              </div>
-              <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
-                {
-                  MAPPING_RULE_TYPE_LABELS[
-                    r.ruleType as 'default' | 'condicional'
-                  ]
-                }
-              </div>
-              <div className="w-16 shrink-0 text-center text-[var(--arca-ink-2)]">
-                {r.lineCount}
-              </div>
-              <div className="w-24 shrink-0 flex justify-center">
-                {isOwner ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleMut.mutate({ id: r.id, isActive: !r.isActive });
-                    }}
-                    title={
-                      r.isActive ? 'Clic para desactivar' : 'Clic para activar'
-                    }
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
-                    style={{
-                      background: r.isActive
-                        ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
-                        : 'var(--arca-surface-2)',
-                      color: r.isActive
-                        ? 'oklch(0.40 0.14 145)'
-                        : 'var(--arca-ink-3)',
-                    }}
-                  >
-                    <Power className="w-2.5 h-2.5" strokeWidth={2} />
-                    {r.isActive ? 'Activa' : 'Inactiva'}
-                  </button>
-                ) : (
-                  <span className="text-[10.5px] text-[var(--arca-ink-3)]">
-                    {r.isActive ? 'Activa' : 'Inactiva'}
-                  </span>
-                )}
-              </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+        >
+          {isLoading ? (
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Cargando…
             </div>
-          ))
-        )}
+          ) : rules.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <Workflow
+                className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
+                strokeWidth={1.5}
+              />
+              <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
+                No hay reglas de mapeo configuradas.
+              </p>
+              <p className="text-[12px] text-[var(--arca-ink-3)]">
+                Las reglas le enseñan al sistema cómo armar los asientos
+                automáticos desde facturas y sueldos.
+              </p>
+            </div>
+          ) : (
+            grupos.map(([modulo, delModulo]) => (
+              <SortableContext
+                key={modulo}
+                items={delModulo.map((r) => r.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {/* El encabezado sólo aparece con el filtro en "Todos": es lo
+                  que deja claro que arrastrar mueve dentro del módulo y no
+                  contra las reglas de otro. */}
+                {!moduleFilter && (
+                  <div className="px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+                    {MAPPING_SOURCE_LABELS[modulo]}
+                  </div>
+                )}
+                {delModulo.map((r) => (
+                  <FilaRegla
+                    key={r.id}
+                    r={r}
+                    isOwner={isOwner}
+                    ordenable={isOwner && delModulo.length > 1}
+                    onAbrir={() => setDetailId(r.id)}
+                    onToggle={() =>
+                      toggleMut.mutate({ id: r.id, isActive: !r.isActive })
+                    }
+                  />
+                ))}
+              </SortableContext>
+            ))
+          )}
+        </DndContext>
       </ArcaCard>
 
       {editor && (
@@ -6468,7 +6630,6 @@ function RuleEditorDialog({
   const [condConceptTipos, setCondConceptTipos] = useState<string[]>([]);
   /** Sueldos: códigos SOS exactos, separados por coma (ej. "101, 102"). */
   const [condSosCodes, setCondSosCodes] = useState('');
-  const [priority, setPriority] = useState('100');
   const [lines, setLines] = useState<RuleLineDraft[]>([
     emptyRuleLine('debe'),
     emptyRuleLine('haber'),
@@ -6508,7 +6669,6 @@ function RuleEditorDialog({
           : [];
       setCondSosCodes(sosArr.map((c) => String(c).trim()).join(', '));
     }
-    setPriority(String(existing.rule.prioridad));
     setLines(
       existing.lines.map((l) => ({
         accountId: l.accountId,
@@ -6567,7 +6727,6 @@ function RuleEditorDialog({
         sourceModule,
         ruleType,
         condition,
-        priority: parseInt(priority, 10) || 100,
         lines: payloadLines,
       };
       if (isEdit) {
@@ -6600,12 +6759,12 @@ function RuleEditorDialog({
           className="flex gap-2 text-[12px] rounded-[10px] px-3 py-2.5 leading-relaxed"
           style={{
             background:
-              'color-mix(in oklch, var(--arca-navy-900), transparent 94%)',
+              'color-mix(in oklch, var(--arca-accent), transparent 94%)',
             color: 'var(--arca-ink-2)',
           }}
         >
           <Lightbulb
-            className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-navy-900)]"
+            className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent)]"
             strokeWidth={1.8}
           />
           <div>
@@ -6672,21 +6831,6 @@ function RuleEditorDialog({
                 <SelectItem value="recibo">Sueldos</SelectItem>
               </SelectContent>
             </Select>
-          </Field>
-          <Field
-            label={
-              <>
-                Prioridad
-                <HelpTip text="Orden de evaluación cuando varias reglas podrían aplicar: gana la de menor número (la más específica primero)." />
-              </>
-            }
-          >
-            <input
-              type="number"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              className={`${INPUT_CLASS} w-full h-9`}
-            />
           </Field>
           <Field
             label={
@@ -6762,7 +6906,7 @@ function RuleEditorDialog({
                         }
                         className={`h-8 min-w-[2.5rem] px-2.5 text-[12.5px] font-medium rounded-[8px] border transition-colors ${
                           on
-                            ? 'bg-[var(--arca-navy-900)] text-white border-[var(--arca-navy-900)]'
+                            ? 'bg-[var(--arca-accent)] text-white border-[var(--arca-accent)]'
                             : 'border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
                         }`}
                       >
@@ -6817,7 +6961,7 @@ function RuleEditorDialog({
                         }
                         className={`h-8 px-2.5 text-[12.5px] font-medium rounded-[8px] border transition-colors ${
                           on
-                            ? 'bg-[var(--arca-navy-900)] text-white border-[var(--arca-navy-900)]'
+                            ? 'bg-[var(--arca-accent)] text-white border-[var(--arca-accent)]'
                             : 'border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
                         }`}
                       >
@@ -6873,7 +7017,7 @@ function RuleEditorDialog({
 
         {/* Líneas-plantilla */}
         <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
             <div className="flex-1">Cuenta</div>
             <div className="w-20 flex items-center gap-1">
               Lado
@@ -7000,7 +7144,7 @@ function RuleEditorDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!canSave || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Guardando…' : 'Guardar regla'}
           </button>
@@ -7058,8 +7202,7 @@ function RuleDetailDialog({
               </DialogTitle>
               <DialogDescription>
                 Módulo: {MAPPING_SOURCE_LABELS[data.rule.modulo]} ·{' '}
-                {MAPPING_RULE_TYPE_LABELS[data.rule.tipo]} · Prioridad{' '}
-                {data.rule.prioridad}
+                {MAPPING_RULE_TYPE_LABELS[data.rule.tipo]}
               </DialogDescription>
             </DialogHeader>
 
@@ -7070,7 +7213,7 @@ function RuleDetailDialog({
             )}
 
             <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-surface-2)] text-[10px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-16">Lado</div>
                 <div className="w-48">Base del monto</div>
@@ -7110,7 +7253,7 @@ function RuleDetailDialog({
                 </button>
                 <button
                   onClick={() => onEdit(ruleId)}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
                 >
                   <Pencil className="w-3.5 h-3.5" strokeWidth={1.8} /> Editar
                 </button>
@@ -7135,7 +7278,19 @@ function ImportRulesDialog({
   onDone: () => void;
 }) {
   const [fromId, setFromId] = useState('');
-  const others = clients.filter((c) => c.id !== clientId);
+
+  // Sólo empresas que tengan algo para copiar: listar la cartera entera era
+  // pedirle al usuario que adivine cuál de 130 tiene reglas.
+  const { data: conReglas = [], isLoading: cargandoOrigenes } = useQuery({
+    queryKey: ['accounting', 'clientes-con-reglas'],
+    queryFn: () => listClientesConReglasActivas(),
+  });
+  const activasPorCliente = new Map(
+    conReglas.map((c) => [c.clienteId, c.activas])
+  );
+  const others = clients.filter(
+    (c) => c.id !== clientId && activasPorCliente.has(c.id)
+  );
 
   const { data: preview = [] } = useQuery({
     queryKey: ['accounting', 'rules', fromId, ''],
@@ -7174,18 +7329,42 @@ function ImportRulesDialog({
             <label className="text-[11px] text-[var(--arca-ink-3)]">
               Empresa origen
             </label>
-            <Select value={fromId} onValueChange={(v) => setFromId(v)}>
+            <Select
+              value={fromId}
+              onValueChange={(v) => setFromId(v)}
+              disabled={cargandoOrigenes || others.length === 0}
+            >
               <SelectTrigger className="w-full text-[12.5px]">
-                <SelectValue placeholder="— Elegí la empresa origen —" />
+                <SelectValue
+                  placeholder={
+                    cargandoOrigenes
+                      ? 'Buscando empresas con reglas…'
+                      : others.length === 0
+                        ? 'Ninguna otra empresa tiene reglas activas'
+                        : '— Elegí la empresa origen —'
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {others.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
+                    <span className="ml-2 text-[var(--arca-ink-3)]">
+                      {activasPorCliente.get(c.id)}{' '}
+                      {activasPorCliente.get(c.id) === 1
+                        ? 'regla activa'
+                        : 'reglas activas'}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {!cargandoOrigenes && others.length === 0 && (
+              <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+                Sólo se puede importar de una empresa que ya tenga reglas
+                activas. Todavía no hay ninguna otra.
+              </p>
+            )}
           </div>
 
           {fromId && (
@@ -7232,7 +7411,7 @@ function ImportRulesDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!fromId || preview.length === 0 || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Importando…' : 'Importar'}
           </button>
@@ -7366,7 +7545,7 @@ function Contabilizar({
       {/* Explicación */}
       <div className="flex gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
         <Lightbulb
-          className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-navy-900)]"
+          className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent)]"
           strokeWidth={1.8}
         />
         <div>
@@ -7412,7 +7591,7 @@ function Contabilizar({
             <button
               onClick={() => genMut.mutate([...selected])}
               disabled={selected.size === 0 || genMut.isPending}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50 inline-flex items-center gap-1.5"
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50 inline-flex items-center gap-1.5"
             >
               <Zap className="w-3.5 h-3.5" strokeWidth={2} />
               {genMut.isPending
@@ -7435,7 +7614,7 @@ function Contabilizar({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                 <th className="w-9 py-2 pl-4">
                   {canWrite && selectable.length > 0 && (
                     <button
@@ -7445,14 +7624,11 @@ function Contabilizar({
                     >
                       {allSelected ? (
                         <CheckSquare
-                          className="w-4 h-4 text-[var(--arca-navy-900)]"
+                          className="w-4 h-4 text-[var(--arca-accent)]"
                           strokeWidth={2}
                         />
                       ) : (
-                        <Square
-                          className="w-4 h-4 text-[var(--arca-ink-3)]"
-                          strokeWidth={2}
-                        />
+                        <Square className="w-4 h-4" strokeWidth={2} />
                       )}
                     </button>
                   )}
@@ -7557,7 +7733,7 @@ function PostingRow({
           <button onClick={onToggle} className="inline-flex">
             {checked ? (
               <CheckSquare
-                className="w-4 h-4 text-[var(--arca-navy-900)]"
+                className="w-4 h-4 text-[var(--arca-accent)]"
                 strokeWidth={2}
               />
             ) : (
@@ -7576,7 +7752,7 @@ function PostingRow({
       <td className="py-2 max-w-[220px] truncate" title={inv.counterparty}>
         {inv.counterparty}
       </td>
-      <td className="py-2 text-right tabular-nums whitespace-nowrap">
+      <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap">
         $ {fmtMoney(inv.total)}
       </td>
       <td className="py-2 pl-4">
@@ -7616,7 +7792,7 @@ function PostingRow({
           <button
             onClick={onRegenerate}
             disabled={regenerating}
-            className="inline-flex items-center gap-1 text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-navy-900)] disabled:opacity-50"
+            className="inline-flex items-center gap-1 text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-accent)] disabled:opacity-50"
             title="Anular el asiento actual y regenerarlo con las reglas vigentes"
           >
             <RefreshCw className="w-3.5 h-3.5" strokeWidth={2} />
@@ -7695,7 +7871,7 @@ function Pendientes({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                 <th className="py-2 pl-4">N°</th>
                 <th className="py-2">Fecha</th>
                 <th className="py-2">Período</th>
@@ -7761,7 +7937,7 @@ function PendingRow({
   const closed = entry.periodStatus === 'cerrado';
   return (
     <tr className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]">
-      <td className="py-2 pl-4 tabular-nums">{entry.number}</td>
+      <td className="py-2 pl-4 tabular-nums [font-family:var(--ff-mono)]">{entry.number}</td>
       <td className="py-2 whitespace-nowrap">{fmtFecha(entry.entryDate)}</td>
       <td className="py-2 whitespace-nowrap">
         {MONTH_NAMES[entry.periodMonth]} {entry.periodYear}
@@ -7774,10 +7950,10 @@ function PendingRow({
       <td className="py-2">
         {JOURNAL_ORIGIN_LABELS[entry.origin] ?? entry.origin}
       </td>
-      <td className="py-2 text-right tabular-nums whitespace-nowrap">
+      <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap">
         $ {fmtMoney(entry.total)}
       </td>
-      <td className="py-2 text-right tabular-nums whitespace-nowrap text-amber-700 font-medium">
+      <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap text-amber-700 font-medium">
         $ {fmtMoney(entry.pendingAmount)}
       </td>
       <td className="py-2 pl-4 max-w-[280px]">
@@ -7788,14 +7964,14 @@ function PendingRow({
       <td className="py-2 pr-4 text-right whitespace-nowrap">
         <button
           onClick={onOpen}
-          className="text-[12px] text-[var(--arca-navy-900)] hover:underline"
+          className="text-[12px] text-[var(--arca-accent)] hover:underline"
         >
           {canWrite ? 'Resolver' : 'Ver'}
         </button>
         {canWrite && (
           <button
             onClick={onCreateRule}
-            className="ml-3 text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-navy-900)]"
+            className="ml-3 text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-accent)]"
             title="Ir a Reglas para configurar el mapeo y evitar que vuelva a pasar"
           >
             Crear regla
@@ -7911,7 +8087,7 @@ function BienesDeUso({
             {canWrite && (
               <button
                 onClick={() => setShowEditor(true)}
-                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white inline-flex items-center gap-1.5"
+                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white inline-flex items-center gap-1.5"
               >
                 <Boxes className="w-3.5 h-3.5" strokeWidth={2} />
                 Nuevo bien
@@ -7930,7 +8106,7 @@ function BienesDeUso({
           ) : (
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                   <th className="py-2 pl-4">Nombre</th>
                   <th className="py-2">Categoría</th>
                   <th className="py-2">Fecha adq.</th>
@@ -7956,13 +8132,13 @@ function BienesDeUso({
                     <td className="py-2 whitespace-nowrap">
                       {fmtFecha(a.acquisitionDate)}
                     </td>
-                    <td className="py-2 text-right tabular-nums whitespace-nowrap">
+                    <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap">
                       $ {fmtMoney(a.originalValue)}
                     </td>
-                    <td className="py-2 text-right tabular-nums whitespace-nowrap text-[var(--arca-ink-3)]">
+                    <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap text-[var(--arca-ink-3)]">
                       $ {fmtMoney(a.accumulatedDepreciation)}
                     </td>
-                    <td className="py-2 text-right tabular-nums whitespace-nowrap font-medium">
+                    <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap font-medium">
                       $ {fmtMoney(a.bookValue)}
                     </td>
                     <td className="py-2 pl-3">
@@ -8167,11 +8343,9 @@ function FixedAssetEditor({
           </Field>
 
           <Field label="Fecha de adquisición *">
-            <input
-              type="date"
+            <SelectorFecha
               value={acquisitionDate}
-              onChange={(e) => setAcquisitionDate(e.target.value)}
-              className={INPUT_CLASS}
+              onChange={(v) => setAcquisitionDate(v)}
             />
           </Field>
 
@@ -8299,7 +8473,7 @@ function FixedAssetEditor({
           <button
             onClick={() => mut.mutate()}
             disabled={!valid || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Guardando…' : 'Registrar bien'}
           </button>
@@ -8347,11 +8521,9 @@ function DisposeAssetDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fecha de baja *">
-            <input
-              type="date"
+            <SelectorFecha
               value={disposalDate}
-              onChange={(e) => setDisposalDate(e.target.value)}
-              className={INPUT_CLASS}
+              onChange={(v) => setDisposalDate(v)}
             />
           </Field>
           <Field label="Motivo *">
@@ -8638,7 +8810,7 @@ function AnexoIView({
               className={`w-full min-w-[1000px] text-[11.5px] ${COL_FIJA}`}
             >
               <thead>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface)]">
+                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                   <th
                     className="py-2 pl-4 text-left align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
@@ -8698,7 +8870,7 @@ function AnexoIView({
                     </th>
                   )}
                 </tr>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)]">
+                <tr className="text-[9.5px] uppercase tracking-wide bg-[var(--arca-surface-2)]">
                   <th
                     className="px-3 py-1.5 text-right align-bottom border-l border-b border-[var(--arca-border)]"
                     rowSpan={2}
@@ -8718,7 +8890,7 @@ function AnexoIView({
                     Del ejercicio
                   </th>
                 </tr>
-                <tr className="text-[9.5px] uppercase tracking-wide text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
+                <tr className="text-[9.5px] uppercase tracking-wide bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
                   <th className="px-3 py-1.5 text-right">%</th>
                   <th className="px-3 py-1.5 text-right">Monto</th>
                 </tr>
@@ -8784,7 +8956,7 @@ function AnexoIView({
         <ArcaCard>
           <div className="px-4 py-3 border-b border-[var(--arca-border)] flex items-center gap-2">
             <Lightbulb
-              className="w-4 h-4 text-[var(--arca-navy-900)]"
+              className="w-4 h-4 text-[var(--arca-accent)]"
               strokeWidth={1.8}
             />
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
@@ -8798,7 +8970,7 @@ function AnexoIView({
             </p>
             <table className="w-full text-[12.5px] mb-3">
               <thead>
-                <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                   <th className="py-1.5">Cuenta</th>
                   <th className="py-1.5 text-right">Debe</th>
                   <th className="py-1.5 text-right">Haber</th>
@@ -8814,20 +8986,20 @@ function AnexoIView({
                       <span className="text-[var(--arca-ink-3)]">{l.code}</span>{' '}
                       {l.name}
                     </td>
-                    <td className="py-1.5 text-right tabular-nums">
+                    <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
                       {l.side === 'debe' ? `$ ${fmtMoney(l.amount)}` : ''}
                     </td>
-                    <td className="py-1.5 text-right tabular-nums">
+                    <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
                       {l.side === 'haber' ? `$ ${fmtMoney(l.amount)}` : ''}
                     </td>
                   </tr>
                 ))}
                 <tr className="font-semibold border-t border-[var(--arca-ink-3)]">
                   <td className="py-1.5 text-right">Total</td>
-                  <td className="py-1.5 text-right tabular-nums">
+                  <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
                     $ {fmtMoney(data.suggestion.total)}
                   </td>
-                  <td className="py-1.5 text-right tabular-nums">
+                  <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
                     $ {fmtMoney(data.suggestion.total)}
                   </td>
                 </tr>
@@ -8836,7 +9008,7 @@ function AnexoIView({
             {canWrite && (
               <button
                 onClick={copyToEditor}
-                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white inline-flex items-center gap-1.5"
+                className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white inline-flex items-center gap-1.5"
               >
                 <FileText className="w-3.5 h-3.5" strokeWidth={2} />
                 Copiar al editor de asientos
@@ -9257,7 +9429,7 @@ function EstadosContables({
                 <button
                   onClick={() => approveMut.mutate()}
                   disabled={approveMut.isPending}
-                  className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-50"
+                  className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-50"
                 >
                   Aprobar EECC
                 </button>
@@ -9618,7 +9790,7 @@ function EspView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                   <th className="py-2 pl-3 text-left">Rubro</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -9659,10 +9831,10 @@ function EspView({
                         <td className="py-1.5 pl-3">
                           Total {title.toLowerCase()}
                         </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                        <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                           $ {fmtMoney(totalCur)}
                         </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                        <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                           {data.hasPrior ? `$ ${fmtMoney(totalPri)}` : '—'}
                         </td>
                       </tr>
@@ -9671,10 +9843,10 @@ function EspView({
                 })}
                 <tr className="border-t-2 border-[var(--arca-ink)] font-bold">
                   <td className="py-2 pl-3">TOTAL PASIVO + PATRIMONIO NETO</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
+                  <td className="py-2 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                     $ {fmtMoney(data.totals.pasivoMasPn.current)}
                   </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
+                  <td className="py-2 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                     {data.hasPrior
                       ? `$ ${fmtMoney(data.totals.pasivoMasPn.prior)}`
                       : '—'}
@@ -9773,10 +9945,10 @@ function EspSectionRows({
                   </span>
                 )}
               </td>
-              <td className="py-1.5 pr-3 text-right tabular-nums">
+              <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                 $ {fmtMoney(rubro.current)}
               </td>
-              <td className="py-1.5 pr-3 text-right tabular-nums">
+              <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                 {hasPrior ? `$ ${fmtMoney(rubro.prior)}` : '—'}
               </td>
             </tr>
@@ -9792,10 +9964,10 @@ function EspSectionRows({
                     <span className="text-[var(--arca-ink-3)]">{a.code}</span>{' '}
                     {a.name}
                   </td>
-                  <td className="py-1 pr-3 text-right tabular-nums">
+                  <td className="py-1 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                     $ {fmtMoney(a.current)}
                   </td>
-                  <td className="py-1 pr-3 text-right tabular-nums">
+                  <td className="py-1 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                     {hasPrior ? `$ ${fmtMoney(a.prior)}` : '—'}
                   </td>
                 </tr>
@@ -9898,7 +10070,7 @@ function InventarioView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
               <th className="text-left font-semibold px-4 py-1.5">Conceptos</th>
               {[1, 2, 3, 4].map((n) => (
                 <th
@@ -10103,7 +10275,7 @@ function Nota3View({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
             <div>Nota</div>
             <div>Concepto</div>
             <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
@@ -10309,7 +10481,7 @@ function EfeView({
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
         <div>Concepto</div>
         <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
         <div className="text-right">
@@ -10336,7 +10508,7 @@ function EfeView({
         hasPrior={data.hasPrior}
       />
 
-      <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold text-[var(--arca-ink-3)] bg-[var(--arca-surface-2)] border-y border-[var(--arca-border)]">
+      <div className="px-5 py-2 text-[10.5px] uppercase tracking-wide font-semibold bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-y border-[var(--arca-border)] text-white">
         Causas de las variaciones del efectivo
       </div>
 
@@ -10518,7 +10690,7 @@ function EepnView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
               <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
                 Concepto
               </th>
@@ -10546,14 +10718,12 @@ function EepnView({
                 </th>
               )}
             </tr>
-            <tr className="bg-[var(--arca-surface-2)] text-[10.5px] text-[var(--arca-ink-3)]">
+            <tr className="bg-[var(--arca-surface-2)] text-[10.5px]">
               {data.columns.map((c) => (
                 <th
                   key={c.accountId}
                   className={`text-right px-3 pb-1.5 border-l border-[var(--arca-border)] whitespace-nowrap ${
-                    c.isSubtotal
-                      ? 'font-semibold text-[var(--arca-ink-2)]'
-                      : 'font-medium'
+                    c.isSubtotal ? 'font-semibold' : 'font-medium'
                   }`}
                   title={c.isSubtotal ? c.groupLabel : `${c.code} · ${c.name}`}
                 >
@@ -10605,7 +10775,7 @@ function EepnView({
                     {money(row.total)}
                   </td>
                   {data.priorFiscalYearNumber !== null && (
-                    <td className="px-4 py-1.5 text-right tabular-nums border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]">
+                    <td className="px-4 py-1.5 text-right tabular-nums [font-family:var(--ff-mono)] border-l border-[var(--arca-border)] text-[var(--arca-ink-2)]">
                       {money(priorFor(row.kind))}
                     </td>
                   )}
@@ -10745,7 +10915,7 @@ function ErView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                   <th className="py-2 pl-3 text-left">Concepto</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -10811,10 +10981,10 @@ function ErView({
                             </span>
                           )}
                         </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                        <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                           $ {fmtMoney(line.current)}
                         </td>
-                        <td className="py-1.5 pr-3 text-right tabular-nums">
+                        <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                           {data.hasPrior ? `$ ${fmtMoney(line.prior)}` : '—'}
                         </td>
                       </tr>
@@ -10832,10 +11002,10 @@ function ErView({
                               </span>{' '}
                               {a.name}
                             </td>
-                            <td className="py-1 pr-3 text-right tabular-nums">
+                            <td className="py-1 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                               $ {fmtMoney(a.current)}
                             </td>
-                            <td className="py-1 pr-3 text-right tabular-nums">
+                            <td className="py-1 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                               {data.hasPrior ? `$ ${fmtMoney(a.prior)}` : '—'}
                             </td>
                           </tr>
@@ -11092,7 +11262,7 @@ function AnexoCMVView({
                 <button
                   onClick={() => mut.mutate()}
                   disabled={mut.isPending}
-                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+                  className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
                 >
                   {mut.isPending ? 'Guardando…' : 'Guardar'}
                 </button>
@@ -11166,7 +11336,7 @@ function AnexoIIView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="text-[11px] uppercase tracking-wide text-[var(--arca-ink-3)] border-b border-[var(--arca-border)]">
+                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                   <th className="py-2 pl-3 text-left">Función / cuenta</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -11185,10 +11355,10 @@ function AnexoIIView({
                       <td className="py-1.5 pl-3 font-semibold text-[var(--arca-ink)]">
                         {fn.label}
                       </td>
-                      <td className="py-1.5 pr-3 text-right tabular-nums font-semibold">
+                      <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)] font-semibold">
                         $ {fmtMoney(fn.current)}
                       </td>
-                      <td className="py-1.5 pr-3 text-right tabular-nums font-semibold">
+                      <td className="py-1.5 pr-3 text-right tabular-nums [font-family:var(--ff-mono)] font-semibold">
                         {data.hasPrior ? `$ ${fmtMoney(fn.prior)}` : '—'}
                       </td>
                     </tr>
@@ -11205,10 +11375,10 @@ function AnexoIIView({
                           </span>{' '}
                           {a.name}
                         </td>
-                        <td className="py-1 pr-3 text-right tabular-nums">
+                        <td className="py-1 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                           $ {fmtMoney(a.current)}
                         </td>
-                        <td className="py-1 pr-3 text-right tabular-nums">
+                        <td className="py-1 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                           {data.hasPrior ? `$ ${fmtMoney(a.prior)}` : '—'}
                         </td>
                       </tr>
@@ -11217,10 +11387,10 @@ function AnexoIIView({
                 ))}
                 <tr className="border-t-2 border-[var(--arca-ink)] font-bold">
                   <td className="py-2 pl-3">TOTAL GASTOS</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
+                  <td className="py-2 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                     $ {fmtMoney(data.totalCurrent)}
                   </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
+                  <td className="py-2 pr-3 text-right tabular-nums [font-family:var(--ff-mono)]">
                     {data.hasPrior ? `$ ${fmtMoney(data.totalPrior)}` : '—'}
                   </td>
                 </tr>
@@ -11498,7 +11668,7 @@ function NotesEditor({
             <button
               onClick={() => saveMut.mutate()}
               disabled={!dirty || saveMut.isPending}
-              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40"
+              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-40"
             >
               Guardar
             </button>
@@ -11568,7 +11738,7 @@ function NotesEditor({
             </button>
             <button
               onClick={() => void bajarPlantilla()}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white"
             >
               Descargar .docx de ejemplo
             </button>
@@ -11951,24 +12121,22 @@ function DatosInicialesView({
               <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
                 Fecha constitución
               </label>
-              <input
-                type="date"
+              <SelectorFecha
                 value={form.fechaConstitucion}
-                onChange={(e) => set('fechaConstitucion', e.target.value)}
+                onChange={(v) => set('fechaConstitucion', v)}
                 disabled={!canEdit}
-                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+                className="w-full"
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
                 Fecha inscripción RPC
               </label>
-              <input
-                type="date"
+              <SelectorFecha
                 value={form.fechaInscripcion}
-                onChange={(e) => set('fechaInscripcion', e.target.value)}
+                onChange={(v) => set('fechaInscripcion', v)}
                 disabled={!canEdit}
-                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+                className="w-full"
               />
             </div>
             <div className="space-y-1.5">
@@ -12015,7 +12183,7 @@ function DatosInicialesView({
               <button
                 type="submit"
                 disabled={mut.isPending || !dirty}
-                className="px-4 h-8 rounded-[7px] bg-[var(--arca-ink)] text-white text-[12.5px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+                className="px-4 h-8 rounded-[7px] bg-[var(--arca-accent)] text-white text-[12.5px] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
               >
                 {mut.isPending ? 'Guardando…' : 'Guardar cambios'}
               </button>
@@ -12591,7 +12759,7 @@ function ExportView({
                 onClick={() => void it.onClick()}
                 disabled={!ready || busy !== null}
                 title={!ready ? 'Cargando los datos del ejercicio…' : undefined}
-                className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-ink)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
+                className="shrink-0 text-[12px] px-3 h-8 rounded-[6px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-40 flex items-center gap-1.5"
               >
                 {busy === it.key || (!ready && busy === null) ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -12642,7 +12810,7 @@ function ExportView({
                 cerrarPreview();
                 descargar?.();
               }}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white"
+              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white"
             >
               Descargar PDF
             </button>

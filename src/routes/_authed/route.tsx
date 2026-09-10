@@ -59,11 +59,21 @@ function RouteComponent() {
 
   /**
    * Pantallas que manejan su propio scroll y ocupan el alto completo: la
-   * bandeja de notificaciones y el tablero de tareas tienen columnas que
-   * scrollean por dentro, así que no pueden convivir con el padding que deja
-   * lugar al input del asistente ni con el input flotando encima.
+   * bandeja, el tablero de tareas y el calendario de vencimientos tienen
+   * columnas que scrollean por dentro, así que no pueden convivir con el
+   * padding que deja lugar al input del asistente.
    */
   const altoCompleto =
+    pathname.startsWith('/notifications') ||
+    pathname.startsWith('/tareas') ||
+    pathname.startsWith('/vencimientos');
+
+  /**
+   * De las de alto completo, las que además se comen el lugar del input del
+   * asistente. Vencimientos no: ahí el input sigue flotando abajo y la
+   * pantalla deja el hueco justo para que no lo tape.
+   */
+  const sinInputAgente =
     pathname.startsWith('/notifications') || pathname.startsWith('/tareas');
 
   const { data: orgModules = [] } = useQuery({
@@ -73,7 +83,7 @@ function RouteComponent() {
 
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
-  const hideAgentInput = isChatRoute || altoCompleto || !aiAgentEnabled;
+  const hideAgentInput = isChatRoute || sinInputAgente || !aiAgentEnabled;
 
   const shell = (agentInputSlot: React.ReactNode) => (
     <OrgSwitchProvider>

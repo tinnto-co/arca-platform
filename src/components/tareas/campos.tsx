@@ -60,7 +60,7 @@ export const controlBase = cn(
   'bg-[var(--arca-surface-2)] px-[9px] py-[5px] text-left text-[12.5px] text-[var(--arca-ink)]',
   'transition-colors duration-[120ms] ease-[ease]',
   'hover:border-[var(--arca-border-strong)] hover:bg-[var(--arca-surface)]',
-  'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--arca-navy-600)]',
+  'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[var(--arca-accent)]',
   'disabled:cursor-not-allowed disabled:opacity-60'
 );
 
@@ -93,11 +93,11 @@ export function Avatar({
   };
   if (variante === 'propio') {
     estilo.background =
-      'linear-gradient(135deg, var(--arca-navy-700), var(--arca-chart-3))';
+      'linear-gradient(135deg, var(--arca-accent), var(--arca-chart-3))';
   } else if (variante === 'empresa') {
     estilo.background = 'var(--arca-chart-1)';
   } else {
-    estilo.background = 'var(--arca-navy-700)';
+    estilo.background = 'var(--arca-accent)';
   }
 
   return (
@@ -209,7 +209,7 @@ export function TextoEditable({
         onClick={empezar}
         aria-label={`${ariaLabel}. Click para editar`}
         className={cn(
-          'w-full cursor-text text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-navy-600)]',
+          'w-full cursor-text text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-accent)]',
           className
         )}
       >

@@ -170,7 +170,7 @@ export function ConceptosResumenCard({
           <button
             type="button"
             onClick={onAbrirDrawer}
-            className="ml-auto h-[32px] px-3.5 rounded-[10px] text-[12.5px] font-semibold bg-[var(--arca-ink)] text-white inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-[var(--arca-navy-800)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+            className="ml-auto h-[32px] px-3.5 rounded-[10px] text-[12.5px] font-semibold bg-[var(--arca-accent)] text-white inline-flex items-center gap-1.5 whitespace-nowrap hover:bg-[var(--arca-accent-hover)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
           >
             <ListPlus className="h-3.5 w-3.5" />
             Carga manual

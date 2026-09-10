@@ -7,13 +7,11 @@
  */
 
 import { useState } from 'react';
-import { Check, CheckCheck, SlidersHorizontal } from 'lucide-react';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  ArrowDownWideNarrow,
+  CheckCheck,
+  SlidersHorizontal,
+} from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -23,19 +21,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
-  ChevronChip,
   ConteoResultados,
   LimpiarFiltros,
-  QuitarFiltro,
   botonHeader,
   chipFiltro,
   chipMasFiltros,
 } from '@/components/shared/filtros';
-import { SEVERIDAD_LABEL, categoriaLabel, haceCuanto } from './utils';
+import { PrioridadesCategoria } from './PrioridadesCategoria';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
+import { SearchableSelect } from '@/components/ui/searchable-select';
+import { SEVERIDAD_LABEL, haceCuanto, nombreCategoria } from './utils';
 import { cn } from '@/lib/utils';
 
 export interface FiltrosInbox {
-  estado: 'sin_leer' | 'todas' | 'resueltas';
+  estado: 'sin_leer' | 'todas' | 'leidas';
   categoria: string;
   severidad: string;
   empresa: string;
@@ -43,6 +42,8 @@ export interface FiltrosInbox {
   hasta: string;
   soloConAdjunto: boolean;
   q: string;
+  /** Cómo se lee la lista: por fecha (defecto) o por importancia. */
+  orden: 'fecha' | 'prioridad';
 }
 
 interface Props {
@@ -58,7 +59,7 @@ interface Props {
 const TABS: { valor: FiltrosInbox['estado']; label: string }[] = [
   { valor: 'sin_leer', label: 'Sin leer' },
   { valor: 'todas', label: 'Todas' },
-  { valor: 'resueltas', label: 'Resueltas' },
+  { valor: 'leidas', label: 'Leídas' },
 ];
 
 export function InboxHeader({
@@ -126,7 +127,7 @@ export function InboxHeader({
           {/* Tabs de estado */}
           <div
             role="tablist"
-            className="flex items-center gap-0.5 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] p-[2px]"
+            className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
           >
             {TABS.map((t) => (
               <button
@@ -136,10 +137,10 @@ export function InboxHeader({
                 aria-selected={filtros.estado === t.valor}
                 onClick={() => onFiltro({ estado: t.valor })}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-[8px] px-2.5 py-1 text-[12px] transition-colors duration-[120ms]',
+                  'flex items-center gap-1.5 rounded-md px-3 py-[5px] text-[12.5px] font-medium transition-colors duration-[120ms]',
                   filtros.estado === t.valor
-                    ? 'bg-[var(--arca-ink)] font-medium text-white'
-                    : 'text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)]'
+                    ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                    : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
                 )}
               >
                 {t.label}
@@ -157,76 +158,42 @@ export function InboxHeader({
             aria-hidden="true"
           />
 
-          {/* Categoría */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={chipFiltro(filtros.categoria !== '')}
-            >
-              Categoría:{' '}
-              {filtros.categoria ? categoriaLabel(filtros.categoria) : 'todas'}
-              {filtros.categoria ? (
-                <QuitarFiltro onQuitar={() => onFiltro({ categoria: '' })} />
-              ) : (
-                <ChevronChip />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="max-h-[320px] min-w-[180px] overflow-y-auto"
-            >
-              {categorias.length === 0 && (
-                <DropdownMenuItem disabled className="text-[12.5px]">
-                  Sin categorías todavía
-                </DropdownMenuItem>
-              )}
-              {categorias.map((c) => (
-                <DropdownMenuItem
-                  key={c}
-                  className="text-[12.5px]"
-                  onSelect={() => onFiltro({ categoria: c })}
-                >
-                  {categoriaLabel(c)}
-                  {c === filtros.categoria && (
-                    <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Mismo control que los filtros de Facturas: el valor "todas"
+              es una opción de la lista, así que sacar el filtro se hace donde
+              se puso. La X que había antes vivía dentro del trigger y no lo
+              sacaba: Radix abre en pointerdown, así que el menú se desplegaba
+              antes de que el click llegara a cortarse. */}
+          <SearchableSelect
+            value={filtros.categoria || 'all'}
+            onValueChange={(v) => onFiltro({ categoria: v === 'all' ? '' : v })}
+            placeholder="Categoría"
+            searchPlaceholder="Buscar categoría..."
+            width={210}
+            options={[
+              { value: 'all', label: 'Todas las categorías' },
+              ...categorias.map((c) => ({
+                value: c,
+                label: nombreCategoria(c),
+              })),
+            ]}
+          />
 
-          {/* Importancia */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={chipFiltro(filtros.severidad !== '')}
-            >
-              Importancia:{' '}
-              {filtros.severidad ? SEVERIDAD_LABEL[filtros.severidad] : 'toda'}
-              {filtros.severidad ? (
-                <QuitarFiltro onQuitar={() => onFiltro({ severidad: '' })} />
-              ) : (
-                <ChevronChip />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[180px]">
-              {[
+          <SearchableSelect
+            value={filtros.severidad || 'all'}
+            onValueChange={(v) => onFiltro({ severidad: v === 'all' ? '' : v })}
+            placeholder="Importancia"
+            searchPlaceholder="Buscar importancia..."
+            width={200}
+            options={[
+              { value: 'all', label: 'Toda importancia' },
+              ...[
                 'urgente',
                 'accion_requerida',
                 'informativa',
                 'sin_clasificar',
-              ].map((sv) => (
-                <DropdownMenuItem
-                  key={sv}
-                  className="text-[12.5px]"
-                  onSelect={() => onFiltro({ severidad: sv })}
-                >
-                  {SEVERIDAD_LABEL[sv]}
-                  {sv === filtros.severidad && (
-                    <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              ].map((sv) => ({ value: sv, label: SEVERIDAD_LABEL[sv] })),
+            ]}
+          />
 
           {/* Más filtros */}
           <Popover open={masFiltros} onOpenChange={setMasFiltros}>
@@ -244,28 +211,28 @@ export function InboxHeader({
               className="flex w-[320px] flex-col gap-3 p-3"
             >
               <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1">
                   <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                     Desde
                   </span>
-                  <input
-                    type="date"
+                  <SelectorFecha
                     value={filtros.desde}
-                    onChange={(e) => onFiltro({ desde: e.target.value })}
-                    className="rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-1 text-[12px] tabular-nums outline-none"
+                    onChange={(v) => onFiltro({ desde: v })}
+                    placeholder="Cualquiera"
+                    aria-label="Publicadas desde"
                   />
-                </label>
-                <label className="flex flex-col gap-1">
+                </div>
+                <div className="flex flex-col gap-1">
                   <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                     Hasta
                   </span>
-                  <input
-                    type="date"
+                  <SelectorFecha
                     value={filtros.hasta}
-                    onChange={(e) => onFiltro({ hasta: e.target.value })}
-                    className="rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-1 text-[12px] tabular-nums outline-none"
+                    onChange={(v) => onFiltro({ hasta: v })}
+                    placeholder="Cualquiera"
+                    aria-label="Publicadas hasta"
                   />
-                </label>
+                </div>
               </div>
 
               <label className="flex cursor-pointer items-center gap-2">
@@ -284,7 +251,7 @@ export function InboxHeader({
                 <button
                   type="button"
                   onClick={() => setMasFiltros(false)}
-                  className="rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-1 text-[12px] font-medium text-white hover:bg-black"
+                  className="rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] px-3 py-1 text-[12px] font-medium text-white hover:bg-[var(--arca-accent-hover)]"
                 >
                   Aplicar
                 </button>
@@ -307,6 +274,28 @@ export function InboxHeader({
           </Popover>
 
           {activos > 0 && <LimpiarFiltros onLimpiar={onLimpiar} />}
+
+          {/* El orden es preferencia de lectura, no un filtro: no entra en
+              `activos` ni lo toca "Limpiar". */}
+          <button
+            type="button"
+            onClick={() =>
+              onFiltro({
+                orden: filtros.orden === 'prioridad' ? 'fecha' : 'prioridad',
+              })
+            }
+            className={chipFiltro(filtros.orden === 'prioridad')}
+            title={
+              filtros.orden === 'prioridad'
+                ? 'Ordenar por fecha'
+                : 'Ordenar por importancia'
+            }
+          >
+            <ArrowDownWideNarrow className="size-3" />
+            {filtros.orden === 'prioridad' ? 'Por prioridad' : 'Por fecha'}
+          </button>
+
+          <PrioridadesCategoria />
 
           <ConteoResultados>
             {resumen.resultados.toLocaleString('es-AR')}{' '}

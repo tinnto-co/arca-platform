@@ -9,6 +9,7 @@ import {
   Circle,
 } from 'lucide-react';
 import { getCalendarDueDates } from '@/actions/dashboard';
+import { getClientes } from '@/actions/client';
 import { markVencimientoCompletado } from '@/actions/client';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
@@ -91,6 +92,17 @@ export function VencimientosCalendar() {
   // El filtro es el selector global de empresa del header: la elección viaja
   // con el usuario a las demás vistas (mismo patrón que Contabilidad).
   const [clienteGlobal] = useClienteSeleccionado();
+
+  // Solo para nombrar la empresa en el subtítulo: decir "toda tu cartera"
+  // mientras se ve una sola empresa es mentir sobre lo que hay en pantalla.
+  const { data: clientes = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
+    staleTime: 60_000,
+  });
+  const nombreCliente = clienteGlobal
+    ? (clientes.find((c) => c.id === clienteGlobal)?.razonSocial ?? null)
+    : null;
 
   // Fetch a bit extra for the grid edges (prev/next month days visible in grid)
   const gridDays = useMemo(
@@ -222,40 +234,50 @@ export function VencimientosCalendar() {
   }, [filteredEventsByDay]);
 
   return (
-    <div>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Calendario de vencimientos"
-        subtitle="Obligaciones fiscales y deudas de toda tu cartera, por fecha"
+        subtitle={
+          nombreCliente
+            ? `Obligaciones fiscales y deudas de ${nombreCliente}, por fecha`
+            : 'Obligaciones fiscales y deudas de toda tu cartera, por fecha'
+        }
         actions={<SelectorClienteGlobal />}
       />
 
-      {/* ── Body grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[26px] lg:items-start">
+      {/* ── Body grid ──
+          Alto completo y recorte acá: cada columna scrollea por dentro, como
+          la bandeja de notificaciones. Antes la columna era `sticky` y el
+          scroll lo hacía la página entera, así que leer el detalle de un día
+          cargado te movía el calendario de al lado. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-[26px] overflow-y-auto lg:grid-cols-[320px_1fr] lg:overflow-hidden">
         {/* ── Left column: summary + day detail ── */}
-        <div className="flex flex-col gap-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-140px)]">
+        <div className="flex min-h-0 flex-col gap-0 lg:h-full lg:overflow-hidden">
           {/* Month summary */}
           <div>
-            <h3 className="font-[family-name:var(--ff-display)] font-semibold text-[15px] text-[#12131A] mb-3">
+            <h3 className="font-[family-name:var(--ff-display)] font-semibold text-[15px] text-[var(--arca-ink)] mb-1.5">
               Resumen del mes
             </h3>
             {isLoading ? (
-              <div className="text-[12.5px] text-[#9B9CA3]">Cargando...</div>
+              <div className="text-[12.5px] text-[var(--arca-ink-4)]">
+                Cargando...
+              </div>
             ) : (
               <div>
-                <div className="flex items-center justify-between py-[11px] border-b border-[#ECEAE3]">
-                  <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
+                <div className="flex items-center justify-between py-[5px]">
+                  <div className="flex items-center gap-2 text-[13px] text-[var(--arca-ink-2)]">
                     <Clock
                       className="w-4 h-4"
                       style={{ color: 'oklch(0.55 0.10 240)' }}
                     />
                     Vencimientos
                   </div>
-                  <span className="font-[family-name:var(--ff-display)] font-bold text-[20px] tabular-nums text-[#12131A]">
+                  <span className="font-[family-name:var(--ff-display)] font-bold text-[20px] tabular-nums text-[var(--arca-ink)]">
                     {totalDue}
                   </span>
                 </div>
-                <div className="flex items-center justify-between py-[11px] border-b border-[#ECEAE3]">
-                  <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
+                <div className="flex items-center justify-between py-[5px]">
+                  <div className="flex items-center gap-2 text-[13px] text-[var(--arca-ink-2)]">
                     <AlertTriangle
                       className="w-4 h-4"
                       style={{ color: 'oklch(0.58 0.15 25)' }}
@@ -274,9 +296,9 @@ export function VencimientosCalendar() {
           </div>
 
           {/* Selected day detail */}
-          <div className="pt-[18px] border-t border-[#ECEAE3] mt-[18px] flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="mb-3 shrink-0">
-              <span className="text-[13px] font-medium text-[#6E7079]">
+          <div className="pt-[12px] pb-[12px] border-t border-b border-[var(--arca-border)] mt-[12px] flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="mb-2 shrink-0">
+              <span className="text-[13px] font-medium text-[var(--arca-ink-3)]">
                 {selectedDate
                   ? selectedDate.toLocaleDateString('es-AR', {
                       weekday: 'long',
@@ -287,28 +309,28 @@ export function VencimientosCalendar() {
               </span>
             </div>
             {!selectedDate ? (
-              <div className="py-8 text-center text-[13px] text-[#9B9CA3]">
+              <div className="py-8 text-center text-[13px] text-[var(--arca-ink-4)]">
                 Hacé clic en un día del calendario
               </div>
             ) : filteredSelectedEvents.length === 0 ? (
-              <div className="py-8 text-center text-[13px] text-[#9B9CA3]">
+              <div className="py-8 text-center text-[13px] text-[var(--arca-ink-4)]">
                 Sin vencimientos ni deudas este día.
               </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
+              <div className="space-y-2 overflow-y-auto overscroll-contain flex-1 min-h-0 pr-1">
                 {filteredSelectedEvents.map((ev) => {
                   const isCompleted = ev.kind === 'due' && !!ev.completedAt;
                   return (
                     <div
                       key={ev.id}
                       className={cn(
-                        'bg-white border border-[#ECEAE3] rounded-[10px] p-[13px_14px]',
+                        'bg-white border border-[var(--arca-border)] rounded-[10px] p-[13px_14px]',
                         isCompleted && 'opacity-60'
                       )}
                     >
                       {/* Top: client name + status tag */}
                       <div className="flex items-center gap-2 mb-1.5">
-                        <span className="text-[13px] font-semibold text-[#12131A] truncate flex-1">
+                        <span className="text-[13px] font-semibold text-[var(--arca-ink)] truncate flex-1">
                           {ev.clientName || 'General'}
                         </span>
                         <span
@@ -339,7 +361,7 @@ export function VencimientosCalendar() {
                               })
                             }
                             disabled={completeMutation.isPending}
-                            className="shrink-0 mt-0.5 cursor-pointer text-[#9B9CA3] hover:text-[#2f7d55] transition-colors"
+                            className="shrink-0 mt-0.5 cursor-pointer text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
                             title={
                               isCompleted
                                 ? 'Marcar como pendiente'
@@ -347,7 +369,7 @@ export function VencimientosCalendar() {
                             }
                           >
                             {isCompleted ? (
-                              <CheckCircle2 className="w-4 h-4 text-[#2f7d55]" />
+                              <CheckCircle2 className="w-4 h-4 text-[var(--arca-accent-pos-fg)]" />
                             ) : (
                               <Circle className="w-4 h-4" />
                             )}
@@ -356,8 +378,9 @@ export function VencimientosCalendar() {
                         <div className="min-w-0 flex-1">
                           <div
                             className={cn(
-                              'text-[14px] font-semibold text-[#12131A]',
-                              isCompleted && 'line-through text-[#9B9CA3]'
+                              'text-[14px] font-semibold text-[var(--arca-ink)]',
+                              isCompleted &&
+                                'line-through text-[var(--arca-ink-4)]'
                             )}
                           >
                             {ev.title}
@@ -365,7 +388,7 @@ export function VencimientosCalendar() {
                           {ev.subtitle && (
                             <div
                               className={cn(
-                                'text-[12.5px] text-[#9B9CA3] mt-0.5',
+                                'text-[12.5px] text-[var(--arca-ink-4)] mt-0.5',
                                 isCompleted && 'line-through'
                               )}
                             >
@@ -391,7 +414,7 @@ export function VencimientosCalendar() {
         </div>
 
         {/* Calendar grid */}
-        <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px] overflow-hidden">
+        <div className="min-h-0 self-start max-h-full overflow-y-auto overscroll-contain bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px]">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--arca-border)]">
             <div className="flex items-center gap-3">
@@ -443,8 +466,9 @@ export function VencimientosCalendar() {
               const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
               const isToday = isSameDay(day, today);
               const isSelected = selectedDate && isSameDay(day, selectedDate);
-              const events = eventsByDay.get(dateKey(day)) ?? [];
+              const events = filteredEventsByDay.get(dateKey(day)) ?? [];
               const isPast = day < today && !isToday;
+              const isFinde = day.getDay() === 0 || day.getDay() === 6;
 
               return (
                 <button
@@ -454,19 +478,41 @@ export function VencimientosCalendar() {
                     'relative min-h-[80px] p-1.5 border-b border-r border-[var(--arca-border)] text-left transition-colors cursor-pointer',
                     i % 7 === 0 && 'border-l-0',
                     !isCurrentMonth && 'bg-[var(--arca-surface-2)]',
-                    isSelected && 'bg-[var(--arca-accent-info-bg)]',
+                    isCurrentMonth &&
+                      isFinde &&
+                      !isToday &&
+                      'bg-[var(--arca-surface-hover)]',
+                    // Hoy gana sobre el finde y sobre el hover.
+                    isToday && 'bg-[var(--arca-accent-bg)]',
+                    isSelected && 'bg-[var(--arca-accent-bg)]',
                     !isSelected &&
+                      !isToday &&
                       isCurrentMonth &&
-                      'hover:bg-[var(--arca-surface-2)]'
+                      'hover:bg-[var(--arca-surface-hover)]'
                   )}
                 >
+                  {isToday && (
+                    <span
+                      aria-hidden
+                      className="absolute top-0 right-0 left-0 h-[3px] bg-[var(--arca-accent)]"
+                    />
+                  )}
+
                   {/* Day number */}
                   <span
                     className={cn(
-                      'inline-flex items-center justify-center w-6 h-6 rounded-full text-[12.5px] font-medium',
-                      isToday && 'bg-[var(--arca-ink)] text-white',
-                      !isToday && isCurrentMonth && 'text-[var(--arca-ink)]',
-                      !isToday && !isCurrentMonth && 'text-[var(--arca-ink-4)]'
+                      'inline-flex h-6 w-6 items-center justify-center rounded-full text-[12.5px] tabular-nums [font-family:var(--ff-mono)]',
+                      isToday &&
+                        'bg-[var(--arca-accent)] font-semibold text-white',
+                      !isToday &&
+                        isCurrentMonth &&
+                        !isFinde &&
+                        'font-medium text-[var(--arca-ink)]',
+                      !isToday &&
+                        isCurrentMonth &&
+                        isFinde &&
+                        'font-medium text-[var(--arca-ink-4)]',
+                      !isCurrentMonth && 'font-medium text-[var(--arca-ink-4)]'
                     )}
                   >
                     {day.getDate()}

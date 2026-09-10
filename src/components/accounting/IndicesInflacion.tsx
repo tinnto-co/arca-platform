@@ -324,7 +324,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
                 </button>
                 <button
                   onClick={() => setEditing('new')}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90"
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
                 >
                   <Plus className="w-3 h-3" strokeWidth={2.5} />
                   Cargar índice
@@ -502,7 +502,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
                 <div className="text-[var(--arca-ink)] font-medium flex items-center gap-1.5">
                   {MONTHS[r.month - 1]}
                   {isClosing && (
-                    <span className="text-[9px] px-1.5 py-px rounded-full bg-[var(--arca-navy-900)] text-white font-semibold">
+                    <span className="text-[9px] px-1.5 py-px rounded-full bg-[var(--arca-accent)] text-white font-semibold">
                       cierre
                     </span>
                   )}
@@ -598,7 +598,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
               onClick={() =>
                 importPreview && importMut.mutate(importPreview.rows)
               }
-              className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-60"
+              className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-60"
             >
               <Download className="w-3.5 h-3.5" strokeWidth={2} />
               {importMut.isPending ? 'Importando…' : 'Importar'}
@@ -783,7 +783,7 @@ function IndexEditor({
           <button
             disabled={!valid || saving}
             onClick={() => onSave({ year, month, value: numeric })}
-            className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-50"
+            className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             <Check className="w-3.5 h-3.5" strokeWidth={2.5} />
             {saving ? 'Guardando…' : 'Guardar'}

@@ -359,12 +359,12 @@ function ChipLibro({ estado }: { estado: string }) {
   const meta =
     estado === 'definitivo'
       ? {
-          texto: 'DDJJ presentada (AFIP)',
+          texto: 'DDJJ presentada (ARCA)',
           cls: 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]',
         }
       : estado === 'completo'
         ? {
-            texto: 'Libro de IVA (AFIP)',
+            texto: 'Libro de IVA (ARCA)',
             cls: 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]',
           }
         : estado === 'preliminar'

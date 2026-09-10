@@ -20,7 +20,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: [
-      "gridstack",
       "@react-pdf/renderer",
       "@copilotkit/react-core",
       "@copilotkit/react-ui",
@@ -32,7 +31,6 @@ export default defineConfig({
   ssr: {
     noExternal: [
       "lucide-react",
-      "gridstack",
       "katex",
       "@platejs/math",
       "platejs",

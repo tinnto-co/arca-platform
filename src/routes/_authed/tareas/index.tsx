@@ -1,5 +1,5 @@
 import { generateKeyBetween } from 'fractional-indexing';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -323,6 +323,51 @@ function TareasPage() {
 
   const tareaAbierta = tareas.find((t) => t.id === search.tarea) ?? null;
 
+  /**
+   * Un link de afuera (el Inicio, una notificación) trae `?tarea=` para abrir
+   * ese detalle. Pero el tablero sólo carga lo que pasa sus filtros, así que
+   * una tarea archivada —o fuera del período— no está en `tareas` y el diálogo
+   * no abre: el usuario aterriza en el tablero sin saber por qué. Si no
+   * aparece, se prueba una vez en el archivo; si tampoco está, se avisa y se
+   * suelta el parámetro en vez de dejarlo colgado.
+   */
+  const buscadaEnArchivo = useRef<string | null>(null);
+  /**
+   * Tareas que el tablero llegó a mostrar. Una que estuvo abierta y se cayó de
+   * la lista no es un link roto: la acaban de editar y dejó de pasar el filtro
+   * —asignarla mientras se mira "sin asignar" es el caso típico—. Sin esto, el
+   * rescate se dispara sobre la edición del propio usuario y le avisa que su
+   * tarea no existe.
+   */
+  const yaMostradas = useRef(new Set<string>());
+  useEffect(() => {
+    if (!search.tarea) return;
+    if (tareaAbierta) {
+      yaMostradas.current.add(search.tarea);
+      return;
+    }
+    if (cargando || yaMostradas.current.has(search.tarea)) return;
+    if (!viendoArchivadas && buscadaEnArchivo.current !== search.tarea) {
+      buscadaEnArchivo.current = search.tarea;
+      void navigate({
+        search: (prev: Busqueda) => ({ ...prev, archivadas: true }),
+        replace: true,
+      });
+      return;
+    }
+    if (viendoArchivadas && buscadaEnArchivo.current === search.tarea) {
+      toast.error('No se encontró esa tarea: puede haber sido eliminada');
+      void navigate({
+        search: (prev: Busqueda) => ({
+          ...prev,
+          tarea: undefined,
+          archivadas: undefined,
+        }),
+        replace: true,
+      });
+    }
+  }, [search.tarea, cargando, tareaAbierta, viendoArchivadas, navigate]);
+
   // ─── Mutaciones ───────────────────────────────────────────────────────────
 
   const refrescar = () =>
@@ -559,7 +604,7 @@ function TareasPage() {
                   venceHasta: '',
                 })
               }
-              className="text-[11.5px] font-medium text-[var(--arca-navy-700)] hover:underline"
+              className="text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
             >
               Limpiar filtros
             </button>

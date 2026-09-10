@@ -393,13 +393,13 @@ function HistorialPresentaciones({
                 {p.nroPresentacion === 1 ? 'Original' : 'Rectificativa'}
               </Badge>
             </TableCell>
-            <TableCell className="text-[13px] text-[var(--arca-ink-2)] tabular-nums">
+            <TableCell className="text-[13px] text-[var(--arca-ink-2)] tabular-nums [font-family:var(--ff-mono)]">
               {formatDateTime(p.generadoEn)}
             </TableCell>
-            <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">
+            <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
               {p.empleados}
             </TableCell>
-            <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">
+            <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
               {p.conceptos}
             </TableCell>
             <TableCell className="text-[12px] font-mono text-[var(--arca-ink-3)] truncate max-w-[200px]">
@@ -678,8 +678,8 @@ function GenerarPresentacionDialog({
                               <span className="inline-flex items-center gap-1 text-[12px] text-amber-600"><TriangleAlert className="h-3 w-3" />Sin modalidad</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">{emp.diasTrabajados ?? '—'}</TableCell>
-                          <TableCell className="text-[13px] text-right tabular-nums font-medium">{emp.cantidadConceptos}</TableCell>
+                          <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">{emp.diasTrabajados ?? '—'}</TableCell>
+                          <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] font-medium">{emp.cantidadConceptos}</TableCell>
                           <TableCell className="w-8 pr-2">
                             <Button
                               variant="ghost" size="icon" className="h-6 w-6" title="Editar bases LSD" tabIndex={-1}

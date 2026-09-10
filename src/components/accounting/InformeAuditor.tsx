@@ -131,7 +131,7 @@ export function InformeAuditor({
             <button
               onClick={() => guardar.mutate()}
               disabled={!dirty || guardar.isPending || body.trim() === ''}
-              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white disabled:opacity-40 inline-flex items-center gap-1.5"
+              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white disabled:opacity-40 inline-flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" strokeWidth={2} />
               {guardar.isPending ? 'Guardando…' : 'Guardar'}

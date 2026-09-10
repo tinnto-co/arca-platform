@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import {
   notificacion,
   notificacionAdjunto,
+  notificacionCategoriaPrioridad,
   credencialAfip,
   cliente,
   documento,
@@ -40,6 +41,23 @@ import {
  * multi-tenancy sin pasar por ninguna tabla intermedia.
  */
 
+type Severidad = (typeof notificacionSeveridad.enumValues)[number];
+
+/**
+ * La severidad que se muestra. Si el estudio le fijó una prioridad a la
+ * categoría, esa manda sobre lo que haya dicho el clasificador: la regla se
+ * aplica en lectura, así que vale para todo el historial y se puede cambiar o
+ * sacar sin tocar ninguna notificación.
+ */
+const severidadEfectiva = sql<Severidad>`coalesce(${notificacionCategoriaPrioridad.severidad}, ${notificacion.severidad})`;
+
+/** Para ordenar de más a menos importante. */
+const rangoSeveridad = sql`case ${severidadEfectiva}
+  when 'urgente' then 3
+  when 'accion_requerida' then 2
+  when 'informativa' then 1
+  else 0 end`;
+
 export const getNotifications = createServerFn({
   method: 'GET',
 })
@@ -61,6 +79,8 @@ export const getNotifications = createServerFn({
       soloResueltas: z.boolean().optional(),
       /** Sólo las que traen archivo adjunto. */
       soloConAdjunto: z.boolean().optional(),
+      /** `prioridad` ordena por importancia; por defecto, por fecha. */
+      orden: z.enum(['fecha', 'prioridad']).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -80,6 +100,7 @@ export const getNotifications = createServerFn({
       soloResueltas,
       search,
       soloConAdjunto,
+      orden,
     } = ctx.data;
     const offset = (page - 1) * limit;
 
@@ -105,10 +126,7 @@ export const getNotifications = createServerFn({
     }
     if (severidad && severidad !== 'all') {
       conditions.push(
-        eq(
-          notificacion.severidad,
-          severidad as (typeof notificacion.severidad.enumValues)[number]
-        )
+        sql`${severidadEfectiva} = ${severidad}::notificacion_severidad`
       );
     }
     if (onlyUnresolved) {
@@ -152,6 +170,13 @@ export const getNotifications = createServerFn({
         eq(notificacion.credencialId, credencialAfip.id)
       )
       .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
+      .leftJoin(
+        notificacionCategoriaPrioridad,
+        and(
+          eq(notificacionCategoriaPrioridad.orgId, notificacion.orgId),
+          eq(notificacionCategoriaPrioridad.categoria, notificacion.categoria)
+        )
+      )
       .where(whereCondition);
 
     const notifications = await db
@@ -169,7 +194,10 @@ export const getNotifications = createServerFn({
         clienteId: notificacion.clienteId,
         clienteRazonSocial: cliente.razonSocial,
         clienteCuit: cliente.cuit,
-        severidad: notificacion.severidad,
+        // La que manda para la UI: chips, filtro y orden.
+        severidad: severidadEfectiva.as('severidad'),
+        /** La del clasificador, por si hace falta contrastarla con la regla. */
+        severidadClasificador: notificacion.severidad,
         categoria: notificacion.categoria,
         aiResumen: notificacion.aiResumen,
         asignadaA: notificacion.asignadaA,
@@ -195,8 +223,20 @@ export const getNotifications = createServerFn({
         eq(notificacion.credencialId, credencialAfip.id)
       )
       .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
+      .leftJoin(
+        notificacionCategoriaPrioridad,
+        and(
+          eq(notificacionCategoriaPrioridad.orgId, notificacion.orgId),
+          eq(notificacionCategoriaPrioridad.categoria, notificacion.categoria)
+        )
+      )
       .where(whereCondition)
-      .orderBy(desc(notificacion.publicadaAt))
+      // Con `prioridad`, la fecha sigue desempatando dentro de cada nivel.
+      .orderBy(
+        ...(orden === 'prioridad'
+          ? [desc(rangoSeveridad), desc(notificacion.publicadaAt)]
+          : [desc(notificacion.publicadaAt)])
+      )
       .limit(limit)
       .offset(offset);
 
@@ -461,43 +501,55 @@ export const unresolveNotification = createServerFn({
  * El total y las no leídas son de la bandeja entera, no del recorte: son el
  * contexto contra el que se lee el conteo de resultados.
  */
-export const getInboxResumen = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+/**
+ * `clienteId` acota los contadores que se muestran al lado de la lista
+ * (`total` y `sinLeer`): la bandeja filtra por empresa, y un contador global
+ * ahí decía "11 sin leer" sobre una lista que no tenía ninguna.
+ *
+ * No se acotan `sinClasificar` ni `ultimaSync` —son estado del sistema, no de
+ * la lista— ni `categorias`, que es el catálogo de opciones del filtro y
+ * quedaría vacío justo cuando hace falta para desfiltrar.
+ */
+export const getInboxResumen = createServerFn({ method: 'GET' })
+  .validator((d: unknown) => (d ?? {}) as { clienteId?: string | null })
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const deLaEmpresa = data.clienteId
+      ? sql`and ${notificacion.clienteId} = ${data.clienteId}`
+      : sql``;
 
-  const [[totales], categorias] = await Promise.all([
-    db
-      .select({
-        total: sql<number>`count(*)::int`,
-        sinLeer: sql<number>`count(*) filter (where ${notificacion.leida} = false)::int`,
-        // Mensajes distintos sin clasificar: es lo que cuesta, no las filas.
-        sinClasificar: sql<number>`count(distinct ${notificacion.mensaje}) filter (where ${notificacion.aiClasificadaAt} is null)::int`,
-        // Cuándo entró la última: es lo que el header muestra como
-        // "última sincronización".
-        ultima: sql<Date | null>`max(${notificacion.createdAt})`,
-      })
-      .from(notificacion)
-      .where(eq(notificacion.orgId, orgId)),
-    db
-      .selectDistinct({ categoria: notificacion.categoria })
-      .from(notificacion)
-      .where(
-        and(eq(notificacion.orgId, orgId), isNotNull(notificacion.categoria))
-      )
-      .orderBy(notificacion.categoria),
-  ]);
+    const [[totales], categorias] = await Promise.all([
+      db
+        .select({
+          total: sql<number>`count(*) filter (where true ${deLaEmpresa})::int`,
+          sinLeer: sql<number>`count(*) filter (where ${notificacion.leida} = false ${deLaEmpresa})::int`,
+          // Mensajes distintos sin clasificar: es lo que cuesta, no las filas.
+          sinClasificar: sql<number>`count(distinct ${notificacion.mensaje}) filter (where ${notificacion.aiClasificadaAt} is null)::int`,
+          // Cuándo entró la última: es lo que el header muestra como
+          // "última sincronización".
+          ultima: sql<Date | null>`max(${notificacion.createdAt})`,
+        })
+        .from(notificacion)
+        .where(eq(notificacion.orgId, orgId)),
+      db
+        .selectDistinct({ categoria: notificacion.categoria })
+        .from(notificacion)
+        .where(
+          and(eq(notificacion.orgId, orgId), isNotNull(notificacion.categoria))
+        )
+        .orderBy(notificacion.categoria),
+    ]);
 
-  return {
-    total: totales?.total ?? 0,
-    sinLeer: totales?.sinLeer ?? 0,
-    sinClasificar: totales?.sinClasificar ?? 0,
-    ultimaSync: totales?.ultima ?? null,
-    categorias: categorias
-      .map((c) => c.categoria)
-      .filter((c): c is string => c !== null),
-  };
-});
+    return {
+      total: totales?.total ?? 0,
+      sinLeer: totales?.sinLeer ?? 0,
+      sinClasificar: totales?.sinClasificar ?? 0,
+      ultimaSync: totales?.ultima ?? null,
+      categorias: categorias
+        .map((c) => c.categoria)
+        .filter((c): c is string => c !== null),
+    };
+  });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Vínculo con tareas
@@ -535,8 +587,6 @@ export const listTareasDeNotificacion = createServerFn({
 // Clasificación con IA
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Severidad = (typeof notificacionSeveridad.enumValues)[number];
-
 interface ClassificationResult {
   severidad: Severidad;
   categoria: string;
@@ -551,7 +601,11 @@ async function classifyWithGemini(
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Sos un clasificador de notificaciones fiscales de AFIP Argentina.
+  // El organismo pasó a llamarse ARCA. El resumen que sale de acá se muestra
+  // en la bandeja, así que el nombre tiene que ser el actual.
+  const prompt = `Sos un clasificador de notificaciones fiscales de ARCA
+(Agencia de Recaudación y Control Aduanero, antes AFIP), Argentina.
+Al redactar el resumen nombrá al organismo como ARCA, nunca como AFIP.
 Analizá el siguiente mensaje de notificación y determiná su severidad, categoría y generá un resumen breve en español.
 
 Severidades disponibles:
@@ -560,7 +614,7 @@ Severidades disponibles:
 - informativa: no requiere acción (acuses de recibo, confirmaciones, comunicaciones generales)
 
 Categorías disponibles:
-- requerimiento: AFIP requiere documentación o información
+- requerimiento: ARCA requiere documentación o información
 - inspeccion: proceso de inspección o auditoría
 - deuda: deuda impositiva o previsional
 - intimacion: intimación formal o carta documento
@@ -617,6 +671,83 @@ async function registrarEventoClasificacion(
     detalle: { severidad: result.severidad, categoria: result.categoria },
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prioridad por categoría
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Las categorías que asigna el clasificador, en el orden en que se muestran. */
+export const CATEGORIAS_NOTIFICACION = [
+  'intimacion',
+  'requerimiento',
+  'deuda',
+  'inspeccion',
+  'vencimiento',
+  'comunicacion_general',
+  'otro',
+] as const;
+
+/** Las prioridades que el estudio fijó, como mapa categoría → severidad. */
+export const getPrioridadesCategoria = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+  const filas = await db
+    .select({
+      categoria: notificacionCategoriaPrioridad.categoria,
+      severidad: notificacionCategoriaPrioridad.severidad,
+    })
+    .from(notificacionCategoriaPrioridad)
+    .where(eq(notificacionCategoriaPrioridad.orgId, orgId));
+
+  return Object.fromEntries(filas.map((f) => [f.categoria, f.severidad]));
+});
+
+/**
+ * Fija —o saca, con `severidad: null`— la prioridad de una categoría. Sacarla
+ * devuelve esa categoría al criterio del clasificador; no hay forma de perder
+ * la clasificación original, porque la regla nunca se escribe en las
+ * notificaciones.
+ */
+export const setPrioridadCategoria = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      categoria: z.enum(CATEGORIAS_NOTIFICACION),
+      severidad: z.enum(notificacionSeveridad.enumValues).nullable(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+
+    if (data.severidad === null) {
+      await db
+        .delete(notificacionCategoriaPrioridad)
+        .where(
+          and(
+            eq(notificacionCategoriaPrioridad.orgId, orgId),
+            eq(notificacionCategoriaPrioridad.categoria, data.categoria)
+          )
+        );
+      return { ok: true };
+    }
+
+    await db
+      .insert(notificacionCategoriaPrioridad)
+      .values({
+        orgId,
+        categoria: data.categoria,
+        severidad: data.severidad,
+      })
+      .onConflictDoUpdate({
+        target: [
+          notificacionCategoriaPrioridad.orgId,
+          notificacionCategoriaPrioridad.categoria,
+        ],
+        set: { severidad: data.severidad, updatedAt: new Date() },
+      });
+
+    return { ok: true };
+  });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Clasificación automática

@@ -1,65 +1,89 @@
 /* ============================================================
    Arca — Colors & Type
-   Warm editorial B2B dashboard palette (Spanish-language, AR).
+   Cool B2B dashboard palette, "1a Petróleo" (Spanish-language, AR).
+   El énfasis es UN acento petróleo; el resto, neutros fríos. Rojo sólido
+   sólo para vencido / crítico / destructivo. Cifras en mono tabular.
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
-  /* --- Neutrals (warm) --- */
-  --bg: #F7F6F2;
+  /* --- Neutrals (cool) --- */
+  --bg: #F4F6F7;
   --surface: #FFFFFF;
-  --surface-2: #FBFAF6;
-  --border: #ECEAE3;
-  --border-strong: #DFDCD3;
+  --surface-2: #E9EDF0;
+  --surface-hover: #F8FAFB;
+  --border: #E3E7EA;
+  --border-row: #EDF0F2;
+  --border-strong: #CBD2D8;
 
   /* --- Ink (text) --- */
-  --ink: #12131A;
-  --ink-2: #3E404A;
-  --ink-3: #6E7079;
-  --ink-4: #9B9CA3;
+  --ink: #101720;
+  --ink-2: #3B4552;
+  --ink-3: #6B7683;
+  --ink-4: #9AA3AD;
 
-  /* --- Primary — Navy --- */
-  --navy-900: #0B1730;
-  --navy-800: #142447;
-  --navy-700: #1E3460;
-  --navy-600: #2A4680;
+  /* --- Accent — Petróleo (el único énfasis) --- */
+  --accent: #1F7A86;
+  --accent-hover: #165E68;
+  --accent-bg: #DDF0F0;
+  --accent-ring: #B8DEDF;
+  --accent-light: #7FD1CF;
 
-  /* --- Status accents (oklch, same chroma, varying hue) --- */
-  --accent-pos:     oklch(0.62 0.13 160);
-  --accent-pos-bg:  oklch(0.94 0.04 160);
-  --accent-pos-fg:  oklch(0.45 0.13 160);
-  --accent-neg:     oklch(0.60 0.15 25);
+  /* --- Sidebar --- */
+  --sidebar: #0E1A2B;
+  --sidebar-fg: #D8DDE4;
+  --sidebar-muted: #7E8A99;
+  --sidebar-label: #6B7A8C;
+  --sidebar-active: rgba(31,122,134,.22);
+  --sidebar-active-rail: #4FB3BC;
+  --sidebar-active-icon: #7FD1CF;
+
+  /* --- Status accents (oklch, same chroma, varying hue).
+         El texto sobre fondo tonal usa el `-fg` (>=4.5:1), no el del punto. --- */
+  --accent-pos:     oklch(0.60 0.13 155);
+  --accent-pos-bg:  oklch(0.94 0.04 155);
+  --accent-pos-fg:  oklch(0.40 0.13 155);
+  --accent-neg:     oklch(0.58 0.16 25);
   --accent-neg-bg:  oklch(0.94 0.04 25);
-  --accent-neg-fg:  oklch(0.45 0.15 25);
+  --accent-neg-fg:  oklch(0.42 0.16 25);
   --accent-warn:    oklch(0.72 0.13 75);
-  --accent-warn-bg: oklch(0.95 0.04 75);
-  --accent-warn-fg: oklch(0.50 0.13 75);
-  --accent-info:    oklch(0.60 0.12 240);
-  --accent-info-bg: oklch(0.94 0.04 240);
-  --accent-info-fg: oklch(0.45 0.12 240);
+  --accent-warn-bg: oklch(0.95 0.05 75);
+  --accent-warn-fg: oklch(0.45 0.13 75);
+  --accent-info:    #1F7A86;
+  --accent-info-bg: #DDF0F0;
+  --accent-info-fg: #165E68;
+
+  /* --- Calendario de vencimientos: carga baja --- */
+  --cal-low: #C9D6D8;
+
+  /* --- Orbe del asistente: el ÚNICO degradado permitido en la UI --- */
+  --orb: linear-gradient(135deg, #1F7A86, #7FD1CF);
 
   /* --- Chart palette --- */
-  --chart-1: #1E3460;  /* navy-700  — Ventas / primary data */
+  --chart-1: #1F7A86;  /* petróleo   — Ventas / primary data */
   --chart-2: #7AA2C8;  /* light blue — Compras */
   --chart-3: #C2A878;  /* gold       — Margin / tax */
   --chart-4: #8FB39F;  /* sage       — Sueldos / quaternary */
 
   /* --- Type families --- */
-  --ff-sans:    'Inter', system-ui, -apple-system, sans-serif;
-  --ff-display: 'Inter Tight', 'Inter', sans-serif;
-  --ff-mono:    'JetBrains Mono', ui-monospace, monospace;
+  --ff-sans:    'Geist', system-ui, -apple-system, sans-serif;
+  --ff-display: 'Geist', system-ui, -apple-system, sans-serif;
+  --ff-mono:    'Geist Mono', ui-monospace, monospace;
 
   /* --- Radii --- */
   --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 18px;
-  --r-pill: 20px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 14px;
+  --r-pill: 999px;
 
   /* --- Shadows --- */
-  --shadow-sm: 0 1px 2px rgba(18,19,26,0.04);
-  --shadow-md: 0 1px 3px rgba(18,19,26,0.04), 0 4px 12px rgba(18,19,26,0.04);
+  --shadow-sm: 0 1px 2px rgba(16,23,32,0.05);
+  --shadow-md: 0 1px 3px rgba(16,23,32,0.06);
+  --shadow-popover: 0 8px 24px rgba(16,23,32,0.08);
+  --shadow-float: 0 10px 30px rgba(16,23,32,0.12), 0 1px 3px rgba(16,23,32,0.06);
+  --shadow-modal: 0 24px 60px rgba(16,23,32,0.3);
 
   /* --- Motion --- */
   --dur-fast: 120ms;
@@ -69,7 +93,7 @@
 
 /* ============================================================
    Base / semantic type
-   Body base: Inter 14 / 1.5.
+   Body base: Geist 14 / 1.5.
    ============================================================ */
 
 html, body {

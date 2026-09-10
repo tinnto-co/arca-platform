@@ -19,6 +19,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -242,7 +243,11 @@ export function EmpleadoFormDialog({
                 <FormItem>
                   <FormLabel>Fecha de ingreso</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} className="w-full max-w-xs" />
+                    <SelectorFecha
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      className="w-full max-w-xs"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

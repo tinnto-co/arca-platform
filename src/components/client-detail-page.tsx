@@ -26,14 +26,6 @@ import {
   ListFilter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -134,6 +126,8 @@ import {
   DialogClose,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Paginador } from '@/components/shared/paginador';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { cn } from '@/lib/utils';
 import { periodoLegible } from '@/lib/periodo';
 import { CONDICION_IVA_LABELS } from '@/lib/cliente-labels';
@@ -186,14 +180,14 @@ const aFechaLocal = (d: Date) =>
   ).padStart(2, '0')}`;
 
 const facturasChartConfig = {
-  ventas: { label: 'Ventas', color: '#1E3460' },
-  compras: { label: 'Compras', color: '#7AA2C8' },
+  ventas: { label: 'Ventas', color: 'var(--arca-chart-1)' },
+  compras: { label: 'Compras', color: 'var(--arca-chart-2)' },
 } satisfies ChartConfig;
 
 /** Convenio Multilateral: comparativa período actual vs anterior */
 const convenioChartConfig = {
-  actual: { label: 'Período actual', color: '#1E3460' },
-  anterior: { label: 'Período anterior', color: '#7AA2C8' },
+  actual: { label: 'Período actual', color: 'var(--arca-chart-1)' },
+  anterior: { label: 'Período anterior', color: 'var(--arca-chart-2)' },
 } satisfies ChartConfig;
 
 const formatIvaCurrency = (
@@ -271,9 +265,6 @@ type ComprobanteRow = Awaited<
 >['comprobantes'][number];
 
 /** Notificación de AFIP tal como la devuelve `getNotifications`. */
-type NotificacionRow = Awaited<
-  ReturnType<typeof getNotifications>
->['notifications'][number];
 
 /** Fila del resumen por provincia (Convenio Multilateral). */
 type MultilateralResumenRow = Awaited<
@@ -1197,16 +1188,6 @@ export function RepresentativeDetailPage({
     dueDatePage * ITEMS_PER_PAGE
   );
 
-  const getPageRange = (currentPage: number, totalPages: number) => {
-    const maxVisible = 7;
-    if (totalPages <= maxVisible) return { startPage: 1, endPage: totalPages };
-    let startPage = Math.max(1, currentPage - 3);
-    const endPage = Math.min(totalPages, startPage + maxVisible - 1);
-    if (endPage - startPage < maxVisible - 1)
-      startPage = Math.max(1, endPage - maxVisible + 1);
-    return { startPage, endPage };
-  };
-
   /** Formatea una fecha en hora local como YYYY-MM-DD (evita desfase por UTC con toISOString). */
   const formatLocalYYYYMMDD = (d: Date) => {
     const y = d.getFullYear();
@@ -1759,7 +1740,7 @@ export function RepresentativeDetailPage({
                 <ArrowLeft className="h-[14px] w-[14px]" />
               </button>
               {/* Avatar */}
-              <div className="w-[36px] h-[36px] shrink-0 rounded-[var(--arca-r-md)] bg-[var(--arca-navy-900)] text-white text-[13px] font-bold inline-flex items-center justify-center select-none">
+              <div className="w-[36px] h-[36px] shrink-0 rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] text-white text-[13px] font-bold inline-flex items-center justify-center select-none">
                 {clientInitials}
               </div>
               {/* Name + meta */}
@@ -1879,7 +1860,7 @@ export function RepresentativeDetailPage({
                   disabled={scrapingAll || !!scrapingSection}
                   onClick={async () => {
                     setScrapingAll(true);
-                    toast('Iniciando actualización');
+                    toast('Iniciando la actualización');
                     const jobTypes = [
                       'deuda',
                       'vencimientos',
@@ -1902,10 +1883,10 @@ export function RepresentativeDetailPage({
                         toast.success('Actualización completada');
                       } else if (failed < jobTypes.length) {
                         toast.warning(
-                          `Actualización parcial: ${failed} módulo(s) fallaron`
+                          `Actualización parcial: ${failed} de ${jobTypes.length} pasos fallaron`
                         );
                       } else {
-                        toast.error('La actualización falló en todos los módulos');
+                        toast.error('No se pudo actualizar ningún dato');
                       }
                     } catch (err) {
                       toast.error(
@@ -1917,7 +1898,7 @@ export function RepresentativeDetailPage({
                       setScrapingAll(false);
                     }
                   }}
-                  title="Actualizar todo (deuda, vencimientos, IVA, notificaciones)"
+                  title="Traer de ARCA todo: deudas, vencimientos, IVA, notificaciones y facturas"
                 >
                   {scrapingAll ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -2088,7 +2069,7 @@ export function RepresentativeDetailPage({
                         clientId: representativeId,
                         profileId: selectedResumenProfile.id,
                       }}
-                      className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+                      className="text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
                     >
                       Ver perfil completo →
                     </Link>
@@ -2264,11 +2245,11 @@ export function RepresentativeDetailPage({
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-[5px] text-[11px] text-[var(--arca-ink-3)]">
-                      <span className="w-2 h-2 rounded-[2px] bg-[#1E3460] shrink-0" />
+                      <span className="w-2 h-2 rounded-[2px] bg-[var(--arca-chart-1)] shrink-0" />
                       Ventas
                     </span>
                     <span className="inline-flex items-center gap-[5px] text-[11px] text-[var(--arca-ink-3)]">
-                      <span className="w-2 h-2 rounded-[2px] bg-[#7AA2C8] shrink-0" />
+                      <span className="w-2 h-2 rounded-[2px] bg-[var(--arca-chart-2)] shrink-0" />
                       Compras
                     </span>
                   </div>
@@ -2284,18 +2265,18 @@ export function RepresentativeDetailPage({
                       <CartesianGrid
                         vertical={false}
                         strokeDasharray="3 4"
-                        stroke="#ECEAE3"
+                        stroke="var(--arca-border)"
                       />
                       <XAxis
                         dataKey="period"
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fill: '#6E7079', fontSize: 9 }}
+                        tick={{ fill: 'var(--arca-ink-3)', fontSize: 9 }}
                       />
                       <YAxis
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                        tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
                         tickFormatter={(v) =>
                           v >= 1e6
                             ? `${(v / 1e6).toFixed(1)}M`
@@ -2307,17 +2288,17 @@ export function RepresentativeDetailPage({
                       <Tooltip
                         cursor={{ fill: 'rgba(30,52,96,0.06)' }}
                         contentStyle={{
-                          background: '#12131A',
+                          background: 'var(--arca-ink)',
                           border: 'none',
                           borderRadius: 8,
                           padding: '8px 12px',
                         }}
                         labelStyle={{
-                          color: '#9B9CA3',
+                          color: 'var(--arca-ink-4)',
                           fontSize: 10,
                           marginBottom: 4,
                         }}
-                        itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
+                        itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
                         formatter={(value) =>
                           new Intl.NumberFormat('es-AR', {
                             style: 'currency',
@@ -2380,7 +2361,7 @@ export function RepresentativeDetailPage({
                         Sin notificaciones pendientes
                       </p>
                       <p className="text-[11.5px] text-[var(--arca-ink-4)]">
-                        Te avisaremos cuando AFIP publique novedades.
+                        Te avisaremos cuando ARCA publique novedades.
                       </p>
                     </div>
                   ) : (
@@ -2631,7 +2612,7 @@ export function RepresentativeDetailPage({
                       setScrapingSection(null);
                     }
                   }}
-                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
+                  className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
                 >
                   {scrapingSection === 'deudas' ? (
                     <>
@@ -2749,7 +2730,7 @@ export function RepresentativeDetailPage({
                     style={{ minWidth: 880 }}
                   >
                     <thead>
-                      <tr className="bg-[var(--arca-surface-2)]">
+                      <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                         {[
                           { label: 'Impuesto', key: 'impuesto' as const },
                           { label: 'Concepto', key: 'concepto' as const },
@@ -2992,86 +2973,14 @@ export function RepresentativeDetailPage({
                 </div>
               )}
               {debtTotalPages > 1 && (
-                <div className="px-[20px] py-[10px] border-t border-[var(--arca-border)] flex items-center gap-[10px] text-[11.5px] text-[var(--arca-ink-4)]">
-                  <span>
-                    Mostrando {pagedDebts.length} de {filteredDebts.length}
-                  </span>
-                  <div className="flex-1" />
-                  {(() => {
-                    const { startPage, endPage } = getPageRange(
-                      debtPage,
-                      debtTotalPages
-                    );
-                    const visiblePages = Array.from(
-                      { length: endPage - startPage + 1 },
-                      (_, i) => startPage + i
-                    );
-                    return (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
-                          disabled={debtPage === 1}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
-                        >
-                          ←
-                        </button>
-                        {startPage > 1 && (
-                          <>
-                            <button
-                              onClick={() => setDebtPage(1)}
-                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
-                            >
-                              1
-                            </button>
-                            {startPage > 2 && (
-                              <span className="px-1 text-[var(--arca-ink-4)]">
-                                …
-                              </span>
-                            )}
-                          </>
-                        )}
-                        {visiblePages.map((page) => (
-                          <button
-                            key={page}
-                            onClick={() => setDebtPage(page)}
-                            className={cn(
-                              'px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] transition-colors',
-                              debtPage === page
-                                ? 'bg-[var(--arca-ink)] text-white font-semibold'
-                                : 'hover:bg-[var(--arca-surface-2)]'
-                            )}
-                          >
-                            {page}
-                          </button>
-                        ))}
-                        {endPage < debtTotalPages && (
-                          <>
-                            {endPage < debtTotalPages - 1 && (
-                              <span className="px-1 text-[var(--arca-ink-4)]">
-                                …
-                              </span>
-                            )}
-                            <button
-                              onClick={() => setDebtPage(debtTotalPages)}
-                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
-                            >
-                              {debtTotalPages}
-                            </button>
-                          </>
-                        )}
-                        <button
-                          onClick={() =>
-                            setDebtPage((p) => Math.min(debtTotalPages, p + 1))
-                          }
-                          disabled={debtPage === debtTotalPages}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
-                        >
-                          →
-                        </button>
-                      </div>
-                    );
-                  })()}
-                </div>
+                <Paginador
+                  pagina={debtPage}
+                  totalPaginas={debtTotalPages}
+                  onPagina={setDebtPage}
+                  total={filteredDebts.length}
+                  unidad="deuda"
+                  className="px-[20px] py-[10px] border-t border-[var(--arca-border)]"
+                />
               )}
             </div>
           </TabsContent>
@@ -3326,98 +3235,15 @@ export function RepresentativeDetailPage({
                         </TableBody>
                       </Table>
                     </div>
-                    {dueDateTotalPages > 1 &&
-                      (() => {
-                        const { startPage, endPage } = getPageRange(
-                          dueDatePage,
-                          dueDateTotalPages
-                        );
-                        const visiblePages = Array.from(
-                          { length: endPage - startPage + 1 },
-                          (_, i) => startPage + i
-                        );
-                        return (
-                          <div className="flex justify-center w-full min-w-0">
-                            <Pagination>
-                              <PaginationContent className="flex-wrap justify-center">
-                                <PaginationItem>
-                                  <PaginationPrevious
-                                    onClick={() =>
-                                      setDueDatePage((p) => Math.max(1, p - 1))
-                                    }
-                                    className={
-                                      dueDatePage === 1
-                                        ? 'pointer-events-none opacity-50'
-                                        : 'cursor-pointer'
-                                    }
-                                  />
-                                </PaginationItem>
-                                {startPage > 1 && (
-                                  <>
-                                    <PaginationItem>
-                                      <PaginationLink
-                                        onClick={() => setDueDatePage(1)}
-                                        className="cursor-pointer"
-                                      >
-                                        1
-                                      </PaginationLink>
-                                    </PaginationItem>
-                                    {startPage > 2 && (
-                                      <PaginationItem>
-                                        <span className="px-2">...</span>
-                                      </PaginationItem>
-                                    )}
-                                  </>
-                                )}
-                                {visiblePages.map((page) => (
-                                  <PaginationItem key={page}>
-                                    <PaginationLink
-                                      onClick={() => setDueDatePage(page)}
-                                      isActive={dueDatePage === page}
-                                      className="cursor-pointer"
-                                    >
-                                      {page}
-                                    </PaginationLink>
-                                  </PaginationItem>
-                                ))}
-                                {endPage < dueDateTotalPages && (
-                                  <>
-                                    {endPage < dueDateTotalPages - 1 && (
-                                      <PaginationItem>
-                                        <span className="px-2">...</span>
-                                      </PaginationItem>
-                                    )}
-                                    <PaginationItem>
-                                      <PaginationLink
-                                        onClick={() =>
-                                          setDueDatePage(dueDateTotalPages)
-                                        }
-                                        className="cursor-pointer"
-                                      >
-                                        {dueDateTotalPages}
-                                      </PaginationLink>
-                                    </PaginationItem>
-                                  </>
-                                )}
-                                <PaginationItem>
-                                  <PaginationNext
-                                    onClick={() =>
-                                      setDueDatePage((p) =>
-                                        Math.min(dueDateTotalPages, p + 1)
-                                      )
-                                    }
-                                    className={
-                                      dueDatePage === dueDateTotalPages
-                                        ? 'pointer-events-none opacity-50'
-                                        : 'cursor-pointer'
-                                    }
-                                  />
-                                </PaginationItem>
-                              </PaginationContent>
-                            </Pagination>
-                          </div>
-                        );
-                      })()}
+                    {dueDateTotalPages > 1 && (
+                      <div className="w-full min-w-0">
+                        <Paginador
+                          pagina={dueDatePage}
+                          totalPaginas={dueDateTotalPages}
+                          onPagina={setDueDatePage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
@@ -4003,18 +3829,18 @@ export function RepresentativeDetailPage({
                         <CartesianGrid
                           vertical={false}
                           strokeDasharray="3 4"
-                          stroke="#ECEAE3"
+                          stroke="var(--arca-border)"
                         />
                         <XAxis
                           dataKey="period"
                           tickLine={false}
                           axisLine={false}
-                          tick={{ fill: '#6E7079', fontSize: 9 }}
+                          tick={{ fill: 'var(--arca-ink-3)', fontSize: 9 }}
                         />
                         <YAxis
                           tickLine={false}
                           axisLine={false}
-                          tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                          tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
                           tickFormatter={(v) =>
                             v >= 1e6
                               ? `${(v / 1e6).toFixed(1)}M`
@@ -4026,17 +3852,17 @@ export function RepresentativeDetailPage({
                         <Tooltip
                           cursor={{ fill: 'rgba(30,52,96,0.06)' }}
                           contentStyle={{
-                            background: '#12131A',
+                            background: 'var(--arca-ink)',
                             border: 'none',
                             borderRadius: 8,
                             padding: '8px 12px',
                           }}
                           labelStyle={{
-                            color: '#9B9CA3',
+                            color: 'var(--arca-ink-4)',
                             fontSize: 10,
                             marginBottom: 4,
                           }}
-                          itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
+                          itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
                           formatter={(value) =>
                             new Intl.NumberFormat('es-AR', {
                               style: 'currency',
@@ -4279,33 +4105,33 @@ export function RepresentativeDetailPage({
                               <CartesianGrid
                                 vertical={false}
                                 strokeDasharray="3 4"
-                                stroke="#ECEAE3"
+                                stroke="var(--arca-border)"
                               />
                               <XAxis
                                 dataKey="metrica"
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: '#6E7079', fontSize: 10 }}
+                                tick={{ fill: 'var(--arca-ink-3)', fontSize: 10 }}
                               />
                               <YAxis
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                                tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
                               />
                               <Tooltip
                                 cursor={{ fill: 'rgba(30,52,96,0.06)' }}
                                 contentStyle={{
-                                  background: '#12131A',
+                                  background: 'var(--arca-ink)',
                                   border: 'none',
                                   borderRadius: 8,
                                   padding: '8px 12px',
                                 }}
                                 labelStyle={{
-                                  color: '#9B9CA3',
+                                  color: 'var(--arca-ink-4)',
                                   fontSize: 10,
                                   marginBottom: 4,
                                 }}
-                                itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
+                                itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
                                 formatter={(value) => String(value)}
                               />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
@@ -4351,18 +4177,18 @@ export function RepresentativeDetailPage({
                               <CartesianGrid
                                 vertical={false}
                                 strokeDasharray="3 4"
-                                stroke="#ECEAE3"
+                                stroke="var(--arca-border)"
                               />
                               <XAxis
                                 dataKey="metrica"
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: '#6E7079', fontSize: 10 }}
+                                tick={{ fill: 'var(--arca-ink-3)', fontSize: 10 }}
                               />
                               <YAxis
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                                tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
                                 tickFormatter={(v) =>
                                   v >= 1e6
                                     ? `${(v / 1e6).toFixed(1)}M`
@@ -4374,17 +4200,17 @@ export function RepresentativeDetailPage({
                               <Tooltip
                                 cursor={{ fill: 'rgba(30,52,96,0.06)' }}
                                 contentStyle={{
-                                  background: '#12131A',
+                                  background: 'var(--arca-ink)',
                                   border: 'none',
                                   borderRadius: 8,
                                   padding: '8px 12px',
                                 }}
                                 labelStyle={{
-                                  color: '#9B9CA3',
+                                  color: 'var(--arca-ink-4)',
                                   fontSize: 10,
                                   marginBottom: 4,
                                 }}
-                                itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
+                                itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
                                 formatter={(value) =>
                                   new Intl.NumberFormat('es-AR', {
                                     style: 'currency',
@@ -4436,7 +4262,7 @@ export function RepresentativeDetailPage({
                           <TableHead className="text-right">
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
+                              className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
                               onClick={() => toggleMultilateralSort('count')}
                             >
                               Cant. comprobantes
@@ -4451,7 +4277,7 @@ export function RepresentativeDetailPage({
                           <TableHead className="text-right">
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
+                              className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
                               onClick={() => toggleMultilateralSort('iva')}
                             >
                               Total IVA
@@ -4466,7 +4292,7 @@ export function RepresentativeDetailPage({
                           <TableHead className="text-right">
                             <button
                               type="button"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
+                              className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
                               onClick={() => toggleMultilateralSort('base')}
                             >
                               Base imponible (amount_taxed)
@@ -4587,8 +4413,8 @@ export function RepresentativeDetailPage({
                             Actualizar IVA
                           </h3>
                           <p className="text-[12px] leading-relaxed text-[var(--arca-ink-4)] mt-1">
-                            Si las facturas ya están al día, podés actualizar solo
-                            IVA para ir más rápido.
+                            Si las facturas ya están al día, podés actualizar
+                            solo IVA para ir más rápido.
                           </p>
                         </div>
                         <div className="px-3 pb-3 space-y-1.5">
@@ -4772,7 +4598,7 @@ export function RepresentativeDetailPage({
                                     }),
                                   ]);
                                   toast.success(
-                                    `${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear} rehecho desde AFIP`
+                                    `${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear} rehecho desde ARCA`
                                   );
                                 } catch (err) {
                                   toast.error(
@@ -4797,10 +4623,10 @@ export function RepresentativeDetailPage({
                                   {ivaSelectedYear}
                                 </div>
                                 <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
-                                  Vuelve a pedirle a AFIP el mes completo. Usala
-                                  si el período quedó incompleto: la actualización
-                                  normal sólo trae lo posterior a la última
-                                  factura cargada.
+                                  Vuelve a pedirle a ARCA el mes completo. Usala
+                                  si el período quedó incompleto: la
+                                  actualización normal sólo trae lo posterior a
+                                  la última factura cargada.
                                 </div>
                               </div>
                             </button>
@@ -4942,7 +4768,7 @@ export function RepresentativeDetailPage({
                 <Button
                   size="sm"
                   onClick={() => setNewRequestDialogOpen(true)}
-                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0 gap-1.5"
+                  className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0 gap-1.5"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Nueva solicitud
@@ -4969,7 +4795,7 @@ export function RepresentativeDetailPage({
                 ) : (
                   <table className="w-full border-collapse text-[12.5px]">
                     <thead>
-                      <tr className="bg-[var(--arca-surface-2)]">
+                      <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                         {(
                           [
                             'Título',
@@ -5213,11 +5039,11 @@ export function RepresentativeDetailPage({
                     <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                       Fecha límite
                     </label>
-                    <Input
-                      type="date"
+                    <SelectorFecha
                       value={newRequestDueAt}
-                      onChange={(e) => setNewRequestDueAt(e.target.value)}
-                      className="mt-1 h-9 text-sm"
+                      onChange={setNewRequestDueAt}
+                      placeholder="Sin fecha límite"
+                      className="mt-1"
                     />
                   </div>
                   <div className="flex justify-end gap-2 pt-2">
@@ -5235,7 +5061,7 @@ export function RepresentativeDetailPage({
                         createRequestMutation.isPending
                       }
                       onClick={() => createRequestMutation.mutate()}
-                      className="bg-[var(--arca-ink)] hover:bg-black text-white"
+                      className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white"
                     >
                       {createRequestMutation.isPending ? (
                         <>
@@ -5273,7 +5099,7 @@ export function RepresentativeDetailPage({
       </Tabs>
 
       {/* El diálogo edita la empresa (cliente) y, opcionalmente, la clave del
-          login de AFIP: sin empresa seleccionada no hay nada que editar. */}
+          login de ARCA: sin empresa seleccionada no hay nada que editar. */}
       {selectedClientId && (
         <EditRepresentativeDialog
           clienteId={selectedClientId}
@@ -5692,7 +5518,7 @@ function PortalAccessTab({ clienteId }: { clienteId: string }) {
         <Button
           size="sm"
           onClick={() => setCreateOpen(true)}
-          className="bg-[var(--arca-ink)] hover:bg-black text-white gap-1.5"
+          className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white gap-1.5"
         >
           <UserPlus className="h-3.5 w-3.5" />
           Agregar usuario
@@ -5874,7 +5700,7 @@ function PortalAccessTab({ clienteId }: { clienteId: string }) {
               Cancelar
             </Button>
             <Button
-              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white"
               disabled={
                 !createForm.name ||
                 !createForm.email ||
@@ -6004,7 +5830,7 @@ function PortalAccessTab({ clienteId }: { clienteId: string }) {
               Cancelar
             </Button>
             <Button
-              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white"
               disabled={editMutation.isPending}
               onClick={() =>
                 editTarget &&

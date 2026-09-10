@@ -67,7 +67,7 @@ type Mode = 'complementar' | 'reemplazar';
 const BTN_OUTLINE =
   'flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors disabled:opacity-50';
 const BTN_PRIMARY =
-  'flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity disabled:opacity-50';
+  'flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity disabled:opacity-50';
 const BTN_GHOST =
   'flex items-center gap-1.5 h-8 px-2.5 text-[12px] rounded-[8px] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors';
 
@@ -396,7 +396,7 @@ export function ImportarPlanDialog({
                             type="checkbox"
                             checked={checked.has(m.code)}
                             onChange={() => toggleChecked(m.code)}
-                            className="accent-[var(--arca-navy-900)]"
+                            className="accent-[var(--arca-accent)]"
                           />
                           <span className="font-mono">{m.code}</span>
                           <span className="text-[var(--arca-ink-3)]">

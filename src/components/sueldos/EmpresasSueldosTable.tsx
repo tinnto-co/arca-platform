@@ -156,7 +156,7 @@ export function EmpresasSueldosTable({
           <span
             className={
               atrasada
-                ? 'text-[13px] font-medium text-[var(--arca-danger,#b3261e)]'
+                ? 'text-[13px] font-medium text-[var(--arca-accent-neg-fg)]'
                 : 'text-[13px]'
             }
             title={
@@ -262,7 +262,7 @@ export function AgregarEmpresaDialog() {
           size="icon"
           aria-label="Agregar empresa a Sueldos"
           title="Agregar empresa a Sueldos"
-          className="bg-[var(--arca-navy-900)] text-white hover:bg-[var(--arca-navy-800)]"
+          className="bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]"
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
         </Button>

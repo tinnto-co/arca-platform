@@ -43,7 +43,7 @@ export function FlujoCajaCard({ from, to }: FlujoCajaCardProps) {
   const rows: CashflowRow[] = [
     {
       label: 'Operaciones',
-      color: 'var(--arca-navy-700)',
+      color: 'var(--arca-accent)',
       amount: operaciones,
       pct: 56,
       detail: 'transacciones',

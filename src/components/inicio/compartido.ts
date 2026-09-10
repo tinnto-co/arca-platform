@@ -165,7 +165,12 @@ export function pesos(n: number): string {
 
 // ── Avatares ───────────────────────────────────────────────────────────────
 
-const COLORES_AVATAR = ['#2A4680', '#7AA2C8', '#8FB39F', '#C2A878'];
+const COLORES_AVATAR = [
+  'var(--arca-accent)',
+  'var(--arca-chart-2)',
+  '#8FB39F',
+  'var(--arca-chart-3)',
+];
 
 export function iniciales(nombre: string): string {
   const partes = nombre.trim().split(/\s+/);

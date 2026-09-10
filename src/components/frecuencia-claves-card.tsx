@@ -71,34 +71,26 @@ export function FrecuenciaClavesCard() {
           </h2>
           <p className="text-[12px] text-[var(--arca-ink-3)] mt-0.5 max-w-[75ch]">
             Ninguna de sus empresas activas tiene comprobantes: espaciar su
-            actualización ahorra recursos sin perder datos. <strong>Semanal</strong> es
-            la opción segura (si empiezan a facturar, te enterás el lunes);{' '}
-            <strong>pausada</strong> es para claves que el estudio sabe
-            inactivas — pausada no hay forma de enterarse de que volvieron a
-            facturar. Solo afecta comprobantes: notificaciones, deuda e IVA
-            siguen normal.
+            actualización ahorra recursos sin perder datos.{' '}
+            <strong>Semanal</strong> es la opción segura (si empiezan a
+            facturar, te enterás el lunes); <strong>pausada</strong> es para
+            claves que el estudio sabe inactivas — pausada no hay forma de
+            enterarse de que volvieron a facturar. Solo afecta comprobantes:
+            notificaciones, deuda e IVA siguen normal.
           </p>
         </div>
       </div>
 
       <table className="w-full text-[12.5px]">
         <thead>
-          <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
-            <th className="px-5 py-2 text-left font-semibold text-[var(--arca-ink-2)]">
-              Clave
-            </th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
-              Empresas
-            </th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
+          <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+            <th className="px-5 py-2 text-left font-semibold">Clave</th>
+            <th className="px-3 py-2 text-right font-semibold">Empresas</th>
+            <th className="px-3 py-2 text-right font-semibold">
               Con comprobantes
             </th>
-            <th className="px-3 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
-              Consultas OK
-            </th>
-            <th className="px-5 py-2 text-right font-semibold text-[var(--arca-ink-2)]">
-              Frecuencia
-            </th>
+            <th className="px-3 py-2 text-right font-semibold">Consultas OK</th>
+            <th className="px-5 py-2 text-right font-semibold">Frecuencia</th>
           </tr>
         </thead>
         <tbody>
@@ -115,13 +107,13 @@ export function FrecuenciaClavesCard() {
                   {c.cuit}
                 </div>
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-[var(--arca-ink-2)]">
+              <td className="px-3 py-2.5 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
                 {c.empresas}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums text-[var(--arca-ink-2)]">
+              <td className="px-3 py-2.5 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
                 {c.conComprobantes}
               </td>
-              <td className="px-3 py-2.5 text-right tabular-nums">
+              <td className="px-3 py-2.5 text-right tabular-nums [font-family:var(--ff-mono)]">
                 <span className="text-[var(--arca-ink-2)]">{c.scrapeosOk}</span>
                 {c.scrapeosOk < SCRAPEOS_MINIMOS && (
                   <span

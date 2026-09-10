@@ -69,7 +69,7 @@ export function MesPicker({
         <Button
           variant="outline"
           className={cn(
-            'justify-start gap-2 bg-white border-[#DFDCD3] rounded-[10px] px-[13px] text-[13.5px] font-normal capitalize shadow-none',
+            'justify-start gap-2 bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] text-[13.5px] font-normal capitalize shadow-none',
             className
           )}
         >
@@ -120,7 +120,7 @@ export function MesPicker({
                 className={cn(
                   'h-8 rounded-[8px] text-[12.5px] capitalize transition-colors',
                   activo
-                    ? 'bg-[var(--arca-navy-900)] font-medium text-white'
+                    ? 'bg-[var(--arca-accent)] font-medium text-white'
                     : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]',
                   'disabled:pointer-events-none disabled:opacity-35'
                 )}

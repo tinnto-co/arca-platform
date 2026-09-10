@@ -136,9 +136,11 @@ function ConceptoEditDialog({
         <button
           type="button"
           title="Configurar para este cliente"
-          className="flex h-7 w-7 items-center justify-center rounded-[8px] hover:bg-[#F1EFE8] transition-colors"
+          className="flex h-7 w-7 items-center justify-center rounded-[8px] hover:bg-[var(--arca-surface-2)] transition-colors"
         >
-          <Pencil style={{ width: 14, height: 14, color: '#B7B8BD' }} />
+          <Pencil
+            style={{ width: 14, height: 14, color: 'var(--arca-ink-4)' }}
+          />
         </button>
       </DialogTrigger>
       <DialogContent className="w-[95vw] sm:max-w-md">
@@ -280,9 +282,9 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="flex h-7 w-7 items-center justify-center rounded-[8px] hover:bg-[#F1EFE8] transition-colors"
+          className="flex h-7 w-7 items-center justify-center rounded-[8px] hover:bg-[var(--arca-surface-2)] transition-colors"
         >
-          <Info style={{ width: 15, height: 15, color: '#B7B8BD' }} />
+          <Info style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }} />
         </button>
       </DialogTrigger>
       <DialogContent className="w-[95vw] sm:max-w-2xl">
@@ -294,7 +296,7 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
             {row.nombre}
             {row.codigoAfip && (
               <span className="ml-2 text-xs text-muted-foreground font-normal">
-                AFIP: {row.codigoAfip}
+                ARCA: {row.codigoAfip}
               </span>
             )}
           </DialogTitle>
@@ -381,7 +383,10 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
   return (
     <div className="w-full min-w-0 max-w-full space-y-4">
       {/* Intro text */}
-      <p className="text-[13.5px] max-w-[760px]" style={{ color: '#6E7079' }}>
+      <p
+        className="text-[13.5px] max-w-[760px]"
+        style={{ color: 'var(--arca-ink-3)' }}
+      >
         Catálogo completo de conceptos SOS (códigos 1–699). Todos los conceptos
         están disponibles para usar en cualquier recibo.
       </p>
@@ -389,37 +394,42 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
       {/* Search pill */}
       <div
         className="flex items-center gap-[9px] w-[380px] bg-white rounded-[10px] px-[13px] py-[8px]"
-        style={{ border: '1px solid #DFDCD3' }}
+        style={{ border: '1px solid var(--arca-border-strong)' }}
       >
         <Search
-          style={{ width: 15, height: 15, color: '#9B9CA3', flexShrink: 0 }}
+          style={{
+            width: 15,
+            height: 15,
+            color: 'var(--arca-ink-4)',
+            flexShrink: 0,
+          }}
         />
         <input
           type="text"
-          placeholder="Buscar por nombre o código AFIP…"
+          placeholder="Buscar por nombre o código ARCA…"
           value={busqueda}
           onChange={(e) => handleBusqueda(e.target.value)}
-          className="flex-1 bg-transparent outline-none text-[13.5px] placeholder:text-[#9B9CA3]"
-          style={{ color: '#12131A' }}
+          className="flex-1 bg-transparent outline-none text-[13.5px] placeholder:text-[var(--arca-ink-4)]"
+          style={{ color: 'var(--arca-ink)' }}
         />
       </div>
 
       {/* Table */}
       <div
         className="w-full overflow-hidden rounded-[10px]"
-        style={{ border: '1px solid #ECEAE3' }}
+        style={{ border: '1px solid var(--arca-border)' }}
       >
         {/* Navy header */}
         <div
           className="grid h-[44px] items-center px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase"
           style={{
-            background: '#0B1730',
-            color: '#E7EAF2',
+            background: 'var(--arca-accent)',
+            color: '#FFFFFF',
             gridTemplateColumns: '120px 140px 1fr 96px',
           }}
         >
           <span>Cód. SOS</span>
-          <span>Cód. AFIP</span>
+          <span>Cód. ARCA</span>
           <span>Nombre</span>
           <span />
         </div>
@@ -428,14 +438,14 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
         {isLoading ? (
           <div
             className="px-5 py-[14px] text-[13.5px] text-center"
-            style={{ color: '#9B9CA3' }}
+            style={{ color: 'var(--arca-ink-4)' }}
           >
             Cargando...
           </div>
         ) : filtrados.length === 0 ? (
           <div
             className="px-5 py-[14px] text-[13.5px] text-center"
-            style={{ color: '#9B9CA3' }}
+            style={{ color: 'var(--arca-ink-4)' }}
           >
             {busqueda
               ? 'Sin resultados para la búsqueda.'
@@ -445,36 +455,39 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
           pagina_rows.map((row) => (
             <div
               key={row.id}
-              className="grid items-center px-5 py-[14px] transition-[background] duration-[120ms] hover:bg-[#FBFAF6]"
+              className="grid items-center px-5 py-[14px] transition-[background] duration-[120ms] hover:bg-[var(--arca-surface-2)]"
               style={{
                 gridTemplateColumns: '120px 140px 1fr 96px',
-                borderBottom: '1px solid #ECEAE3',
+                borderBottom: '1px solid var(--arca-border)',
               }}
             >
               {/* CÓD. SOS */}
               <span
                 className="text-[13.5px] font-semibold tabular-nums"
-                style={{ color: '#12131A' }}
+                style={{ color: 'var(--arca-ink)' }}
               >
                 {row.numero}
               </span>
-              {/* CÓD. AFIP */}
+              {/* CÓD. ARCA */}
               <span
                 className="font-[family-name:var(--ff-mono)] text-[12.5px]"
-                style={{ color: '#9B9CA3' }}
+                style={{ color: 'var(--arca-ink-4)' }}
               >
                 {row.codigoAfip ?? '—'}
               </span>
               {/* NOMBRE */}
               <span
                 className="text-[13.5px] min-w-0 break-words"
-                style={{ color: '#3E404A' }}
+                style={{ color: 'var(--arca-ink-2)' }}
               >
                 {row.nombre}
                 {overridePorNumero.has(row.numero) && (
                   <span
                     className="ml-2 inline-block rounded-full px-2 py-[1px] text-[10.5px] font-semibold align-middle"
-                    style={{ background: '#F1EFE8', color: '#6E7079' }}
+                    style={{
+                      background: 'var(--arca-surface-2)',
+                      color: 'var(--arca-ink-3)',
+                    }}
                     title="Este cliente tiene una configuración propia para el concepto"
                   >
                     Personalizado
@@ -499,7 +512,10 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
       {/* Pagination */}
       {!isLoading && filtrados.length > 0 && (
         <div className="flex items-center justify-between py-4 px-[2px]">
-          <span className="text-[12.5px]" style={{ color: '#9B9CA3' }}>
+          <span
+            className="text-[12.5px]"
+            style={{ color: 'var(--arca-ink-4)' }}
+          >
             {filtrados.length === conceptos.length
               ? `${conceptos.length} de ${conceptos.length} conceptos`
               : `${filtrados.length} de ${conceptos.length} conceptos`}
@@ -510,8 +526,8 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
               type="button"
               onClick={() => setPagina((p) => Math.max(1, p - 1))}
               disabled={paginaActual === 1}
-              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[#FBFAF6] disabled:opacity-40 transition-colors flex items-center gap-1"
-              style={{ color: '#3E404A' }}
+              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
+              style={{ color: 'var(--arca-ink-2)' }}
             >
               <ChevronLeft style={{ width: 14, height: 14 }} />
               Anterior
@@ -520,8 +536,8 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
               type="button"
               onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
               disabled={paginaActual === totalPaginas}
-              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[#FBFAF6] disabled:opacity-40 transition-colors flex items-center gap-1"
-              style={{ color: '#3E404A' }}
+              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
+              style={{ color: 'var(--arca-ink-2)' }}
             >
               Siguiente
               <ChevronRight style={{ width: 14, height: 14 }} />

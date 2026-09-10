@@ -13,26 +13,61 @@ export const SEVERIDAD_LABEL: Record<string, string> = {
   sin_clasificar: 'Sin clasificar',
 };
 
-// La categoría viene cruda de la clasificación automática (intimacion,
-// comunicacion_general...). El mapa la traduce; lo que no esté mapeado se
-// emprolija igual (guiones bajos → espacios, inicial mayúscula) para que una
-// categoría nueva nunca se vea como código.
+/**
+ * Las categorías del clasificador, en castellano legible.
+ *
+ * Dos formas porque se usan para dos cosas: el plural nombra al conjunto
+ * —filtro, prioridades por categoría— y el singular nombra el tipo de UNA
+ * notificación.
+ */
 export const CATEGORIA_LABEL: Record<string, string> = {
-  comunicacion_general: 'Comunicación general',
+  intimacion: 'Intimaciones',
+  requerimiento: 'Requerimientos',
   deuda: 'Deuda',
-  inspeccion: 'Inspección',
-  intimacion: 'Intimación',
-  otro: 'Otro',
-  requerimiento: 'Requerimiento',
-  vencimiento: 'Vencimiento',
+  inspeccion: 'Fiscalización / inspección',
+  vencimiento: 'Vencimientos',
+  comunicacion_general: 'Comunicaciones generales',
+  otro: 'Otras',
 };
 
-export function categoriaLabel(categoria: string): string {
-  const conocida = CATEGORIA_LABEL[categoria];
-  if (conocida) return conocida;
-  const limpia = categoria.replaceAll('_', ' ').trim();
-  return limpia.charAt(0).toUpperCase() + limpia.slice(1);
-}
+export const CATEGORIA_LABEL_SINGULAR: Record<string, string> = {
+  intimacion: 'Intimación',
+  requerimiento: 'Requerimiento',
+  deuda: 'Deuda',
+  inspeccion: 'Fiscalización / inspección',
+  vencimiento: 'Vencimiento',
+  comunicacion_general: 'Comunicación general',
+  otro: 'Otra',
+};
+
+/** Con `mayuscula` en false queda para el medio de una frase. */
+const legible = (
+  mapa: Record<string, string>,
+  c: string,
+  mayuscula = true
+): string => {
+  // Una categoría nueva del clasificador no puede salir en crudo con guiones
+  // bajos: se limpia y se capitaliza igual.
+  const texto = mapa[c] ?? c.replace(/_/g, ' ');
+  return mayuscula
+    ? texto.charAt(0).toUpperCase() + texto.slice(1)
+    : texto.charAt(0).toLowerCase() + texto.slice(1);
+};
+
+/** Nombre del conjunto: "Intimaciones". Para filtros y agrupaciones. */
+export const nombreCategoria = (c: string): string =>
+  legible(CATEGORIA_LABEL, c);
+
+/** Tipo de una notificación: "Intimación". */
+export const tipoNotificacion = (c: string): string =>
+  legible(CATEGORIA_LABEL_SINGULAR, c);
+
+/**
+ * Nombre que usa la bandeja nueva (`InboxEmbebido`, `InboxHeader`,
+ * `ListaNotificaciones`, `PanelLectura`). Es el singular: allá la etiqueta
+ * siempre nombra UNA notificación, nunca el conjunto.
+ */
+export const categoriaLabel = tipoNotificacion;
 
 export const SEVERIDAD_PILL: Record<string, string> = {
   urgente: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',

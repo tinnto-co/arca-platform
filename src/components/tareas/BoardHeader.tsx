@@ -10,6 +10,7 @@
  */
 
 import { format } from 'date-fns';
+import { useAtajo } from '@/lib/tecla-modificador';
 import { es } from 'date-fns/locale';
 import {
   Archive,
@@ -97,6 +98,7 @@ export function BoardHeader({
   resumen,
   onBuscar,
 }: BoardHeaderProps) {
+  const atajoBuscar = useAtajo('K');
   const activos = Object.values(filtros).filter(Boolean).length;
   const periodoTxt = etiquetaPeriodo(filtros.periodo);
   const asignadoTxt =
@@ -145,7 +147,7 @@ export function BoardHeader({
                   className={cn(
                     'grid size-6 place-items-center rounded-full border-2 border-[var(--arca-bg)] text-[9.5px] font-semibold text-white transition-transform duration-[120ms]',
                     filtros.asignado === m.id &&
-                      'ring-2 ring-[var(--arca-navy-700)]'
+                      'ring-2 ring-[var(--arca-accent)]'
                   )}
                 >
                   {iniciales(m.name)}
@@ -166,7 +168,7 @@ export function BoardHeader({
             <Search className="size-3.5 text-[var(--arca-ink-3)]" />
             Buscar
             <kbd className="rounded-[4px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-1 text-[10px] text-[var(--arca-ink-3)] [font-family:var(--ff-mono)]">
-              ⌘K
+              {atajoBuscar}
             </kbd>
           </button>
 
@@ -399,7 +401,7 @@ export function BoardHeader({
             className={cn(
               'inline-flex items-center gap-1.5 rounded-[var(--arca-r-pill)] border px-[10px] py-1 text-[11.5px] transition-colors duration-[120ms]',
               viendoArchivadas
-                ? 'border-[var(--arca-navy-700)] bg-[var(--arca-navy-700)] font-medium text-white'
+                ? 'border-[var(--arca-accent)] bg-[var(--arca-accent)] font-medium text-white'
                 : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
             )}
           >
