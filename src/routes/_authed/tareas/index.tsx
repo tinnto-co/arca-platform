@@ -332,8 +332,21 @@ function TareasPage() {
    * suelta el parámetro en vez de dejarlo colgado.
    */
   const buscadaEnArchivo = useRef<string | null>(null);
+  /**
+   * Tareas que el tablero llegó a mostrar. Una que estuvo abierta y se cayó de
+   * la lista no es un link roto: la acaban de editar y dejó de pasar el filtro
+   * —asignarla mientras se mira "sin asignar" es el caso típico—. Sin esto, el
+   * rescate se dispara sobre la edición del propio usuario y le avisa que su
+   * tarea no existe.
+   */
+  const yaMostradas = useRef(new Set<string>());
   useEffect(() => {
-    if (!search.tarea || cargando || tareaAbierta) return;
+    if (!search.tarea) return;
+    if (tareaAbierta) {
+      yaMostradas.current.add(search.tarea);
+      return;
+    }
+    if (cargando || yaMostradas.current.has(search.tarea)) return;
     if (!viendoArchivadas && buscadaEnArchivo.current !== search.tarea) {
       buscadaEnArchivo.current = search.tarea;
       void navigate({
