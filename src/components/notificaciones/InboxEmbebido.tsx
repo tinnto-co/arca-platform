@@ -123,6 +123,8 @@ export function InboxEmbebido({
   const refrescar = () => {
     void queryClient.invalidateQueries({ queryKey: ['notifications'] });
     void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
+    // La card del Resumen de la ficha tiene su propia query de sin-leer.
+    void queryClient.invalidateQueries({ queryKey: ['unreadNotifications'] });
   };
 
   const marcarLeida = useMutation({

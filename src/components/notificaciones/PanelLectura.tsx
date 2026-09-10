@@ -224,6 +224,11 @@ export function PanelLectura({
     void queryClient.invalidateQueries({
       queryKey: ['notificacion', notificacionId],
     });
+    // La card «Notificaciones sin leer» del Resumen de la ficha usa su
+    // propia query: sin esto, marcar no leída/resuelta desde el panel no
+    // la refresca hasta recargar.
+    void queryClient.invalidateQueries({ queryKey: ['unreadNotifications'] });
+    void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
   };
 
   const resolver = useMutation({
