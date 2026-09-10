@@ -74,8 +74,8 @@ const tabCls = () =>
     'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
   );
 
-const thCls =
-  'px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap';
+// Sin color propio: el encabezado hereda el blanco de la fila navy.
+const thCls = 'px-3 py-2.5 font-semibold whitespace-nowrap';
 const monoStyle = { fontFamily: 'var(--ff-mono)' } as const;
 
 /** Fila del resumen RI, tal cual la devuelve `getIvaResumenRI`. */
@@ -166,7 +166,7 @@ function SortableTh({
       className={cn(
         thCls,
         align === 'right' ? 'text-right' : 'text-left',
-        'cursor-pointer select-none hover:text-[var(--arca-ink)]'
+        'cursor-pointer select-none hover:bg-white/10'
       )}
       onClick={() => onSort(colKey)}
     >
@@ -492,7 +492,7 @@ function IvaResumenRI({ search }: { search: string }) {
             setSelectedMonth(mes);
           }}
         />
-        <Ayuda titulo="De dónde sale cada número">
+        <Ayuda titulo="De dónde sale cada número" etiqueta="Cómo se calcula">
           <p>
             <strong>Débito, crédito y saldo técnico</strong> se calculan sobre
             los comprobantes cargados del período — los mismos números que la
@@ -502,9 +502,10 @@ function IvaResumenRI({ search }: { search: string }) {
           <p>
             <strong>Saldo libre disponibilidad</strong> y{' '}
             <strong>retenciones/percepciones</strong> vienen de la declaración
-            de ARCA y no se pueden derivar de comprobantes. Si todavía no se
-            trajeron, se cargan a mano haciendo click en la celda; la
-            declaración real los pisa cuando llega.
+            de ARCA y no se pueden derivar de comprobantes. Mientras no se
+            traigan, esas dos columnas muestran un guion y se pueden completar a
+            mano: hacé click sobre el guion y escribí el importe. Cuando llega
+            la declaración real, ese valor se reemplaza por el de ARCA.
           </p>
         </Ayuda>
       </div>
@@ -844,7 +845,7 @@ function MonotributistasTab({ search }: { search: string }) {
             setSelectedMonth(mes);
           }}
         />
-        <Ayuda titulo="Qué mide esta facturación">
+        <Ayuda titulo="Qué mide esta facturación" etiqueta="Qué mide">
           <p>
             Facturación emitida de los doce meses que terminan en el período
             elegido, tomada de los comprobantes cargados. Las notas de crédito
