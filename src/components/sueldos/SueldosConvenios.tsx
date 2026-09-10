@@ -160,7 +160,7 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
           <div className="grid gap-2 py-4">
             {conveniosAfip.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No hay convenios ARCA scrapeados para este cliente todavía.
+                Todavía no se trajeron convenios de ARCA para este cliente.
               </p>
             ) : (
               conveniosAfip.map((c) => {

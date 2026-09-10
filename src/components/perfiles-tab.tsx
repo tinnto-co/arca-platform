@@ -113,7 +113,9 @@ export function PerfilesTab({
       }),
     onSuccess: (_r, p) => {
       invalidate();
-      toast.success(`${p.name} dado de alta. Se encoló el primer scrapeo.`);
+      toast.success(
+        `${p.name} dado de alta. Se encoló la primera actualización.`
+      );
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -182,15 +184,15 @@ export function PerfilesTab({
         <CardHeader>
           <CardTitle>Perfiles dados de alta</CardTitle>
           <CardDescription>
-            Solo se scrapean estas empresas. Lo que ARCA muestre y no esté acá
-            se ignora.
+            Solo se traen datos de estas empresas. Lo que ARCA muestre y no esté
+            acá se ignora.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {enrolled.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               Este representante no tiene ninguna empresa dada de alta, así que
-              no se scrapea nada.
+              no se trae ningún dato.
             </p>
           ) : (
             <div className="space-y-2">
@@ -262,7 +264,7 @@ export function PerfilesTab({
           {notEnrolled.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No se detectaron perfiles nuevos. Ejecutá &quot;Buscar en
-              ARCA&quot; o esperá el próximo scrapeo.
+              ARCA&quot; o esperá la próxima actualización.
             </p>
           ) : (
             <div className="space-y-2">

@@ -274,7 +274,7 @@ function FuentesDatosItem() {
                   </div>
                   <div className="text-[11.5px] text-muted-foreground leading-snug">
                     {f.ultimoOkAt
-                      ? `Scrapeado ${relativeTime(f.ultimoOkAt)}`
+                      ? `Actualizado ${relativeTime(f.ultimoOkAt)}`
                       : 'Sin corridas OK'}
                     {' · '}
                     {f.datosActualizadosAt

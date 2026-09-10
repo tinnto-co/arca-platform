@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Ayuda } from '@/components/shared/ayuda';
 import {
   SelectorPeriodo,
   aPeriodo,
@@ -359,7 +360,7 @@ function EstadoBadge({ row }: { row: RiRow }) {
         className={cls('bg-sky-50 text-sky-700')}
         title={`Calculado sobre ${row.comprobantes} comprobante${
           row.comprobantes === 1 ? '' : 's'
-        }. Todavía no se scrapeó la declaración de ARCA.`}
+        }. Todavía no se trajo la declaración de ARCA.`}
       >
         Calculado
       </span>
@@ -491,17 +492,22 @@ function IvaResumenRI({ search }: { search: string }) {
             setSelectedMonth(mes);
           }}
         />
+        <Ayuda titulo="De dónde sale cada número">
+          <p>
+            <strong>Débito, crédito y saldo técnico</strong> se calculan sobre
+            los comprobantes cargados del período — los mismos números que la
+            ficha de cada empresa. El saldo técnico es débito menos crédito:
+            positivo es a pagar.
+          </p>
+          <p>
+            <strong>Saldo libre disponibilidad</strong> y{' '}
+            <strong>retenciones/percepciones</strong> vienen de la declaración
+            de ARCA y no se pueden derivar de comprobantes. Si todavía no se
+            trajeron, se cargan a mano haciendo click en la celda; la
+            declaración real los pisa cuando llega.
+          </p>
+        </Ayuda>
       </div>
-
-      <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
-        Débito, crédito y saldo técnico se calculan sobre los comprobantes
-        cargados del período — los mismos números que la ficha de cada empresa.
-        Saldo libre disponibilidad y retenciones/percepciones vienen de la
-        declaración de ARCA: no se pueden derivar de comprobantes — si el
-        scrapeo todavía no los trajo, se pueden cargar a mano haciendo click en
-        la celda (la declaración real los pisa cuando llega). El saldo técnico
-        es débito menos crédito: positivo es a pagar.
-      </p>
 
       {isLoading ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
@@ -838,13 +844,15 @@ function MonotributistasTab({ search }: { search: string }) {
             setSelectedMonth(mes);
           }}
         />
+        <Ayuda titulo="Qué mide esta facturación">
+          <p>
+            Facturación emitida de los doce meses que terminan en el período
+            elegido, tomada de los comprobantes cargados. Las notas de crédito
+            restan.
+          </p>
+          <p>Sirve para vigilar el tope de la categoría de monotributo.</p>
+        </Ayuda>
       </div>
-
-      <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
-        Facturación emitida de los 12 meses que terminan en el período elegido
-        (desde comprobantes cargados; las notas de crédito restan). Útil para
-        monitorear límites de categoría.
-      </p>
 
       {isLoading ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">

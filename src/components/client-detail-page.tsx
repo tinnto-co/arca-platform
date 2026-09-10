@@ -1824,7 +1824,7 @@ export function RepresentativeDetailPage({
                   disabled={scrapingAll || !!scrapingSection}
                   onClick={async () => {
                     setScrapingAll(true);
-                    toast('Iniciando scrapeo');
+                    toast('Iniciando la actualización');
                     const jobTypes = [
                       'deuda',
                       'vencimientos',
@@ -1844,32 +1844,32 @@ export function RepresentativeDetailPage({
                         }
                       }
                       if (failed === 0) {
-                        toast.success('Scraping completado');
+                        toast.success('Actualización completada');
                       } else if (failed < jobTypes.length) {
                         toast.warning(
-                          `Scraping parcial: ${failed} job(s) fallaron`
+                          `Actualización parcial: ${failed} de ${jobTypes.length} pasos fallaron`
                         );
                       } else {
-                        toast.error('Todos los jobs fallaron');
+                        toast.error('No se pudo actualizar ningún dato');
                       }
                     } catch (err) {
                       toast.error(
                         err instanceof Error
                           ? err.message
-                          : 'Error al encolar scraping'
+                          : 'No se pudo iniciar la actualización'
                       );
                     } finally {
                       setScrapingAll(false);
                     }
                   }}
-                  title="Scrapear todo (deuda, vencimientos, IVA, notificaciones)"
+                  title="Traer de ARCA todo: deudas, vencimientos, IVA, notificaciones y facturas"
                 >
                   {scrapingAll ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
                     <Play className="h-3 w-3" />
                   )}
-                  Scrapear todo
+                  Actualizar todo
                 </Button>
                 <button
                   onClick={() => setEditRepresentativeDialogOpen(true)}
@@ -4385,8 +4385,8 @@ export function RepresentativeDetailPage({
                             Actualizar IVA
                           </h3>
                           <p className="text-[12px] leading-relaxed text-[var(--arca-ink-4)] mt-1">
-                            Si las facturas ya están al día, podés scrapear solo
-                            IVA para ir más rápido.
+                            Si las facturas ya están al día, podés actualizar
+                            solo IVA para ir más rápido.
                           </p>
                         </div>
                         <div className="px-3 pb-3 space-y-1.5">
@@ -4596,9 +4596,9 @@ export function RepresentativeDetailPage({
                                 </div>
                                 <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
                                   Vuelve a pedirle a ARCA el mes completo. Usala
-                                  si el período quedó incompleto: el scrapeo
-                                  normal sólo trae lo posterior a la última
-                                  factura cargada.
+                                  si el período quedó incompleto: la
+                                  actualización normal sólo trae lo posterior a
+                                  la última factura cargada.
                                 </div>
                               </div>
                             </button>

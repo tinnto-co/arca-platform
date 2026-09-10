@@ -2049,7 +2049,7 @@ export function SueldosEmpleados({
                 ? 'Sin resultados para la búsqueda.'
                 : ocultarBajas
                   ? 'No hay empleados activos. Desactivá "Ocultar bajas" para ver todos.'
-                  : 'No hay empleados para este perfil. Ejecutá el import de Excel en el scrapper o creá uno manualmente.'}
+                  : 'No hay empleados para este perfil. Importá el Excel de sueldos o creá uno manualmente.'}
             </div>
           ) : (
             paginaRows.map((r) => {
