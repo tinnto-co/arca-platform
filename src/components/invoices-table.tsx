@@ -1098,7 +1098,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     {/* La disposición imita a la del comprobante: emisor a la
                         izquierda, letra al medio, tipo y número a la derecha. */}
                     <div className="relative flex rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-white">
-                      <div className="flex-1 p-5">
+                      <div className="flex-1 p-5 pr-8">
                         <p className="text-[15px] font-semibold text-[var(--arca-ink)]">
                           {emisor ?? 'Sin datos'}
                         </p>
@@ -1110,7 +1110,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                               : ''}
                         </p>
                       </div>
-                      <div className="flex-1 border-l border-[var(--arca-border-strong)] p-5 text-right">
+                      <div className="flex-1 border-l border-[var(--arca-border-strong)] p-5 pl-8 text-right">
                         <p className="text-[14px] font-semibold text-[var(--arca-ink)]">
                           {d.tipoDescripcion ?? 'Comprobante'}
                         </p>

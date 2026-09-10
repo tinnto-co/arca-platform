@@ -56,6 +56,9 @@ const s = StyleSheet.create({
   marco: { borderWidth: 1, borderColor: BORDE },
   cabecera: { flexDirection: 'row', borderBottomWidth: 1, borderColor: BORDE },
   mitad: { flex: 1, padding: 10 },
+  // 17px del recuadro + aire.
+  mitadIzq: { paddingRight: 26 },
+  mitadDer: { paddingLeft: 26 },
   // La letra va en un recuadro centrado sobre la línea divisoria, como en el
   // formato de AFIP.
   letra: {
@@ -134,7 +137,11 @@ const pesos = (v: string | null): string => {
 const fecha = (f: string | Date | null): string => {
   if (!f) return '—';
   const d = typeof f === 'string' ? new Date(f) : f;
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('es-AR');
+  if (Number.isNaN(d.getTime())) return '—';
+  // Con ceros: "30/06/2026", como en el resto de la app.
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
 };
 
 /** `0006-00000123`, como se numera un comprobante. */
@@ -165,13 +172,19 @@ export function ComprobantePdf({ d }: { d: ComprobantePdfData }) {
       <Page size="A4" style={s.page}>
         <View style={s.marco}>
           <View style={s.cabecera}>
-            <View style={s.mitad}>
+            <View style={[s.mitad, s.mitadIzq]}>
               <Text style={s.emisor}>{emisor ?? 'Sin datos'}</Text>
               <Text style={{ fontSize: 8, color: SUAVE, marginTop: 3 }}>
                 {emisorDoc ? `CUIT ${emisorDoc}` : ' '}
               </Text>
             </View>
-            <View style={[s.mitad, { borderLeftWidth: 1, borderColor: BORDE }]}>
+            <View
+              style={[
+                s.mitad,
+                s.mitadDer,
+                { borderLeftWidth: 1, borderColor: BORDE },
+              ]}
+            >
               <Text style={s.titulo}>{d.tipoDescripcion ?? 'Comprobante'}</Text>
               <Text style={{ fontSize: 10, marginTop: 3 }}>
                 N° {numeroLargo(d.puntoVenta, d.numero)}
