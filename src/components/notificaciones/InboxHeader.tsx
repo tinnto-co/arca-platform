@@ -9,16 +9,9 @@
 import { useState } from 'react';
 import {
   ArrowDownWideNarrow,
-  Check,
   CheckCheck,
   SlidersHorizontal,
 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import {
   Popover,
   PopoverContent,
@@ -28,15 +21,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
-  ChevronChip,
   ConteoResultados,
   LimpiarFiltros,
-  QuitarFiltro,
   botonHeader,
   chipFiltro,
   chipMasFiltros,
 } from '@/components/shared/filtros';
 import { PrioridadesCategoria } from './PrioridadesCategoria';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { SEVERIDAD_LABEL, haceCuanto, nombreCategoria } from './utils';
 import { cn } from '@/lib/utils';
 
@@ -165,76 +157,42 @@ export function InboxHeader({
             aria-hidden="true"
           />
 
-          {/* Categoría */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={chipFiltro(filtros.categoria !== '')}
-            >
-              Categoría:{' '}
-              {filtros.categoria ? nombreCategoria(filtros.categoria) : 'todas'}
-              {filtros.categoria ? (
-                <QuitarFiltro onQuitar={() => onFiltro({ categoria: '' })} />
-              ) : (
-                <ChevronChip />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="max-h-[320px] min-w-[180px] overflow-y-auto"
-            >
-              {categorias.length === 0 && (
-                <DropdownMenuItem disabled className="text-[12.5px]">
-                  Sin categorías todavía
-                </DropdownMenuItem>
-              )}
-              {categorias.map((c) => (
-                <DropdownMenuItem
-                  key={c}
-                  className="text-[12.5px]"
-                  onSelect={() => onFiltro({ categoria: c })}
-                >
-                  {nombreCategoria(c)}
-                  {c === filtros.categoria && (
-                    <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {/* Mismo control que los filtros de Facturas: el valor "todas"
+              es una opción de la lista, así que sacar el filtro se hace donde
+              se puso. La X que había antes vivía dentro del trigger y no lo
+              sacaba: Radix abre en pointerdown, así que el menú se desplegaba
+              antes de que el click llegara a cortarse. */}
+          <SearchableSelect
+            value={filtros.categoria || 'all'}
+            onValueChange={(v) => onFiltro({ categoria: v === 'all' ? '' : v })}
+            placeholder="Categoría"
+            searchPlaceholder="Buscar categoría..."
+            width={210}
+            options={[
+              { value: 'all', label: 'Todas las categorías' },
+              ...categorias.map((c) => ({
+                value: c,
+                label: nombreCategoria(c),
+              })),
+            ]}
+          />
 
-          {/* Importancia */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              className={chipFiltro(filtros.severidad !== '')}
-            >
-              Importancia:{' '}
-              {filtros.severidad ? SEVERIDAD_LABEL[filtros.severidad] : 'toda'}
-              {filtros.severidad ? (
-                <QuitarFiltro onQuitar={() => onFiltro({ severidad: '' })} />
-              ) : (
-                <ChevronChip />
-              )}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[180px]">
-              {[
+          <SearchableSelect
+            value={filtros.severidad || 'all'}
+            onValueChange={(v) => onFiltro({ severidad: v === 'all' ? '' : v })}
+            placeholder="Importancia"
+            searchPlaceholder="Buscar importancia..."
+            width={200}
+            options={[
+              { value: 'all', label: 'Toda importancia' },
+              ...[
                 'urgente',
                 'accion_requerida',
                 'informativa',
                 'sin_clasificar',
-              ].map((sv) => (
-                <DropdownMenuItem
-                  key={sv}
-                  className="text-[12.5px]"
-                  onSelect={() => onFiltro({ severidad: sv })}
-                >
-                  {SEVERIDAD_LABEL[sv]}
-                  {sv === filtros.severidad && (
-                    <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                  )}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              ].map((sv) => ({ value: sv, label: SEVERIDAD_LABEL[sv] })),
+            ]}
+          />
 
           {/* Más filtros */}
           <Popover open={masFiltros} onOpenChange={setMasFiltros}>
