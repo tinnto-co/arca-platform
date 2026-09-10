@@ -41,8 +41,6 @@ import {
   markNotificationUnread,
   markAllNotificationsRead,
   assignNotification,
-  resolveNotification,
-  unresolveNotification,
   listOrgMembersForAssignment,
   classifyNotification,
   classifyUnclassifiedNotifications,
@@ -136,11 +134,11 @@ export function NotificationsView({
   const [clienteFilter, setClienteFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [severidadFilter, setSeveridadFilter] = useState<string>('all');
-  /** 'all' | 'si' | 'no'. Distinto de `onlyUnresolved`: leída ≠ resuelta. */
+  /** 'all' | 'si' | 'no'. Único estado de lectura desde que «resuelta» se
+   *  colapsó en «leída». */
   const [leidaFilter, setLeidaFilter] = useState<string>('all');
   const [desde, setDesde] = useState('');
   const [hasta, setHasta] = useState('');
-  const [onlyUnresolved, setOnlyUnresolved] = useState(false);
   const [selectedNotificationId, setSelectedNotificationId] = useState<
     string | null
   >(initialNotificationId ?? null);
@@ -182,7 +180,6 @@ export function NotificationsView({
           leidaFilter,
           desde,
           hasta,
-          onlyUnresolved,
           searchTerm,
         ]
       : [
@@ -195,7 +192,6 @@ export function NotificationsView({
           categoryFilter,
           severidadFilter,
           leidaFilter,
-          onlyUnresolved,
           searchTerm,
         ],
     queryFn: () =>
@@ -216,7 +212,6 @@ export function NotificationsView({
           // El input date da el día a las 00:00; sin esto el "hasta" excluiría
           // todo lo publicado ese mismo día.
           dateTo: hasta ? `${hasta}T23:59:59` : undefined,
-          onlyUnresolved: onlyUnresolved || undefined,
         },
       }),
   });
@@ -314,16 +309,16 @@ export function NotificationsView({
   });
 
   const resolveMutation = useMutation({
-    mutationFn: (id: string) => resolveNotification({ data: { id } }),
+    mutationFn: (id: string) => markNotificationOpened({ data: { id } }),
     onSuccess: () => {
       invalidateNotificationQueries();
-      toast.success('Notificación resuelta');
+      toast.success('Notificación marcada como leída');
     },
-    onError: () => toast.error('Error al resolver la notificación'),
+    onError: () => toast.error('No se pudo marcar como leída'),
   });
 
   const unresolveMutation = useMutation({
-    mutationFn: (id: string) => unresolveNotification({ data: { id } }),
+    mutationFn: (id: string) => markNotificationUnread({ data: { id } }),
     onSuccess: () => {
       invalidateNotificationQueries();
       toast.success('Notificación reabierta');
@@ -599,10 +594,10 @@ export function NotificationsView({
               />
             </div>
             <label className="flex items-center justify-between gap-2 px-3 py-[7px] rounded-[var(--arca-r-md)] text-[13px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] cursor-pointer">
-              <span>Ocultar notificaciones resueltas</span>
+              <span>Ocultar notificaciones leídas</span>
               <Switch
-                checked={onlyUnresolved}
-                onCheckedChange={setOnlyUnresolved}
+                checked={leidaFilter === 'no'}
+                onCheckedChange={(v) => setLeidaFilter(v ? 'no' : 'all')}
               />
             </label>
           </div>
@@ -631,7 +626,7 @@ export function NotificationsView({
                         selectedNotificationId === notification.id &&
                           'bg-muted border-l-4 border-l-primary',
                         !notification.leida && 'bg-primary/5',
-                        notification.resueltaAt && 'opacity-50'
+                        notification.leida && 'opacity-50'
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -810,7 +805,7 @@ export function NotificationsView({
                           : 'Clasificar con IA'}
                       </Button>
                     )}
-                    {selectedNotification.resueltaAt ? (
+                    {selectedNotification.leida ? (
                       <Button
                         variant="outline"
                         size="sm"
@@ -820,7 +815,7 @@ export function NotificationsView({
                         disabled={unresolveMutation.isPending}
                       >
                         <XCircle className="h-4 w-4 mr-1" />
-                        Reabrir
+                        Marcar como no leída
                       </Button>
                     ) : (
                       <Button
@@ -832,7 +827,7 @@ export function NotificationsView({
                         disabled={resolveMutation.isPending}
                       >
                         <CheckCircle className="h-4 w-4 mr-1" />
-                        Resolver
+                        Marcar como leída
                       </Button>
                     )}
                   </div>

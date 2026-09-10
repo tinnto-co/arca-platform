@@ -37,8 +37,7 @@ import {
   listTareasDeNotificacion,
   listOrgMembersForAssignment,
   assignNotification,
-  resolveNotification,
-  unresolveNotification,
+  markNotificationOpened,
   markNotificationUnread,
 } from '@/actions/notification';
 import {
@@ -225,12 +224,18 @@ export function PanelLectura({
     });
   };
 
-  const resolver = useMutation({
-    mutationFn: (resuelta: boolean) =>
-      resuelta
-        ? resolveNotification({ data: { id: notificacionId! } })
-        : unresolveNotification({ data: { id: notificacionId! } }),
-    onSuccess: refrescar,
+  const marcarLeida = useMutation<{ leida: boolean }, Error, boolean>({
+    mutationFn: (leida: boolean) =>
+      leida
+        ? markNotificationOpened({ data: { id: notificacionId! } })
+        : markNotificationUnread({ data: { id: notificacionId! } }),
+    onSuccess: () => {
+      refrescar();
+      void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
+    },
     onError: () => toast.error('No se pudo cambiar el estado'),
   });
 
@@ -279,7 +284,7 @@ export function PanelLectura({
   // queda el resumen de la IA, si lo hay.
   const cuerpo = n.mensaje.split('\n').slice(1).join('\n').trim();
   const hayCuerpo = cuerpo !== '';
-  const resuelta = n.resueltaAt !== null;
+  const leida = n.leida;
   const empresa = n.clienteRazonSocial ?? n.credencialNombre ?? 'Sin empresa';
   const asignado = miembros.find((m) => m.userId === n.asignadaA);
 
@@ -307,12 +312,12 @@ export function PanelLectura({
               )}
               <span
                 className={`rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium ${
-                  resuelta
+                  leida
                     ? 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
                     : SEVERIDAD_PILL[n.severidad]
                 }`}
               >
-                {resuelta ? 'Resuelta' : SEVERIDAD_LABEL[n.severidad]}
+                {leida ? 'Leída' : SEVERIDAD_LABEL[n.severidad]}
               </span>
             </div>
 
@@ -370,12 +375,12 @@ export function PanelLectura({
 
         <button
           type="button"
-          onClick={() => resolver.mutate(!resuelta)}
-          disabled={resolver.isPending}
+          onClick={() => marcarLeida.mutate(!leida)}
+          disabled={marcarLeida.isPending}
           className={BOTON}
         >
           <Check className="size-3.5" />
-          {resuelta ? 'Reabrir' : 'Marcar resuelta'}
+          {leida ? 'Marcar como no leída' : 'Marcar como leída'}
         </button>
 
         <DropdownMenu>
@@ -429,32 +434,73 @@ export function PanelLectura({
         </DropdownMenu>
       </div>
 
-      {/* Cuerpo */}
-      <div className="flex flex-col gap-3.5 px-7 py-5">
-        {/* Tareas ya creadas desde esta notificación */}
-        {tareas.map((t) => (
-          <div
-            key={t.id}
-            className="flex items-center gap-2 rounded-[var(--arca-r-md)] bg-[var(--arca-accent-pos-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-pos-fg)]"
-          >
-            {t.fuente !== 'manual' && (
-              <span className="inline-flex items-center gap-1 rounded-[var(--arca-r-pill)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-[2px] text-[10.5px] text-[var(--arca-ink-2)]">
-                <Zap className="size-3" />
-                Automática · regla «{t.fuente}»
-              </span>
-            )}
-            <span className="min-w-0 flex-1 truncate">
-              Tarea creada · {t.titulo}
-            </span>
-            <button
-              type="button"
-              onClick={() => onIrATarea(t.id)}
-              className="shrink-0 font-medium text-[var(--arca-navy-700)] hover:underline"
+      {/* Lo que puso la plataforma: tareas creadas y la fecha que detectó el
+          scrapeo. Va arriba y separado del mensaje, porque no vino de AFIP. */}
+      {(tareas.length > 0 || n.venceAt) && (
+        <div className="flex flex-col gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-7 py-3.5">
+          {tareas.map((t) => (
+            <div
+              key={t.id}
+              className="flex items-center gap-2 rounded-[var(--arca-r-md)] bg-[var(--arca-accent-pos-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-pos-fg)]"
             >
-              Ver tarea
-            </button>
-          </div>
-        ))}
+              {t.fuente !== 'manual' && (
+                <span className="inline-flex items-center gap-1 rounded-[var(--arca-r-pill)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 py-[2px] text-[10.5px] text-[var(--arca-ink-2)]">
+                  <Zap className="size-3" />
+                  Automática · regla «{t.fuente}»
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate">
+                Tarea creada · {t.titulo}
+              </span>
+              <button
+                type="button"
+                onClick={() => onIrATarea(t.id)}
+                className="shrink-0 font-medium text-[var(--arca-navy-700)] hover:underline"
+              >
+                Ver tarea
+              </button>
+            </div>
+          ))}
+
+          {/* La fecha la completa el scrapeo cuando la encuentra en el cuerpo.
+              Con una tarea ya creada la tira sobra: ofrecía crear una segunda
+              para el mismo vencimiento. */}
+          {n.venceAt && tareas.length === 0 && (
+            <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-4 py-3">
+              <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                <Calendar className="size-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12.5px] font-semibold text-[var(--arca-ink)]">
+                  Vencimiento detectado:{' '}
+                  <span className="tabular-nums">
+                    {fechaHoraLarga(n.venceAt).split(',')[0]}
+                  </span>
+                </p>
+                <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+                  Se usa como fecha de la tarea si la creás desde acá.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onCrearTarea}
+                className={`${BOTON} shrink-0`}
+              >
+                Crear tarea con esta fecha
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lo que llegó de AFIP, tal cual. */}
+      <div className="flex flex-col gap-3.5 px-7 py-5">
+        <span
+          className="text-[9.5px] font-semibold uppercase"
+          style={{ letterSpacing: '0.08em', color: 'var(--arca-ink-4)' }}
+        >
+          Recibido de AFIP
+        </span>
 
         {(hayCuerpo || n.aiResumen) && (
           <article className="max-w-[72ch] rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-6 py-[22px]">
@@ -477,35 +523,6 @@ export function PanelLectura({
           </article>
         )}
 
-        {/* Vencimiento detectado. `vence_at` lo completa el scrapeo cuando
-            encuentra una fecha en el cuerpo; si no hay, la tira no aparece. */}
-        {n.venceAt && (
-          <div className="flex max-w-[72ch] items-center gap-3 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
-            <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
-              <Calendar className="size-3.5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[12.5px] font-semibold text-[var(--arca-ink)]">
-                Vencimiento detectado:{' '}
-                <span className="tabular-nums">
-                  {fechaHoraLarga(n.venceAt).split(',')[0]}
-                </span>
-              </p>
-              <p className="text-[11.5px] text-[var(--arca-ink-3)]">
-                Se usa como fecha de la tarea si la creás desde acá.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onCrearTarea}
-              className={`${BOTON} shrink-0`}
-            >
-              Crear tarea con esta fecha
-            </button>
-          </div>
-        )}
-
-        {/* Adjuntos */}
         {n.adjuntos.length > 0 && (
           <div className="flex max-w-[72ch] flex-col">
             {n.adjuntos.map((a) => (

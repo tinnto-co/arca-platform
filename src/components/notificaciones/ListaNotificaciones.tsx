@@ -129,12 +129,12 @@ export function ListaNotificaciones({
                     n.aiResumen
                   );
                   const activa = n.id === seleccionada;
-                  const resuelta = n.resueltaAt !== null;
+                  const leida = n.leida;
                   const destacada =
                     n.severidad === 'urgente' ||
                     n.severidad === 'accion_requerida';
                   const hayPills =
-                    resuelta ||
+                    leida ||
                     destacada ||
                     n.categoria !== null ||
                     n.tareas > 0 ||
@@ -214,11 +214,11 @@ export function ListaNotificaciones({
 
                           {hayPills && (
                             <div className="mt-0.5 flex items-center gap-1.5">
-                              {resuelta ? (
+                              {leida ? (
                                 <span
                                   className={`${PILL} bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]`}
                                 >
-                                  Resuelta
+                                  Leída
                                 </span>
                               ) : (
                                 destacada && (

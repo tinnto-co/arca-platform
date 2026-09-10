@@ -20,7 +20,7 @@ import {
 } from '@/actions/notification';
 
 interface Busqueda {
-  estado?: 'sin_leer' | 'todas' | 'resueltas';
+  estado?: 'sin_leer' | 'todas' | 'leidas';
   categoria?: string;
   importancia?: string;
   empresa?: string;
@@ -35,10 +35,7 @@ interface Busqueda {
 // Cada campo con su `.catch`: un parámetro raro en la URL no puede tumbar la
 // bandeja, simplemente no filtra.
 const esquema = z.object({
-  estado: z
-    .enum(['sin_leer', 'todas', 'resueltas'])
-    .optional()
-    .catch(undefined),
+  estado: z.enum(['sin_leer', 'todas', 'leidas']).optional().catch(undefined),
   categoria: z.string().optional().catch(undefined),
   importancia: z.string().optional().catch(undefined),
   empresa: z.string().optional().catch(undefined),
@@ -161,9 +158,12 @@ function RouteComponent() {
     search: oQuitar(filtros.q),
     // Los tabs se traducen a filtros del servidor. Recortar en el cliente
     // haría mentir al contador y a la paginación.
-    leida: filtros.estado === 'sin_leer' ? false : undefined,
-    onlyUnresolved: filtros.estado === 'sin_leer' ? true : undefined,
-    soloResueltas: filtros.estado === 'resueltas' ? true : undefined,
+    leida:
+      filtros.estado === 'sin_leer'
+        ? false
+        : filtros.estado === 'leidas'
+          ? true
+          : undefined,
     orden: filtros.orden,
   };
 
@@ -215,7 +215,7 @@ function RouteComponent() {
       refrescar();
       void queryClient.invalidateQueries({ queryKey: ['notificacion'] });
     },
-    onError: () => toast.error('No se pudo marcar como resuelta'),
+    onError: () => toast.error('No se pudo marcar como leída'),
   });
 
   /**
@@ -358,8 +358,8 @@ function RouteComponent() {
           vacio={
             filtros.estado === 'sin_leer'
               ? 'Estás al día'
-              : filtros.estado === 'resueltas'
-                ? 'Todavía no hay notificaciones resueltas'
+              : filtros.estado === 'leidas'
+                ? 'Todavía no hay notificaciones leídas'
                 : 'No hay notificaciones con estos filtros'
           }
           pagina={pagina}

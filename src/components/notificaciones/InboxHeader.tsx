@@ -41,7 +41,7 @@ import { SEVERIDAD_LABEL, haceCuanto, nombreCategoria } from './utils';
 import { cn } from '@/lib/utils';
 
 export interface FiltrosInbox {
-  estado: 'sin_leer' | 'todas' | 'resueltas';
+  estado: 'sin_leer' | 'todas' | 'leidas';
   categoria: string;
   severidad: string;
   empresa: string;
@@ -66,7 +66,7 @@ interface Props {
 const TABS: { valor: FiltrosInbox['estado']; label: string }[] = [
   { valor: 'sin_leer', label: 'Sin leer' },
   { valor: 'todas', label: 'Todas' },
-  { valor: 'resueltas', label: 'Resueltas' },
+  { valor: 'leidas', label: 'Leídas' },
 ];
 
 export function InboxHeader({

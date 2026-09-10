@@ -39,7 +39,7 @@ import {
   listOrgMembers,
   TIPOS_TAREA,
 } from '@/actions/tareas';
-import { resolveNotification } from '@/actions/notification';
+import { markNotificationOpened } from '@/actions/notification';
 import { TIPO_LABELS } from '@/components/tareas/utils';
 import type { TipoTarea } from '@/components/tareas/utils';
 import { asuntoYPreview } from './utils';
@@ -121,7 +121,7 @@ function Formulario({
   const [descripcion, setDescripcion] = useState(
     `${(inicial.preview !== '' ? inicial.preview : notificacion.mensaje).slice(0, 300)}\n\nDesde la notificación ${notificacion.id.slice(0, 8)}`
   );
-  const [marcarResuelta, setMarcarResuelta] = useState(false);
+  const [marcarLeida, setMarcarLeida] = useState(false);
   const [calendario, setCalendario] = useState(false);
 
   const { data: columnas = [] } = useQuery({
@@ -154,8 +154,8 @@ function Formulario({
           clienteIds: notificacion.clienteId ? [notificacion.clienteId] : [],
         },
       });
-      if (marcarResuelta) {
-        await resolveNotification({ data: { id: notificacion.id } });
+      if (marcarLeida) {
+        await markNotificationOpened({ data: { id: notificacion.id } });
       }
       return tarea;
     },
@@ -343,11 +343,11 @@ function Formulario({
 
           <label className="flex cursor-pointer items-center gap-2">
             <Checkbox
-              checked={marcarResuelta}
-              onCheckedChange={(v) => setMarcarResuelta(v === true)}
+              checked={marcarLeida}
+              onCheckedChange={(v) => setMarcarLeida(v === true)}
             />
             <span className="text-[12.5px] text-[var(--arca-ink-2)]">
-              Marcar la notificación como resuelta
+              Marcar la notificación como leída
             </span>
           </label>
         </div>
