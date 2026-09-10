@@ -81,8 +81,6 @@ import { userQuery } from '../../../lib/user-query';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 
-const logoUrlSchema = z.union([z.string().url(), z.literal('')]);
-
 export const Route = createFileRoute('/_authed/admin/')({
   beforeLoad: async () => {
     const user = await getUser();
@@ -461,13 +459,7 @@ function SettingsTab() {
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [logoUrl, setLogoUrl] = useState('');
-
-  useEffect(() => {
-    if (org) {
-      setLogoUrl(org.logo ?? '');
-    }
-  }, [org?.id, org?.logo]);
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
 
   const updateMutation = useMutation({
     mutationFn: (data: { name?: string; slug?: string; logo?: string }) =>
@@ -480,24 +472,35 @@ function SettingsTab() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const subirLogo = async (file: File) => {
+    setSubiendoLogo(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/org/logo', { method: 'POST', body: form });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error ?? 'No se pudo subir el logo');
+      }
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'org'] });
+      await queryClient.invalidateQueries({ queryKey: userQuery.queryKey });
+      toast.success('Logo actualizado');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo subir el logo');
+    } finally {
+      setSubiendoLogo(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!org) return;
 
-    const parsedLogo = logoUrlSchema.safeParse(logoUrl.trim());
-    if (!parsedLogo.success) {
-      toast.error('La URL del logo no es válida');
-      return;
-    }
-
-    const updates: { name?: string; slug?: string; logo?: string } = {};
+    const updates: { name?: string; slug?: string } = {};
     if (name && name !== org.name) updates.name = name;
     if (slug && slug !== org.slug) updates.slug = slug;
-    const trimmedLogo = parsedLogo.data;
-    const currentLogo = org.logo ?? '';
-    if (trimmedLogo !== currentLogo) {
-      updates.logo = trimmedLogo;
-    }
 
     if (Object.keys(updates).length > 0) {
       updateMutation.mutate(updates);
@@ -518,14 +521,14 @@ function SettingsTab() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
             <div className="space-y-2">
-              <Label>Logo (URL)</Label>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+              <Label htmlFor="org-logo">Logo</Label>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[var(--arca-surface-2)]">
-                  {logoUrl.trim() ? (
+                  {org?.logo ? (
                     <Avatar className="size-20 rounded-lg">
                       <AvatarImage
-                        src={logoUrl.trim()}
-                        alt="Vista previa"
+                        src={org.logo}
+                        alt="Logo de la organización"
                         className="object-cover"
                       />
                       <AvatarFallback className="rounded-lg text-xs">
@@ -536,14 +539,24 @@ function SettingsTab() {
                     <Building className="size-8 text-[var(--arca-ink-3)]" />
                   )}
                 </div>
-                <Input
-                  id="org-logo"
-                  type="url"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  placeholder="https://…"
-                  className="flex-1"
-                />
+                <div className="flex flex-col gap-1.5">
+                  <Input
+                    id="org-logo"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    disabled={subiendoLogo}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void subirLogo(file);
+                      e.target.value = '';
+                    }}
+                    className="flex-1 cursor-pointer"
+                  />
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    PNG, JPG o WebP, hasta 2 MB.
+                    {subiendoLogo && ' Subiendo…'}
+                  </p>
+                </div>
               </div>
             </div>
             <div className="space-y-2">

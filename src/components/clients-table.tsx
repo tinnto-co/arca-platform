@@ -109,7 +109,12 @@ const ESTADO_META: Record<EstadoValue, { label: string; className: string }> = {
   },
 };
 
-export function RepresentativesTable() {
+export function RepresentativesTable({
+  soloClavesInvalidas = false,
+}: {
+  /** Arranca con el filtro Estado en «Credenciales inválidas» (viene por URL). */
+  soloClavesInvalidas?: boolean;
+} = {}) {
   const navigate = useNavigate();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   /**
@@ -420,6 +425,9 @@ export function RepresentativesTable() {
         columns={columns}
         data={clientsTyped}
         isLoading={isLoading}
+        initialColumnFilters={
+          soloClavesInvalidas ? [{ id: 'estado', value: 'error' }] : undefined
+        }
         filters={[
           {
             columnId: 'estado',
@@ -468,8 +476,8 @@ export function RepresentativesTable() {
                   <DialogDescription>
                     Se van a encolar los módulos seleccionados para{' '}
                     {selectedRepresentativeIds.length} cliente
-                    {selectedRepresentativeIds.length > 1 ? 's' : ''}. El
-                    scraping corre en segundo plano.
+                    {selectedRepresentativeIds.length > 1 ? 's' : ''}. La
+                    actualización corre en segundo plano.
                   </DialogDescription>
                 </DialogHeader>
                 {runningSelected.length > 0 && (

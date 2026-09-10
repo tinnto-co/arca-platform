@@ -64,7 +64,12 @@ export function FranjaInfra() {
           : ' · no se traen datos nuevos de esa empresa hasta actualizarla'}
       </p>
       <Button variant="ghost" size="sm" asChild className="shrink-0">
-        <Link to="/clients">Ver empresas</Link>
+        {/* El search pre-filtra la lista a las claves inválidas: sin esto el
+            link deja al usuario buscando cuáles eran entre todos los
+            clientes. Viene de staging. */}
+        <Link to="/clients" search={{ filtro: 'claves_invalidas' }}>
+          Ver empresas
+        </Link>
       </Button>
       <Button
         variant="destructive"

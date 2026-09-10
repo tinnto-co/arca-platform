@@ -62,6 +62,13 @@ export const nombreCategoria = (c: string): string =>
 export const tipoNotificacion = (c: string): string =>
   legible(CATEGORIA_LABEL_SINGULAR, c);
 
+/**
+ * Nombre que usa la bandeja nueva (`InboxEmbebido`, `InboxHeader`,
+ * `ListaNotificaciones`, `PanelLectura`). Es el singular: allá la etiqueta
+ * siempre nombra UNA notificación, nunca el conjunto.
+ */
+export const categoriaLabel = tipoNotificacion;
+
 export const SEVERIDAD_PILL: Record<string, string> = {
   urgente: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
   accion_requerida:

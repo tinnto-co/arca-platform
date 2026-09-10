@@ -154,8 +154,8 @@ export function FrontendTools() {
       const tabStr = tab ? String(tab) : undefined;
       const validTab = tabStr && isSueldosTab(tabStr) ? tabStr : undefined;
       void navigate({
-        to: '/sueldos/$profileId',
-        params: { profileId },
+        to: '/sueldos/$clienteId',
+        params: { clienteId: profileId },
         search: validTab ? { tab: validTab } : {},
       });
       const name = clientName ? `"${String(clientName)}"` : 'el cliente';
@@ -209,7 +209,7 @@ export function FrontendTools() {
   useFrontendTool({
     name: 'cambiarTabSueldos',
     description:
-      'Cambiá la pestaña activa en el módulo Sueldos (/sueldos/$profileId). Solo tiene efecto si el usuario está actualmente en esa página. Pestañas válidas: dashboard, empleados, convenios, conceptos, simulador, recibo, firma-digital.',
+      'Cambiá la pestaña activa en el módulo Sueldos (/sueldos/$clienteId). Solo tiene efecto si el usuario está actualmente en esa página. Pestañas válidas: dashboard, empleados, convenios, conceptos, simulador, recibo, firma-digital.',
     parameters: [
       {
         name: 'tab',
@@ -230,10 +230,10 @@ export function FrontendTools() {
       if (!match) {
         return 'No estás en la página de sueldos de un cliente. Usá `abrirSueldosCliente` con el `tab` correspondiente.';
       }
-      const profileId = match[1];
+      const clienteId = match[1];
       void navigate({
-        to: '/sueldos/$profileId',
-        params: { profileId },
+        to: '/sueldos/$clienteId',
+        params: { clienteId },
         search: { tab: tabStr },
         replace: true,
       });

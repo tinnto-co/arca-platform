@@ -2,15 +2,12 @@
 
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
 import {
   LayoutDashboard,
   Users,
   FileText,
   Calculator,
   Loader2,
-  Calendar,
   Trash2,
   Zap,
   Upload,
@@ -56,15 +53,10 @@ import { SueldosCierreContable } from '@/components/sueldos/SueldosCierreContabl
 import { legajoParaMostrar } from '@/lib/legajo';
 import { dateAPeriodo } from '@/lib/periodo';
 import { toTitleCase } from '@/lib/format-name';
+import { MesPicker } from '@/components/shared/mes-picker';
 
-const now = new Date();
 const [PERIODO_INICIAL_ANO, PERIODO_INICIAL_MES] =
   getPeriodoMesAnterior().split('-');
-const ANOS = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i);
-const MESES = Array.from({ length: 12 }, (_, i) => ({
-  value: String(i + 1).padStart(2, '0'),
-  label: format(new Date(2000, i, 1), 'MMMM', { locale: es }),
-}));
 
 function compareLegajoAsc(
   a: string | null | undefined,
@@ -84,7 +76,7 @@ interface SueldosDashboardProps {
   clientId: string;
 }
 
-type LiquidacionMasivaResultItem = {
+interface LiquidacionMasivaResultItem {
   empleadoId: string;
   empleadoNombre: string;
   legajo: string;
@@ -92,7 +84,7 @@ type LiquidacionMasivaResultItem = {
   skipped?: boolean;
   errorCode?: LiquidacionMasivaErrorCode;
   error?: string;
-};
+}
 
 export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
   const queryClient = useQueryClient();
@@ -100,10 +92,6 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
   const [mes, setMes] = useState(PERIODO_INICIAL_MES);
   const periodo = useMemo(() => `${ano}-${mes}`, [ano, mes]);
   const permiteLiquidar = puedeLiquidarPeriodo(periodo);
-  const mesesDisponibles =
-    ano === PERIODO_INICIAL_ANO
-      ? MESES.filter((m) => m.value <= PERIODO_INICIAL_MES)
-      : MESES;
 
   const liquidacionesQuery = useQuery({
     queryKey: ['liquidaciones', clientId, periodo],
@@ -387,35 +375,15 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
 
       {/* Control row */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-2">
-          <Calendar
-            style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-          />
-          <Select value={ano} onValueChange={setAno}>
-            <SelectTrigger className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-[100px] shadow-none focus:ring-0 focus:ring-offset-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ANOS.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={mes} onValueChange={setMes}>
-            <SelectTrigger className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-[140px] shadow-none focus:ring-0 focus:ring-offset-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {mesesDisponibles.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <MesPicker
+          ano={ano}
+          mes={mes}
+          onChange={(a, m) => {
+            setAno(a);
+            setMes(m);
+          }}
+          maxPeriodo={`${PERIODO_INICIAL_ANO}-${PERIODO_INICIAL_MES}`}
+        />
         <div className="flex flex-col items-end gap-1">
           {!permiteLiquidar && (
             <span className="text-xs" style={{ color: 'var(--arca-ink-4)' }}>

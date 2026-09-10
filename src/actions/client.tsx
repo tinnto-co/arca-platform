@@ -49,6 +49,7 @@ const credencialBaseSelect = {
   telefono: credencialAfip.telefono,
   estado: credencialAfip.estado,
   ultimoLoginOk: credencialAfip.ultimoLoginOk,
+  claveActualizadaAt: credencialAfip.claveActualizadaAt,
   createdAt: credencialAfip.createdAt,
   updatedAt: credencialAfip.updatedAt,
 };
@@ -66,6 +67,8 @@ const clienteBaseSelect = {
   email: cliente.email,
   telefono: cliente.telefono,
   domicilio: cliente.domicilio,
+  estadoAfip: cliente.estadoAfip,
+  estadoAfipAt: cliente.estadoAfipAt,
   createdAt: cliente.createdAt,
   updatedAt: cliente.updatedAt,
 };

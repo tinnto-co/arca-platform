@@ -112,6 +112,10 @@ export const firmaContadorKey = (
   extension: string
 ): string => `firmas/${slug(orgId)}/contador/${slug(firmanteId)}.${extension}`;
 
+/** logos/{orgId}.{ext} — el logo del estudio (uno por organización). */
+export const logoOrgKey = (orgId: string, extension: string): string =>
+  `logos/${slug(orgId)}.${extension}`;
+
 /** eecc/{orgId}/{clienteId}/{ejercicioId}.pdf */
 export const eeccKey = (
   orgId: string,

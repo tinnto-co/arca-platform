@@ -16,7 +16,6 @@ import {
   ChevronsUpDown,
   Check,
   Building,
-  User,
   AlertTriangle,
   Landmark,
   BookOpen,
@@ -721,6 +720,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <NavItem to="/admin" icon={Settings} label="Administración" />
             </NavGroup>
           )}
+
+          {/* Superadmin (rol de usuario, plugin admin): gestión de estudios. */}
+          {(user as { role?: string | null } | undefined)?.role === 'admin' && (
+            <NavGroup id="plataforma" label="Plataforma">
+              <NavItem
+                to="/organizaciones"
+                icon={Building}
+                label="Organizaciones"
+              />
+            </NavGroup>
+          )}
         </nav>
 
         {/* ─── Footer: user card ─── */}
@@ -778,13 +788,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               align="end"
               sideOffset={4}
             >
-              <Link to="/profile">
-                <DropdownMenuItem className="gap-2">
-                  <User className="size-4" />
-                  Perfil
-                </DropdownMenuItem>
-              </Link>
-              <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="gap-2 text-destructive"
                 onClick={async () => {

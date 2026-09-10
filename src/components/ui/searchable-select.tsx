@@ -50,7 +50,9 @@ export function SearchableSelect({
   const selected = options.find((o) => o.value === value);
 
   return (
-    <Popover open={open} onOpenChange={disabled ? undefined : setOpen}>
+    // modal: sin esto, dentro de un Dialog el bloqueo de scroll de Radix se
+    // come la rueda del mouse sobre la lista (la barra andaba, la rueda no).
+    <Popover modal open={open} onOpenChange={disabled ? undefined : setOpen}>
       <PopoverTrigger asChild>
         <button
           disabled={disabled}
@@ -76,7 +78,12 @@ export function SearchableSelect({
             placeholder={searchPlaceholder}
             className="text-[13px]"
           />
-          <CommandList className="max-h-[220px]">
+          {/* maxHeight inline: dentro de un Dialog la clase max-h se pierde
+              en la cascada y la lista se desborda sin scroll. */}
+          <CommandList
+            className="max-h-[220px]"
+            style={{ maxHeight: 220, overflowY: 'auto' }}
+          >
             <CommandEmpty className="py-6 text-center text-[12.5px] text-[var(--arca-ink-3)]">
               {emptyMessage}
             </CommandEmpty>

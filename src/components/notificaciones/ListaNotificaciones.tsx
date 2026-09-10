@@ -43,9 +43,14 @@ interface Props {
   onSeleccionar: (id: string) => void;
   cargando: boolean;
   total: number;
-  pagina: number;
-  totalPaginas: number;
-  onPagina: (p: number) => void;
+  /** Paginado clásico (bandeja `/notifications`). */
+  pagina?: number;
+  totalPaginas?: number;
+  onPagina?: (p: number) => void;
+  /** Paginado incremental (inbox embebido de la ficha). Excluyente con el
+      anterior: si viene `onCargarMas`, el pie es "Cargar más". */
+  hayMas?: boolean;
+  onCargarMas?: () => void;
   /** Qué decir cuando no hay nada: depende del tab, no es siempre lo mismo. */
   vacio: string;
   /** Se muestra sobre la lista cuando algún login del scrapeo falló. */
@@ -66,6 +71,8 @@ export function ListaNotificaciones({
   pagina,
   totalPaginas,
   onPagina,
+  hayMas,
+  onCargarMas,
   vacio,
   avisoLogins,
   orden = 'fecha',
@@ -257,16 +264,36 @@ export function ListaNotificaciones({
         )}
       </div>
 
-      {/* Pie fijo */}
-      <Paginador
-        pagina={pagina}
-        totalPaginas={totalPaginas}
-        onPagina={onPagina}
-        total={total}
-        unidad="notificación"
-        unidadPlural="notificaciones"
-        className="shrink-0 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]"
-      />
+      {/* Pie fijo. La lista sirve a dos consumidores con paginados distintos:
+          `/notifications` usa el paginador de siempre y el inbox embebido de
+          la ficha usa "cargar más". En vez de duplicar el componente, el pie
+          es uno u otro según qué props recibe. */}
+      {onCargarMas ? (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]">
+          <span className="text-[12px] tabular-nums text-[var(--arca-ink-3)] [font-family:var(--ff-mono)]">
+            {notificaciones.length} de {total}
+          </span>
+          {hayMas && (
+            <button
+              type="button"
+              onClick={onCargarMas}
+              className="text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
+            >
+              Cargar más →
+            </button>
+          )}
+        </div>
+      ) : (
+        <Paginador
+          pagina={pagina ?? 1}
+          totalPaginas={totalPaginas ?? 1}
+          onPagina={onPagina ?? (() => undefined)}
+          total={total}
+          unidad="notificación"
+          unidadPlural="notificaciones"
+          className="shrink-0 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]"
+        />
+      )}
     </div>
   );
 }
