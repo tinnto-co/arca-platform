@@ -214,12 +214,13 @@ function InicioPage() {
         {/* Franja de días */}
         <div className="mb-[14px]">
           {isLoading ? (
-            <Esqueleto alto={104} />
+            <Esqueleto alto={141} />
           ) : (
             <FranjaDias
               celdas={celdas}
               seleccion={seleccion}
               onSeleccionar={setSeleccion}
+              unidad={periodo === 'trimestre' ? 'semana' : 'día'}
             />
           )}
         </div>
