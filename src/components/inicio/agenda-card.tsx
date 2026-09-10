@@ -144,7 +144,6 @@ export function AgendaCard({
   // El chip «vencidos» despliega la lista acá mismo, no navega: los vencidos
   // son fechas pasadas y el calendario abre en el presente — no se veían.
   const [verVencidos, setVerVencidos] = useState(false);
-  const [verTodos, setVerTodos] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const queryClient = useQueryClient();
 
@@ -219,8 +218,7 @@ export function AgendaCard({
       ),
   });
 
-  const limite =
-    verTodos || filtro || verVencidos ? Infinity : VISIBLES_POR_DEFECTO;
+  const limite = filtro || verVencidos ? Infinity : VISIBLES_POR_DEFECTO;
   let mostrados = 0;
   // Los renglones están compactados —"Suss · 14 empresas" son 14 vencimientos
   // en una línea—, así que contar renglones y llamarlos "vencidos" contradice
@@ -467,24 +465,16 @@ export function AgendaCard({
             ? ` · ${mostrados} ${mostrados === 1 ? 'renglón' : 'renglones'}`
             : ''}
         </span>
-        {!verTodos && items.length > VISIBLES_POR_DEFECTO && !filtro ? (
-          <button
-            type="button"
-            onClick={() => setVerTodos(true)}
-            className="text-[12px] font-medium cursor-pointer hover:underline"
-            style={{ color: 'var(--arca-ink)' }}
-          >
-            Ver los {vencsTotal} →
-          </button>
-        ) : (
-          <Link
-            to="/vencimientos"
-            className="text-[12px] font-medium hover:underline"
-            style={{ color: 'var(--arca-ink)' }}
-          >
-            Ver calendario completo →
-          </Link>
-        )}
+        {/* Un solo destino. Antes el pie ofrecía "Ver los 239", que sonaba a
+            navegar y sólo estiraba la lista unos renglones —los 239 ya estaban
+            compactados— y recién en el segundo click aparecía el calendario. */}
+        <Link
+          to="/vencimientos"
+          className="text-[12px] font-medium hover:underline"
+          style={{ color: 'var(--arca-ink)' }}
+        >
+          Ver calendario completo →
+        </Link>
       </div>
 
       {/* Confirmación de Autogenerar: qué se va a crear, antes de crearlo. */}
