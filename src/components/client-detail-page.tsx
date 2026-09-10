@@ -55,6 +55,8 @@ import {
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
+import { PanelLectura } from '@/components/notificaciones/PanelLectura';
+import { CrearTareaDesdeNotificacion } from '@/components/notificaciones/CrearTareaDesdeNotificacion';
 import {
   InvoicesTable,
   INVOICE_TYPE_LABELS,
@@ -332,11 +334,10 @@ export function RepresentativeDetailPage({
     now.getFullYear(),
     now.getMonth()
   );
-  // Click en una notificación del Resumen: abre la solapa Notificaciones
-  // con esa notificación ya seleccionada en el panel de lectura.
-  const [notifPreseleccionada, setNotifPreseleccionada] = useState<
-    string | null
-  >(null);
+  // Click en una notificación del Resumen: dialog con el MISMO panel de
+  // lectura de la bandeja (no una vista propia), sin salir del Resumen.
+  const [notifAbierta, setNotifAbierta] = useState<string | null>(null);
+  const [creandoTareaDesdeNotif, setCreandoTareaDesdeNotif] = useState(false);
   const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>(
     initialMultilateralRange.from.toISOString().slice(0, 10)
   );
@@ -2391,10 +2392,7 @@ export function RepresentativeDetailPage({
                         >
                           <button
                             className="flex-1 min-w-0 text-left"
-                            onClick={() => {
-                              setNotifPreseleccionada(notif.id);
-                              onTabChange('notificaciones');
-                            }}
+                            onClick={() => setNotifAbierta(notif.id)}
                           >
                             {notif.clienteRazonSocial && (
                               <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
@@ -2443,6 +2441,63 @@ export function RepresentativeDetailPage({
               </div>
             )}
           </TabsContent>
+
+          {/* Dialog: la notificación del Resumen, con el panel de lectura real */}
+          <Dialog
+            open={!!notifAbierta}
+            onOpenChange={(open) => {
+              if (!open) setNotifAbierta(null);
+            }}
+          >
+            <DialogContent className="max-w-3xl p-0 overflow-hidden gap-0">
+              <DialogHeader className="sr-only">
+                <DialogTitle>Notificación</DialogTitle>
+              </DialogHeader>
+              <div className="flex h-[72vh] min-h-[420px] flex-col">
+                <PanelLectura
+                  notificacionId={notifAbierta}
+                  onCrearTarea={() => setCreandoTareaDesdeNotif(true)}
+                  onIrATarea={(tareaId) => {
+                    setNotifAbierta(null);
+                    void navigate({ to: '/tareas', search: { tarea: tareaId } });
+                  }}
+                  onAnterior={() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    if (i > 0) setNotifAbierta(lista[i - 1].id);
+                  }}
+                  onSiguiente={() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    if (i >= 0 && i < lista.length - 1)
+                      setNotifAbierta(lista[i + 1].id);
+                  }}
+                  hayAnterior={(() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    return lista.findIndex((n) => n.id === notifAbierta) > 0;
+                  })()}
+                  haySiguiente={(() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    return i >= 0 && i < lista.length - 1;
+                  })()}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+          <CrearTareaDesdeNotificacion
+            abierto={creandoTareaDesdeNotif}
+            onAbrirChange={setCreandoTareaDesdeNotif}
+            notificacion={
+              unreadNotifications?.notifications.find(
+                (n) => n.id === notifAbierta
+              ) ?? null
+            }
+            onCreada={(tareaId) => {
+              setNotifAbierta(null);
+              void navigate({ to: '/tareas', search: { tarea: tareaId } });
+            }}
+          />
 
           {/* Deudas Tab */}
           <TabsContent value="deudas" className="space-y-[14px]">
@@ -3466,7 +3521,6 @@ export function RepresentativeDetailPage({
             <InboxEmbebido
               credencialId={representativeId}
               clienteId={selectedClientId}
-              seleccionInicial={notifPreseleccionada}
               className="h-[calc(100vh-330px)] min-h-[540px]"
             />
           </TabsContent>
