@@ -59,6 +59,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
 
 export { userQuery };
@@ -332,9 +333,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const isOwner = user?.organizationRole === 'owner';
   const isViewer = user?.organizationRole === 'viewer';
 
+  // El badge cuenta lo mismo que el usuario va a ver al entrar: la bandeja
+  // reaplica la empresa elegida, así que un contador global prometía 11 y
+  // mostraba 2.
+  const [clienteGlobal] = useClienteSeleccionado();
   const { data: notifData } = useQuery({
-    queryKey: ['pendingNotificationsCount'],
-    queryFn: () => getPendingNotificationsCount(),
+    queryKey: ['pendingNotificationsCount', clienteGlobal ?? ''],
+    queryFn: () =>
+      getPendingNotificationsCount({ data: { clienteId: clienteGlobal } }),
   });
   const notifCount = notifData?.count ?? 0;
 

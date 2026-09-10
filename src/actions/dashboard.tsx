@@ -21,7 +21,17 @@ import {
   job,
   tarea,
 } from '@/drizzle/schema';
-import { eq, and, gte, lte, sql, isNull, desc, ne, isNotNull } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  gte,
+  lte,
+  sql,
+  isNull,
+  desc,
+  ne,
+  isNotNull,
+} from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -270,7 +280,9 @@ export const getOverdueDebts = createServerFn({ method: 'GET' })
       })
       .from(deuda)
       .leftJoin(cliente, eq(deuda.clienteId, cliente.id))
-      .where(and(eq(deuda.orgId, orgId), lte(deuda.venceAt, aFecha(new Date()))))
+      .where(
+        and(eq(deuda.orgId, orgId), lte(deuda.venceAt, aFecha(new Date())))
+      )
       .orderBy(deuda.venceAt)
       .limit(ctx.data.limit);
   });
@@ -410,20 +422,32 @@ export const getTopClientes = createServerFn({ method: 'GET' })
 
 // ── getPendingNotificationsCount ───────────────────────────────────────────
 
-export const getPendingNotificationsCount = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+/**
+ * Sin `clienteId` cuenta toda la organización. Con `clienteId` cuenta sólo esa
+ * empresa, que es lo que el badge del menú necesita: la bandeja reaplica la
+ * empresa elegida al entrar, así que un contador global mandaba al usuario a
+ * una lista más corta que el número del badge.
+ */
+export const getPendingNotificationsCount = createServerFn({ method: 'GET' })
+  .validator((d: unknown) => (d ?? {}) as { clienteId?: string | null })
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
 
-  const [result] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(notificacion)
-    .where(
-      and(eq(notificacion.orgId, orgId), eq(notificacion.leida, false))
-    );
+    const [result] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(notificacion)
+      .where(
+        and(
+          eq(notificacion.orgId, orgId),
+          eq(notificacion.leida, false),
+          data.clienteId
+            ? eq(notificacion.clienteId, data.clienteId)
+            : undefined
+        )
+      );
 
-  return { count: Number(result?.count ?? 0) };
-});
+    return { count: Number(result?.count ?? 0) };
+  });
 
 // ── getCalendarDueDates ──────────────────────────────────────────────────
 
@@ -680,51 +704,53 @@ function getNextScheduledAfter(frequency: string, now: Date): string {
 
 // ── getHomeKpis ──────────────────────────────────────────────────────────────
 
-export const getHomeKpis = createServerFn({ method: 'GET' }).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+export const getHomeKpis = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    const { orgId } = await getSessionWithOrg();
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const endOfWeek = new Date(today);
-  endOfWeek.setDate(today.getDate() + 7);
-  endOfWeek.setHours(23, 59, 59, 999);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endOfWeek = new Date(today);
+    endOfWeek.setDate(today.getDate() + 7);
+    endOfWeek.setHours(23, 59, 59, 999);
 
-  const [pendientes, vencidas, semana] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(tarea)
-      .where(and(eq(tarea.orgId, orgId), eq(tarea.estado, 'pendiente'))),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(tarea)
-      .where(
-        and(
-          eq(tarea.orgId, orgId),
-          isNotNull(tarea.venceAt),
-          lte(tarea.venceAt, today),
-          ne(tarea.estado, 'verificada')
-        )
-      ),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(tarea)
-      .where(
-        and(
-          eq(tarea.orgId, orgId),
-          isNotNull(tarea.venceAt),
-          gte(tarea.venceAt, today),
-          lte(tarea.venceAt, endOfWeek),
-          ne(tarea.estado, 'verificada')
-        )
-      ),
-  ]);
+    const [pendientes, vencidas, semana] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(tarea)
+        .where(and(eq(tarea.orgId, orgId), eq(tarea.estado, 'pendiente'))),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(tarea)
+        .where(
+          and(
+            eq(tarea.orgId, orgId),
+            isNotNull(tarea.venceAt),
+            lte(tarea.venceAt, today),
+            ne(tarea.estado, 'verificada')
+          )
+        ),
+      db
+        .select({ count: sql<number>`count(*)` })
+        .from(tarea)
+        .where(
+          and(
+            eq(tarea.orgId, orgId),
+            isNotNull(tarea.venceAt),
+            gte(tarea.venceAt, today),
+            lte(tarea.venceAt, endOfWeek),
+            ne(tarea.estado, 'verificada')
+          )
+        ),
+    ]);
 
-  return {
-    pendientes: Number(pendientes[0]?.count ?? 0),
-    vencidas: Number(vencidas[0]?.count ?? 0),
-    semana: Number(semana[0]?.count ?? 0),
-  };
-});
+    return {
+      pendientes: Number(pendientes[0]?.count ?? 0),
+      vencidas: Number(vencidas[0]?.count ?? 0),
+      semana: Number(semana[0]?.count ?? 0),
+    };
+  }
+);
 
 // ── getScheduleStatus ────────────────────────────────────────────────────────
 
