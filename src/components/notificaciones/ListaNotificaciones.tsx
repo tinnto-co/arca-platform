@@ -16,7 +16,7 @@ import {
   asuntoYPreview,
   grupoDeFecha,
   horaOFecha,
-  nombreCategoria,
+  tipoNotificacion,
 } from './utils';
 import { Paginador } from '@/components/shared/paginador';
 import { cn } from '@/lib/utils';
@@ -226,7 +226,7 @@ export function ListaNotificaciones({
                                 <span
                                   className={`${PILL} border border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]`}
                                 >
-                                  {nombreCategoria(n.categoria)}
+                                  {tipoNotificacion(n.categoria)}
                                 </span>
                               )}
 

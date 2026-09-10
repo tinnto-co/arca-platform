@@ -47,6 +47,7 @@ import {
   asuntoYPreview,
   fechaHoraLarga,
   iniciales,
+  tipoNotificacion,
 } from './utils';
 
 interface Props {
@@ -271,12 +272,6 @@ export function PanelLectura({
   // Cambiar de notificación arranca de nuevo con el asunto recortado.
   useLayoutEffect(() => setAsuntoExpandido(false), [notificacionId]);
 
-  const noLeida = useMutation({
-    mutationFn: () => markNotificationUnread({ data: { id: notificacionId! } }),
-    onSuccess: refrescar,
-    onError: () => toast.error('No se pudo marcar como no leída'),
-  });
-
   if (!notificacionId) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-[var(--arca-bg)]">
@@ -361,7 +356,10 @@ export function PanelLectura({
             )}
 
             <p className="mt-1 text-[11.5px] text-[var(--arca-ink-3)]">
-              {n.categoria ?? 'ARCA'} · Domicilio fiscal electrónico · login{' '}
+              <span className="font-semibold text-[var(--arca-ink-2)]">
+                {n.categoria ? tipoNotificacion(n.categoria) : 'Notificación'}
+              </span>{' '}
+              · Domicilio fiscal electrónico · login{' '}
               <span className="[font-family:var(--ff-mono)]">
                 {n.credencialNombre}
               </span>{' '}
@@ -453,15 +451,6 @@ export function PanelLectura({
             <MoreHorizontal className="size-3.5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-[12.5px]"
-              onSelect={() => {
-                if (notificacionId) onNoLeidaManual(notificacionId);
-                noLeida.mutate();
-              }}
-            >
-              Marcar como no leída
-            </DropdownMenuItem>
             <DropdownMenuItem
               className="text-[12.5px]"
               onSelect={() => {

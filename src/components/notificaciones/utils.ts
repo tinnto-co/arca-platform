@@ -13,7 +13,13 @@ export const SEVERIDAD_LABEL: Record<string, string> = {
   sin_clasificar: 'Sin clasificar',
 };
 
-/** Las categorías del clasificador, en castellano legible. */
+/**
+ * Las categorías del clasificador, en castellano legible.
+ *
+ * Dos formas porque se usan para dos cosas: el plural nombra al conjunto
+ * —filtro, prioridades por categoría— y el singular nombra el tipo de UNA
+ * notificación.
+ */
 export const CATEGORIA_LABEL: Record<string, string> = {
   intimacion: 'Intimaciones',
   requerimiento: 'Requerimientos',
@@ -24,9 +30,37 @@ export const CATEGORIA_LABEL: Record<string, string> = {
   otro: 'Otras',
 };
 
-/** El nombre legible, o la clave cruda si aparece una categoría nueva. */
+export const CATEGORIA_LABEL_SINGULAR: Record<string, string> = {
+  intimacion: 'Intimación',
+  requerimiento: 'Requerimiento',
+  deuda: 'Deuda',
+  inspeccion: 'Fiscalización / inspección',
+  vencimiento: 'Vencimiento',
+  comunicacion_general: 'Comunicación general',
+  otro: 'Otra',
+};
+
+/** Con `mayuscula` en false queda para el medio de una frase. */
+const legible = (
+  mapa: Record<string, string>,
+  c: string,
+  mayuscula = true
+): string => {
+  // Una categoría nueva del clasificador no puede salir en crudo con guiones
+  // bajos: se limpia y se capitaliza igual.
+  const texto = mapa[c] ?? c.replace(/_/g, ' ');
+  return mayuscula
+    ? texto.charAt(0).toUpperCase() + texto.slice(1)
+    : texto.charAt(0).toLowerCase() + texto.slice(1);
+};
+
+/** Nombre del conjunto: "Intimaciones". Para filtros y agrupaciones. */
 export const nombreCategoria = (c: string): string =>
-  CATEGORIA_LABEL[c] ?? c.replace(/_/g, ' ');
+  legible(CATEGORIA_LABEL, c);
+
+/** Tipo de una notificación: "Intimación". */
+export const tipoNotificacion = (c: string): string =>
+  legible(CATEGORIA_LABEL_SINGULAR, c);
 
 export const SEVERIDAD_PILL: Record<string, string> = {
   urgente: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
