@@ -9,6 +9,7 @@ import {
   Circle,
 } from 'lucide-react';
 import { getCalendarDueDates } from '@/actions/dashboard';
+import { getClientes } from '@/actions/client';
 import { markVencimientoCompletado } from '@/actions/client';
 import { cn } from '@/lib/utils';
 import { PageHeader } from '@/components/shared/page-header';
@@ -91,6 +92,17 @@ export function VencimientosCalendar() {
   // El filtro es el selector global de empresa del header: la elección viaja
   // con el usuario a las demás vistas (mismo patrón que Contabilidad).
   const [clienteGlobal] = useClienteSeleccionado();
+
+  // Solo para nombrar la empresa en el subtítulo: decir "toda tu cartera"
+  // mientras se ve una sola empresa es mentir sobre lo que hay en pantalla.
+  const { data: clientes = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
+    staleTime: 60_000,
+  });
+  const nombreCliente = clienteGlobal
+    ? (clientes.find((c) => c.id === clienteGlobal)?.razonSocial ?? null)
+    : null;
 
   // Fetch a bit extra for the grid edges (prev/next month days visible in grid)
   const gridDays = useMemo(
@@ -225,7 +237,11 @@ export function VencimientosCalendar() {
     <div>
       <PageHeader
         title="Calendario de vencimientos"
-        subtitle="Obligaciones fiscales y deudas de toda tu cartera, por fecha"
+        subtitle={
+          nombreCliente
+            ? `Obligaciones fiscales y deudas de ${nombreCliente}, por fecha`
+            : 'Obligaciones fiscales y deudas de toda tu cartera, por fecha'
+        }
         actions={<SelectorClienteGlobal />}
       />
 
@@ -443,7 +459,7 @@ export function VencimientosCalendar() {
               const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
               const isToday = isSameDay(day, today);
               const isSelected = selectedDate && isSameDay(day, selectedDate);
-              const events = eventsByDay.get(dateKey(day)) ?? [];
+              const events = filteredEventsByDay.get(dateKey(day)) ?? [];
               const isPast = day < today && !isToday;
 
               return (
