@@ -228,6 +228,21 @@ export function ComprobantePdf({ d }: { d: ComprobantePdfData }) {
           )}
 
           <View style={s.totales}>
+            {/* Sin desglose el total queda solo: los C nunca discriminan IVA
+                y en el resto pasa cuando ARCA no lo publicó. */}
+            {[
+              d.netoGravado,
+              d.netoNoGravado,
+              d.exento,
+              d.otrosTributos,
+              d.ivaTotal,
+            ].every((v) => Number(v ?? 0) === 0) && (
+              <Text style={[s.cel, { color: SUAVE, marginBottom: 4 }]}>
+                {d.letra === 'C'
+                  ? 'Los comprobantes C no discriminan IVA: está incluido en el total.'
+                  : 'ARCA no publicó el desglose de este comprobante.'}
+              </Text>
+            )}
             {[
               ['Neto gravado', d.netoGravado],
               ['Neto no gravado', d.netoNoGravado],

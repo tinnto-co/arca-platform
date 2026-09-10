@@ -1078,6 +1078,15 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                   ? d.contraparteNombre
                   : d.clienteRazonSocial;
                 const numero = `${String(d.puntoVenta ?? 0).padStart(4, '0')}-${String(d.numero ?? 0).padStart(8, '0')}`;
+                const desglose = (
+                  [
+                    ['Neto gravado', d.netoGravado],
+                    ['Neto no gravado', d.netoNoGravado],
+                    ['Exento', d.exento],
+                    ['Otros tributos', d.otrosTributos],
+                    ['IVA', d.ivaTotal],
+                  ] as [string, string | null][]
+                ).filter(([, v]) => Number(v ?? 0) !== 0);
                 const monto = (v: string | null) =>
                   Number(v ?? 0).toLocaleString('es-AR', {
                     minimumFractionDigits: 2,
@@ -1185,25 +1194,27 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     )}
 
                     <div className="flex flex-col items-end gap-1 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3">
-                      {(
-                        [
-                          ['Neto gravado', d.netoGravado],
-                          ['Neto no gravado', d.netoNoGravado],
-                          ['Exento', d.exento],
-                          ['Otros tributos', d.otrosTributos],
-                          ['IVA', d.ivaTotal],
-                        ] as [string, string | null][]
-                      )
-                        .filter(([, v]) => Number(v ?? 0) !== 0)
-                        .map(([label, v]) => (
-                          <div
-                            key={label}
-                            className="flex w-full max-w-[280px] justify-between text-[12.5px] text-[var(--arca-ink-2)]"
-                          >
-                            <span>{label}</span>
-                            <span className="tabular-nums">{monto(v)}</span>
-                          </div>
-                        ))}
+                      {/* Sin ninguna línea, el Total quedaba flotando solo y
+                          parecía un error de la pantalla. Los comprobantes C
+                          nunca discriminan IVA —va dentro del precio— y en el
+                          resto pasa cuando ARCA no publicó el desglose: en
+                          esta base, el 100% de las C y el 5% de las B. */}
+                      {desglose.length === 0 && (
+                        <p className="w-full max-w-[280px] text-[11.5px] text-[var(--arca-ink-4)]">
+                          {d.letra === 'C'
+                            ? 'Los comprobantes C no discriminan IVA: está incluido en el total.'
+                            : 'ARCA no publicó el desglose de este comprobante.'}
+                        </p>
+                      )}
+                      {desglose.map(([label, v]) => (
+                        <div
+                          key={label}
+                          className="flex w-full max-w-[280px] justify-between text-[12.5px] text-[var(--arca-ink-2)]"
+                        >
+                          <span>{label}</span>
+                          <span className="tabular-nums">{monto(v)}</span>
+                        </div>
+                      ))}
                       <div className="mt-1 flex w-full max-w-[280px] justify-between border-t border-[var(--arca-border-strong)] pt-2">
                         <span className="text-[14px] font-semibold text-[var(--arca-ink)]">
                           Total
