@@ -6,6 +6,7 @@
  */
 import { Link } from '@tanstack/react-router';
 import type { getInicio } from '@/actions/inicio';
+import { guardarClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { usoDelTope } from '@/lib/monotributo-escala';
 import { fechaCorta, haceDias, pesos } from './compartido';
 
@@ -189,6 +190,11 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
                 key={f.clave}
                 to="/notifications"
                 search={{ categoria: f.clave }}
+                // El recuento de la fila es de todo el estudio. La bandeja
+                // recuerda la última empresa elegida (localStorage) y la
+                // reaplica al entrar, así que sin esto el click sobre "53
+                // intimaciones" aterriza mostrando 2.
+                onClick={() => guardarClienteSeleccionado(null)}
                 className="flex items-center gap-[11px] border-b transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
                 style={{
                   padding: '13px 20px',
@@ -235,6 +241,9 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
             <Link
               key={m.clienteId}
               to="/iva"
+              // Al revés que las intimaciones: esta fila ya es de una empresa,
+              // así que IVA tiene que abrir en ésa y no en la última mirada.
+              onClick={() => guardarClienteSeleccionado(m.clienteId)}
               className="flex flex-col gap-[7px] border-b transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
               style={{
                 padding: '13px 20px',
@@ -292,6 +301,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
             </span>
             <Link
               to="/iva"
+              onClick={() => guardarClienteSeleccionado(null)}
               className="text-[12px] font-medium hover:underline"
               style={{ color: 'var(--arca-ink)' }}
             >
