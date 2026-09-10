@@ -20,6 +20,7 @@ import {
   Eye,
   FileText,
   Image as ImageIcon,
+  Landmark,
   Mail,
   MoreHorizontal,
   Plus,
@@ -435,9 +436,9 @@ export function PanelLectura({
       </div>
 
       {/* Lo que puso la plataforma: tareas creadas y la fecha que detectó el
-          scrapeo. Va arriba y separado del mensaje, porque no vino de AFIP. */}
+          scrapeo. Queda sobre el fondo de la pantalla, sin tarjeta. */}
       {(tareas.length > 0 || n.venceAt) && (
-        <div className="flex flex-col gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-7 py-3.5">
+        <div className="flex flex-col gap-2 px-7 pt-4">
           {tareas.map((t) => (
             <div
               key={t.id}
@@ -466,7 +467,7 @@ export function PanelLectura({
               Con una tarea ya creada la tira sobra: ofrecía crear una segunda
               para el mismo vencimiento. */}
           {n.venceAt && tareas.length === 0 && (
-            <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-4 py-3">
+            <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-4 py-3">
               <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                 <Calendar className="size-3.5" />
               </span>
@@ -493,20 +494,25 @@ export function PanelLectura({
         </div>
       )}
 
-      {/* Lo que llegó de AFIP, tal cual. */}
-      <div className="flex flex-col gap-3.5 px-7 py-5">
-        <span
-          className="text-[9.5px] font-semibold uppercase"
-          style={{ letterSpacing: '0.08em', color: 'var(--arca-ink-4)' }}
-        >
-          Recibido de AFIP
-        </span>
+      {/* Lo que llegó de AFIP: una tarjeta con su propia cabecera, como un
+          mensaje. Es blanca contra el beige de la pantalla, así se ve de una
+          dónde termina lo que hace la plataforma y empieza lo recibido. */}
+      <div className="m-7 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
+        <div className="flex items-center gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-5 py-2.5">
+          <Landmark className="size-3.5 text-[var(--arca-ink-4)]" />
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-3)]">
+            Recibido de AFIP
+          </span>
+          <span className="ml-auto text-[11px] text-[var(--arca-ink-4)]">
+            {fechaHoraLarga(n.publicadaAt ?? n.createdAt)}
+          </span>
+        </div>
 
         {(hayCuerpo || n.aiResumen) && (
-          <article className="max-w-[72ch] rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-6 py-[22px]">
+          <div className="px-6 py-5">
             {n.aiResumen && (
               <p
-                className={`text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
+                className={`max-w-[72ch] text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
                   hayCuerpo
                     ? 'mb-3 border-b border-[var(--arca-border)] pb-3'
                     : ''
@@ -516,15 +522,15 @@ export function PanelLectura({
               </p>
             )}
             {hayCuerpo && (
-              <p className="text-[13px] leading-[1.65] whitespace-pre-wrap text-[var(--arca-ink-2)]">
+              <p className="max-w-[72ch] text-[13px] leading-[1.65] whitespace-pre-wrap text-[var(--arca-ink-2)]">
                 {cuerpo}
               </p>
             )}
-          </article>
+          </div>
         )}
 
         {n.adjuntos.length > 0 && (
-          <div className="flex max-w-[72ch] flex-col">
+          <div className="flex flex-col border-t border-[var(--arca-border)] px-6 py-4">
             {n.adjuntos.map((a) => (
               <Adjunto
                 key={a.id}
