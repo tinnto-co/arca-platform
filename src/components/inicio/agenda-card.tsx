@@ -459,11 +459,15 @@ export function AgendaCard({
         }}
       >
         <span className="text-[11.5px]" style={{ color: 'var(--arca-ink-3)' }}>
-          Mostrando {vencsMostrados} de {vencsTotal}
-          {verVencidos ? ' vencidos (desde el mes pasado)' : ' del período'}
-          {vencsMostrados !== mostrados
-            ? ` · ${mostrados} ${mostrados === 1 ? 'renglón' : 'renglones'}`
-            : ''}
+          {/* Decir "70" mientras se ven 13 líneas confunde aunque el 70 sea
+              correcto: lo que falta explicar es que cada línea junta las
+              empresas de un mismo impuesto. El número sólo se acompaña de "de
+              N" cuando la lista está recortada de verdad. */}
+          {vencsMostrados < vencsTotal
+            ? `Mostrando ${vencsMostrados} de ${vencsTotal}`
+            : vencsTotal}
+          {verVencidos ? ' vencidos desde el mes pasado' : ' del período'}
+          {mostrados < vencsTotal ? ', agrupados por impuesto' : ''}
         </span>
         {/* Un solo destino. Antes el pie ofrecía "Ver los 239", que sonaba a
             navegar y sólo estiraba la lista unos renglones —los 239 ya estaban

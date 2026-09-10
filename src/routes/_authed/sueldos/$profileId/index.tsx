@@ -14,6 +14,7 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { guardarClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
@@ -138,6 +139,7 @@ function RouteComponent() {
           </p>
           <Link
             to="/sueldos"
+            onClick={() => guardarClienteSeleccionado(null)}
             className="mt-4 text-[13.5px] font-medium text-[#2A4680] hover:underline"
           >
             Volver al listado
@@ -173,6 +175,9 @@ function RouteComponent() {
           <div className="flex items-center gap-[10px]">
             <Link
               to="/sueldos"
+              // Sin esto "volver al listado" reabre la misma empresa: en
+              // Sueldos el listado es justamente la vista sin empresa elegida.
+              onClick={() => guardarClienteSeleccionado(null)}
               className="w-[30px] h-[30px] shrink-0 rounded-[10px] border border-[#DFDCD3] bg-white text-[#6E7079] inline-flex items-center justify-center hover:bg-[#FBFAF6] transition-[background] duration-[120ms]"
               title="Volver al listado"
             >
@@ -189,7 +194,7 @@ function RouteComponent() {
                 <span>
                   CUIT{' '}
                   <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[#6E7079] tabular-nums">
-                    {selectedOption.label.match(/\((\d+)\)/)?.[1] ?? ''}
+                    {/\((\d+)\)/.exec(selectedOption.label)?.[1] ?? ''}
                   </span>
                 </span>
                 <span>·</span>
