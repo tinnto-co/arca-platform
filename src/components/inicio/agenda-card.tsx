@@ -222,6 +222,12 @@ export function AgendaCard({
   const limite =
     verTodos || filtro || verVencidos ? Infinity : VISIBLES_POR_DEFECTO;
   let mostrados = 0;
+  // Los renglones están compactados —"Suss · 14 empresas" son 14 vencimientos
+  // en una línea—, así que contar renglones y llamarlos "vencidos" contradice
+  // al chip de arriba, que cuenta vencimientos. El pie cuenta lo mismo que el
+  // chip.
+  let vencsMostrados = 0;
+  const vencsTotal = items.reduce((s, i) => s + i.filas.length, 0);
 
   return (
     <div
@@ -325,6 +331,7 @@ export function AgendaCard({
           if (mostrados >= limite) return null;
           const visibles = grupo.items.slice(0, limite - mostrados);
           mostrados += visibles.length;
+          vencsMostrados += visibles.reduce((s, i) => s + i.filas.length, 0);
           const totalVencs = grupo.items.reduce(
             (s, i) => s + i.filas.length,
             0
@@ -454,8 +461,11 @@ export function AgendaCard({
         }}
       >
         <span className="text-[11.5px]" style={{ color: 'var(--arca-ink-3)' }}>
-          Mostrando {Math.min(mostrados, items.length)} de {items.length}
+          Mostrando {vencsMostrados} de {vencsTotal}
           {verVencidos ? ' vencidos (desde el mes pasado)' : ' del período'}
+          {vencsMostrados !== mostrados
+            ? ` · ${mostrados} ${mostrados === 1 ? 'renglón' : 'renglones'}`
+            : ''}
         </span>
         {!verTodos && items.length > VISIBLES_POR_DEFECTO && !filtro ? (
           <button
@@ -464,7 +474,7 @@ export function AgendaCard({
             className="text-[12px] font-medium cursor-pointer hover:underline"
             style={{ color: 'var(--arca-ink)' }}
           >
-            Ver los {items.length} →
+            Ver los {vencsTotal} →
           </button>
         ) : (
           <Link
