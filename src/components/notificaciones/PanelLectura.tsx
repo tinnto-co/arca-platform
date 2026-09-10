@@ -381,7 +381,7 @@ export function PanelLectura({
       {/* Barra de la aplicación: lo que se le hace a la notificación. Va
           arriba de todo —antes del asunto— y sólo con íconos, con el nombre de
           cada acción en su tooltip. */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-4 py-1">
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-[18px] py-1">
         <AccionIcono etiqueta="Crear tarea" onClick={onCrearTarea} destacada>
           <Plus className="size-4" />
         </AccionIcono>
@@ -623,7 +623,7 @@ export function PanelLectura({
       {/* Lo que llegó de ARCA: una tarjeta con su propia cabecera, como un
           mensaje. Es blanca contra el beige de la pantalla, así se ve de una
           dónde termina lo que hace la plataforma y empieza lo recibido. */}
-      <div className="m-5 mt-2.5 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
+      <div className="mx-6 mt-2.5 mb-5 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
         <div className="flex items-center gap-2 bg-[var(--arca-surface-2)] px-5 py-1.5">
           <Landmark className="size-3.5 text-[var(--arca-ink-4)]" />
           <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-3)]">
