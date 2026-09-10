@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -33,7 +33,19 @@ import {
 } from '@/actions/iva';
 import { cn } from '@/lib/utils';
 
+/**
+ * `tab` en la URL para que se pueda enlazar la solapa: el panel de Inicio
+ * manda acá desde la fila de un monotributista, y caer en Responsable
+ * Inscripto —donde esa empresa no está— se lee como que el link falló.
+ */
+interface Busqueda {
+  tab?: 'ri' | 'monotributo';
+}
+
 export const Route = createFileRoute('/_authed/iva/')({
+  validateSearch: (s: Record<string, unknown>): Busqueda => ({
+    tab: s.tab === 'monotributo' || s.tab === 'ri' ? s.tab : undefined,
+  }),
   component: RouteComponent,
 });
 
@@ -1125,6 +1137,8 @@ function RouteComponent() {
   // empresa elegida no está en una tab (una RI en Monotributista), esa tab
   // muestra su estado vacío: limitación conocida y aceptada.
   const [seleccionado] = useClienteSeleccionado();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const { tab }: Busqueda = Route.useSearch();
   const { data: clientes = [] } = useQuery({
     queryKey: ['clientes'],
     queryFn: () => getClientes(),
@@ -1140,7 +1154,15 @@ function RouteComponent() {
         actions={<SelectorClienteGlobal />}
       />
 
-      <Tabs defaultValue="ri">
+      <Tabs
+        value={tab ?? 'ri'}
+        onValueChange={(v) =>
+          void navigate({
+            search: { tab: v === 'ri' ? undefined : (v as 'monotributo') },
+            replace: true,
+          })
+        }
+      >
         <div style={{ borderBottom: '1px solid var(--arca-border)' }}>
           <TabsList className="bg-transparent h-auto p-0 gap-1">
             <TabsTrigger value="ri" className={tabCls()}>

@@ -164,15 +164,14 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
           borderColor: 'var(--arca-border)',
         }}
       >
-        Crítico: intimación del mes pasado en adelante (o sin leer) sin
-        responder hace +{DIAS_CRITICO} d, o monotributo sobre el{' '}
-        {UMBRAL_CRITICO * 100}% del tope
+        Crítico: sin responder hace más de {DIAS_CRITICO} días, o monotributo
+        sobre el {UMBRAL_CRITICO * 100}% del tope
       </p>
 
       {filas.length > 0 && (
         <>
           <EncabezadoSeccion
-            label="Intimaciones AFIP"
+            label="AFIP · sin resolver"
             derecha={`${sinLeer} sin leer${criticasNotif > 0 ? ` · ${criticasNotif} crítica${criticasNotif !== 1 ? 's' : ''}` : ''}`}
           />
           {filas.map((f) => {
@@ -180,7 +179,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
             const partes = [
               `${d.empresas} empresa${d.empresas !== 1 ? 's' : ''}`,
               d.proximoVenceAt
-                ? `vence ${fechaCorta(d.proximoVenceAt)}`
+                ? `la próxima vence ${fechaCorta(d.proximoVenceAt)}`
                 : d.masViejaAt
                   ? `la más vieja ${haceDias(d.masViejaAt, ahora)}`
                   : null,
@@ -235,12 +234,13 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
         <>
           <EncabezadoSeccion
             label="Monotributo · cerca del tope"
-            derecha={`${monos.length} de ${datos.monotributo.length}`}
+            derecha={`${monos.length} de ${datos.monotributo.length} monotributistas`}
           />
           {monos.slice(0, 3).map((m) => (
             <Link
               key={m.clienteId}
               to="/iva"
+              search={{ tab: 'monotributo' }}
               // Al revés que las intimaciones: esta fila ya es de una empresa,
               // así que IVA tiene que abrir en ésa y no en la última mirada.
               onClick={() => guardarClienteSeleccionado(m.clienteId)}
@@ -281,8 +281,9 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
                 style={{ color: 'var(--arca-ink-3)' }}
               >
                 Cat. {m.categoria}
-                {m.esEstimada ? ' (estimada)' : ''} ·{' '}
-                {pesos(Number(m.facturacion12m))} de {pesos(m.tope!)} · 12 meses
+                {m.esEstimada ? ' (estimada)' : ''} · facturó{' '}
+                {pesos(Number(m.facturacion12m))} de {pesos(m.tope!)} en 12
+                meses
               </span>
             </Link>
           ))}
@@ -297,10 +298,11 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
               className="text-[11.5px]"
               style={{ color: 'var(--arca-ink-3)' }}
             >
-              Umbral de alerta: {UMBRAL_MONOTRIBUTO * 100}%
+              Se listan desde el {UMBRAL_MONOTRIBUTO * 100}% del tope
             </span>
             <Link
               to="/iva"
+              search={{ tab: 'monotributo' }}
               onClick={() => guardarClienteSeleccionado(null)}
               className="text-[12px] font-medium hover:underline"
               style={{ color: 'var(--arca-ink)' }}
