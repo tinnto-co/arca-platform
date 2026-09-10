@@ -601,7 +601,11 @@ async function classifyWithGemini(
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Sos un clasificador de notificaciones fiscales de AFIP Argentina.
+  // El organismo pasó a llamarse ARCA. El resumen que sale de acá se muestra
+  // en la bandeja, así que el nombre tiene que ser el actual.
+  const prompt = `Sos un clasificador de notificaciones fiscales de ARCA
+(Agencia de Recaudación y Control Aduanero, antes AFIP), Argentina.
+Al redactar el resumen nombrá al organismo como ARCA, nunca como AFIP.
 Analizá el siguiente mensaje de notificación y determiná su severidad, categoría y generá un resumen breve en español.
 
 Severidades disponibles:
@@ -610,7 +614,7 @@ Severidades disponibles:
 - informativa: no requiere acción (acuses de recibo, confirmaciones, comunicaciones generales)
 
 Categorías disponibles:
-- requerimiento: AFIP requiere documentación o información
+- requerimiento: ARCA requiere documentación o información
 - inspeccion: proceso de inspección o auditoría
 - deuda: deuda impositiva o previsional
 - intimacion: intimación formal o carta documento

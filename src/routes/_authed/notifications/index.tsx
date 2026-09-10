@@ -256,10 +256,18 @@ function RouteComponent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendientesDeClasificar]);
 
+  /**
+   * La que el usuario marcó como no leída a mano. Sin esto el auto-marcado
+   * peleaba con él: marcarla como no leída dispara de nuevo este efecto —
+   * depende de `leida`— y 1,5 s después volvía a quedar leída.
+   */
+  const noLeidaAMano = useRef<string | null>(null);
+
   // Se marca leída tras 1,5 s de lectura: abrir de paso mientras se navega con
   // el teclado no debería contar como leída.
   useEffect(() => {
     if (!abierta || abierta.leida) return;
+    if (noLeidaAMano.current === abierta.id) return;
     const id = abierta.id;
     const t = setTimeout(() => marcarLeida.mutate(id), 1500);
     return () => clearTimeout(t);
@@ -375,6 +383,7 @@ function RouteComponent() {
           }
           onAnterior={() => irA(-1)}
           onSiguiente={() => irA(1)}
+          onNoLeidaManual={(id) => (noLeidaAMano.current = id)}
           hayAnterior={idx > 0}
           haySiguiente={idx >= 0 && idx < notificaciones.length - 1}
         />

@@ -57,6 +57,8 @@ interface Props {
   onSiguiente: () => void;
   hayAnterior: boolean;
   haySiguiente: boolean;
+  /** Se marcó como no leída a mano: la bandeja no debe volver a marcarla. */
+  onNoLeidaManual: (id: string) => void;
 }
 
 const BOTON =
@@ -197,6 +199,7 @@ export function PanelLectura({
   onSiguiente,
   hayAnterior,
   haySiguiente,
+  onNoLeidaManual,
 }: Props) {
   const queryClient = useQueryClient();
 
@@ -312,7 +315,7 @@ export function PanelLectura({
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--arca-bg)]">
       {/* Encabezado */}
-      <div className="shrink-0 border-b border-[var(--arca-border)] px-7 pt-5 pb-4">
+      <div className="shrink-0 px-6 pt-4 pb-2">
         <div className="flex items-start gap-3">
           <span
             className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--arca-chart-1)] text-[12px] font-semibold text-white"
@@ -332,19 +335,15 @@ export function PanelLectura({
                 </span>
               )}
               <span
-                className={`rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium ${
-                  leida
-                    ? 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
-                    : SEVERIDAD_PILL[n.severidad]
-                }`}
+                className={`rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium ${SEVERIDAD_PILL[n.severidad]}`}
               >
-                {leida ? 'Leída' : SEVERIDAD_LABEL[n.severidad]}
+                {SEVERIDAD_LABEL[n.severidad]}
               </span>
             </div>
 
             <h2
               ref={asuntoRef}
-              className={`mt-1 text-[21px] leading-[1.25] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] [font-family:var(--ff-display)] ${
+              className={`mt-0.5 text-[19px] leading-[1.22] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] [font-family:var(--ff-display)] ${
                 asuntoExpandido ? '' : 'line-clamp-2'
               }`}
               title={asunto}
@@ -399,7 +398,7 @@ export function PanelLectura({
       </div>
 
       {/* Acciones */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--arca-border)] px-7 py-3">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--arca-border)] px-6 py-2.5">
         <button
           type="button"
           onClick={onCrearTarea}
@@ -411,7 +410,10 @@ export function PanelLectura({
 
         <button
           type="button"
-          onClick={() => marcarLeida.mutate(!leida)}
+          onClick={() => {
+            if (leida && notificacionId) onNoLeidaManual(notificacionId);
+            marcarLeida.mutate(!leida);
+          }}
           disabled={marcarLeida.isPending}
           className={BOTON}
         >
@@ -453,7 +455,10 @@ export function PanelLectura({
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               className="text-[12.5px]"
-              onSelect={() => noLeida.mutate()}
+              onSelect={() => {
+                if (notificacionId) onNoLeidaManual(notificacionId);
+                noLeida.mutate();
+              }}
             >
               Marcar como no leída
             </DropdownMenuItem>
@@ -473,7 +478,7 @@ export function PanelLectura({
       {/* Lo que puso la plataforma: tareas creadas y la fecha que detectó el
           scrapeo. Queda sobre el fondo de la pantalla, sin tarjeta. */}
       {(tareas.length > 0 || n.venceAt) && (
-        <div className="flex shrink-0 flex-col gap-2 px-7 pt-4">
+        <div className="flex shrink-0 flex-col gap-2 px-6 pt-3">
           {tareas.map((t) => (
             <div
               key={t.id}
@@ -532,8 +537,8 @@ export function PanelLectura({
       {/* Lo que llegó de ARCA: una tarjeta con su propia cabecera, como un
           mensaje. Es blanca contra el beige de la pantalla, así se ve de una
           dónde termina lo que hace la plataforma y empieza lo recibido. */}
-      <div className="m-7 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
-        <div className="flex items-center gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-5 py-2.5">
+      <div className="m-6 mt-3 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
+        <div className="flex items-center gap-2 bg-[var(--arca-surface-2)] px-5 py-2">
           <Landmark className="size-3.5 text-[var(--arca-ink-4)]" />
           <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-3)]">
             Recibido de ARCA
@@ -541,7 +546,7 @@ export function PanelLectura({
         </div>
 
         {(hayCuerpo || n.aiResumen) && (
-          <div className="px-6 py-5">
+          <div className="px-5 py-3.5">
             {n.aiResumen && (
               <p
                 className={`max-w-[72ch] text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
@@ -562,7 +567,7 @@ export function PanelLectura({
         )}
 
         {n.adjuntos.length > 0 && (
-          <div className="flex flex-col border-t border-[var(--arca-border)] px-6 py-4">
+          <div className="flex flex-col border-t border-[var(--arca-border)] px-5 py-3">
             {n.adjuntos.map((a) => (
               <Adjunto
                 key={a.id}
