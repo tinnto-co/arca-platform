@@ -141,8 +141,9 @@ function RouteComponent() {
   // ─── Datos ────────────────────────────────────────────────────────────────
 
   const { data: resumen } = useQuery({
-    queryKey: ['inbox-resumen'],
-    queryFn: () => getInboxResumen(),
+    queryKey: ['inbox-resumen', filtros.empresa],
+    queryFn: () =>
+      getInboxResumen({ data: { clienteId: oQuitar(filtros.empresa) } }),
   });
 
   const { data: credenciales = [] } = useQuery({

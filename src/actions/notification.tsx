@@ -461,43 +461,55 @@ export const unresolveNotification = createServerFn({
  * El total y las no leídas son de la bandeja entera, no del recorte: son el
  * contexto contra el que se lee el conteo de resultados.
  */
-export const getInboxResumen = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
+/**
+ * `clienteId` acota los contadores que se muestran al lado de la lista
+ * (`total` y `sinLeer`): la bandeja filtra por empresa, y un contador global
+ * ahí decía "11 sin leer" sobre una lista que no tenía ninguna.
+ *
+ * No se acotan `sinClasificar` ni `ultimaSync` —son estado del sistema, no de
+ * la lista— ni `categorias`, que es el catálogo de opciones del filtro y
+ * quedaría vacío justo cuando hace falta para desfiltrar.
+ */
+export const getInboxResumen = createServerFn({ method: 'GET' })
+  .validator((d: unknown) => (d ?? {}) as { clienteId?: string | null })
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const deLaEmpresa = data.clienteId
+      ? sql`and ${notificacion.clienteId} = ${data.clienteId}`
+      : sql``;
 
-  const [[totales], categorias] = await Promise.all([
-    db
-      .select({
-        total: sql<number>`count(*)::int`,
-        sinLeer: sql<number>`count(*) filter (where ${notificacion.leida} = false)::int`,
-        // Mensajes distintos sin clasificar: es lo que cuesta, no las filas.
-        sinClasificar: sql<number>`count(distinct ${notificacion.mensaje}) filter (where ${notificacion.aiClasificadaAt} is null)::int`,
-        // Cuándo entró la última: es lo que el header muestra como
-        // "última sincronización".
-        ultima: sql<Date | null>`max(${notificacion.createdAt})`,
-      })
-      .from(notificacion)
-      .where(eq(notificacion.orgId, orgId)),
-    db
-      .selectDistinct({ categoria: notificacion.categoria })
-      .from(notificacion)
-      .where(
-        and(eq(notificacion.orgId, orgId), isNotNull(notificacion.categoria))
-      )
-      .orderBy(notificacion.categoria),
-  ]);
+    const [[totales], categorias] = await Promise.all([
+      db
+        .select({
+          total: sql<number>`count(*) filter (where true ${deLaEmpresa})::int`,
+          sinLeer: sql<number>`count(*) filter (where ${notificacion.leida} = false ${deLaEmpresa})::int`,
+          // Mensajes distintos sin clasificar: es lo que cuesta, no las filas.
+          sinClasificar: sql<number>`count(distinct ${notificacion.mensaje}) filter (where ${notificacion.aiClasificadaAt} is null)::int`,
+          // Cuándo entró la última: es lo que el header muestra como
+          // "última sincronización".
+          ultima: sql<Date | null>`max(${notificacion.createdAt})`,
+        })
+        .from(notificacion)
+        .where(eq(notificacion.orgId, orgId)),
+      db
+        .selectDistinct({ categoria: notificacion.categoria })
+        .from(notificacion)
+        .where(
+          and(eq(notificacion.orgId, orgId), isNotNull(notificacion.categoria))
+        )
+        .orderBy(notificacion.categoria),
+    ]);
 
-  return {
-    total: totales?.total ?? 0,
-    sinLeer: totales?.sinLeer ?? 0,
-    sinClasificar: totales?.sinClasificar ?? 0,
-    ultimaSync: totales?.ultima ?? null,
-    categorias: categorias
-      .map((c) => c.categoria)
-      .filter((c): c is string => c !== null),
-  };
-});
+    return {
+      total: totales?.total ?? 0,
+      sinLeer: totales?.sinLeer ?? 0,
+      sinClasificar: totales?.sinClasificar ?? 0,
+      ultimaSync: totales?.ultima ?? null,
+      categorias: categorias
+        .map((c) => c.categoria)
+        .filter((c): c is string => c !== null),
+    };
+  });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Vínculo con tareas
