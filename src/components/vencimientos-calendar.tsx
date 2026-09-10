@@ -251,14 +251,14 @@ export function VencimientosCalendar() {
         <div className="flex flex-col gap-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-140px)]">
           {/* Month summary */}
           <div>
-            <h3 className="font-[family-name:var(--ff-display)] font-semibold text-[15px] text-[#12131A] mb-3">
+            <h3 className="font-[family-name:var(--ff-display)] font-semibold text-[15px] text-[#12131A] mb-1.5">
               Resumen del mes
             </h3>
             {isLoading ? (
               <div className="text-[12.5px] text-[#9B9CA3]">Cargando...</div>
             ) : (
               <div>
-                <div className="flex items-center justify-between py-[9px]">
+                <div className="flex items-center justify-between py-[5px]">
                   <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
                     <Clock
                       className="w-4 h-4"
@@ -270,7 +270,7 @@ export function VencimientosCalendar() {
                     {totalDue}
                   </span>
                 </div>
-                <div className="flex items-center justify-between py-[9px]">
+                <div className="flex items-center justify-between py-[5px]">
                   <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
                     <AlertTriangle
                       className="w-4 h-4"
@@ -290,8 +290,8 @@ export function VencimientosCalendar() {
           </div>
 
           {/* Selected day detail */}
-          <div className="pt-[18px] border-t border-[var(--arca-border)] mt-[18px] flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="mb-3 shrink-0">
+          <div className="pt-[12px] border-t border-[var(--arca-border)] mt-[12px] flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="mb-2 shrink-0">
               <span className="text-[13px] font-medium text-[#6E7079]">
                 {selectedDate
                   ? selectedDate.toLocaleDateString('es-AR', {
