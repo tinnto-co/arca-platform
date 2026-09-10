@@ -54,7 +54,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
-import { NotificationsView } from '@/components/notifications-view';
+import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
 import {
   InvoicesTable,
   INVOICE_TYPE_LABELS,
@@ -3522,10 +3522,12 @@ export function RepresentativeDetailPage({
                 </Button>
               </div>
             </div>
-            <NotificationsView
-              clientId={representativeId}
-              profileId={selectedClientId}
-              className="min-h-[500px]"
+            {/* La misma bandeja que /notifications, acotada a este login y
+                empresa — reemplaza a la vista vieja de filtros apilados. */}
+            <InboxEmbebido
+              credencialId={representativeId}
+              clienteId={selectedClientId}
+              className="h-[calc(100vh-330px)] min-h-[540px]"
             />
           </TabsContent>
 

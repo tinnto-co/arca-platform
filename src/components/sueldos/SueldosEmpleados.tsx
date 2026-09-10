@@ -1363,12 +1363,54 @@ export function SueldosEmpleados({
         </Alert>
       ) : null}
 
-      {/* Top action row */}
-      <div className="flex items-center justify-between gap-2">
-        <p className="break-words" style={{ fontSize: '13.5px', color: '#9B9CA3' }}>
-          Empleados del perfil fiscal (importados desde LSD o creados manualmente).
-        </p>
-        <div className="flex items-center gap-2">
+      {/* Search + filter row */}
+      <div className="flex justify-between">
+        <div className="flex items-center gap-3">
+          <div className="relative" style={{ width: 320 }}>
+            <Search
+              className="absolute top-1/2 -translate-y-1/2"
+              style={{ left: 13, width: 14, height: 14, color: '#9B9CA3' }}
+            />
+            <Input
+              placeholder="Buscar por nombre, CUIL o legajo…"
+              value={busqueda}
+              onChange={(e) => handleBusqueda(e.target.value)}
+              className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              style={{ paddingLeft: 36 }}
+            />
+          </div>
+          <label className="flex cursor-pointer items-center gap-2 select-none" style={{ fontSize: '13.5px', color: '#6E7079' }}>
+            <span
+              className="relative flex items-center justify-center shrink-0"
+              style={{ width: 19, height: 19 }}
+            >
+              <input
+                type="checkbox"
+                checked={ocultarBajas}
+                onChange={(e) => { setOcultarBajas(e.target.checked); setPagina(1); }}
+                className="peer absolute opacity-0 inset-0 w-full h-full cursor-pointer"
+              />
+              <span
+                className="pointer-events-none flex items-center justify-center rounded-[4px] transition-colors"
+                style={{
+                  width: 19,
+                  height: 19,
+                  backgroundColor: ocultarBajas ? '#12131A' : '#FFFFFF',
+                  border: ocultarBajas ? 'none' : '1px solid #DFDCD3',
+                }}
+              >
+                {ocultarBajas && (
+                  <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
+                    <path d="M1 3.5L4 6.5L10 1" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </span>
+            </span>
+            Ocultar bajas
+          </label>
+        </div>
+
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => sincronizar.mutate()}
@@ -1388,52 +1430,6 @@ export function SueldosEmpleados({
             Nuevo empleado
           </button>
         </div>
-      </div>
-
-      {/* Search + filter row */}
-      <div className="flex items-center gap-3">
-        <div className="relative" style={{ width: 320 }}>
-          <Search
-            className="absolute top-1/2 -translate-y-1/2"
-            style={{ left: 13, width: 14, height: 14, color: '#9B9CA3' }}
-          />
-          <Input
-            placeholder="Buscar por nombre, CUIL o legajo…"
-            value={busqueda}
-            onChange={(e) => handleBusqueda(e.target.value)}
-            className="bg-white border border-[#DFDCD3] rounded-[10px] text-[13.5px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-            style={{ paddingLeft: 36 }}
-          />
-        </div>
-        <label className="flex cursor-pointer items-center gap-2 select-none" style={{ fontSize: '13.5px', color: '#6E7079' }}>
-          <span
-            className="relative flex items-center justify-center shrink-0"
-            style={{ width: 19, height: 19 }}
-          >
-            <input
-              type="checkbox"
-              checked={ocultarBajas}
-              onChange={(e) => { setOcultarBajas(e.target.checked); setPagina(1); }}
-              className="peer absolute opacity-0 inset-0 w-full h-full cursor-pointer"
-            />
-            <span
-              className="pointer-events-none flex items-center justify-center rounded-[4px] transition-colors"
-              style={{
-                width: 19,
-                height: 19,
-                backgroundColor: ocultarBajas ? '#12131A' : '#FFFFFF',
-                border: ocultarBajas ? 'none' : '1px solid #DFDCD3',
-              }}
-            >
-              {ocultarBajas && (
-                <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                  <path d="M1 3.5L4 6.5L10 1" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </span>
-          </span>
-          Ocultar bajas
-        </label>
       </div>
 
       {/* Navy-header grid table */}
