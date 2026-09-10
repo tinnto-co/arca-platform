@@ -8,6 +8,7 @@ import {
   ArrowDown,
   ChevronsUpDown,
   Pencil,
+  CircleHelp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -33,7 +34,7 @@ import { getClientes } from '@/actions/client';
 import {
   getIvaResumenRI,
   getMonotributistasFacturacion,
-  getClientesSinClasificar,
+  getClientesOtros,
   updateClienteCondicionIva,
   updateIvaDeclaracionManual,
 } from '@/actions/iva';
@@ -45,12 +46,16 @@ import { cn } from '@/lib/utils';
  * Inscripto —donde esa empresa no está— se lee como que el link falló.
  */
 interface Busqueda {
-  tab?: 'ri' | 'monotributo';
+  tab?: 'ri' | 'monotributo' | 'otras';
 }
+
+const TABS = ['ri', 'monotributo', 'otras'] as const;
 
 export const Route = createFileRoute('/_authed/iva/')({
   validateSearch: (s: Record<string, unknown>): Busqueda => ({
-    tab: s.tab === 'monotributo' || s.tab === 'ri' ? s.tab : undefined,
+    tab: TABS.includes(s.tab as (typeof TABS)[number])
+      ? (s.tab as Busqueda['tab'])
+      : undefined,
   }),
   component: RouteComponent,
 });
@@ -977,76 +982,138 @@ function MonotributistasTab({ search }: { search: string }) {
   );
 }
 
-/** Bloque de empresas sin condición fiscal asignada. */
-function SinClasificarBlock({ search }: { search: string }) {
-  const { data: allRows = [] } = useQuery({
-    queryKey: ['iva', 'sin-clasificar'],
-    queryFn: () => getClientesSinClasificar(),
+/**
+ * Las empresas que no salen en ninguna de las dos tablas de liquidación.
+ *
+ * Son dos casos distintos y por eso van en dos bloques: las que nadie
+ * clasificó todavía —que podrían ser cualquier cosa, y hasta que no se diga
+ * qué son no se liquidan— y las exentas o no alcanzadas, que sí están
+ * clasificadas y simplemente no tienen posición mensual de IVA.
+ *
+ * Antes esto era un bloque ámbar colgado abajo de las dos tabs, que aparecía
+ * repetido en las dos y empujaba la tabla real fuera de la pantalla. Y las
+ * exentas no estaban en ningún lado: marcarlas era hacerlas desaparecer.
+ */
+function OtrasEmpresasTab({ search }: { search: string }) {
+  const { data: allRows = [], isLoading } = useQuery({
+    queryKey: ['iva', 'otras'],
+    queryFn: () => getClientesOtros(),
   });
   const rows = useMemo(
     () => filtrarPorTexto(allRows, search),
     [allRows, search]
   );
 
-  // Con la búsqueda activa el bloque desaparece si nada matchea, igual que
-  // cuando no hay empresas sin clasificar: no hay nada sobre lo que actuar.
-  if (rows.length === 0) return null;
+  const sinClasificar = rows.filter((r) => r.condicionIva == null);
+  const fueraDeIva = rows.filter((r) => r.condicionIva != null);
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+        Cargando...
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+        {allRows.length === 0
+          ? 'Todas las empresas están clasificadas y liquidan IVA.'
+          : 'Ninguna empresa acá coincide con la que elegiste arriba.'}
+      </div>
+    );
+  }
 
   return (
-    <div className="mt-8 rounded-lg border border-amber-300 bg-amber-50/40 p-4">
-      <div className="text-[13px] font-semibold text-[var(--arca-ink)] mb-3">
-        {rows.length} {rows.length === 1 ? 'empresa' : 'empresas'} sin condición
-        fiscal asignada
-        {search && allRows.length !== rows.length
-          ? ` (de ${allRows.length})`
-          : ''}
-      </div>
-      <div
-        style={{
-          border: '1px solid var(--arca-border)',
-          borderRadius: 8,
-          overflowX: 'auto',
-          background: 'var(--arca-surface)',
-        }}
+    <div className="space-y-8">
+      {sinClasificar.length > 0 && (
+        <section>
+          <h2 className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {sinClasificar.length}{' '}
+            {sinClasificar.length === 1
+              ? 'empresa sin condición asignada'
+              : 'empresas sin condición asignada'}
+          </h2>
+          <p className="mt-1 mb-3 text-[12px] text-[var(--arca-ink-3)]">
+            No aparecen en Responsable Inscripto ni en Monotributista hasta que
+            alguien diga qué son. Elegí la condición en la última columna.
+          </p>
+          <TablaOtras rows={sinClasificar} />
+        </section>
+      )}
+
+      {fueraDeIva.length > 0 && (
+        <section>
+          <h2 className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {fueraDeIva.length}{' '}
+            {fueraDeIva.length === 1
+              ? 'empresa exenta o no alcanzada'
+              : 'empresas exentas o no alcanzadas'}
+          </h2>
+          <p className="mt-1 mb-3 text-[12px] text-[var(--arca-ink-3)]">
+            No liquidan IVA, así que no tienen posición mensual. Están acá para
+            que no se pierdan de vista y para poder corregir la condición si
+            quedó mal puesta.
+          </p>
+          <TablaOtras rows={fueraDeIva} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+type FilaOtras = Awaited<ReturnType<typeof getClientesOtros>>[number];
+
+function TablaOtras({ rows }: { rows: FilaOtras[] }) {
+  return (
+    <div
+      style={{
+        border: '1px solid var(--arca-border)',
+        borderRadius: 8,
+        overflowX: 'auto',
+        background: 'var(--arca-surface)',
+      }}
+    >
+      <table
+        className="text-[12px]"
+        style={{ width: '100%', borderCollapse: 'collapse' }}
       >
-        <table
-          className="text-[12px]"
-          style={{ width: '100%', borderCollapse: 'collapse' }}
-        >
-          <thead>
-            <tr className="bg-[var(--arca-navy-900)] text-white">
-              <th className={cn(thCls, 'text-left')}>Cliente</th>
-              <th className={cn(thCls, 'text-left')}>CUIT</th>
-              <th className={cn(thCls, 'text-left')}>Login ARCA</th>
-              <th className={cn(thCls, 'text-left')}>Condición</th>
+        <thead>
+          <tr className="bg-[var(--arca-navy-900)] text-white">
+            <th className={cn(thCls, 'text-left')}>Cliente</th>
+            <th className={cn(thCls, 'text-left')}>CUIT</th>
+            <th className={cn(thCls, 'text-left')}>Login ARCA</th>
+            <th className={cn(thCls, 'text-left')}>Condición</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr
+              key={r.clienteId}
+              style={{
+                borderTop: i === 0 ? undefined : '1px solid var(--arca-border)',
+              }}
+            >
+              <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
+                {r.razonSocial}
+              </td>
+              <td className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums whitespace-nowrap">
+                {r.cuit}
+              </td>
+              <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
+                {r.credenciales ?? '—'}
+              </td>
+              <td className="px-3 py-2">
+                <FiscalConditionSelect
+                  clienteId={r.clienteId}
+                  value={r.condicionIva}
+                />
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr
-                key={r.clienteId}
-                style={{
-                  borderTop:
-                    i === 0 ? undefined : '1px solid var(--arca-border)',
-                }}
-              >
-                <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
-                  {r.razonSocial}
-                </td>
-                <td className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums whitespace-nowrap">
-                  {r.cuit}
-                </td>
-                <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
-                  {r.credenciales ?? '—'}
-                </td>
-                <td className="px-3 py-2">
-                  <FiscalConditionSelect clienteId={r.clienteId} value={null} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1068,6 +1135,14 @@ function RouteComponent() {
   });
   const search = clientes.find((c) => c.id === seleccionado)?.cuit ?? '';
 
+  // Sin clasificar es lo único accionable de la tab "Otras": el badge lo
+  // cuenta para que se vea desde afuera que hay trabajo pendiente ahí.
+  const { data: otras = [] } = useQuery({
+    queryKey: ['iva', 'otras'],
+    queryFn: () => getClientesOtros(),
+  });
+  const sinClasificar = otras.filter((r) => r.condicionIva == null).length;
+
   return (
     <PageShell>
       <PageHeader
@@ -1080,7 +1155,7 @@ function RouteComponent() {
         value={tab ?? 'ri'}
         onValueChange={(v) =>
           void navigate({
-            search: { tab: v === 'ri' ? undefined : (v as 'monotributo') },
+            search: { tab: v === 'ri' ? undefined : (v as Busqueda['tab']) },
             replace: true,
           })
         }
@@ -1095,6 +1170,15 @@ function RouteComponent() {
               <Wallet className="w-[13px] h-[13px]" />
               Monotributista
             </TabsTrigger>
+            <TabsTrigger value="otras" className={tabCls()}>
+              <CircleHelp className="w-[13px] h-[13px]" />
+              Otras empresas
+              {sinClasificar > 0 && (
+                <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-px text-[10.5px] font-semibold text-amber-800 tabular-nums">
+                  {sinClasificar}
+                </span>
+              )}
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -1105,9 +1189,11 @@ function RouteComponent() {
         <TabsContent value="monotributo" className="mt-6">
           <MonotributistasTab search={search} />
         </TabsContent>
-      </Tabs>
 
-      <SinClasificarBlock search={search} />
+        <TabsContent value="otras" className="mt-6">
+          <OtrasEmpresasTab search={search} />
+        </TabsContent>
+      </Tabs>
     </PageShell>
   );
 }
