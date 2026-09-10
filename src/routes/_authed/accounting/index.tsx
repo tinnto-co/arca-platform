@@ -61,7 +61,23 @@ import {
   BookmarkPlus,
   Eye,
   Loader2,
+  GripVertical,
 } from 'lucide-react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -157,6 +173,9 @@ import {
   updateMappingRule,
   setMappingRuleActive,
   importMappingRules,
+  listClientesConReglasActivas,
+  reorderMappingRules,
+  type MappingRuleListRow,
   getInvoicePostingPreview,
   generateInvoiceEntries,
   regenerateInvoiceEntry,
@@ -6205,6 +6224,122 @@ function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
   };
 }
 
+type ModuloRegla = 'comprobante' | 'recibo' | 'movimiento_bancario';
+
+/**
+ * Una regla en la lista, arrastrable para cambiar su lugar en la cola.
+ *
+ * El orden es la prioridad: el motor toma la primera regla aplicable del
+ * módulo, así que arriba es "se prueba antes". Antes eso se editaba escribiendo
+ * un número —100, 200, 150 para meter una en el medio— y para saber qué corría
+ * primero había que leer la columna y ordenar mentalmente.
+ *
+ * El agarre es una manija aparte y no la fila entera: la fila abre el detalle,
+ * y si arrastrar y abrir compartieran el mismo gesto uno de los dos perdería.
+ */
+function FilaRegla({
+  r,
+  isOwner,
+  ordenable,
+  onAbrir,
+  onToggle,
+}: {
+  r: MappingRuleListRow;
+  isOwner: boolean;
+  /** Con una sola regla en el módulo no hay nada que ordenar. */
+  ordenable: boolean;
+  onAbrir: () => void;
+  onToggle: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: r.id, disabled: !ordenable });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      onClick={onAbrir}
+      role="button"
+      tabIndex={0}
+      className={cn(
+        'flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-[12.5px] cursor-pointer',
+        isDragging &&
+          'relative z-10 bg-[var(--arca-surface)] shadow-[var(--arca-shadow-2,0_6px_16px_rgba(0,0,0,0.10))]'
+      )}
+    >
+      <div className="w-8 shrink-0 flex justify-center">
+        {ordenable ? (
+          <button
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Mover ${r.name} en el orden`}
+            title="Arrastrar para cambiar el orden en que se prueba"
+            className="grid size-6 touch-none place-items-center rounded-[6px] text-[var(--arca-ink-4)] hover:bg-[var(--arca-border)] hover:text-[var(--arca-ink-2)] cursor-grab active:cursor-grabbing"
+          >
+            <GripVertical className="size-3.5" />
+          </button>
+        ) : (
+          <span
+            className="block size-6"
+            aria-hidden
+            title={
+              isOwner
+                ? 'Única regla del módulo: no hay orden que cambiar'
+                : undefined
+            }
+          />
+        )}
+      </div>
+      <div className="flex-1 min-w-0 truncate font-medium text-[var(--arca-ink)]">
+        {r.name}
+      </div>
+      <div className="w-24 shrink-0">
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+          {MAPPING_SOURCE_LABELS[r.sourceModule as ModuloRegla]}
+        </span>
+      </div>
+      <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
+        {MAPPING_RULE_TYPE_LABELS[r.ruleType as 'default' | 'condicional']}
+      </div>
+      <div className="w-16 shrink-0 text-center text-[var(--arca-ink-2)]">
+        {r.lineCount}
+      </div>
+      <div className="w-24 shrink-0 flex justify-center">
+        {isOwner ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggle();
+            }}
+            title={r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
+            style={{
+              background: r.isActive
+                ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
+                : 'var(--arca-surface-2)',
+              color: r.isActive ? 'oklch(0.40 0.14 145)' : 'var(--arca-ink-3)',
+            }}
+          >
+            <Power className="w-2.5 h-2.5" strokeWidth={2} />
+            {r.isActive ? 'Activa' : 'Inactiva'}
+          </button>
+        ) : (
+          <span className="text-[10.5px] text-[var(--arca-ink-3)]">
+            {r.isActive ? 'Activa' : 'Inactiva'}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Reglas({
   clientId,
   isOwner,
@@ -6240,6 +6375,72 @@ function Reglas({
     onSuccess: invalidate,
     onError: (e: Error) => toast.error(e.message),
   });
+
+  // ─── Orden manual ─────────────────────────────────────────────────────────
+
+  /**
+   * La prioridad sólo ordena dentro de un módulo: el motor busca la primera
+   * regla aplicable de ese módulo y nunca compara una de facturas contra una
+   * de sueldos. Por eso la lista va agrupada y se arrastra dentro del grupo:
+   * mover una regla de facturas debajo de una de sueldos no significaría nada.
+   */
+  const grupos = useMemo(() => {
+    const porModulo = new Map<ModuloRegla, MappingRuleListRow[]>();
+    for (const r of rules) {
+      const m = r.sourceModule as ModuloRegla;
+      const lista = porModulo.get(m) ?? [];
+      lista.push(r);
+      porModulo.set(m, lista);
+    }
+    return [...porModulo.entries()];
+  }, [rules]);
+
+  const reorderMut = useMutation({
+    mutationFn: (args: { sourceModule: ModuloRegla; orderedIds: string[] }) =>
+      reorderMappingRules({ data: { clientId, ...args } }),
+    onError: (e: Error) => {
+      toast.error(e.message);
+      // El orden optimista ya no vale: que la lista vuelva a lo que hay guardado.
+      invalidate();
+    },
+    onSuccess: invalidate,
+  });
+
+  const sensors = useSensors(
+    // 6px de umbral: sin esto, un clic sobre la manija empieza un arrastre
+    // fantasma y la fila tiembla cada vez que la tocás.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  );
+
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+
+    const grupo = grupos.find(([, rs]) => rs.some((r) => r.id === active.id));
+    if (!grupo) return;
+    const [modulo, delModulo] = grupo;
+
+    const desde = delModulo.findIndex((r) => r.id === active.id);
+    const hasta = delModulo.findIndex((r) => r.id === over.id);
+    // `over` de otro grupo: el arrastre cruzó módulos y no hay nada que hacer.
+    if (desde === -1 || hasta === -1) return;
+
+    const ordenadas = arrayMove(delModulo, desde, hasta);
+    const orderedIds = ordenadas.map((r) => r.id);
+
+    // Optimista: la fila se queda donde la soltaste mientras el servidor
+    // renumera. Sin esto pega un salto al lugar viejo y vuelve.
+    qc.setQueryData<MappingRuleListRow[]>(queryKey, (prev) => {
+      if (!prev) return prev;
+      const nuevas = new Map(ordenadas.map((r, i) => [r.id, (i + 1) * 10]));
+      return prev
+        .map((r) => ({ ...r, priority: nuevas.get(r.id) ?? r.priority }))
+        .sort(
+          (x, y) => x.priority - y.priority || x.name.localeCompare(y.name)
+        );
+    });
+
+    reorderMut.mutate({ sourceModule: modulo, orderedIds });
+  };
 
   return (
     <>
@@ -6289,7 +6490,7 @@ function Reglas({
         </div>
 
         <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-navy-900)] text-[11px] font-semibold uppercase tracking-wide text-white">
-          <div className="w-14 shrink-0 text-center">Prior.</div>
+          <div className="w-8 shrink-0" aria-hidden />
           <div className="flex-1 min-w-0">Nombre</div>
           <div className="w-24 shrink-0">Módulo</div>
           <div className="w-28 shrink-0">Tipo</div>
@@ -6297,93 +6498,60 @@ function Reglas({
           <div className="w-24 shrink-0 text-center">Estado</div>
         </div>
 
-        {isLoading ? (
-          <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-            Cargando…
-          </div>
-        ) : rules.length === 0 ? (
-          <div className="px-5 py-12 text-center">
-            <Workflow
-              className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
-              strokeWidth={1.5}
-            />
-            <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
-              No hay reglas de mapeo configuradas.
-            </p>
-            <p className="text-[12px] text-[var(--arca-ink-3)]">
-              Las reglas le enseñan al sistema cómo armar los asientos
-              automáticos desde facturas y sueldos.
-            </p>
-          </div>
-        ) : (
-          rules.map((r) => (
-            <div
-              key={r.id}
-              onClick={() => setDetailId(r.id)}
-              role="button"
-              tabIndex={0}
-              className="flex items-center gap-3 px-4 py-2.5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-colors text-[12.5px] cursor-pointer"
-            >
-              <div className="w-14 shrink-0 text-center font-mono text-[var(--arca-ink-3)]">
-                {r.priority}
-              </div>
-              <div className="flex-1 min-w-0 truncate font-medium text-[var(--arca-ink)]">
-                {r.name}
-              </div>
-              <div className="w-24 shrink-0">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-                  {
-                    MAPPING_SOURCE_LABELS[
-                      r.sourceModule as
-                        | 'comprobante'
-                        | 'recibo'
-                        | 'movimiento_bancario'
-                    ]
-                  }
-                </span>
-              </div>
-              <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
-                {
-                  MAPPING_RULE_TYPE_LABELS[
-                    r.ruleType as 'default' | 'condicional'
-                  ]
-                }
-              </div>
-              <div className="w-16 shrink-0 text-center text-[var(--arca-ink-2)]">
-                {r.lineCount}
-              </div>
-              <div className="w-24 shrink-0 flex justify-center">
-                {isOwner ? (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleMut.mutate({ id: r.id, isActive: !r.isActive });
-                    }}
-                    title={
-                      r.isActive ? 'Clic para desactivar' : 'Clic para activar'
-                    }
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
-                    style={{
-                      background: r.isActive
-                        ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
-                        : 'var(--arca-surface-2)',
-                      color: r.isActive
-                        ? 'oklch(0.40 0.14 145)'
-                        : 'var(--arca-ink-3)',
-                    }}
-                  >
-                    <Power className="w-2.5 h-2.5" strokeWidth={2} />
-                    {r.isActive ? 'Activa' : 'Inactiva'}
-                  </button>
-                ) : (
-                  <span className="text-[10.5px] text-[var(--arca-ink-3)]">
-                    {r.isActive ? 'Activa' : 'Inactiva'}
-                  </span>
-                )}
-              </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={onDragEnd}
+        >
+          {isLoading ? (
+            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+              Cargando…
             </div>
-          ))
-        )}
+          ) : rules.length === 0 ? (
+            <div className="px-5 py-12 text-center">
+              <Workflow
+                className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
+                strokeWidth={1.5}
+              />
+              <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
+                No hay reglas de mapeo configuradas.
+              </p>
+              <p className="text-[12px] text-[var(--arca-ink-3)]">
+                Las reglas le enseñan al sistema cómo armar los asientos
+                automáticos desde facturas y sueldos.
+              </p>
+            </div>
+          ) : (
+            grupos.map(([modulo, delModulo]) => (
+              <SortableContext
+                key={modulo}
+                items={delModulo.map((r) => r.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {/* El encabezado sólo aparece con el filtro en "Todos": es lo
+                  que deja claro que arrastrar mueve dentro del módulo y no
+                  contra las reglas de otro. */}
+                {!moduleFilter && (
+                  <div className="px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+                    {MAPPING_SOURCE_LABELS[modulo]}
+                  </div>
+                )}
+                {delModulo.map((r) => (
+                  <FilaRegla
+                    key={r.id}
+                    r={r}
+                    isOwner={isOwner}
+                    ordenable={isOwner && delModulo.length > 1}
+                    onAbrir={() => setDetailId(r.id)}
+                    onToggle={() =>
+                      toggleMut.mutate({ id: r.id, isActive: !r.isActive })
+                    }
+                  />
+                ))}
+              </SortableContext>
+            ))
+          )}
+        </DndContext>
       </ArcaCard>
 
       {editor && (
@@ -6462,7 +6630,6 @@ function RuleEditorDialog({
   const [condConceptTipos, setCondConceptTipos] = useState<string[]>([]);
   /** Sueldos: códigos SOS exactos, separados por coma (ej. "101, 102"). */
   const [condSosCodes, setCondSosCodes] = useState('');
-  const [priority, setPriority] = useState('100');
   const [lines, setLines] = useState<RuleLineDraft[]>([
     emptyRuleLine('debe'),
     emptyRuleLine('haber'),
@@ -6502,7 +6669,6 @@ function RuleEditorDialog({
           : [];
       setCondSosCodes(sosArr.map((c) => String(c).trim()).join(', '));
     }
-    setPriority(String(existing.rule.prioridad));
     setLines(
       existing.lines.map((l) => ({
         accountId: l.accountId,
@@ -6561,7 +6727,6 @@ function RuleEditorDialog({
         sourceModule,
         ruleType,
         condition,
-        priority: parseInt(priority, 10) || 100,
         lines: payloadLines,
       };
       if (isEdit) {
@@ -6666,21 +6831,6 @@ function RuleEditorDialog({
                 <SelectItem value="recibo">Sueldos</SelectItem>
               </SelectContent>
             </Select>
-          </Field>
-          <Field
-            label={
-              <>
-                Prioridad
-                <HelpTip text="Orden de evaluación cuando varias reglas podrían aplicar: gana la de menor número (la más específica primero)." />
-              </>
-            }
-          >
-            <input
-              type="number"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              className={`${INPUT_CLASS} w-full h-9`}
-            />
           </Field>
           <Field
             label={
@@ -7052,8 +7202,7 @@ function RuleDetailDialog({
               </DialogTitle>
               <DialogDescription>
                 Módulo: {MAPPING_SOURCE_LABELS[data.rule.modulo]} ·{' '}
-                {MAPPING_RULE_TYPE_LABELS[data.rule.tipo]} · Prioridad{' '}
-                {data.rule.prioridad}
+                {MAPPING_RULE_TYPE_LABELS[data.rule.tipo]}
               </DialogDescription>
             </DialogHeader>
 
@@ -7129,7 +7278,19 @@ function ImportRulesDialog({
   onDone: () => void;
 }) {
   const [fromId, setFromId] = useState('');
-  const others = clients.filter((c) => c.id !== clientId);
+
+  // Sólo empresas que tengan algo para copiar: listar la cartera entera era
+  // pedirle al usuario que adivine cuál de 130 tiene reglas.
+  const { data: conReglas = [], isLoading: cargandoOrigenes } = useQuery({
+    queryKey: ['accounting', 'clientes-con-reglas'],
+    queryFn: () => listClientesConReglasActivas(),
+  });
+  const activasPorCliente = new Map(
+    conReglas.map((c) => [c.clienteId, c.activas])
+  );
+  const others = clients.filter(
+    (c) => c.id !== clientId && activasPorCliente.has(c.id)
+  );
 
   const { data: preview = [] } = useQuery({
     queryKey: ['accounting', 'rules', fromId, ''],
@@ -7168,18 +7329,42 @@ function ImportRulesDialog({
             <label className="text-[11px] text-[var(--arca-ink-3)]">
               Empresa origen
             </label>
-            <Select value={fromId} onValueChange={(v) => setFromId(v)}>
+            <Select
+              value={fromId}
+              onValueChange={(v) => setFromId(v)}
+              disabled={cargandoOrigenes || others.length === 0}
+            >
               <SelectTrigger className="w-full text-[12.5px]">
-                <SelectValue placeholder="— Elegí la empresa origen —" />
+                <SelectValue
+                  placeholder={
+                    cargandoOrigenes
+                      ? 'Buscando empresas con reglas…'
+                      : others.length === 0
+                        ? 'Ninguna otra empresa tiene reglas activas'
+                        : '— Elegí la empresa origen —'
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {others.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name}
+                    <span className="ml-2 text-[var(--arca-ink-3)]">
+                      {activasPorCliente.get(c.id)}{' '}
+                      {activasPorCliente.get(c.id) === 1
+                        ? 'regla activa'
+                        : 'reglas activas'}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {!cargandoOrigenes && others.length === 0 && (
+              <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+                Sólo se puede importar de una empresa que ya tenga reglas
+                activas. Todavía no hay ninguna otra.
+              </p>
+            )}
           </div>
 
           {fromId && (
