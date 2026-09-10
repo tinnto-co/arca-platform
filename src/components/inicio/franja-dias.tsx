@@ -22,8 +22,11 @@ export interface CeldaDia {
   rango: [string, string];
 }
 
+// Rampa dorado → navy. El tramo bajo es un dorado aguado y no el token de
+// borde: `--arca-border-strong` es un gris de 1px, sobre blanco una barra
+// pintada con él no se lee como dato.
 const NIVELES = [
-  { label: 'baja', color: 'var(--arca-border-strong)' },
+  { label: 'baja', color: 'color-mix(in srgb, var(--arca-chart-3) 50%, #fff)' },
   { label: 'media', color: 'var(--arca-chart-3)' },
   { label: 'alta', color: 'var(--arca-navy-700)' },
 ] as const;
@@ -70,8 +73,7 @@ function Leyenda({ pico, unidad }: { pico: number; unidad: 'día' | 'semana' }) 
       }}
     >
       <span className="text-[11.5px]" style={{ color: 'var(--arca-ink-3)' }}>
-        Cada barra son los vencimientos{' '}
-        {unidad === 'día' ? 'del día' : 'de la semana'}
+        Vencimientos por {unidad}
       </span>
 
       <div className="flex items-center flex-wrap" style={{ gap: 14 }}>
@@ -168,7 +170,10 @@ export function FranjaDias({
   return (
     <div
       className="bg-white border rounded-[14px] overflow-hidden"
-      style={{ borderColor: 'var(--arca-border)' }}
+      style={{
+        borderColor: 'var(--arca-border-strong)',
+        boxShadow: 'var(--arca-shadow-md)',
+      }}
     >
       <div
         className="grid"
@@ -188,7 +193,7 @@ export function FranjaDias({
               onClick={() => onSeleccionar(activa ? null : c.clave)}
               className="relative flex flex-col items-center gap-2 cursor-pointer transition-colors duration-150"
               style={{
-                padding: '14px 0 12px',
+                padding: '18px 0 15px',
                 borderRight:
                   i < celdas.length - 1
                     ? '1px solid var(--arca-border)'
@@ -213,7 +218,7 @@ export function FranjaDias({
                 {c.labelArriba}
               </span>
               <span
-                className="text-[16px] font-bold tabular-nums"
+                className="text-[18px] font-bold tabular-nums"
                 style={{
                   fontFamily: 'var(--ff-display)',
                   color: 'var(--arca-ink)',

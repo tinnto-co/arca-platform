@@ -66,10 +66,12 @@ export function FranjaInfra() {
         style={{ color: 'var(--arca-accent-neg-fg)' }}
       >
         <span className="font-semibold">
-          {alertas.length} credencial{alertas.length !== 1 ? 'es' : ''} con
-          clave inválida
+          AFIP rechaza {alertas.length} clave{alertas.length !== 1 ? 's' : ''}{' '}
+          fiscal{alertas.length !== 1 ? 'es' : ''}
         </span>
-        {' · no se scrapean hasta actualizarlas'}
+        {alertas.length !== 1
+          ? ' · no se traen datos nuevos de esas empresas hasta actualizarlas'
+          : ' · no se traen datos nuevos de esa empresa hasta actualizarla'}
       </p>
       <Link
         to="/clients"
@@ -103,9 +105,10 @@ export function FranjaInfra() {
       >
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Credenciales con clave inválida</DialogTitle>
+            <DialogTitle>Claves fiscales rechazadas por AFIP</DialogTitle>
             <DialogDescription>
-              AFIP rechaza el login: no se scrapean hasta cargar la clave nueva.
+              AFIP no acepta la clave de estas empresas. Hasta cargar la clave
+              nueva no se traen datos nuevos de ellas.
             </DialogDescription>
           </DialogHeader>
           <div className="divide-y divide-[var(--arca-border)] max-h-[50vh] overflow-y-auto">
