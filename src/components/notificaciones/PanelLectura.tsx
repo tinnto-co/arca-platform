@@ -98,7 +98,7 @@ function AccionIcono({
           disabled={disabled}
           aria-label={etiqueta}
           className={cn(
-            'grid size-8 place-items-center rounded-[var(--arca-r-md)] transition-colors duration-[120ms] disabled:opacity-40',
+            'grid size-7 place-items-center rounded-[var(--arca-r-md)] transition-colors duration-[120ms] disabled:opacity-40',
             destacada
               ? 'bg-[var(--arca-ink)] text-white hover:bg-black'
               : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-border)]'
@@ -381,7 +381,7 @@ export function PanelLectura({
       {/* Barra de la aplicación: lo que se le hace a la notificación. Va
           arriba de todo —antes del asunto— y sólo con íconos, con el nombre de
           cada acción en su tooltip. */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-4 py-2">
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-4 py-1">
         <AccionIcono etiqueta="Crear tarea" onClick={onCrearTarea} destacada>
           <Plus className="size-4" />
         </AccionIcono>
@@ -407,7 +407,7 @@ export function PanelLectura({
                     ? `Asignada a ${asignado.name}`
                     : 'Asignar responsable'
                 }
-                className="grid size-8 place-items-center rounded-[var(--arca-r-md)] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-border)]"
+                className="grid size-7 place-items-center rounded-[var(--arca-r-md)] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-border)]"
               >
                 {/* Con responsable, sus iniciales en lugar del ícono: se ve de
                     un vistazo quién la tiene. */}
@@ -499,7 +499,7 @@ export function PanelLectura({
       </div>
 
       {/* Encabezado */}
-      <div className="shrink-0 px-6 pt-4 pb-2">
+      <div className="shrink-0 px-6 pt-3 pb-2">
         <div className="flex items-start gap-3">
           <span
             className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--arca-chart-1)] text-[12px] font-semibold text-white"
@@ -564,7 +564,7 @@ export function PanelLectura({
       {/* Lo que puso la plataforma: tareas creadas y la fecha que detectó el
           scrapeo. Queda sobre el fondo de la pantalla, sin tarjeta. */}
       {(tareas.length > 0 || n.venceAt) && (
-        <div className="flex shrink-0 flex-col gap-2 px-6 pt-3">
+        <div className="flex shrink-0 flex-col gap-2 px-6 pt-2.5">
           {tareas.map((t) => (
             <div
               key={t.id}
@@ -593,7 +593,7 @@ export function PanelLectura({
               Con una tarea ya creada la tira sobra: ofrecía crear una segunda
               para el mismo vencimiento. */}
           {n.venceAt && tareas.length === 0 && (
-            <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-4 py-3">
+            <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-4 py-2.5">
               <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                 <Calendar className="size-3.5" />
               </span>
@@ -623,8 +623,8 @@ export function PanelLectura({
       {/* Lo que llegó de ARCA: una tarjeta con su propia cabecera, como un
           mensaje. Es blanca contra el beige de la pantalla, así se ve de una
           dónde termina lo que hace la plataforma y empieza lo recibido. */}
-      <div className="m-6 mt-3 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
-        <div className="flex items-center gap-2 bg-[var(--arca-surface-2)] px-5 py-2">
+      <div className="m-5 mt-2.5 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
+        <div className="flex items-center gap-2 bg-[var(--arca-surface-2)] px-5 py-1.5">
           <Landmark className="size-3.5 text-[var(--arca-ink-4)]" />
           <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-3)]">
             Recibido de ARCA
@@ -632,7 +632,7 @@ export function PanelLectura({
         </div>
 
         {(hayCuerpo || n.aiResumen) && (
-          <div className="px-5 py-3.5">
+          <div className="px-5 py-3">
             {n.aiResumen && (
               <p
                 className={`max-w-[72ch] text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
@@ -653,7 +653,7 @@ export function PanelLectura({
         )}
 
         {n.adjuntos.length > 0 && (
-          <div className="flex flex-col border-t border-[var(--arca-border)] px-5 py-3">
+          <div className="flex flex-col border-t border-[var(--arca-border)] px-5 py-2.5">
             {n.adjuntos.map((a) => (
               <Adjunto
                 key={a.id}
