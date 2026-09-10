@@ -258,7 +258,7 @@ export function VencimientosCalendar() {
               <div className="text-[12.5px] text-[#9B9CA3]">Cargando...</div>
             ) : (
               <div>
-                <div className="flex items-center justify-between py-[11px] border-b border-[#ECEAE3]">
+                <div className="flex items-center justify-between py-[9px]">
                   <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
                     <Clock
                       className="w-4 h-4"
@@ -270,7 +270,7 @@ export function VencimientosCalendar() {
                     {totalDue}
                   </span>
                 </div>
-                <div className="flex items-center justify-between py-[11px] border-b border-[#ECEAE3]">
+                <div className="flex items-center justify-between py-[9px]">
                   <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
                     <AlertTriangle
                       className="w-4 h-4"
@@ -290,7 +290,7 @@ export function VencimientosCalendar() {
           </div>
 
           {/* Selected day detail */}
-          <div className="pt-[18px] border-t border-[#ECEAE3] mt-[18px] flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="pt-[18px] border-t border-[var(--arca-border)] mt-[18px] flex-1 min-h-0 flex flex-col overflow-hidden">
             <div className="mb-3 shrink-0">
               <span className="text-[13px] font-medium text-[#6E7079]">
                 {selectedDate
