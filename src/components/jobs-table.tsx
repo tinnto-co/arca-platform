@@ -46,14 +46,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -73,6 +65,7 @@ import {
   type JobsResponse,
   type JobLogRow,
 } from '@/actions/job';
+import { Paginador } from '@/components/shared/paginador';
 import { getCredenciales } from '@/actions/client';
 import { JobsErrorSummary } from '@/components/jobs-error-summary';
 
@@ -760,71 +753,11 @@ export function JobsTable() {
 
       {totalPages > 1 && (
         <div className="flex justify-center">
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() =>
-                    setFilter({ page: Math.max(1, currentPage - 1) })
-                  }
-                  className={
-                    currentPage === 1
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-
-              {/* Mostrar solo primeras 3, últimas 1 y ventana alrededor de la actual */}
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter((page) => {
-                  if (page <= 3) return true;
-                  if (page === totalPages) return true;
-                  if (Math.abs(page - currentPage) <= 1) return true;
-                  return false;
-                })
-                .flatMap((page, index, visiblePages) => {
-                  const prevPage = visiblePages[index - 1];
-                  const showEllipsis = prevPage && page - prevPage > 1;
-
-                  const items = [];
-                  if (showEllipsis) {
-                    items.push(
-                      <PaginationItem key={`ellipsis-${page}`}>
-                        <span className="px-2 text-[var(--arca-ink-3)]">
-                          ...
-                        </span>
-                      </PaginationItem>
-                    );
-                  }
-                  items.push(
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        onClick={() => setFilter({ page })}
-                        isActive={currentPage === page}
-                        className="cursor-pointer"
-                      >
-                        {page}
-                      </PaginationLink>
-                    </PaginationItem>
-                  );
-                  return items;
-                })}
-
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() =>
-                    setFilter({ page: Math.min(totalPages, currentPage + 1) })
-                  }
-                  className={
-                    currentPage === totalPages
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+          <Paginador
+            pagina={currentPage}
+            totalPaginas={totalPages}
+            onPagina={(page) => setFilter({ page })}
+          />
         </div>
       )}
 

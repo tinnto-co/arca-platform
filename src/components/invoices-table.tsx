@@ -39,16 +39,9 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { getComprobantes, getComprobante } from '@/actions/comprobante';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
+import { Paginador } from '@/components/shared/paginador';
 import { cn } from '@/lib/utils';
 
 /** Fila de la grilla, tal cual la devuelve `getComprobantes`. */
@@ -713,37 +706,6 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
     const totalPages = invoicesData?.totalPages || 1;
 
-    // Calculate pagination pages to display (max 7)
-    const getPaginationPages = () => {
-      const maxVisiblePages = 7;
-      if (totalPages <= maxVisiblePages) {
-        return { startPage: 1, endPage: totalPages };
-      }
-
-      const halfVisible = Math.floor(maxVisiblePages / 2);
-      let startPage: number;
-      let endPage: number;
-
-      if (currentPage <= halfVisible) {
-        startPage = 1;
-        endPage = maxVisiblePages;
-      } else if (currentPage + halfVisible >= totalPages) {
-        startPage = totalPages - maxVisiblePages + 1;
-        endPage = totalPages;
-      } else {
-        startPage = currentPage - halfVisible;
-        endPage = currentPage + halfVisible;
-      }
-
-      return { startPage, endPage };
-    };
-
-    const { startPage, endPage } = getPaginationPages();
-    const visiblePages = Array.from(
-      { length: endPage - startPage + 1 },
-      (_, i) => startPage + i
-    );
-
     return (
       <div className="w-full min-w-0 flex flex-col h-full gap-4">
         {/* Filters */}
@@ -1049,81 +1011,11 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex justify-center w-full min-w-0">
-            <Pagination>
-              <PaginationContent className="flex-wrap justify-center">
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                    className={
-                      currentPage === 1
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-
-                {startPage > 1 && (
-                  <>
-                    <PaginationItem>
-                      <PaginationLink
-                        onClick={() => setCurrentPage(1)}
-                        className="cursor-pointer"
-                      >
-                        1
-                      </PaginationLink>
-                    </PaginationItem>
-                    {startPage > 2 && (
-                      <PaginationItem>
-                        <span className="px-2">...</span>
-                      </PaginationItem>
-                    )}
-                  </>
-                )}
-
-                {visiblePages.map((page) => (
-                  <PaginationItem key={page}>
-                    <PaginationLink
-                      onClick={() => setCurrentPage(page)}
-                      isActive={currentPage === page}
-                      className="cursor-pointer"
-                    >
-                      {page}
-                    </PaginationLink>
-                  </PaginationItem>
-                ))}
-
-                {endPage < totalPages && (
-                  <>
-                    {endPage < totalPages - 1 && (
-                      <PaginationItem>
-                        <span className="px-2">...</span>
-                      </PaginationItem>
-                    )}
-                    <PaginationItem>
-                      <PaginationLink
-                        onClick={() => setCurrentPage(totalPages)}
-                        className="cursor-pointer"
-                      >
-                        {totalPages}
-                      </PaginationLink>
-                    </PaginationItem>
-                  </>
-                )}
-
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() =>
-                      setCurrentPage(Math.min(totalPages, currentPage + 1))
-                    }
-                    className={
-                      currentPage === totalPages
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
+            <Paginador
+              pagina={currentPage}
+              totalPaginas={totalPages}
+              onPagina={setCurrentPage}
+            />
           </div>
         )}
 

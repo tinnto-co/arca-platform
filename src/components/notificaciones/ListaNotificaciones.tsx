@@ -18,6 +18,7 @@ import {
   horaOFecha,
   nombreCategoria,
 } from './utils';
+import { Paginador } from '@/components/shared/paginador';
 import { cn } from '@/lib/utils';
 
 export interface NotificacionListada {
@@ -42,8 +43,9 @@ interface Props {
   onSeleccionar: (id: string) => void;
   cargando: boolean;
   total: number;
-  hayMas: boolean;
-  onCargarMas: () => void;
+  pagina: number;
+  totalPaginas: number;
+  onPagina: (p: number) => void;
   /** Qué decir cuando no hay nada: depende del tab, no es siempre lo mismo. */
   vacio: string;
   /** Se muestra sobre la lista cuando algún login del scrapeo falló. */
@@ -61,8 +63,9 @@ export function ListaNotificaciones({
   onSeleccionar,
   cargando,
   total,
-  hayMas,
-  onCargarMas,
+  pagina,
+  totalPaginas,
+  onPagina,
   vacio,
   avisoLogins,
   orden = 'fecha',
@@ -263,20 +266,15 @@ export function ListaNotificaciones({
       </div>
 
       {/* Pie fijo */}
-      <div className="flex shrink-0 items-center justify-between border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]">
-        <span className="text-[11.5px] text-[var(--arca-ink-3)] tabular-nums">
-          {notificaciones.length} de {total}
-        </span>
-        {hayMas && (
-          <button
-            type="button"
-            onClick={onCargarMas}
-            className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
-          >
-            Cargar más →
-          </button>
-        )}
-      </div>
+      <Paginador
+        pagina={pagina}
+        totalPaginas={totalPaginas}
+        onPagina={onPagina}
+        total={total}
+        unidad="notificación"
+        unidadPlural="notificaciones"
+        className="shrink-0 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]"
+      />
     </div>
   );
 }

@@ -18,11 +18,9 @@ import {
   resolveNotification,
   clasificarPendientes,
 } from '@/actions/notification';
-import { getCredenciales } from '@/actions/client';
 
 interface Busqueda {
   estado?: 'sin_leer' | 'todas' | 'resueltas';
-  login?: string;
   categoria?: string;
   importancia?: string;
   empresa?: string;
@@ -41,7 +39,6 @@ const esquema = z.object({
     .enum(['sin_leer', 'todas', 'resueltas'])
     .optional()
     .catch(undefined),
-  login: z.string().optional().catch(undefined),
   categoria: z.string().optional().catch(undefined),
   importancia: z.string().optional().catch(undefined),
   empresa: z.string().optional().catch(undefined),
@@ -73,13 +70,14 @@ function RouteComponent() {
   const queryClient = useQueryClient();
 
   const [clienteGlobal, setClienteGlobal] = useClienteSeleccionado();
-  const [paginas, setPaginas] = useState(1);
+  // Paginado real: se pide una página, no un `limit` que crece. Con "cargar
+  // más" no había forma de volver ni de saber dónde estabas.
+  const [pagina, setPagina] = useState(1);
 
   const [creandoTarea, setCreandoTarea] = useState(false);
 
   const filtros: FiltrosInbox = {
     estado: search.estado ?? 'todas',
-    credencial: search.login ?? '',
     categoria: search.categoria ?? '',
     severidad: search.importancia ?? '',
     empresa: search.empresa ?? '',
@@ -91,12 +89,11 @@ function RouteComponent() {
   };
 
   const setFiltros = (p: Partial<FiltrosInbox>) => {
-    setPaginas(1);
+    setPagina(1);
     void navigate({
       search: (prev: Busqueda) => ({
         ...prev,
         ...(p.estado !== undefined && { estado: p.estado }),
-        ...(p.credencial !== undefined && { login: oQuitar(p.credencial) }),
         ...(p.categoria !== undefined && { categoria: oQuitar(p.categoria) }),
         ...(p.severidad !== undefined && { importancia: oQuitar(p.severidad) }),
         ...(p.empresa !== undefined && { empresa: oQuitar(p.empresa) }),
@@ -153,15 +150,9 @@ function RouteComponent() {
       getInboxResumen({ data: { clienteId: oQuitar(filtros.empresa) } }),
   });
 
-  const { data: credenciales = [] } = useQuery({
-    queryKey: ['credenciales'],
-    queryFn: () => getCredenciales(),
-  });
-
   const parametros = {
-    limit: POR_PAGINA * paginas,
-    page: 1,
-    credencialFilter: oQuitar(filtros.credencial),
+    limit: POR_PAGINA,
+    page: pagina,
     clienteId: oQuitar(filtros.empresa),
     dateFrom: oQuitar(filtros.desde),
     dateTo: oQuitar(filtros.hasta),
@@ -319,7 +310,7 @@ function RouteComponent() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   const total = data?.totalCount ?? 0;
-  const hayMas = notificaciones.length < total;
+  const totalPaginas = data?.totalPages ?? 1;
 
   return (
     <PageShell variant="panel">
@@ -330,7 +321,6 @@ function RouteComponent() {
           setClienteGlobal(null);
           setFiltros({
             estado: 'todas',
-            credencial: '',
             categoria: '',
             severidad: '',
             empresa: '',
@@ -340,7 +330,6 @@ function RouteComponent() {
             q: '',
           });
         }}
-        credenciales={credenciales}
         categorias={resumen?.categorias ?? []}
         resumen={{
           total: resumen?.total ?? 0,
@@ -373,8 +362,9 @@ function RouteComponent() {
                 ? 'Todavía no hay notificaciones resueltas'
                 : 'No hay notificaciones con estos filtros'
           }
-          hayMas={hayMas}
-          onCargarMas={() => setPaginas((p) => p + 1)}
+          pagina={pagina}
+          totalPaginas={totalPaginas}
+          onPagina={setPagina}
         />
 
         <PanelLectura

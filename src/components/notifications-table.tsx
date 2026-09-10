@@ -50,18 +50,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
-import {
   getNotifications,
   deleteNotification,
   getNotification,
 } from '@/actions/notification';
+import { Paginador } from '@/components/shared/paginador';
 import { getCredenciales } from '@/actions/client';
 import { userQuery } from '../lib/user-query';
 
@@ -267,8 +260,8 @@ export function NotificationsTable() {
               notificationsData?.notifications.map((notification) => (
                 <TableRow key={notification.id}>
                   <TableCell>
-                    {notification.clienteRazonSocial ??
-                    notification.credencialNombre ? (
+                    {(notification.clienteRazonSocial ??
+                    notification.credencialNombre) ? (
                       <div>
                         <div className="font-medium">
                           {notification.clienteRazonSocial ??
@@ -325,47 +318,11 @@ export function NotificationsTable() {
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-center">
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                  className={
-                    currentPage === 1
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(
-                (page) => (
-                  <PaginationItem key={page}>
-                    <PaginationLink
-                      onClick={() => setCurrentPage(page)}
-                      isActive={currentPage === page}
-                      className="cursor-pointer"
-                    >
-                      {page}
-                    </PaginationLink>
-                  </PaginationItem>
-                )
-              )}
-
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() =>
-                    setCurrentPage(Math.min(totalPages, currentPage + 1))
-                  }
-                  className={
-                    currentPage === totalPages
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+          <Paginador
+            pagina={currentPage}
+            totalPaginas={totalPages}
+            onPagina={setCurrentPage}
+          />
         </div>
       )}
 

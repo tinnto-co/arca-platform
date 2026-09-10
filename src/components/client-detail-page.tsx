@@ -25,14 +25,6 @@ import {
   ListFilter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -131,6 +123,7 @@ import {
   DialogClose,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Paginador } from '@/components/shared/paginador';
 import { cn } from '@/lib/utils';
 import { periodoLegible } from '@/lib/periodo';
 import { CONDICION_IVA_LABELS } from '@/lib/cliente-labels';
@@ -1191,16 +1184,6 @@ export function RepresentativeDetailPage({
     (dueDatePage - 1) * ITEMS_PER_PAGE,
     dueDatePage * ITEMS_PER_PAGE
   );
-
-  const getPageRange = (currentPage: number, totalPages: number) => {
-    const maxVisible = 7;
-    if (totalPages <= maxVisible) return { startPage: 1, endPage: totalPages };
-    let startPage = Math.max(1, currentPage - 3);
-    const endPage = Math.min(totalPages, startPage + maxVisible - 1);
-    if (endPage - startPage < maxVisible - 1)
-      startPage = Math.max(1, endPage - maxVisible + 1);
-    return { startPage, endPage };
-  };
 
   /** Formatea una fecha en hora local como YYYY-MM-DD (evita desfase por UTC con toISOString). */
   const formatLocalYYYYMMDD = (d: Date) => {
@@ -2963,86 +2946,14 @@ export function RepresentativeDetailPage({
                 </div>
               )}
               {debtTotalPages > 1 && (
-                <div className="px-[20px] py-[10px] border-t border-[var(--arca-border)] flex items-center gap-[10px] text-[11.5px] text-[var(--arca-ink-4)]">
-                  <span>
-                    Mostrando {pagedDebts.length} de {filteredDebts.length}
-                  </span>
-                  <div className="flex-1" />
-                  {(() => {
-                    const { startPage, endPage } = getPageRange(
-                      debtPage,
-                      debtTotalPages
-                    );
-                    const visiblePages = Array.from(
-                      { length: endPage - startPage + 1 },
-                      (_, i) => startPage + i
-                    );
-                    return (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
-                          disabled={debtPage === 1}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
-                        >
-                          ←
-                        </button>
-                        {startPage > 1 && (
-                          <>
-                            <button
-                              onClick={() => setDebtPage(1)}
-                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
-                            >
-                              1
-                            </button>
-                            {startPage > 2 && (
-                              <span className="px-1 text-[var(--arca-ink-4)]">
-                                …
-                              </span>
-                            )}
-                          </>
-                        )}
-                        {visiblePages.map((page) => (
-                          <button
-                            key={page}
-                            onClick={() => setDebtPage(page)}
-                            className={cn(
-                              'px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] transition-colors',
-                              debtPage === page
-                                ? 'bg-[var(--arca-ink)] text-white font-semibold'
-                                : 'hover:bg-[var(--arca-surface-2)]'
-                            )}
-                          >
-                            {page}
-                          </button>
-                        ))}
-                        {endPage < debtTotalPages && (
-                          <>
-                            {endPage < debtTotalPages - 1 && (
-                              <span className="px-1 text-[var(--arca-ink-4)]">
-                                …
-                              </span>
-                            )}
-                            <button
-                              onClick={() => setDebtPage(debtTotalPages)}
-                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
-                            >
-                              {debtTotalPages}
-                            </button>
-                          </>
-                        )}
-                        <button
-                          onClick={() =>
-                            setDebtPage((p) => Math.min(debtTotalPages, p + 1))
-                          }
-                          disabled={debtPage === debtTotalPages}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
-                        >
-                          →
-                        </button>
-                      </div>
-                    );
-                  })()}
-                </div>
+                <Paginador
+                  pagina={debtPage}
+                  totalPaginas={debtTotalPages}
+                  onPagina={setDebtPage}
+                  total={filteredDebts.length}
+                  unidad="deuda"
+                  className="px-[20px] py-[10px] border-t border-[var(--arca-border)]"
+                />
               )}
             </div>
           </TabsContent>
@@ -3297,98 +3208,15 @@ export function RepresentativeDetailPage({
                         </TableBody>
                       </Table>
                     </div>
-                    {dueDateTotalPages > 1 &&
-                      (() => {
-                        const { startPage, endPage } = getPageRange(
-                          dueDatePage,
-                          dueDateTotalPages
-                        );
-                        const visiblePages = Array.from(
-                          { length: endPage - startPage + 1 },
-                          (_, i) => startPage + i
-                        );
-                        return (
-                          <div className="flex justify-center w-full min-w-0">
-                            <Pagination>
-                              <PaginationContent className="flex-wrap justify-center">
-                                <PaginationItem>
-                                  <PaginationPrevious
-                                    onClick={() =>
-                                      setDueDatePage((p) => Math.max(1, p - 1))
-                                    }
-                                    className={
-                                      dueDatePage === 1
-                                        ? 'pointer-events-none opacity-50'
-                                        : 'cursor-pointer'
-                                    }
-                                  />
-                                </PaginationItem>
-                                {startPage > 1 && (
-                                  <>
-                                    <PaginationItem>
-                                      <PaginationLink
-                                        onClick={() => setDueDatePage(1)}
-                                        className="cursor-pointer"
-                                      >
-                                        1
-                                      </PaginationLink>
-                                    </PaginationItem>
-                                    {startPage > 2 && (
-                                      <PaginationItem>
-                                        <span className="px-2">...</span>
-                                      </PaginationItem>
-                                    )}
-                                  </>
-                                )}
-                                {visiblePages.map((page) => (
-                                  <PaginationItem key={page}>
-                                    <PaginationLink
-                                      onClick={() => setDueDatePage(page)}
-                                      isActive={dueDatePage === page}
-                                      className="cursor-pointer"
-                                    >
-                                      {page}
-                                    </PaginationLink>
-                                  </PaginationItem>
-                                ))}
-                                {endPage < dueDateTotalPages && (
-                                  <>
-                                    {endPage < dueDateTotalPages - 1 && (
-                                      <PaginationItem>
-                                        <span className="px-2">...</span>
-                                      </PaginationItem>
-                                    )}
-                                    <PaginationItem>
-                                      <PaginationLink
-                                        onClick={() =>
-                                          setDueDatePage(dueDateTotalPages)
-                                        }
-                                        className="cursor-pointer"
-                                      >
-                                        {dueDateTotalPages}
-                                      </PaginationLink>
-                                    </PaginationItem>
-                                  </>
-                                )}
-                                <PaginationItem>
-                                  <PaginationNext
-                                    onClick={() =>
-                                      setDueDatePage((p) =>
-                                        Math.min(dueDateTotalPages, p + 1)
-                                      )
-                                    }
-                                    className={
-                                      dueDatePage === dueDateTotalPages
-                                        ? 'pointer-events-none opacity-50'
-                                        : 'cursor-pointer'
-                                    }
-                                  />
-                                </PaginationItem>
-                              </PaginationContent>
-                            </Pagination>
-                          </div>
-                        );
-                      })()}
+                    {dueDateTotalPages > 1 && (
+                      <div className="flex justify-center w-full min-w-0">
+                        <Paginador
+                          pagina={dueDatePage}
+                          totalPaginas={dueDateTotalPages}
+                          onPagina={setDueDatePage}
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
