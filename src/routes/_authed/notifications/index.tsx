@@ -31,6 +31,7 @@ interface Busqueda {
   adjunto?: boolean;
   q?: string;
   n?: string;
+  orden?: 'prioridad';
 }
 
 // Cada campo con su `.catch`: un parámetro raro en la URL no puede tumbar la
@@ -49,6 +50,8 @@ const esquema = z.object({
   adjunto: z.boolean().optional().catch(undefined),
   q: z.string().optional().catch(undefined),
   n: z.string().uuid().optional().catch(undefined),
+  // Sólo viaja cuando no es el orden por defecto.
+  orden: z.literal('prioridad').optional().catch(undefined),
 });
 
 export const Route = createFileRoute('/_authed/notifications/')({
@@ -84,6 +87,7 @@ function RouteComponent() {
     hasta: search.hasta ?? '',
     soloConAdjunto: search.adjunto ?? false,
     q: search.q ?? '',
+    orden: search.orden ?? 'fecha',
   };
 
   const setFiltros = (p: Partial<FiltrosInbox>) => {
@@ -102,6 +106,9 @@ function RouteComponent() {
           adjunto: p.soloConAdjunto || undefined,
         }),
         ...(p.q !== undefined && { q: oQuitar(p.q) }),
+        ...(p.orden !== undefined && {
+          orden: p.orden === 'prioridad' ? ('prioridad' as const) : undefined,
+        }),
       }),
       replace: true,
     });
@@ -166,6 +173,7 @@ function RouteComponent() {
     leida: filtros.estado === 'sin_leer' ? false : undefined,
     onlyUnresolved: filtros.estado === 'sin_leer' ? true : undefined,
     soloResueltas: filtros.estado === 'resueltas' ? true : undefined,
+    orden: filtros.orden,
   };
 
   const { data, isLoading } = useQuery({
@@ -357,6 +365,7 @@ function RouteComponent() {
           onSeleccionar={(id) => seleccionar(id)}
           cargando={isLoading}
           total={total}
+          orden={filtros.orden}
           vacio={
             filtros.estado === 'sin_leer'
               ? 'Estás al día'

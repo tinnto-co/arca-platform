@@ -7,7 +7,12 @@
  */
 
 import { useState } from 'react';
-import { Check, CheckCheck, SlidersHorizontal } from 'lucide-react';
+import {
+  ArrowDownWideNarrow,
+  Check,
+  CheckCheck,
+  SlidersHorizontal,
+} from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +36,8 @@ import {
   chipFiltro,
   chipMasFiltros,
 } from '@/components/shared/filtros';
-import { SEVERIDAD_LABEL, haceCuanto } from './utils';
+import { PrioridadesCategoria } from './PrioridadesCategoria';
+import { SEVERIDAD_LABEL, haceCuanto, nombreCategoria } from './utils';
 import { cn } from '@/lib/utils';
 
 export interface FiltrosInbox {
@@ -44,6 +50,8 @@ export interface FiltrosInbox {
   hasta: string;
   soloConAdjunto: boolean;
   q: string;
+  /** Cómo se lee la lista: por fecha (defecto) o por importancia. */
+  orden: 'fecha' | 'prioridad';
 }
 
 interface Props {
@@ -201,7 +209,8 @@ export function InboxHeader({
             <DropdownMenuTrigger
               className={chipFiltro(filtros.categoria !== '')}
             >
-              Categoría: {filtros.categoria || 'todas'}
+              Categoría:{' '}
+              {filtros.categoria ? nombreCategoria(filtros.categoria) : 'todas'}
               {filtros.categoria ? (
                 <QuitarFiltro onQuitar={() => onFiltro({ categoria: '' })} />
               ) : (
@@ -223,7 +232,7 @@ export function InboxHeader({
                   className="text-[12.5px]"
                   onSelect={() => onFiltro({ categoria: c })}
                 >
-                  {c}
+                  {nombreCategoria(c)}
                   {c === filtros.categoria && (
                     <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
                   )}
@@ -345,6 +354,28 @@ export function InboxHeader({
           </Popover>
 
           {activos > 0 && <LimpiarFiltros onLimpiar={onLimpiar} />}
+
+          {/* El orden es preferencia de lectura, no un filtro: no entra en
+              `activos` ni lo toca "Limpiar". */}
+          <button
+            type="button"
+            onClick={() =>
+              onFiltro({
+                orden: filtros.orden === 'prioridad' ? 'fecha' : 'prioridad',
+              })
+            }
+            className={chipFiltro(filtros.orden === 'prioridad')}
+            title={
+              filtros.orden === 'prioridad'
+                ? 'Ordenar por fecha'
+                : 'Ordenar por importancia'
+            }
+          >
+            <ArrowDownWideNarrow className="size-3" />
+            {filtros.orden === 'prioridad' ? 'Por prioridad' : 'Por fecha'}
+          </button>
+
+          <PrioridadesCategoria />
 
           <ConteoResultados>
             {resumen.resultados.toLocaleString('es-AR')}{' '}

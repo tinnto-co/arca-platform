@@ -13,6 +13,21 @@ export const SEVERIDAD_LABEL: Record<string, string> = {
   sin_clasificar: 'Sin clasificar',
 };
 
+/** Las categorías del clasificador, en castellano legible. */
+export const CATEGORIA_LABEL: Record<string, string> = {
+  intimacion: 'Intimaciones',
+  requerimiento: 'Requerimientos',
+  deuda: 'Deuda',
+  inspeccion: 'Fiscalización / inspección',
+  vencimiento: 'Vencimientos',
+  comunicacion_general: 'Comunicaciones generales',
+  otro: 'Otras',
+};
+
+/** El nombre legible, o la clave cruda si aparece una categoría nueva. */
+export const nombreCategoria = (c: string): string =>
+  CATEGORIA_LABEL[c] ?? c.replace(/_/g, ' ');
+
 export const SEVERIDAD_PILL: Record<string, string> = {
   urgente: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
   accion_requerida:

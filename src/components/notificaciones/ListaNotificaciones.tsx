@@ -16,6 +16,7 @@ import {
   asuntoYPreview,
   grupoDeFecha,
   horaOFecha,
+  nombreCategoria,
 } from './utils';
 import { cn } from '@/lib/utils';
 
@@ -47,6 +48,8 @@ interface Props {
   vacio: string;
   /** Se muestra sobre la lista cuando algún login del scrapeo falló. */
   avisoLogins?: string | null;
+  /** Cómo viene ordenada la lista, para encabezar los grupos por lo mismo. */
+  orden?: 'fecha' | 'prioridad';
 }
 
 const PILL =
@@ -62,12 +65,18 @@ export function ListaNotificaciones({
   onCargarMas,
   vacio,
   avisoLogins,
+  orden = 'fecha',
 }: Props) {
-  // Agrupa por día conservando el orden que ya trae el servidor (más nuevas
-  // primero): no reordena, sólo corta.
+  // Agrupa conservando el orden que ya trae el servidor: no reordena, sólo
+  // corta. El encabezado tiene que ser el mismo criterio con el que viene
+  // ordenada la lista — encabezar por mes una lista ordenada por importancia
+  // repite "Septiembre" una vez por cada nivel.
   const grupos: { label: string; items: NotificacionListada[] }[] = [];
   for (const n of notificaciones) {
-    const label = grupoDeFecha(n.publicadaAt ?? n.createdAt);
+    const label =
+      orden === 'prioridad'
+        ? (SEVERIDAD_LABEL[n.severidad] ?? 'Sin clasificar')
+        : grupoDeFecha(n.publicadaAt ?? n.createdAt);
     const ultimo = grupos[grupos.length - 1];
     if (ultimo?.label === label) ultimo.items.push(n);
     else grupos.push({ label, items: [n] });
@@ -222,7 +231,7 @@ export function ListaNotificaciones({
                                 <span
                                   className={`${PILL} border border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]`}
                                 >
-                                  {n.categoria}
+                                  {nombreCategoria(n.categoria)}
                                 </span>
                               )}
 
