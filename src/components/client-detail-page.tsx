@@ -2347,12 +2347,19 @@ export function RepresentativeDetailPage({
                 <div className="flex items-center gap-2 shrink-0">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
                   <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-                    Notificaciones
+                    Notificaciones sin leer
                   </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {unreadNotifications?.notifications.length ?? 0}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => onTabChange('notificaciones')}
+                    className="text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] hover:underline"
+                  >
+                    Ver todas →
+                  </button>
                 </div>
                 <div className="relative flex-1 min-h-0">
                   {loadingUnreadNotifications ? (
