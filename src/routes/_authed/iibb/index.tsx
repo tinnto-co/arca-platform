@@ -4,17 +4,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Globe, MapPin, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  SelectorPeriodo,
+  dePeriodo,
+  nombrePeriodo,
+} from '@/components/shared/selector-periodo';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { getClientesForIIBB } from '@/actions/client';
 import {
   deleteLiquidacionIibbFila,
@@ -29,21 +27,6 @@ import { cn } from '@/lib/utils';
 export const Route = createFileRoute('/_authed/iibb/')({
   component: RouteComponent,
 });
-
-const MONTH_NAMES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
 
 function formatARS(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—';
@@ -279,9 +262,6 @@ function IIBBDesglose({
     return { ...DEFAULT_LIQ, saldoAFavor: carry };
   };
 
-  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
-  const maxMonth = selectedYear === now.getFullYear() ? now.getMonth() : 11;
-
   // Cambiar de empresa descarta la liquidación local a medio editar, igual
   // que hacía el selector propio que este componente tenía antes. Ajuste
   // durante el render, no en un efecto.
@@ -431,48 +411,15 @@ function IIBBDesglose({
     <div>
       {/* Selectors — la empresa se elige en el selector global del header. */}
       <div className="flex flex-wrap gap-3 mb-6">
-        <div className="flex items-center gap-2">
-          <Select
-            value={String(selectedMonth)}
-            onValueChange={(v) => {
-              setSelectedMonth(Number(v));
-              setLocalLiq({});
-            }}
-          >
-            <SelectTrigger className="w-[140px] text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: maxMonth + 1 }, (_, i) => (
-                <SelectItem key={i} value={String(i)}>
-                  {MONTH_NAMES[i]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={String(selectedYear)}
-            onValueChange={(v) => {
-              const y = Number(v);
-              setSelectedYear(y);
-              setLocalLiq({});
-              if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
-                setSelectedMonth(now.getMonth());
-              }
-            }}
-          >
-            <SelectTrigger className="w-[100px] text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <SelectorPeriodo
+          periodo={periodo}
+          onPeriodo={(p) => {
+            const { anio, mes } = dePeriodo(p);
+            setSelectedYear(anio);
+            setSelectedMonth(mes);
+            setLocalLiq({});
+          }}
+        />
       </div>
 
       {/* Sin empresa: portada del período agrupada por empresa. Click en una
@@ -577,7 +524,7 @@ function IIBBDesglose({
         </div>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
-          {`Sin comprobantes emitidos en ${MONTH_NAMES[selectedMonth]} ${selectedYear} para esta empresa — probá con otro período.`}
+          {`Sin comprobantes emitidos en ${nombrePeriodo(periodo)} para esta empresa — probá con otro período.`}
         </div>
       ) : (
         <div

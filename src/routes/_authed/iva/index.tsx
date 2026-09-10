@@ -19,6 +19,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import {
+  SelectorPeriodo,
+  aPeriodo,
+  dePeriodo,
+} from '@/components/shared/selector-periodo';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
@@ -48,21 +53,6 @@ export const Route = createFileRoute('/_authed/iva/')({
   }),
   component: RouteComponent,
 });
-
-const MONTH_NAMES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
 
 function formatARS(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—';
@@ -467,9 +457,6 @@ function IvaResumenRI({ search }: { search: string }) {
     [rows, sort]
   );
 
-  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
-  const maxMonth = selectedYear === now.getFullYear() ? now.getMonth() : 11;
-
   // Los totales siguen a lo que está filtrado en pantalla: si se busca una
   // empresa, el pie muestra su posición y no la de toda la cartera.
   const totals = rows.reduce(
@@ -496,42 +483,14 @@ function IvaResumenRI({ search }: { search: string }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-6">
-        <Select
-          value={String(selectedMonth)}
-          onValueChange={(v) => setSelectedMonth(Number(v))}
-        >
-          <SelectTrigger className="w-[140px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Array.from({ length: maxMonth + 1 }, (_, i) => (
-              <SelectItem key={i} value={String(i)}>
-                {MONTH_NAMES[i]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={String(selectedYear)}
-          onValueChange={(v) => {
-            const y = Number(v);
-            setSelectedYear(y);
-            if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
-              setSelectedMonth(now.getMonth());
-            }
+        <SelectorPeriodo
+          periodo={aPeriodo(selectedYear, selectedMonth)}
+          onPeriodo={(p) => {
+            const { anio, mes } = dePeriodo(p);
+            setSelectedYear(anio);
+            setSelectedMonth(mes);
           }}
-        >
-          <SelectTrigger className="w-[100px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
 
       <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
@@ -873,48 +832,17 @@ function MonotributistasTab({ search }: { search: string }) {
     [rows, sort]
   );
 
-  const yearsMono = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
-  const maxMonthMono = selectedYear === now.getFullYear() ? now.getMonth() : 11;
-
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
-        <Select
-          value={String(selectedMonth)}
-          onValueChange={(v) => setSelectedMonth(Number(v))}
-        >
-          <SelectTrigger className="w-[140px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Array.from({ length: maxMonthMono + 1 }, (_, i) => (
-              <SelectItem key={i} value={String(i)}>
-                {MONTH_NAMES[i]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={String(selectedYear)}
-          onValueChange={(v) => {
-            const y = Number(v);
-            setSelectedYear(y);
-            if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
-              setSelectedMonth(now.getMonth());
-            }
+        <SelectorPeriodo
+          periodo={aPeriodo(selectedYear, selectedMonth)}
+          onPeriodo={(p) => {
+            const { anio, mes } = dePeriodo(p);
+            setSelectedYear(anio);
+            setSelectedMonth(mes);
           }}
-        >
-          <SelectTrigger className="w-[100px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {yearsMono.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
       </div>
 
       <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
