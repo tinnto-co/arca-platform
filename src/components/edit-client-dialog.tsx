@@ -32,6 +32,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   getCliente,
@@ -348,12 +349,10 @@ export function EditRepresentativeDialog({
                           Teléfono (opcional)
                         </FormLabel>
                         <FormControl>
-                          <Input
-                            type="tel"
-                            placeholder="+54 9 11 1234-5678"
-                            className={inputClass}
-                            {...field}
+                          <PhoneInput
+                            placeholder="11 1234-5678"
                             value={field.value ?? ''}
+                            onChange={field.onChange}
                           />
                         </FormControl>
                         <FormMessage />
