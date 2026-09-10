@@ -464,7 +464,7 @@ export function PanelLectura({
         ))}
 
         {(hayCuerpo || n.aiResumen) && (
-          <article className="max-w-[72ch] rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-6 py-[22px]">
+          <article className="max-w-[105ch] rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-6 py-[22px]">
             {n.aiResumen && (
               <p
                 className={`text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
@@ -487,7 +487,7 @@ export function PanelLectura({
         {/* Vencimiento detectado. `vence_at` lo completa el scrapeo cuando
             encuentra una fecha en el cuerpo; si no hay, la tira no aparece. */}
         {n.venceAt && (
-          <div className="flex max-w-[72ch] items-center gap-3 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
+          <div className="flex max-w-[105ch] items-center gap-3 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
             <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
               <Calendar className="size-3.5" />
             </span>
@@ -514,7 +514,7 @@ export function PanelLectura({
 
         {/* Adjuntos */}
         {n.adjuntos.length > 0 && (
-          <div className="flex max-w-[72ch] flex-col">
+          <div className="flex max-w-[105ch] flex-col">
             {n.adjuntos.map((a) => (
               <Adjunto
                 key={a.id}
