@@ -294,7 +294,7 @@ function ConceptoDialog({ row }: { row: ConceptoRow }) {
             {row.nombre}
             {row.codigoAfip && (
               <span className="ml-2 text-xs text-muted-foreground font-normal">
-                AFIP: {row.codigoAfip}
+                ARCA: {row.codigoAfip}
               </span>
             )}
           </DialogTitle>
@@ -396,7 +396,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
         />
         <input
           type="text"
-          placeholder="Buscar por nombre o código AFIP…"
+          placeholder="Buscar por nombre o código ARCA…"
           value={busqueda}
           onChange={(e) => handleBusqueda(e.target.value)}
           className="flex-1 bg-transparent outline-none text-[13.5px] placeholder:text-[#9B9CA3]"
@@ -419,7 +419,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
           }}
         >
           <span>Cód. SOS</span>
-          <span>Cód. AFIP</span>
+          <span>Cód. ARCA</span>
           <span>Nombre</span>
           <span />
         </div>
@@ -458,7 +458,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
               >
                 {row.numero}
               </span>
-              {/* CÓD. AFIP */}
+              {/* CÓD. ARCA */}
               <span
                 className="font-[family-name:var(--ff-mono)] text-[12.5px]"
                 style={{ color: '#9B9CA3' }}

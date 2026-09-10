@@ -1216,7 +1216,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
                     <div className="flex items-center justify-between gap-3 border-t border-[var(--arca-border)] pt-3">
                       <p className="text-[11.5px] text-[var(--arca-ink-4)]">
-                        AFIP entrega los datos del comprobante, no el archivo.
+                        ARCA entrega los datos del comprobante, no el archivo.
                         El PDF es una representación armada con esos datos.
                       </p>
                       <Button

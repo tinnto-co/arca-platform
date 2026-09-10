@@ -66,7 +66,7 @@ export function FranjaInfra() {
         style={{ color: 'var(--arca-accent-neg-fg)' }}
       >
         <span className="font-semibold">
-          AFIP rechaza {alertas.length} clave{alertas.length !== 1 ? 's' : ''}{' '}
+          ARCA rechaza {alertas.length} clave{alertas.length !== 1 ? 's' : ''}{' '}
           fiscal{alertas.length !== 1 ? 'es' : ''}
         </span>
         {alertas.length !== 1
@@ -105,9 +105,9 @@ export function FranjaInfra() {
       >
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Claves fiscales rechazadas por AFIP</DialogTitle>
+            <DialogTitle>Claves fiscales rechazadas por ARCA</DialogTitle>
             <DialogDescription>
-              AFIP no acepta la clave de estas empresas. Hasta cargar la clave
+              ARCA no acepta la clave de estas empresas. Hasta cargar la clave
               nueva no se traen datos nuevos de ellas.
             </DialogDescription>
           </DialogHeader>

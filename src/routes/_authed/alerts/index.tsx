@@ -476,7 +476,7 @@ function AlertsPage() {
             { value: 'credentials', label: 'Credenciales inválidas' },
             { value: 'captcha', label: 'Error de CAPTCHA' },
             { value: 'infrastructure', label: 'Infraestructura' },
-            { value: 'selector_change', label: 'AFIP cambió la interfaz' },
+            { value: 'selector_change', label: 'ARCA cambió la interfaz' },
             { value: 'csv_not_found', label: 'CSV no encontrado' },
             { value: 'profile_not_found', label: 'Perfil no encontrado' },
             { value: 'partial', label: 'Falla parcial' },

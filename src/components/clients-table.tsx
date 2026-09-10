@@ -549,7 +549,7 @@ export function RepresentativesTable() {
             </AlertDialogTitle>
             <AlertDialogDescription>
               Esta acción no se puede deshacer. Se eliminan el cliente y todos
-              sus datos (comprobantes, deudas, sueldos). El login de AFIP no se
+              sus datos (comprobantes, deudas, sueldos). El login de ARCA no se
               toca: si tiene otros clientes, siguen funcionando.
             </AlertDialogDescription>
           </AlertDialogHeader>

@@ -8,7 +8,7 @@
  * del trabajo.
  */
 
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -200,6 +200,15 @@ export function PanelLectura({
 }: Props) {
   const queryClient = useQueryClient();
 
+  // Un asunto de ARCA puede ocupar varios renglones y empujar todo hacia
+  // abajo: se recorta a dos líneas con opción de abrirlo. El botón aparece
+  // sólo si de verdad se corta —se mide el desborde en vez de suponer un
+  // largo, porque depende del ancho del panel—, y estos hooks van acá arriba
+  // porque más abajo hay returns tempranos.
+  const asuntoRef = useRef<HTMLHeadingElement>(null);
+  const [asuntoExpandido, setAsuntoExpandido] = useState(false);
+  const [asuntoLargo, setAsuntoLargo] = useState(false);
+
   const { data: n, isLoading } = useQuery({
     queryKey: ['notificacion', notificacionId],
     queryFn: () => getNotification({ data: { id: notificacionId! } }),
@@ -247,6 +256,18 @@ export function PanelLectura({
     onError: () => toast.error('No se pudo asignar'),
   });
 
+  useLayoutEffect(() => {
+    // Se mide sólo con el recorte puesto: expandido no desborda, y volver a
+    // medir ahí apagaba el botón y dejaba el asunto abierto sin forma de
+    // cerrarlo.
+    const el = asuntoRef.current;
+    if (!el || asuntoExpandido) return;
+    setAsuntoLargo(el.scrollHeight > el.clientHeight + 1);
+  }, [n?.mensaje, asuntoExpandido]);
+
+  // Cambiar de notificación arranca de nuevo con el asunto recortado.
+  useLayoutEffect(() => setAsuntoExpandido(false), [notificacionId]);
+
   const noLeida = useMutation({
     mutationFn: () => markNotificationUnread({ data: { id: notificacionId! } }),
     onSuccess: refrescar,
@@ -279,7 +300,6 @@ export function PanelLectura({
   }
 
   const { asunto, preview } = asuntoYPreview(n.mensaje, n.aiResumen);
-
   // Muchas notificaciones de AFIP son una sola línea: ahí el asunto ES el
   // mensaje entero y la card del cuerpo repetiría el título. En ese caso sólo
   // queda el resumen de la IA, si lo hay.
@@ -322,12 +342,27 @@ export function PanelLectura({
               </span>
             </div>
 
-            <h2 className="mt-1 text-[21px] leading-[1.25] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] [font-family:var(--ff-display)]">
+            <h2
+              ref={asuntoRef}
+              className={`mt-1 text-[21px] leading-[1.25] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] [font-family:var(--ff-display)] ${
+                asuntoExpandido ? '' : 'line-clamp-2'
+              }`}
+              title={asunto}
+            >
               {asunto}
             </h2>
+            {asuntoLargo && (
+              <button
+                type="button"
+                onClick={() => setAsuntoExpandido((v) => !v)}
+                className="mt-0.5 text-[11.5px] font-medium text-[var(--arca-navy-700)] hover:underline"
+              >
+                {asuntoExpandido ? 'Ver menos' : 'Ver asunto completo'}
+              </button>
+            )}
 
             <p className="mt-1 text-[11.5px] text-[var(--arca-ink-3)]">
-              {n.categoria ?? 'AFIP'} · Domicilio fiscal electrónico · login{' '}
+              {n.categoria ?? 'ARCA'} · Domicilio fiscal electrónico · login{' '}
               <span className="[font-family:var(--ff-mono)]">
                 {n.credencialNombre}
               </span>{' '}
@@ -494,17 +529,14 @@ export function PanelLectura({
         </div>
       )}
 
-      {/* Lo que llegó de AFIP: una tarjeta con su propia cabecera, como un
+      {/* Lo que llegó de ARCA: una tarjeta con su propia cabecera, como un
           mensaje. Es blanca contra el beige de la pantalla, así se ve de una
           dónde termina lo que hace la plataforma y empieza lo recibido. */}
       <div className="m-7 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
         <div className="flex items-center gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-5 py-2.5">
           <Landmark className="size-3.5 text-[var(--arca-ink-4)]" />
           <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-3)]">
-            Recibido de AFIP
-          </span>
-          <span className="ml-auto text-[11px] text-[var(--arca-ink-4)]">
-            {fechaHoraLarga(n.publicadaAt ?? n.createdAt)}
+            Recibido de ARCA
           </span>
         </div>
 

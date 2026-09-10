@@ -171,7 +171,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
       {filas.length > 0 && (
         <>
           <EncabezadoSeccion
-            label="AFIP · sin resolver"
+            label="ARCA · sin resolver"
             derecha={`${sinLeer} sin leer${criticasNotif > 0 ? ` · ${criticasNotif} crítica${criticasNotif !== 1 ? 's' : ''}` : ''}`}
           />
           {filas.map((f) => {

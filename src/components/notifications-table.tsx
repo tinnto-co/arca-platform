@@ -200,7 +200,7 @@ export function NotificationsTable() {
 
           <Select value={credencialFilter} onValueChange={setCredencialFilter}>
             <SelectTrigger className="w-full md:w-48">
-              <SelectValue placeholder="Filtrar por login AFIP" />
+              <SelectValue placeholder="Filtrar por login ARCA" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos los logins</SelectItem>

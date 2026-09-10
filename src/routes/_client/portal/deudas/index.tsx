@@ -84,7 +84,7 @@ function PortalDeudas() {
           Deudas
         </h1>
         <p className="text-sm text-[var(--arca-ink-3)] mt-1">
-          Deuda registrada en AFIP a su nombre
+          Deuda registrada en ARCA a su nombre
         </p>
       </div>
 

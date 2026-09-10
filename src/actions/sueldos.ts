@@ -690,7 +690,7 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
       .limit(1);
 
     if (!afipRow)
-      throw new Error('Convenio AFIP no encontrado o no autorizado');
+      throw new Error('Convenio de ARCA no encontrado o no autorizado');
 
     const cctCodigo = extractCctCodigo(afipRow.cct);
     const cctNormalizado = cctCodigo ?? afipRow.cct;

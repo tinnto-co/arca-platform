@@ -52,7 +52,7 @@ const TAB_DESCRIPTIONS: Record<SueldosTab, string> = {
   simulador: 'Generación de un nuevo recibo individual',
   recibo: 'Visor e impresor de recibos confirmados',
   'firma-digital': 'Carga y gestión de la firma digital del empleador',
-  cargas: 'Cargas sociales y generación del archivo LSD para AFIP',
+  cargas: 'Cargas sociales y generación del archivo LSD para ARCA',
 };
 
 /** Datos para precargar el simulador al editar un recibo existente. */

@@ -28,7 +28,7 @@ export type ScrapeJobType =
 const JOB_TYPE_LABELS: Record<ScrapeJobType, string> = {
   iva: 'Posición IVA',
   comprobantes: 'Comprobantes (facturas)',
-  notificaciones: 'Notificaciones AFIP',
+  notificaciones: 'Notificaciones ARCA',
   deuda: 'Deudas',
   vencimientos: 'Vencimientos',
 };
@@ -74,7 +74,7 @@ export function ScrapeConfirmation({
     try {
       if (!credencialId) {
         throw new Error(
-          'El cliente no tiene ninguna credencial de AFIP asociada.'
+          'El cliente no tiene ninguna credencial de ARCA asociada.'
         );
       }
       const result = await scrapSingleJob({

@@ -248,11 +248,11 @@ export function CreateRepresentativeDialog({
           <>
             <div className="space-y-1 pb-2">
               <h2 className="text-lg font-semibold">
-                Agregar representante AFIP
+                Agregar representante ARCA
               </h2>
               <p className="text-sm text-muted-foreground">
                 Ingresá las credenciales de la persona física que se loguea en
-                AFIP. Vamos a verificar el acceso y descubrir los clientes
+                ARCA. Vamos a verificar el acceso y descubrir los clientes
                 asociados.
               </p>
             </div>
@@ -285,7 +285,7 @@ export function CreateRepresentativeDialog({
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Clave fiscal AFIP</FormLabel>
+                      <FormLabel>Clave fiscal ARCA</FormLabel>
                       <FormControl>
                         <div className="relative">
                           <Input
@@ -389,7 +389,7 @@ export function CreateRepresentativeDialog({
                     className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
                   >
                     <PenLine className="inline h-3 w-3 mr-1" />
-                    Agregar clientes manualmente (sin verificar AFIP)
+                    Agregar clientes manualmente (sin verificar ARCA)
                   </button>
                 )}
               </form>

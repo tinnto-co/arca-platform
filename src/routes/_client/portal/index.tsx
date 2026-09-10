@@ -192,7 +192,7 @@ function PortalDashboard() {
           )}
           {datosAfipAt && (
             <>
-              {' · datos de AFIP al '}
+              {' · datos de ARCA al '}
               <span className="font-[family-name:var(--ff-mono)] tabular-nums">
                 {fechaCorta(datosAfipAt.slice(0, 10))}
               </span>
@@ -231,7 +231,7 @@ function PortalDashboard() {
                     <Pildora tono="neg">{deudasVencidas} vencidas</Pildora>
                   )}
                   <span className="text-xs text-[var(--arca-ink-3)]">
-                    saldo consolidado AFIP
+                    saldo consolidado ARCA
                   </span>
                 </>
               ) : (
@@ -259,7 +259,7 @@ function PortalDashboard() {
               }
               nota={
                 notificacionesSinLeer > 0
-                  ? 'notificaciones de AFIP'
+                  ? 'notificaciones de ARCA'
                   : 'leídas hasta hoy'
               }
             />
@@ -531,10 +531,10 @@ function FilaActividad({ item, ultima }: { item: Actividad; ultima: boolean }) {
       : item.tipo === 'comprobantes'
         ? {
             titulo: `Cargamos ${item.cantidad} comprobantes nuevos`,
-            sub: 'sincronizados con AFIP',
+            sub: 'sincronizados con ARCA',
           }
         : {
-            titulo: 'Te llegó una notificación de AFIP',
+            titulo: 'Te llegó una notificación de ARCA',
             sub: item.detalle ?? '',
           };
 

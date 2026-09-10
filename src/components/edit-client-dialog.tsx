@@ -259,7 +259,7 @@ export function EditRepresentativeDialog({
               Editar
             </DialogTitle>
             <DialogDescription className="mt-2 max-w-[340px] text-[14px] leading-[1.45] text-[var(--arca-ink-3)]">
-              Modifica los datos del cliente y la credencial de AFIP del
+              Modifica los datos del cliente y la credencial de ARCA del
               representante.
             </DialogDescription>
           </div>
@@ -440,7 +440,7 @@ export function EditRepresentativeDialog({
                   />
                 </SectionCard>
 
-                {/* SECTION: Credencial de AFIP */}
+                {/* SECTION: Credencial de ARCA */}
                 {credencialId && (
                   <SectionCard
                     icon={
@@ -450,7 +450,7 @@ export function EditRepresentativeDialog({
                         strokeWidth={2}
                       />
                     }
-                    label="Credencial de AFIP"
+                    label="Credencial de ARCA"
                   >
                     <FormField
                       control={form.control}
@@ -521,7 +521,7 @@ export function EditRepresentativeDialog({
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel className={labelClass}>
-                            Actualizar contraseña en AFIP
+                            Actualizar contraseña en ARCA
                           </FormLabel>
                           <FormControl>
                             <div className="relative">

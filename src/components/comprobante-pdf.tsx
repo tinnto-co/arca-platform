@@ -270,7 +270,7 @@ export function ComprobantePdf({ d }: { d: ComprobantePdfData }) {
         </View>
 
         <Text style={s.pie}>
-          Representación generada por Arca a partir de los datos de AFIP. No
+          Representación generada por Arca a partir de los datos de ARCA. No
           reemplaza al comprobante original.
         </Text>
       </Page>

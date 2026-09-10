@@ -111,7 +111,7 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
       }),
     onSuccess: (result) => {
       if (result.created) {
-        toast.success('Convenio AFIP agregado al cliente');
+        toast.success('Convenio ARCA agregado al cliente');
         setSeleccionarConvenioOpen(false);
         queryClient.invalidateQueries({ queryKey: ['convenios', clientId] });
       } else {
@@ -150,16 +150,16 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
       >
         <DialogContent className="max-w-md sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Seleccionar CCT (AFIP) para este cliente</DialogTitle>
+            <DialogTitle>Seleccionar CCT (ARCA) para este cliente</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              Seleccioná el CCT descargado de AFIP para este cliente. Luego
+              Seleccioná el CCT descargado de ARCA para este cliente. Luego
               cargá las categorías y escalas manualmente.
             </p>
           </DialogHeader>
           <div className="grid gap-2 py-4">
             {conveniosAfip.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No hay convenios AFIP scrapeados para este cliente todavía.
+                No hay convenios ARCA scrapeados para este cliente todavía.
               </p>
             ) : (
               conveniosAfip.map((c) => {
@@ -344,7 +344,10 @@ function ConvenioCard({
                 {convenio.nombre}
               </span>
               <div className="mt-1 flex flex-wrap items-center gap-3">
-                <Building2 className="shrink-0" style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+                <Building2
+                  className="shrink-0"
+                  style={{ width: 15, height: 15, color: '#9B9CA3' }}
+                />
                 {convenio.cctCodigo ? (
                   <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[#3E404A] bg-white border border-[#DFDCD3] rounded-[6px] px-2 py-[3px]">
                     CCT: {convenio.cctCodigo}
@@ -352,16 +355,22 @@ function ConvenioCard({
                 ) : null}
                 <span className="text-[12px] text-[#9B9CA3] max-w-[540px] truncate">
                   {convenio.fuentes && convenio.fuentes.length > 0
-                    ? convenio.fuentes.join(', ')
+                    ? // El dato guardado dice "AFIP" desde antes del cambio
+                      // de nombre del organismo; se traduce al mostrarlo para
+                      // no reescribir filas ni romper comparaciones.
+                      convenio.fuentes
+                        .map((f) => (f === 'AFIP' ? 'ARCA' : f))
+                        .join(', ')
                     : 'Sin fuente identificada'}
                 </span>
                 {convenio.afipUpdatedAt ? (
                   <span className="text-[oklch(0.42_0.13_160)] bg-[oklch(0.94_0.04_160)] rounded-full px-[9px] py-[3px] text-[11px] font-semibold shrink-0">
-                    AFIP actualizado: {format(new Date(convenio.afipUpdatedAt), 'dd/MM/yyyy')}
+                    ARCA actualizado:{' '}
+                    {format(new Date(convenio.afipUpdatedAt), 'dd/MM/yyyy')}
                   </span>
                 ) : (
                   <span className="text-[oklch(0.48_0.13_75)] bg-[oklch(0.95_0.04_75)] rounded-full px-[9px] py-[3px] text-[11px] font-semibold shrink-0">
-                    AFIP pendiente
+                    ARCA pendiente
                   </span>
                 )}
                 <span className="flex-1" />
@@ -525,12 +534,20 @@ function CategoriaRow({
   onRefresh,
 }: {
   clientId: string;
-  categoria: { id: string; codigo: string; nombre: string; esValorHora: boolean };
+  categoria: {
+    id: string;
+    codigo: string;
+    nombre: string;
+    esValorHora: boolean;
+  };
   onRefresh: () => void;
 }) {
   const getCategoriaDisplay = (codigo: string, nombre: string) => {
     if (!nombre.includes(' - ')) {
-      return { titulo: `${codigo} - ${nombre}`, subtitulo: null as string | null };
+      return {
+        titulo: `${codigo} - ${nombre}`,
+        subtitulo: null as string | null,
+      };
     }
     const [grupo, detalle] = nombre.split(' - ', 2);
     return {
@@ -538,7 +555,10 @@ function CategoriaRow({
       subtitulo: detalle || null,
     };
   };
-  const categoriaDisplay = getCategoriaDisplay(categoria.codigo, categoria.nombre);
+  const categoriaDisplay = getCategoriaDisplay(
+    categoria.codigo,
+    categoria.nombre
+  );
 
   const queryClient = useQueryClient();
   const [showEscala, setShowEscala] = useState(false);
@@ -591,25 +611,32 @@ function CategoriaRow({
 
   const toggleValorHora = useMutation({
     mutationFn: (val: boolean) =>
-      updateCategoriaEsValorHora({ data: { categoriaId: categoria.id, clientId, esValorHora: val } }),
+      updateCategoriaEsValorHora({
+        data: { categoriaId: categoria.id, clientId, esValorHora: val },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categorias'] });
       onRefresh();
       toast.success('Categoría actualizada');
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al actualizar'),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al actualizar'),
   });
 
-    const hoy = new Date();
+  const hoy = new Date();
 
   return (
     <li className="border-b border-[#ECEAE3] pb-[10px]">
       <div className="flex items-center gap-2 py-2">
-        <Layers style={{ width: 15, height: 15, color: '#9B9CA3', flexShrink: 0 }} />
+        <Layers
+          style={{ width: 15, height: 15, color: '#9B9CA3', flexShrink: 0 }}
+        />
         <span className="text-[14px] font-semibold text-[#12131A] flex-1 min-w-0">
           {categoriaDisplay.titulo}
           {categoriaDisplay.subtitulo ? (
-            <span className="text-[#6E7079] font-normal ml-1">— {categoriaDisplay.subtitulo}</span>
+            <span className="text-[#6E7079] font-normal ml-1">
+              — {categoriaDisplay.subtitulo}
+            </span>
           ) : null}
         </span>
         <span className="text-[11px] text-[#3E404A] bg-[#F2F1EB] rounded-full px-2 py-[2px] shrink-0">

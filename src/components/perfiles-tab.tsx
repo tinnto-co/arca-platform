@@ -130,7 +130,7 @@ export function PerfilesTab({
 
   const onDiscover = async () => {
     setDiscovering(true);
-    setProgressMessage('Conectando con AFIP...');
+    setProgressMessage('Conectando con ARCA...');
     try {
       const response = await fetch('/api/afip/discover-profiles', {
         method: 'POST',
@@ -144,7 +144,7 @@ export function PerfilesTab({
           onResult: (d) => {
             setFreshProfiles(d.profiles ?? []);
             setFreshAt(new Date().toISOString());
-            toast.success(`AFIP devolvió ${d.profiles?.length ?? 0} perfiles`);
+            toast.success(`ARCA devolvió ${d.profiles?.length ?? 0} perfiles`);
           },
           onError: (m) => toast.error(m),
         }
@@ -182,7 +182,7 @@ export function PerfilesTab({
         <CardHeader>
           <CardTitle>Perfiles dados de alta</CardTitle>
           <CardDescription>
-            Solo se scrapean estas empresas. Lo que AFIP muestre y no esté acá
+            Solo se scrapean estas empresas. Lo que ARCA muestre y no esté acá
             se ignora.
           </CardDescription>
         </CardHeader>
@@ -209,7 +209,7 @@ export function PerfilesTab({
                       <span>Último dato: {fmtDate(c.ultimoDatoAt)}</span>
                       {c.afipContribuyenteId == null && (
                         <Badge variant="outline" className="text-xs">
-                          sin id AFIP
+                          sin id ARCA
                         </Badge>
                       )}
                     </div>
@@ -232,7 +232,7 @@ export function PerfilesTab({
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="space-y-1.5">
-            <CardTitle>Detectados en AFIP, sin dar de alta</CardTitle>
+            <CardTitle>Detectados en ARCA, sin dar de alta</CardTitle>
             <CardDescription>
               Última búsqueda: {fmtDate(discoveredAt)}
             </CardDescription>
@@ -253,7 +253,7 @@ export function PerfilesTab({
             ) : (
               <>
                 <Search className="mr-2 h-4 w-4" />
-                Buscar en AFIP
+                Buscar en ARCA
               </>
             )}
           </Button>
@@ -262,7 +262,7 @@ export function PerfilesTab({
           {notEnrolled.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No se detectaron perfiles nuevos. Ejecutá &quot;Buscar en
-              AFIP&quot; o esperá el próximo scrapeo.
+              ARCA&quot; o esperá el próximo scrapeo.
             </p>
           ) : (
             <div className="space-y-2">

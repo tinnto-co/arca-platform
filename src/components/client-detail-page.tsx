@@ -2317,7 +2317,7 @@ export function RepresentativeDetailPage({
                         Sin notificaciones pendientes
                       </p>
                       <p className="text-[11.5px] text-[var(--arca-ink-4)]">
-                        Te avisaremos cuando AFIP publique novedades.
+                        Te avisaremos cuando ARCA publique novedades.
                       </p>
                     </div>
                   ) : (
@@ -4569,7 +4569,7 @@ export function RepresentativeDetailPage({
                                     }),
                                   ]);
                                   toast.success(
-                                    `${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear} rehecho desde AFIP`
+                                    `${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear} rehecho desde ARCA`
                                   );
                                 } catch (err) {
                                   toast.error(
@@ -4594,7 +4594,7 @@ export function RepresentativeDetailPage({
                                   {ivaSelectedYear}
                                 </div>
                                 <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
-                                  Vuelve a pedirle a AFIP el mes completo. Usala
+                                  Vuelve a pedirle a ARCA el mes completo. Usala
                                   si el período quedó incompleto: el scrapeo
                                   normal sólo trae lo posterior a la última
                                   factura cargada.
@@ -5070,7 +5070,7 @@ export function RepresentativeDetailPage({
       </Tabs>
 
       {/* El diálogo edita la empresa (cliente) y, opcionalmente, la clave del
-          login de AFIP: sin empresa seleccionada no hay nada que editar. */}
+          login de ARCA: sin empresa seleccionada no hay nada que editar. */}
       {selectedClientId && (
         <EditRepresentativeDialog
           clienteId={selectedClientId}

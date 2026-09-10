@@ -682,7 +682,7 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     else
       observaciones.push({
         severidad: 'warn',
-        mensaje: `${noLeidas} notificaciones AFIP sin leer`,
+        mensaje: `${noLeidas} notificaciones de ARCA sin leer`,
       });
 
     // 20 pts: tiene facturación reciente

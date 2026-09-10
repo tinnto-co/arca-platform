@@ -24,7 +24,7 @@ interface ResumenSaludClienteProps {
 const TIPO_LABEL: Record<string, string> = {
   iva: 'IVA',
   comprobantes: 'Facturas',
-  notificaciones: 'Notif. AFIP',
+  notificaciones: 'Notif. ARCA',
   deuda: 'Deudas',
   vencimientos: 'Vencimientos',
 };

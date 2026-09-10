@@ -90,7 +90,7 @@ export function CopilotIvaResume({ result }: CopilotIvaResumeProps) {
         </div>
         {!selected.tieneDatosAFIP && (
           <div className="text-muted-foreground">
-            Sin declaración de AFIP para el período: los totales salen de los
+            Sin declaración de ARCA para el período: los totales salen de los
             comprobantes.
           </div>
         )}

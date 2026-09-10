@@ -286,7 +286,7 @@ function CeldaImporteEditable({
         setBorrador(valor ?? '');
         setEditando(true);
       }}
-      title="Editar (dato de AFIP faltante o a corregir)"
+      title="Editar (dato de ARCA faltante o a corregir)"
       className="group/celda inline-flex w-full items-center justify-end gap-1.5 cursor-pointer"
     >
       <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover/celda:opacity-60" />
@@ -360,7 +360,7 @@ function EstadoBadge({ row }: { row: RiRow }) {
     return row.comprobantes === 0 ? (
       <span
         className={cls('bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]')}
-        title="No hay comprobantes cargados para este período ni declaración de AFIP."
+        title="No hay comprobantes cargados para este período ni declaración de ARCA."
       >
         Sin datos
       </span>
@@ -369,7 +369,7 @@ function EstadoBadge({ row }: { row: RiRow }) {
         className={cls('bg-sky-50 text-sky-700')}
         title={`Calculado sobre ${row.comprobantes} comprobante${
           row.comprobantes === 1 ? '' : 's'
-        }. Todavía no se scrapeó la declaración de AFIP.`}
+        }. Todavía no se scrapeó la declaración de ARCA.`}
       >
         Calculado
       </span>
@@ -385,7 +385,7 @@ function EstadoBadge({ row }: { row: RiRow }) {
   if (!difiere) {
     return (
       <span className={cls('bg-emerald-50 text-emerald-700')}>
-        Coincide AFIP
+        Coincide ARCA
       </span>
     );
   }
@@ -393,11 +393,11 @@ function EstadoBadge({ row }: { row: RiRow }) {
     <span
       className={cls('bg-amber-50 text-amber-700')}
       title={[
-        `Débito — calculado ${formatARS(row.calcDebitoFiscal)} · AFIP ${formatARS(row.debitoFiscal)}`,
-        `Crédito — calculado ${formatARS(row.calcCreditoFiscal)} · AFIP ${formatARS(row.creditoFiscal)}`,
+        `Débito — calculado ${formatARS(row.calcDebitoFiscal)} · ARCA ${formatARS(row.debitoFiscal)}`,
+        `Crédito — calculado ${formatARS(row.calcCreditoFiscal)} · ARCA ${formatARS(row.creditoFiscal)}`,
       ].join('\n')}
     >
-      Difiere de AFIP
+      Difiere de ARCA
     </span>
   );
 }
@@ -538,7 +538,7 @@ function IvaResumenRI({ search }: { search: string }) {
         Débito, crédito y saldo técnico se calculan sobre los comprobantes
         cargados del período — los mismos números que la ficha de cada empresa.
         Saldo libre disponibilidad y retenciones/percepciones vienen de la
-        declaración de AFIP: no se pueden derivar de comprobantes — si el
+        declaración de ARCA: no se pueden derivar de comprobantes — si el
         scrapeo todavía no los trajo, se pueden cargar a mano haciendo click en
         la celda (la declaración real los pisa cuando llega). El saldo técnico
         es débito menos crédito: positivo es a pagar.
@@ -965,7 +965,7 @@ function MonotributistasTab({ search }: { search: string }) {
                   onSort={onSort}
                 />
                 <SortableTh
-                  label="Login AFIP"
+                  label="Login ARCA"
                   colKey="representante"
                   sort={sort}
                   onSort={onSort}
@@ -1095,7 +1095,7 @@ function SinClasificarBlock({ search }: { search: string }) {
             >
               <th className={cn(thCls, 'text-left')}>Cliente</th>
               <th className={cn(thCls, 'text-left')}>CUIT</th>
-              <th className={cn(thCls, 'text-left')}>Login AFIP</th>
+              <th className={cn(thCls, 'text-left')}>Login ARCA</th>
               <th className={cn(thCls, 'text-left')}>Condición</th>
             </tr>
           </thead>

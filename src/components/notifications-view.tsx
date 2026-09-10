@@ -528,7 +528,7 @@ export function NotificationsView({
                 ]}
                 value={credencialFilter}
                 onValueChange={setCredencialFilter}
-                placeholder="Filtrar por login AFIP"
+                placeholder="Filtrar por login ARCA"
                 searchPlaceholder="Buscar login..."
                 width="100%"
               />
