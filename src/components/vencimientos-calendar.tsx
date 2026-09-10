@@ -234,7 +234,7 @@ export function VencimientosCalendar() {
   }, [filteredEventsByDay]);
 
   return (
-    <div>
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Calendario de vencimientos"
         subtitle={
@@ -245,10 +245,14 @@ export function VencimientosCalendar() {
         actions={<SelectorClienteGlobal />}
       />
 
-      {/* ── Body grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[26px] lg:items-start">
+      {/* ── Body grid ──
+          Alto completo y recorte acá: cada columna scrollea por dentro, como
+          la bandeja de notificaciones. Antes la columna era `sticky` y el
+          scroll lo hacía la página entera, así que leer el detalle de un día
+          cargado te movía el calendario de al lado. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-[26px] overflow-y-auto lg:grid-cols-[320px_1fr] lg:overflow-hidden">
         {/* ── Left column: summary + day detail ── */}
-        <div className="flex flex-col gap-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-140px)]">
+        <div className="flex min-h-0 flex-col gap-0 lg:h-full lg:overflow-hidden">
           {/* Month summary */}
           <div>
             <h3 className="font-[family-name:var(--ff-display)] font-semibold text-[15px] text-[#12131A] mb-1.5">
@@ -290,7 +294,7 @@ export function VencimientosCalendar() {
           </div>
 
           {/* Selected day detail */}
-          <div className="pt-[12px] border-t border-[var(--arca-border)] mt-[12px] flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="pt-[12px] pb-[12px] border-t border-b border-[var(--arca-border)] mt-[12px] flex-1 min-h-0 flex flex-col overflow-hidden">
             <div className="mb-2 shrink-0">
               <span className="text-[13px] font-medium text-[#6E7079]">
                 {selectedDate
@@ -311,7 +315,7 @@ export function VencimientosCalendar() {
                 Sin vencimientos ni deudas este día.
               </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
+              <div className="space-y-2 overflow-y-auto overscroll-contain flex-1 min-h-0 pr-1">
                 {filteredSelectedEvents.map((ev) => {
                   const isCompleted = ev.kind === 'due' && !!ev.completedAt;
                   return (
@@ -407,7 +411,7 @@ export function VencimientosCalendar() {
         </div>
 
         {/* Calendar grid */}
-        <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px] overflow-hidden">
+        <div className="min-h-0 self-start max-h-full overflow-y-auto overscroll-contain bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px]">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--arca-border)]">
             <div className="flex items-center gap-3">

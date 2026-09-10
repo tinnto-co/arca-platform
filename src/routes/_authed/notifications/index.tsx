@@ -333,7 +333,7 @@ function RouteComponent() {
         }}
       />
 
-      <div className="flex min-h-0 flex-1 overflow-hidden border">
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)]">
         <ListaNotificaciones
           notificaciones={notificaciones}
           seleccionada={seleccionada}
