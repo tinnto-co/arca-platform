@@ -381,7 +381,7 @@ export function PanelLectura({
       {/* Barra de la aplicación: lo que se le hace a la notificación. Va
           arriba de todo —antes del asunto— y sólo con íconos, con el nombre de
           cada acción en su tooltip. */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-[18px] py-1">
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-6 py-1">
         <AccionIcono etiqueta="Crear tarea" onClick={onCrearTarea} destacada>
           <Plus className="size-4" />
         </AccionIcono>
