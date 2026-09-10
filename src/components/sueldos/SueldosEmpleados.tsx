@@ -3,8 +3,22 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Plus, Trash2, RefreshCw, Pencil, Save, Search, ChevronLeft, ChevronRight, FileText, Bookmark, BookmarkCheck, UserX } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  RefreshCw,
+  Pencil,
+  Save,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Bookmark,
+  BookmarkCheck,
+  UserX,
+} from 'lucide-react';
 import { toast } from 'sonner';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,12 +59,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface SueldosEmpleadosProps {
   clientId: string;
@@ -88,7 +97,7 @@ function formatDate(d: Date | string | null | undefined): string {
   if (d == null) return '—';
   try {
     // Siempre leer la parte UTC para evitar el desfase de timezone (UTC-3 → día anterior)
-    const iso = typeof d === 'string' ? d : (d as Date).toISOString();
+    const iso = typeof d === 'string' ? d : d.toISOString();
     const [y, m, day] = iso.slice(0, 10).split('-');
     return `${day}/${m}/${y}`;
   } catch {
@@ -149,7 +158,12 @@ function formaPagoLabel(v: string | null | undefined): string {
   if (!v) return '—';
   const s = v.trim().toLowerCase();
   if (s === '1' || s === 'efectivo') return 'Efectivo';
-  if (s === '2' || s === 'deposito' || s === 'acreditacion' || s === 'acreditación')
+  if (
+    s === '2' ||
+    s === 'deposito' ||
+    s === 'acreditacion' ||
+    s === 'acreditación'
+  )
     return 'Depósito en cuenta';
   if (s === '3' || s === 'cheque') return 'Cheque';
   if (s === 'transferencia') return 'Transferencia';
@@ -169,15 +183,27 @@ function Campo({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-function Seccion({ title, children, cols = 3 }: { title: string; children: React.ReactNode; cols?: 2 | 3 }) {
+function Seccion({
+  title,
+  children,
+  cols = 3,
+}: {
+  title: string;
+  children: React.ReactNode;
+  cols?: 2 | 3;
+}) {
   return (
     <div className="space-y-3">
       <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground border-b pb-1">
         {title}
       </h4>
-      <div className={cols === 2
-        ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5'
-        : 'grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3'}>
+      <div
+        className={
+          cols === 2
+            ? 'grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5'
+            : 'grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-3'
+        }
+      >
         {children}
       </div>
     </div>
@@ -211,12 +237,15 @@ function EmpleadoDetalleDialog({
   const [fechaAlta, setFechaAlta] = useState('');
   const [fechaBaja, setFechaBaja] = useState('');
   const [activo, setActivo] = useState(true);
-  const [tipoJornada, setTipoJornada] = useState<'full_time' | 'part_time' | 'reducida'>('full_time');
+  const [tipoJornada, setTipoJornada] = useState<
+    'full_time' | 'part_time' | 'reducida'
+  >('full_time');
   const [convenioId, setConvenioId] = useState('');
   const [categoriaId, setCategoriaId] = useState('');
   const [categoria, setCategoria] = useState('');
   const [legajo, setLegajo] = useState('');
-  const [formaPago, setFormaPago] = useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
+  const [formaPago, setFormaPago] =
+    useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
   const [banco, setBanco] = useState('_otro banco');
   const [cbu, setCbu] = useState('');
   // Domicilio y familia
@@ -300,16 +329,22 @@ function EmpleadoDetalleDialog({
     setCuil(emp.cuil ?? '');
     setFechaAlta(
       emp.fechaAlta
-        ? (typeof emp.fechaAlta === 'string' ? emp.fechaAlta : (emp.fechaAlta as Date).toISOString()).slice(0, 10)
+        ? (typeof emp.fechaAlta === 'string'
+            ? emp.fechaAlta
+            : (emp.fechaAlta as Date).toISOString()
+          ).slice(0, 10)
         : ''
     );
     setFechaBaja(
       emp.fechaBaja
-        ? (typeof emp.fechaBaja === 'string' ? emp.fechaBaja : (emp.fechaBaja as Date).toISOString()).slice(0, 10)
+        ? (typeof emp.fechaBaja === 'string'
+            ? emp.fechaBaja
+            : (emp.fechaBaja as Date).toISOString()
+          ).slice(0, 10)
         : ''
     );
     setActivo(emp.activo ?? true);
-    setTipoJornada((emp.tipoJornada as 'full_time' | 'part_time' | 'reducida') ?? 'full_time');
+    setTipoJornada(emp.tipoJornada ?? 'full_time');
     setConvenioId(emp.convenioId ?? '');
     setCategoriaId(emp.categoriaId ?? '');
     setCategoria(emp.categoriaTexto ?? '');
@@ -330,7 +365,9 @@ function EmpleadoDetalleDialog({
     setActividadId(emp.actividadId ?? '');
     setSiniestradoId(emp.siniestradoId ?? '');
     setObservaciones(emp.observaciones ?? '');
-    setValorSueldoOverride(emp.valorSueldo != null ? String(emp.valorSueldo) : '');
+    setValorSueldoOverride(
+      emp.valorSueldo != null ? String(emp.valorSueldo) : ''
+    );
   };
 
   useEffect(() => {
@@ -372,26 +409,37 @@ function EmpleadoDetalleDialog({
           actividadId: actividadId || null,
           siniestradoId: siniestradoId || null,
           observaciones: observaciones.trim() || null,
-          valorSueldo: valorSueldoOverride.trim() !== '' ? valorSueldoOverride.trim() : null,
+          valorSueldo:
+            valorSueldoOverride.trim() !== ''
+              ? valorSueldoOverride.trim()
+              : null,
         },
       });
     },
     onSuccess: () => {
       toast.success('Empleado guardado');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId],
+      });
       queryClient.invalidateQueries({ queryKey: ['empleados', clientId] });
       queryClient.invalidateQueries({ queryKey: ['recibo-detalle'] });
       setIsEditing(false);
       onSaved();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al guardar'),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : 'Error al guardar'),
   });
 
   if (!row) return null;
   const e = row.empleado;
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent className="w-[95vw] sm:max-w-2xl h-[85vh] flex flex-col">
         <DialogHeader className="shrink-0">
           <div className="flex items-center justify-between gap-2">
@@ -402,16 +450,33 @@ function EmpleadoDetalleDialog({
               </span>
             </DialogTitle>
             {!isEditing ? (
-              <Button size="sm" variant="outline" className="shrink-0 gap-1.5" onClick={() => setIsEditing(true)}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 gap-1.5"
+                onClick={() => setIsEditing(true)}
+              >
                 <Pencil className="h-3.5 w-3.5" />
                 Editar
               </Button>
             ) : (
               <div className="flex shrink-0 gap-2">
-                <Button size="sm" variant="ghost" onClick={() => { resetForm(row); setIsEditing(false); }}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    resetForm(row);
+                    setIsEditing(false);
+                  }}
+                >
                   Cancelar
                 </Button>
-                <Button size="sm" disabled={guardar.isPending} onClick={() => guardar.mutate()} className="gap-1.5">
+                <Button
+                  size="sm"
+                  disabled={guardar.isPending}
+                  onClick={() => guardar.mutate()}
+                  className="gap-1.5"
+                >
                   <Save className="h-3.5 w-3.5" />
                   Guardar
                 </Button>
@@ -436,16 +501,28 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Nombre</Label>
-                      <Input value={nombre} onChange={(ev) => setNombre(ev.target.value)} />
+                      <Input
+                        value={nombre}
+                        onChange={(ev) => setNombre(ev.target.value)}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>CUIL</Label>
-                      <Input value={cuil} onChange={(ev) => setCuil(ev.target.value)} placeholder="20-12345678-9" />
+                      <Input
+                        value={cuil}
+                        onChange={(ev) => setCuil(ev.target.value)}
+                        placeholder="20-12345678-9"
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Estado</Label>
-                      <Select value={activo ? 'activo' : 'inactivo'} onValueChange={(v) => setActivo(v === 'activo')}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Select
+                        value={activo ? 'activo' : 'inactivo'}
+                        onValueChange={(v) => setActivo(v === 'activo')}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="activo">Activo</SelectItem>
                           <SelectItem value="inactivo">Inactivo</SelectItem>
@@ -457,9 +534,18 @@ function EmpleadoDetalleDialog({
                   <>
                     <Campo label="CUIL" value={e.cuil} />
                     <Campo label="Sexo" value={e.sexo} />
-                    <Campo label="Fecha de nacimiento" value={formatDate(e.fechaNacimiento)} />
-                    <Campo label="Origen" value={e.fuente === 'manual' ? 'Manual' : 'Importado'} />
-                    <Campo label="Estado" value={e.activo ? 'Activo' : 'Inactivo'} />
+                    <Campo
+                      label="Fecha de nacimiento"
+                      value={formatDate(e.fechaNacimiento)}
+                    />
+                    <Campo
+                      label="Origen"
+                      value={e.fuente === 'manual' ? 'Manual' : 'Importado'}
+                    />
+                    <Campo
+                      label="Estado"
+                      value={e.activo ? 'Activo' : 'Inactivo'}
+                    />
                   </>
                 )}
               </Seccion>
@@ -468,40 +554,81 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Domicilio</Label>
-                      <Input value={domicilio} onChange={(ev) => setDomicilio(ev.target.value)} />
+                      <Input
+                        value={domicilio}
+                        onChange={(ev) => setDomicilio(ev.target.value)}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Provincia</Label>
-                      <Select value={provinciaId || '_ninguna'} onValueChange={(v) => setProvinciaId(v === '_ninguna' ? '' : v)}>
-                        <SelectTrigger><SelectValue placeholder="Sin provincia" /></SelectTrigger>
+                      <Select
+                        value={provinciaId || '_ninguna'}
+                        onValueChange={(v) =>
+                          setProvinciaId(v === '_ninguna' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin provincia" />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">Sin provincia</SelectItem>
+                          <SelectItem value="_ninguna">
+                            Sin provincia
+                          </SelectItem>
                           {catalogProvincias.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Código postal</Label>
-                      <Input value={codigoPostal} onChange={(ev) => setCodigoPostal(ev.target.value)} maxLength={10} />
+                      <Input
+                        value={codigoPostal}
+                        onChange={(ev) => setCodigoPostal(ev.target.value)}
+                        maxLength={10}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Cónyuge</Label>
-                      <Input type="number" min={0} value={conyuge} onChange={(ev) => setConyuge(ev.target.value)} placeholder="0" />
+                      <Input
+                        type="number"
+                        min={0}
+                        value={conyuge}
+                        onChange={(ev) => setConyuge(ev.target.value)}
+                        placeholder="0"
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Hijos</Label>
-                      <Input type="number" min={0} value={hijos} onChange={(ev) => setHijos(ev.target.value)} placeholder="0" />
+                      <Input
+                        type="number"
+                        min={0}
+                        value={hijos}
+                        onChange={(ev) => setHijos(ev.target.value)}
+                        placeholder="0"
+                      />
                     </div>
                   </>
                 ) : (
                   <>
                     <Campo label="Domicilio" value={e.domicilio} />
-                    <Campo label="Provincia" value={row.provinciaNombre ?? null} />
+                    <Campo
+                      label="Provincia"
+                      value={row.provinciaNombre ?? null}
+                    />
                     <Campo label="Código postal" value={e.codigoPostal} />
-                    <Campo label="Cónyuge" value={e.conyuge != null ? (e.conyuge > 0 ? 'Sí' : 'No') : null} />
-                    <Campo label="Hijos" value={e.hijos != null ? String(e.hijos) : null} />
+                    <Campo
+                      label="Cónyuge"
+                      value={
+                        e.conyuge != null ? (e.conyuge > 0 ? 'Sí' : 'No') : null
+                      }
+                    />
+                    <Campo
+                      label="Hijos"
+                      value={e.hijos != null ? String(e.hijos) : null}
+                    />
                   </>
                 )}
               </Seccion>
@@ -514,22 +641,40 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Legajo</Label>
-                      <Input value={legajo} onChange={(ev) => setLegajo(ev.target.value)} />
+                      <Input
+                        value={legajo}
+                        onChange={(ev) => setLegajo(ev.target.value)}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Fecha de alta (antigüedad)</Label>
-                      <Input type="date" value={fechaAlta} onChange={(ev) => setFechaAlta(ev.target.value)} />
+                      <SelectorFecha
+                        value={fechaAlta}
+                        onChange={setFechaAlta}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Fecha de baja</Label>
-                      <Input type="date" value={fechaBaja} onChange={(ev) => setFechaBaja(ev.target.value)} />
+                      <SelectorFecha
+                        value={fechaBaja}
+                        onChange={setFechaBaja}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Tipo jornada</Label>
-                      <Select value={tipoJornada} onValueChange={(v) => setTipoJornada(v as typeof tipoJornada)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Select
+                        value={tipoJornada}
+                        onValueChange={(v) =>
+                          setTipoJornada(v as typeof tipoJornada)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="full_time">Tiempo completo</SelectItem>
+                          <SelectItem value="full_time">
+                            Tiempo completo
+                          </SelectItem>
                           <SelectItem value="part_time">Part time</SelectItem>
                           <SelectItem value="reducida">Reducida</SelectItem>
                         </SelectContent>
@@ -538,9 +683,18 @@ function EmpleadoDetalleDialog({
                   </>
                 ) : (
                   <>
-                    <Campo label="Fecha de alta (antigüedad)" value={formatDate(e.fechaAlta)} />
-                    <Campo label="Fecha de baja" value={formatDate(e.fechaBaja)} />
-                    <Campo label="Tipo jornada" value={tipoJornadaLabel(e.tipoJornada)} />
+                    <Campo
+                      label="Fecha de alta (antigüedad)"
+                      value={formatDate(e.fechaAlta)}
+                    />
+                    <Campo
+                      label="Fecha de baja"
+                      value={formatDate(e.fechaBaja)}
+                    />
+                    <Campo
+                      label="Tipo jornada"
+                      value={tipoJornadaLabel(e.tipoJornada)}
+                    />
                     <Campo label="Tarea / Puesto" value={e.tarea} />
                   </>
                 )}
@@ -550,11 +704,21 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Convenio</Label>
-                      <Select value={convenioId} onValueChange={(v) => { setConvenioId(v); setCategoriaId(''); }}>
-                        <SelectTrigger><SelectValue placeholder="Sin convenio" /></SelectTrigger>
+                      <Select
+                        value={convenioId}
+                        onValueChange={(v) => {
+                          setConvenioId(v);
+                          setCategoriaId('');
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin convenio" />
+                        </SelectTrigger>
                         <SelectContent>
                           {convenios.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -570,24 +734,53 @@ function EmpleadoDetalleDialog({
                         }}
                         disabled={!convenioId}
                       >
-                        <SelectTrigger><SelectValue placeholder="Sin categoría" /></SelectTrigger>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin categoría" />
+                        </SelectTrigger>
                         <SelectContent>
                           {categoriasEdit.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>{c.codigo} - {c.nombre}</SelectItem>
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.codigo} - {c.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Puesto</Label>
-                      <Input value={categoria} onChange={(ev) => setCategoria(ev.target.value)} placeholder="Nombre del puesto" />
+                      <Input
+                        value={categoria}
+                        onChange={(ev) => setCategoria(ev.target.value)}
+                        placeholder="Nombre del puesto"
+                      />
                     </div>
                   </>
                 ) : (
                   <>
-                    <Campo label="Convenio" value={row.convenioNombre ? formatTitleCaseDisplay(row.convenioNombre) : null} />
-                    <Campo label="Categoría (sistema)" value={row.categoriaNombre ? formatTitleCaseDisplay(row.categoriaNombre) : null} />
-                    <Campo label="Puesto" value={e.categoriaTexto ? formatTitleCaseDisplay(e.categoriaTexto) : null} />
+                    <Campo
+                      label="Convenio"
+                      value={
+                        row.convenioNombre
+                          ? formatTitleCaseDisplay(row.convenioNombre)
+                          : null
+                      }
+                    />
+                    <Campo
+                      label="Categoría (sistema)"
+                      value={
+                        row.categoriaNombre
+                          ? formatTitleCaseDisplay(row.categoriaNombre)
+                          : null
+                      }
+                    />
+                    <Campo
+                      label="Puesto"
+                      value={
+                        e.categoriaTexto
+                          ? formatTitleCaseDisplay(e.categoriaTexto)
+                          : null
+                      }
+                    />
                   </>
                 )}
               </Seccion>
@@ -603,14 +796,45 @@ function EmpleadoDetalleDialog({
                       value={valorSueldoOverride}
                       onChange={(ev) => setValorSueldoOverride(ev.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">Si se ingresa un valor, tiene prioridad sobre la escala del convenio.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Si se ingresa un valor, tiene prioridad sobre la escala
+                      del convenio.
+                    </p>
                   </div>
                 ) : (
-                  <Campo label="Sueldo básico override" value={e.valorSueldo ? `$${Number(e.valorSueldo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : null} />
+                  <Campo
+                    label="Sueldo básico override"
+                    value={
+                      e.valorSueldo
+                        ? `$${Number(e.valorSueldo).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                        : null
+                    }
+                  />
                 )}
-                <Campo label="Valor hora override" value={e.valorHora ? `$${Number(e.valorHora).toLocaleString('es-AR', { minimumFractionDigits: 2 })}` : null} />
-                <Campo label="Horas mensuales" value={e.horasMensualesNormales != null ? String(e.horasMensualesNormales) : null} />
-                <Campo label="Días mensuales" value={e.diasMensualesNormales != null ? String(e.diasMensualesNormales) : null} />
+                <Campo
+                  label="Valor hora override"
+                  value={
+                    e.valorHora
+                      ? `$${Number(e.valorHora).toLocaleString('es-AR', { minimumFractionDigits: 2 })}`
+                      : null
+                  }
+                />
+                <Campo
+                  label="Horas mensuales"
+                  value={
+                    e.horasMensualesNormales != null
+                      ? String(e.horasMensualesNormales)
+                      : null
+                  }
+                />
+                <Campo
+                  label="Días mensuales"
+                  value={
+                    e.diasMensualesNormales != null
+                      ? String(e.diasMensualesNormales)
+                      : null
+                  }
+                />
               </Seccion>
             </TabsContent>
 
@@ -620,20 +844,41 @@ function EmpleadoDetalleDialog({
                 {isEditing ? (
                   <div className="col-span-full space-y-1">
                     <Label>Obra social</Label>
-                    <Select value={obraSocialId || '_ninguna'} onValueChange={(v) => setObraSocialId(v === '_ninguna' ? '' : v)}>
-                      <SelectTrigger><SelectValue placeholder="Sin obra social" /></SelectTrigger>
+                    <Select
+                      value={obraSocialId || '_ninguna'}
+                      onValueChange={(v) =>
+                        setObraSocialId(v === '_ninguna' ? '' : v)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Sin obra social" />
+                      </SelectTrigger>
                       <SelectContent className="max-h-[240px]">
-                        <SelectItem value="_ninguna">Sin obra social</SelectItem>
+                        <SelectItem value="_ninguna">
+                          Sin obra social
+                        </SelectItem>
                         {obrasSociales.map((os) => (
-                          <SelectItem key={os.id} value={os.id}>{os.codigo} — {os.nombre}</SelectItem>
+                          <SelectItem key={os.id} value={os.id}>
+                            {os.codigo} — {os.nombre}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                 ) : (
                   <>
-                    <Campo label="Nombre" value={row.obraSocialNombre ? formatTitleCaseDisplay(row.obraSocialNombre) : null} />
-                    <Campo label="Código" value={row.obraSocialCodigo ?? null} />
+                    <Campo
+                      label="Nombre"
+                      value={
+                        row.obraSocialNombre
+                          ? formatTitleCaseDisplay(row.obraSocialNombre)
+                          : null
+                      }
+                    />
+                    <Campo
+                      label="Código"
+                      value={row.obraSocialCodigo ?? null}
+                    />
                   </>
                 )}
               </Seccion>
@@ -642,37 +887,69 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Forma de pago</Label>
-                      <Select value={formaPago} onValueChange={(v) => setFormaPago(v as typeof formaPago)}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Select
+                        value={formaPago}
+                        onValueChange={(v) =>
+                          setFormaPago(v as typeof formaPago)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent>
                           {FORMAS_PAGO.map((f) => (
-                            <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                            <SelectItem key={f.value} value={f.value}>
+                              {f.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Banco</Label>
-                      <Select value={banco || '_otro banco'} onValueChange={setBanco}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Select
+                        value={banco || '_otro banco'}
+                        onValueChange={setBanco}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
                           {BANCOS.map((b) => (
-                            <SelectItem key={b} value={b}>{b}</SelectItem>
+                            <SelectItem key={b} value={b}>
+                              {b}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
-                    {(formaPago === 'deposito' || formaPago === 'transferencia') && (
+                    {(formaPago === 'deposito' ||
+                      formaPago === 'transferencia') && (
                       <div className="space-y-1">
                         <Label htmlFor="det-cbu">CBU / cuenta</Label>
-                        <Input id="det-cbu" value={cbu} onChange={(ev) => setCbu(ev.target.value)} maxLength={22} className="font-mono" placeholder="22 dígitos" />
+                        <Input
+                          id="det-cbu"
+                          value={cbu}
+                          onChange={(ev) => setCbu(ev.target.value)}
+                          maxLength={22}
+                          className="font-mono"
+                          placeholder="22 dígitos"
+                        />
                       </div>
                     )}
                   </>
                 ) : (
                   <>
-                    <Campo label="Forma de pago" value={formaPagoLabel(e.formaPago)} />
-                    <Campo label="Banco" value={e.banco && e.banco !== '_otro banco' ? e.banco : null} />
+                    <Campo
+                      label="Forma de pago"
+                      value={formaPagoLabel(e.formaPago)}
+                    />
+                    <Campo
+                      label="Banco"
+                      value={
+                        e.banco && e.banco !== '_otro banco' ? e.banco : null
+                      }
+                    />
                     <Campo label="CBU" value={e.cbu} />
                   </>
                 )}
@@ -686,72 +963,136 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Modalidad contratación</Label>
-                      <Select value={modalidadContratacionId || '_ninguna'} onValueChange={(v) => setModalidadContratacionId(v === '_ninguna' ? '' : v)}>
-                        <SelectTrigger><SelectValue placeholder="Sin modalidad" /></SelectTrigger>
+                      <Select
+                        value={modalidadContratacionId || '_ninguna'}
+                        onValueChange={(v) =>
+                          setModalidadContratacionId(v === '_ninguna' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin modalidad" />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">Sin modalidad</SelectItem>
+                          <SelectItem value="_ninguna">
+                            Sin modalidad
+                          </SelectItem>
                           {catalogModalidades.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>{m.codigo} — {m.nombre}</SelectItem>
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.codigo} — {m.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Situación</Label>
-                      <Select value={situacionId || '_ninguna'} onValueChange={(v) => setSituacionId(v === '_ninguna' ? '' : v)}>
-                        <SelectTrigger><SelectValue placeholder="Sin situación" /></SelectTrigger>
+                      <Select
+                        value={situacionId || '_ninguna'}
+                        onValueChange={(v) =>
+                          setSituacionId(v === '_ninguna' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin situación" />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">Sin situación</SelectItem>
+                          <SelectItem value="_ninguna">
+                            Sin situación
+                          </SelectItem>
                           {catalogSituaciones.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.codigo} — {s.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Zona</Label>
-                      <Select value={zonaId || '_ninguna'} onValueChange={(v) => setZonaId(v === '_ninguna' ? '' : v)}>
-                        <SelectTrigger><SelectValue placeholder="Sin zona" /></SelectTrigger>
+                      <Select
+                        value={zonaId || '_ninguna'}
+                        onValueChange={(v) =>
+                          setZonaId(v === '_ninguna' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin zona" />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
                           <SelectItem value="_ninguna">Sin zona</SelectItem>
                           {catalogZonas.map((z) => (
-                            <SelectItem key={z.id} value={z.id}>{z.codigo} — {z.nombre}</SelectItem>
+                            <SelectItem key={z.id} value={z.id}>
+                              {z.codigo} — {z.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Condición</Label>
-                      <Select value={condicionId || '_ninguna'} onValueChange={(v) => setCondicionId(v === '_ninguna' ? '' : v)}>
-                        <SelectTrigger><SelectValue placeholder="Sin condición" /></SelectTrigger>
+                      <Select
+                        value={condicionId || '_ninguna'}
+                        onValueChange={(v) =>
+                          setCondicionId(v === '_ninguna' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin condición" />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">Sin condición</SelectItem>
+                          <SelectItem value="_ninguna">
+                            Sin condición
+                          </SelectItem>
                           {catalogCondiciones.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>{c.codigo} — {c.nombre}</SelectItem>
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.codigo} — {c.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Actividad</Label>
-                      <Select value={actividadId || '_ninguna'} onValueChange={(v) => setActividadId(v === '_ninguna' ? '' : v)}>
-                        <SelectTrigger><SelectValue placeholder="Sin actividad" /></SelectTrigger>
+                      <Select
+                        value={actividadId || '_ninguna'}
+                        onValueChange={(v) =>
+                          setActividadId(v === '_ninguna' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin actividad" />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">Sin actividad</SelectItem>
+                          <SelectItem value="_ninguna">
+                            Sin actividad
+                          </SelectItem>
                           {catalogActividades.map((a) => (
-                            <SelectItem key={a.id} value={a.id}>{a.codigo} — {a.nombre}</SelectItem>
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.codigo} — {a.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
                       <Label>Siniestrado</Label>
-                      <Select value={siniestradoId || '_ninguna'} onValueChange={(v) => setSiniestradoId(v === '_ninguna' ? '' : v)}>
-                        <SelectTrigger><SelectValue placeholder="Sin siniestrado" /></SelectTrigger>
+                      <Select
+                        value={siniestradoId || '_ninguna'}
+                        onValueChange={(v) =>
+                          setSiniestradoId(v === '_ninguna' ? '' : v)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Sin siniestrado" />
+                        </SelectTrigger>
                         <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">Sin siniestrado</SelectItem>
+                          <SelectItem value="_ninguna">
+                            Sin siniestrado
+                          </SelectItem>
                           {catalogSiniestrados.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.codigo} — {s.nombre}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -759,12 +1100,27 @@ function EmpleadoDetalleDialog({
                   </>
                 ) : (
                   <>
-                    <Campo label="Modalidad contratación" value={row.modalidadNombre ?? null} />
-                    <Campo label="Situación" value={row.situacionNombre ?? null} />
+                    <Campo
+                      label="Modalidad contratación"
+                      value={row.modalidadNombre ?? null}
+                    />
+                    <Campo
+                      label="Situación"
+                      value={row.situacionNombre ?? null}
+                    />
                     <Campo label="Zona" value={row.zonaNombre ?? null} />
-                    <Campo label="Condición" value={row.condicionNombre ?? null} />
-                    <Campo label="Actividad" value={row.actividadNombre ?? null} />
-                    <Campo label="Siniestrado" value={row.siniestradoNombre ?? null} />
+                    <Campo
+                      label="Condición"
+                      value={row.condicionNombre ?? null}
+                    />
+                    <Campo
+                      label="Actividad"
+                      value={row.actividadNombre ?? null}
+                    />
+                    <Campo
+                      label="Siniestrado"
+                      value={row.siniestradoNombre ?? null}
+                    />
                   </>
                 )}
               </Seccion>
@@ -811,11 +1167,14 @@ function NuevoEmpleadoDialog({
   const [cuil, setCuil] = useState('');
   const [fechaAlta, setFechaAlta] = useState('');
   const [fechaBaja, setFechaBaja] = useState('');
-  const [tipoJornada, setTipoJornada] = useState<'full_time' | 'part_time' | 'reducida'>('full_time');
+  const [tipoJornada, setTipoJornada] = useState<
+    'full_time' | 'part_time' | 'reducida'
+  >('full_time');
   const [convenioId, setConvenioId] = useState('');
   const [categoriaId, setCategoriaId] = useState('');
   const [legajo, setLegajo] = useState('');
-  const [formaPago, setFormaPago] = useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
+  const [formaPago, setFormaPago] =
+    useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
   const [banco, setBanco] = useState('_otro banco');
   const [cbu, setCbu] = useState('');
   const [domicilio, setDomicilio] = useState('');
@@ -833,16 +1192,30 @@ function NuevoEmpleadoDialog({
   const [observaciones, setObservaciones] = useState('');
 
   const resetForm = () => {
-    setNombre(''); setCuil(''); setFechaAlta(''); setFechaBaja('');
-    setTipoJornada('full_time'); setConvenioId(''); setCategoriaId('');
+    setNombre('');
+    setCuil('');
+    setFechaAlta('');
+    setFechaBaja('');
+    setTipoJornada('full_time');
+    setConvenioId('');
+    setCategoriaId('');
     setLegajo('');
-    setFormaPago('efectivo'); setBanco('_otro banco'); setCbu('');
-    setDomicilio(''); setCodigoPostal('');
-    setConyuge(''); setHijos('');
-    setObraSocialId(''); setProvinciaId('');
-    setModalidadContratacionId(''); setSituacionId('');
-    setZonaId(''); setCondicionId(''); setActividadId('');
-    setSiniestradoId(''); setObservaciones('');
+    setFormaPago('efectivo');
+    setBanco('_otro banco');
+    setCbu('');
+    setDomicilio('');
+    setCodigoPostal('');
+    setConyuge('');
+    setHijos('');
+    setObraSocialId('');
+    setProvinciaId('');
+    setModalidadContratacionId('');
+    setSituacionId('');
+    setZonaId('');
+    setCondicionId('');
+    setActividadId('');
+    setSiniestradoId('');
+    setObservaciones('');
   };
 
   useEffect(() => {
@@ -936,11 +1309,14 @@ function NuevoEmpleadoDialog({
       }),
     onSuccess: () => {
       toast.success('Empleado creado');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId],
+      });
       queryClient.invalidateQueries({ queryKey: ['empleados', clientId] });
       onClose();
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : 'Error al crear'),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : 'Error al crear'),
   });
 
   const handleSubmit = () => {
@@ -952,7 +1328,12 @@ function NuevoEmpleadoDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) onClose();
+      }}
+    >
       <DialogContent className="w-[95vw] sm:max-w-2xl h-[85vh] flex flex-col">
         <DialogHeader className="shrink-0">
           <DialogTitle>Nuevo empleado</DialogTitle>
@@ -972,41 +1353,77 @@ function NuevoEmpleadoDialog({
               <Seccion title="Identificación">
                 <div className="space-y-1">
                   <Label>CUIL *</Label>
-                  <Input value={cuil} onChange={(ev) => setCuil(ev.target.value)} placeholder="20-12345678-9" />
+                  <Input
+                    value={cuil}
+                    onChange={(ev) => setCuil(ev.target.value)}
+                    placeholder="20-12345678-9"
+                  />
                 </div>
                 <div className="space-y-1 sm:col-span-2">
                   <Label>Nombre completo *</Label>
-                  <Input value={nombre} onChange={(ev) => setNombre(ev.target.value)} placeholder="Apellido, Nombre" />
+                  <Input
+                    value={nombre}
+                    onChange={(ev) => setNombre(ev.target.value)}
+                    placeholder="Apellido, Nombre"
+                  />
                 </div>
               </Seccion>
               <Seccion title="Domicilio y familia">
                 <div className="space-y-1">
                   <Label>Domicilio</Label>
-                  <Input value={domicilio} onChange={(ev) => setDomicilio(ev.target.value)} />
+                  <Input
+                    value={domicilio}
+                    onChange={(ev) => setDomicilio(ev.target.value)}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Provincia</Label>
-                  <Select value={provinciaId || '_ninguna'} onValueChange={(v) => setProvinciaId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin provincia" /></SelectTrigger>
+                  <Select
+                    value={provinciaId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setProvinciaId(v === '_ninguna' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin provincia" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin provincia</SelectItem>
                       {catalogProvinciasCreate.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.nombre}</SelectItem>
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Código postal</Label>
-                  <Input value={codigoPostal} onChange={(ev) => setCodigoPostal(ev.target.value)} maxLength={10} />
+                  <Input
+                    value={codigoPostal}
+                    onChange={(ev) => setCodigoPostal(ev.target.value)}
+                    maxLength={10}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Cónyuge</Label>
-                  <Input type="number" min={0} value={conyuge} onChange={(ev) => setConyuge(ev.target.value)} placeholder="0" />
+                  <Input
+                    type="number"
+                    min={0}
+                    value={conyuge}
+                    onChange={(ev) => setConyuge(ev.target.value)}
+                    placeholder="0"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Hijos</Label>
-                  <Input type="number" min={0} value={hijos} onChange={(ev) => setHijos(ev.target.value)} placeholder="0" />
+                  <Input
+                    type="number"
+                    min={0}
+                    value={hijos}
+                    onChange={(ev) => setHijos(ev.target.value)}
+                    placeholder="0"
+                  />
                 </div>
               </Seccion>
             </TabsContent>
@@ -1016,20 +1433,31 @@ function NuevoEmpleadoDialog({
               <Seccion title="Situación laboral">
                 <div className="space-y-1">
                   <Label>Legajo *</Label>
-                  <Input value={legajo} onChange={(ev) => setLegajo(ev.target.value)} placeholder="001" />
+                  <Input
+                    value={legajo}
+                    onChange={(ev) => setLegajo(ev.target.value)}
+                    placeholder="001"
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Fecha de alta</Label>
-                  <Input type="date" value={fechaAlta} onChange={(ev) => setFechaAlta(ev.target.value)} />
+                  <SelectorFecha value={fechaAlta} onChange={setFechaAlta} />
                 </div>
                 <div className="space-y-1">
                   <Label>Fecha de baja</Label>
-                  <Input type="date" value={fechaBaja} onChange={(ev) => setFechaBaja(ev.target.value)} />
+                  <SelectorFecha value={fechaBaja} onChange={setFechaBaja} />
                 </div>
                 <div className="space-y-1">
                   <Label>Tipo jornada</Label>
-                  <Select value={tipoJornada} onValueChange={(v) => setTipoJornada(v as typeof tipoJornada)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Select
+                    value={tipoJornada}
+                    onValueChange={(v) =>
+                      setTipoJornada(v as typeof tipoJornada)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="full_time">Tiempo completo</SelectItem>
                       <SelectItem value="part_time">Part time</SelectItem>
@@ -1041,24 +1469,44 @@ function NuevoEmpleadoDialog({
               <Seccion title="Convenio y categoría">
                 <div className="space-y-1">
                   <Label>Convenio</Label>
-                  <Select value={convenioId || '_ninguno'} onValueChange={(v) => { setConvenioId(v === '_ninguno' ? '' : v); setCategoriaId(''); }}>
-                    <SelectTrigger><SelectValue placeholder="Sin convenio" /></SelectTrigger>
+                  <Select
+                    value={convenioId || '_ninguno'}
+                    onValueChange={(v) => {
+                      setConvenioId(v === '_ninguno' ? '' : v);
+                      setCategoriaId('');
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin convenio" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="_ninguno">Sin convenio</SelectItem>
                       {convenios.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Categoría</Label>
-                  <Select value={categoriaId || '_ninguna'} onValueChange={(v) => setCategoriaId(v === '_ninguna' ? '' : v)} disabled={!convenioId}>
-                    <SelectTrigger><SelectValue placeholder="Sin categoría" /></SelectTrigger>
+                  <Select
+                    value={categoriaId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setCategoriaId(v === '_ninguna' ? '' : v)
+                    }
+                    disabled={!convenioId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin categoría" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="_ninguna">Sin categoría</SelectItem>
                       {categoriasCreate.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.codigo} - {c.nombre}</SelectItem>
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.codigo} - {c.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1071,12 +1519,21 @@ function NuevoEmpleadoDialog({
               <Seccion title="Obra social">
                 <div className="col-span-full space-y-1">
                   <Label>Obra social</Label>
-                  <Select value={obraSocialId || '_ninguna'} onValueChange={(v) => setObraSocialId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin obra social" /></SelectTrigger>
+                  <Select
+                    value={obraSocialId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setObraSocialId(v === '_ninguna' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin obra social" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin obra social</SelectItem>
                       {obrasSocialesCreate.map((os) => (
-                        <SelectItem key={os.id} value={os.id}>{os.codigo} — {os.nombre}</SelectItem>
+                        <SelectItem key={os.id} value={os.id}>
+                          {os.codigo} — {os.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1085,30 +1542,51 @@ function NuevoEmpleadoDialog({
               <Seccion title="Datos de pago">
                 <div className="space-y-1">
                   <Label>Forma de pago</Label>
-                  <Select value={formaPago} onValueChange={(v) => setFormaPago(v as typeof formaPago)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Select
+                    value={formaPago}
+                    onValueChange={(v) => setFormaPago(v as typeof formaPago)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent>
                       {FORMAS_PAGO.map((f) => (
-                        <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+                        <SelectItem key={f.value} value={f.value}>
+                          {f.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Banco</Label>
-                  <Select value={banco || '_otro banco'} onValueChange={setBanco}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                  <Select
+                    value={banco || '_otro banco'}
+                    onValueChange={setBanco}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       {BANCOS.map((b) => (
-                        <SelectItem key={b} value={b}>{b}</SelectItem>
+                        <SelectItem key={b} value={b}>
+                          {b}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-                {(formaPago === 'deposito' || formaPago === 'transferencia') && (
+                {(formaPago === 'deposito' ||
+                  formaPago === 'transferencia') && (
                   <div className="space-y-1">
                     <Label>CBU / cuenta</Label>
-                    <Input value={cbu} onChange={(ev) => setCbu(ev.target.value)} maxLength={22} className="font-mono" placeholder="22 dígitos" />
+                    <Input
+                      value={cbu}
+                      onChange={(ev) => setCbu(ev.target.value)}
+                      maxLength={22}
+                      className="font-mono"
+                      placeholder="22 dígitos"
+                    />
                   </div>
                 )}
               </Seccion>
@@ -1119,72 +1597,124 @@ function NuevoEmpleadoDialog({
               <Seccion title="Códigos auxiliares" cols={2}>
                 <div className="space-y-1">
                   <Label>Modalidad contratación</Label>
-                  <Select value={modalidadContratacionId || '_ninguna'} onValueChange={(v) => setModalidadContratacionId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin modalidad" /></SelectTrigger>
+                  <Select
+                    value={modalidadContratacionId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setModalidadContratacionId(v === '_ninguna' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin modalidad" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin modalidad</SelectItem>
                       {catalogModalidadesCreate.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.codigo} — {m.nombre}</SelectItem>
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.codigo} — {m.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Situación</Label>
-                  <Select value={situacionId || '_ninguna'} onValueChange={(v) => setSituacionId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin situación" /></SelectTrigger>
+                  <Select
+                    value={situacionId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setSituacionId(v === '_ninguna' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin situación" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin situación</SelectItem>
                       {catalogSituacionesCreate.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.codigo} — {s.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Zona</Label>
-                  <Select value={zonaId || '_ninguna'} onValueChange={(v) => setZonaId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin zona" /></SelectTrigger>
+                  <Select
+                    value={zonaId || '_ninguna'}
+                    onValueChange={(v) => setZonaId(v === '_ninguna' ? '' : v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin zona" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin zona</SelectItem>
                       {catalogZonasCreate.map((z) => (
-                        <SelectItem key={z.id} value={z.id}>{z.codigo} — {z.nombre}</SelectItem>
+                        <SelectItem key={z.id} value={z.id}>
+                          {z.codigo} — {z.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Condición</Label>
-                  <Select value={condicionId || '_ninguna'} onValueChange={(v) => setCondicionId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin condición" /></SelectTrigger>
+                  <Select
+                    value={condicionId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setCondicionId(v === '_ninguna' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin condición" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin condición</SelectItem>
                       {catalogCondicionesCreate.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>{c.codigo} — {c.nombre}</SelectItem>
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.codigo} — {c.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Actividad</Label>
-                  <Select value={actividadId || '_ninguna'} onValueChange={(v) => setActividadId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin actividad" /></SelectTrigger>
+                  <Select
+                    value={actividadId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setActividadId(v === '_ninguna' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin actividad" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin actividad</SelectItem>
                       {catalogActividadesCreate.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>{a.codigo} — {a.nombre}</SelectItem>
+                        <SelectItem key={a.id} value={a.id}>
+                          {a.codigo} — {a.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
                   <Label>Siniestrado</Label>
-                  <Select value={siniestradoId || '_ninguna'} onValueChange={(v) => setSiniestradoId(v === '_ninguna' ? '' : v)}>
-                    <SelectTrigger><SelectValue placeholder="Sin siniestrado" /></SelectTrigger>
+                  <Select
+                    value={siniestradoId || '_ninguna'}
+                    onValueChange={(v) =>
+                      setSiniestradoId(v === '_ninguna' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin siniestrado" />
+                    </SelectTrigger>
                     <SelectContent className="max-h-[240px]">
                       <SelectItem value="_ninguna">Sin siniestrado</SelectItem>
                       {catalogSiniestradosCreate.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>{s.codigo} — {s.nombre}</SelectItem>
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.codigo} — {s.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -1205,7 +1735,9 @@ function NuevoEmpleadoDialog({
         </Tabs>
 
         <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
-          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
           <Button disabled={crear.isPending} onClick={handleSubmit}>
             {crear.isPending ? 'Guardando…' : 'Guardar'}
           </Button>
@@ -1268,20 +1800,30 @@ export function SueldosEmpleados({
   });
 
   const sincronizar = useMutation({
-    mutationFn: () =>
-      sincronizarConveniosEmpleados({ data: { clientId } }),
+    mutationFn: () => sincronizarConveniosEmpleados({ data: { clientId } }),
     onSuccess: (result) => {
       toast.success(result.mensaje);
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId],
+      });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al sincronizar'),
   });
 
   // Dialog para dar de baja
-  const [dialogBaja, setDialogBaja] = useState<{ id: string; nombre: string } | null>(null);
+  const [dialogBaja, setDialogBaja] = useState<{
+    id: string;
+    nombre: string;
+  } | null>(null);
   const [fechaBajaInput, setFechaBajaInput] = useState('');
-  const [pendingLiqFinal, setPendingLiqFinal] = useState<{ nombre: string; fechaBaja: string } | null>(null);
-  const [showLiqFinalPost, setShowLiqFinalPost] = useState<{ periodo: string } | null>(null);
+  const [pendingLiqFinal, setPendingLiqFinal] = useState<{
+    nombre: string;
+    fechaBaja: string;
+  } | null>(null);
+  const [showLiqFinalPost, setShowLiqFinalPost] = useState<{
+    periodo: string;
+  } | null>(null);
 
   const darDeBaja = useMutation({
     mutationFn: ({ id, fechaBaja }: { id: string; fechaBaja: string }) =>
@@ -1292,7 +1834,9 @@ export function SueldosEmpleados({
       setPendingLiqFinal({ nombre, fechaBaja: variables.fechaBaja });
       setDialogBaja(null);
       setFechaBajaInput('');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId],
+      });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
@@ -1302,7 +1846,9 @@ export function SueldosEmpleados({
       updateEmpleado({ data: { id, clientId, fechaBaja: null, activo: true } }),
     onSuccess: () => {
       toast.success('Empleado reactivado');
-      queryClient.invalidateQueries({ queryKey: ['import-empleados', clientId] });
+      queryClient.invalidateQueries({
+        queryKey: ['import-empleados', clientId],
+      });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
@@ -1330,9 +1876,15 @@ export function SueldosEmpleados({
     mutationFn: (empleadoId: string | null) =>
       setPlantillaEmpleado({ data: { clientId, empleadoId } }),
     onSuccess: (_, empleadoId) => {
-      toast.success(empleadoId ? 'Plantilla base actualizada' : 'Plantilla base eliminada');
-      queryClient.invalidateQueries({ queryKey: ['payroll-employer-config', clientId] });
-      queryClient.invalidateQueries({ queryKey: ['plantilla-manual-sos', clientId] });
+      toast.success(
+        empleadoId ? 'Plantilla base actualizada' : 'Plantilla base eliminada'
+      );
+      queryClient.invalidateQueries({
+        queryKey: ['payroll-employer-config', clientId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['plantilla-manual-sos', clientId],
+      });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : 'Error'),
   });
@@ -1365,8 +1917,12 @@ export function SueldosEmpleados({
 
       {/* Top action row */}
       <div className="flex items-center justify-between gap-2">
-        <p className="break-words" style={{ fontSize: '13.5px', color: '#9B9CA3' }}>
-          Empleados del perfil fiscal (importados desde LSD o creados manualmente).
+        <p
+          className="break-words"
+          style={{ fontSize: '13.5px', color: '#9B9CA3' }}
+        >
+          Empleados del perfil fiscal (importados desde LSD o creados
+          manualmente).
         </p>
         <div className="flex items-center gap-2">
           <button
@@ -1376,7 +1932,10 @@ export function SueldosEmpleados({
             className="inline-flex items-center gap-2 bg-white border border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[#FBFAF6] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ color: '#3E404A' }}
           >
-            <RefreshCw style={{ width: 14, height: 14 }} className={sincronizar.isPending ? 'animate-spin' : ''} />
+            <RefreshCw
+              style={{ width: 14, height: 14 }}
+              className={sincronizar.isPending ? 'animate-spin' : ''}
+            />
             Sincronizar convenios
           </button>
           <button
@@ -1405,7 +1964,10 @@ export function SueldosEmpleados({
             style={{ paddingLeft: 36 }}
           />
         </div>
-        <label className="flex cursor-pointer items-center gap-2 select-none" style={{ fontSize: '13.5px', color: '#6E7079' }}>
+        <label
+          className="flex cursor-pointer items-center gap-2 select-none"
+          style={{ fontSize: '13.5px', color: '#6E7079' }}
+        >
           <span
             className="relative flex items-center justify-center shrink-0"
             style={{ width: 19, height: 19 }}
@@ -1413,7 +1975,10 @@ export function SueldosEmpleados({
             <input
               type="checkbox"
               checked={ocultarBajas}
-              onChange={(e) => { setOcultarBajas(e.target.checked); setPagina(1); }}
+              onChange={(e) => {
+                setOcultarBajas(e.target.checked);
+                setPagina(1);
+              }}
               className="peer absolute opacity-0 inset-0 w-full h-full cursor-pointer"
             />
             <span
@@ -1427,7 +1992,13 @@ export function SueldosEmpleados({
             >
               {ocultarBajas && (
                 <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                  <path d="M1 3.5L4 6.5L10 1" stroke="white" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  <path
+                    d="M1 3.5L4 6.5L10 1"
+                    stroke="white"
+                    strokeWidth="1.7"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               )}
             </span>
@@ -1463,11 +2034,17 @@ export function SueldosEmpleados({
         {/* Body */}
         <div className="border border-t-0 border-[#ECEAE3] rounded-b-[10px] overflow-hidden">
           {isLoading ? (
-            <div className="flex items-center justify-center py-8" style={{ color: '#9B9CA3', fontSize: 13 }}>
+            <div
+              className="flex items-center justify-center py-8"
+              style={{ color: '#9B9CA3', fontSize: 13 }}
+            >
               Cargando…
             </div>
           ) : filtrados.length === 0 ? (
-            <div className="flex items-center justify-center py-8 px-5 text-center" style={{ color: '#9B9CA3', fontSize: 13 }}>
+            <div
+              className="flex items-center justify-center py-8 px-5 text-center"
+              style={{ color: '#9B9CA3', fontSize: 13 }}
+            >
               {busqueda
                 ? 'Sin resultados para la búsqueda.'
                 : ocultarBajas
@@ -1484,7 +2061,8 @@ export function SueldosEmpleados({
                   key={e.id}
                   className="grid items-center px-5 border-b border-[#ECEAE3] hover:bg-[#FBFAF6] transition-[background] duration-[120ms] cursor-pointer last:border-b-0"
                   style={{
-                    gridTemplateColumns: '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
+                    gridTemplateColumns:
+                      '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
                     paddingTop: 14,
                     paddingBottom: 14,
                   }}
@@ -1493,7 +2071,11 @@ export function SueldosEmpleados({
                   {/* Nombre */}
                   <span
                     className="min-w-0 break-words pr-3"
-                    style={{ fontSize: '13.5px', fontWeight: 600, color: '#12131A' }}
+                    style={{
+                      fontSize: '13.5px',
+                      fontWeight: 600,
+                      color: '#12131A',
+                    }}
                   >
                     {formatTitleCaseDisplay(e.nombre)}
                   </span>
@@ -1552,7 +2134,11 @@ export function SueldosEmpleados({
                       >
                         <span
                           className="rounded-full shrink-0"
-                          style={{ width: 5, height: 5, backgroundColor: 'oklch(0.55 0.18 20)' }}
+                          style={{
+                            width: 5,
+                            height: 5,
+                            backgroundColor: 'oklch(0.55 0.18 20)',
+                          }}
                         />
                         Baja {e.fechaBaja ? formatDate(e.fechaBaja) : ''}
                       </button>
@@ -1576,7 +2162,11 @@ export function SueldosEmpleados({
                       >
                         <span
                           className="rounded-full shrink-0"
-                          style={{ width: 5, height: 5, backgroundColor: 'oklch(0.55 0.18 160)' }}
+                          style={{
+                            width: 5,
+                            height: 5,
+                            backgroundColor: 'oklch(0.55 0.18 160)',
+                          }}
                         />
                         Activo
                       </button>
@@ -1601,20 +2191,30 @@ export function SueldosEmpleados({
                     )}
                     <button
                       type="button"
-                      title={plantillaEmpleadoId === e.id ? 'Quitar como plantilla base' : 'Usar como plantilla base para nuevos recibos'}
+                      title={
+                        plantillaEmpleadoId === e.id
+                          ? 'Quitar como plantilla base'
+                          : 'Usar como plantilla base para nuevos recibos'
+                      }
                       disabled={setPlantilla.isPending}
-                      onClick={() => setPlantilla.mutate(plantillaEmpleadoId === e.id ? null : e.id)}
+                      onClick={() =>
+                        setPlantilla.mutate(
+                          plantillaEmpleadoId === e.id ? null : e.id
+                        )
+                      }
                       className="flex items-center justify-center rounded-md hover:bg-[#F1EFE8] transition-colors disabled:opacity-40"
                       style={{
                         width: 28,
                         height: 28,
-                        color: plantillaEmpleadoId === e.id ? '#d97706' : '#9B9CA3',
+                        color:
+                          plantillaEmpleadoId === e.id ? '#d97706' : '#9B9CA3',
                       }}
                     >
-                      {plantillaEmpleadoId === e.id
-                        ? <BookmarkCheck style={{ width: 15, height: 15 }} />
-                        : <Bookmark style={{ width: 15, height: 15 }} />
-                      }
+                      {plantillaEmpleadoId === e.id ? (
+                        <BookmarkCheck style={{ width: 15, height: 15 }} />
+                      ) : (
+                        <Bookmark style={{ width: 15, height: 15 }} />
+                      )}
                     </button>
                   </div>
 
@@ -1698,19 +2298,35 @@ export function SueldosEmpleados({
       />
 
       {/* Dialog: ¿Generar Liquidación Final? (post-baja) */}
-      <Dialog open={pendingLiqFinal !== null} onOpenChange={(open) => { if (!open) setPendingLiqFinal(null); }}>
+      <Dialog
+        open={pendingLiqFinal !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingLiqFinal(null);
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-[15px]">¿Generar Liquidación Final?</DialogTitle>
+            <DialogTitle className="text-[15px]">
+              ¿Generar Liquidación Final?
+            </DialogTitle>
           </DialogHeader>
           <p className="text-[13px] text-muted-foreground -mt-2">
             {pendingLiqFinal?.nombre} fue dado/a de baja el{' '}
-            <span className="font-medium text-foreground">{pendingLiqFinal?.fechaBaja}</span>.
-            ¿Querés generar la Liquidación Final para el período{' '}
-            <span className="font-medium text-foreground">{pendingLiqFinal?.fechaBaja?.slice(0, 7)}</span>?
+            <span className="font-medium text-foreground">
+              {pendingLiqFinal?.fechaBaja}
+            </span>
+            . ¿Querés generar la Liquidación Final para el período{' '}
+            <span className="font-medium text-foreground">
+              {pendingLiqFinal?.fechaBaja?.slice(0, 7)}
+            </span>
+            ?
           </p>
           <DialogFooter className="gap-2 pt-2">
-            <Button variant="outline" size="sm" onClick={() => setPendingLiqFinal(null)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPendingLiqFinal(null)}
+            >
               No, después
             </Button>
             <Button
@@ -1737,7 +2353,15 @@ export function SueldosEmpleados({
       )}
 
       {/* Dialog: Dar de baja */}
-      <Dialog open={dialogBaja !== null} onOpenChange={(open) => { if (!open) { setDialogBaja(null); setFechaBajaInput(''); } }}>
+      <Dialog
+        open={dialogBaja !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDialogBaja(null);
+            setFechaBajaInput('');
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-[15px]">Dar de baja</DialogTitle>
@@ -1747,19 +2371,20 @@ export function SueldosEmpleados({
           </p>
           <div className="space-y-1 pt-1">
             <Label className="text-[13px]">Fecha de baja</Label>
-            <Input
-              type="date"
+            <SelectorFecha
               value={fechaBajaInput}
-              onChange={(e) => setFechaBajaInput(e.target.value)}
-              className="h-9 text-[13px]"
-              autoFocus
+              onChange={setFechaBajaInput}
+              placeholder="Fecha de baja"
             />
           </div>
           <DialogFooter className="pt-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { setDialogBaja(null); setFechaBajaInput(''); }}
+              onClick={() => {
+                setDialogBaja(null);
+                setFechaBajaInput('');
+              }}
               disabled={darDeBaja.isPending}
             >
               Cancelar
@@ -1768,9 +2393,19 @@ export function SueldosEmpleados({
               variant="destructive"
               size="sm"
               disabled={!fechaBajaInput || darDeBaja.isPending}
-              onClick={() => dialogBaja && darDeBaja.mutate({ id: dialogBaja.id, fechaBaja: fechaBajaInput })}
+              onClick={() =>
+                dialogBaja &&
+                darDeBaja.mutate({
+                  id: dialogBaja.id,
+                  fechaBaja: fechaBajaInput,
+                })
+              }
             >
-              {darDeBaja.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
+              {darDeBaja.isPending ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <UserX className="h-3.5 w-3.5" />
+              )}
               Registrar baja
             </Button>
           </DialogFooter>

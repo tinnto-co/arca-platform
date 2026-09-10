@@ -15,6 +15,7 @@ import {
   Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -661,10 +662,10 @@ function CategoriaRow({
       </div>
       {showEscala && (
         <div className="mt-2 mb-2 flex gap-2">
-          <Input
-            type="date"
+          <SelectorFecha
             value={vigenciaDesde}
-            onChange={(e) => setVigenciaDesde(e.target.value)}
+            onChange={setVigenciaDesde}
+            placeholder="Vigencia desde"
           />
           <Input
             type="number"

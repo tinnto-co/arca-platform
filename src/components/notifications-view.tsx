@@ -14,6 +14,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -577,19 +578,17 @@ export function NotificationsView({
               width="100%"
             />
             <div className="flex items-center gap-2">
-              <Input
-                type="date"
+              <SelectorFecha
                 value={desde}
-                onChange={(e) => setDesde(e.target.value)}
-                className="h-9 text-[12.5px]"
+                onChange={setDesde}
+                placeholder="Desde"
                 aria-label="Publicadas desde"
               />
               <span className="text-[12.5px] text-[var(--arca-ink-4)]">a</span>
-              <Input
-                type="date"
+              <SelectorFecha
                 value={hasta}
-                onChange={(e) => setHasta(e.target.value)}
-                className="h-9 text-[12.5px]"
+                onChange={setHasta}
+                placeholder="Hasta"
                 aria-label="Publicadas hasta"
               />
             </div>

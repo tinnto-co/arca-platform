@@ -28,6 +28,7 @@ import {
   chipMasFiltros,
 } from '@/components/shared/filtros';
 import { PrioridadesCategoria } from './PrioridadesCategoria';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { SEVERIDAD_LABEL, haceCuanto, nombreCategoria } from './utils';
 import { cn } from '@/lib/utils';
@@ -210,28 +211,28 @@ export function InboxHeader({
               className="flex w-[320px] flex-col gap-3 p-3"
             >
               <div className="grid grid-cols-2 gap-2">
-                <label className="flex flex-col gap-1">
+                <div className="flex flex-col gap-1">
                   <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                     Desde
                   </span>
-                  <input
-                    type="date"
+                  <SelectorFecha
                     value={filtros.desde}
-                    onChange={(e) => onFiltro({ desde: e.target.value })}
-                    className="rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-1 text-[12px] tabular-nums outline-none"
+                    onChange={(v) => onFiltro({ desde: v })}
+                    placeholder="Cualquiera"
+                    aria-label="Publicadas desde"
                   />
-                </label>
-                <label className="flex flex-col gap-1">
+                </div>
+                <div className="flex flex-col gap-1">
                   <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                     Hasta
                   </span>
-                  <input
-                    type="date"
+                  <SelectorFecha
                     value={filtros.hasta}
-                    onChange={(e) => onFiltro({ hasta: e.target.value })}
-                    className="rounded-[var(--arca-r-sm)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-1 text-[12px] tabular-nums outline-none"
+                    onChange={(v) => onFiltro({ hasta: v })}
+                    placeholder="Cualquiera"
+                    aria-label="Publicadas hasta"
                   />
-                </label>
+                </div>
               </div>
 
               <label className="flex cursor-pointer items-center gap-2">

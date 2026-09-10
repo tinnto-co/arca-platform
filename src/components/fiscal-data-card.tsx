@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Landmark } from 'lucide-react';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -134,12 +135,11 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
               <Label htmlFor="fd-constitucion" className="text-xs">
                 Fecha de constitución
               </Label>
-              <Input
+              <SelectorFecha
                 id="fd-constitucion"
-                type="date"
                 value={form.fechaConstitucion}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, fechaConstitucion: e.target.value }))
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, fechaConstitucion: v }))
                 }
               />
             </div>
@@ -147,12 +147,11 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
               <Label htmlFor="fd-fecha" className="text-xs">
                 Fecha de inscripción (RPC)
               </Label>
-              <Input
+              <SelectorFecha
                 id="fd-fecha"
-                type="date"
                 value={form.fechaInscripcion}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, fechaInscripcion: e.target.value }))
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, fechaInscripcion: v }))
                 }
               />
             </div>

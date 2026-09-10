@@ -62,6 +62,7 @@ import {
   Eye,
   Loader2,
 } from 'lucide-react';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { ArcaCard } from '@/components/dashboard/shared';
@@ -3453,11 +3454,9 @@ function CreateFiscalYearDialog({
               <label className="text-[11px] text-[var(--arca-ink-3)]">
                 Mes de inicio *
               </label>
-              <input
-                type="date"
+              <SelectorFecha
                 value={start}
-                onChange={(e) => setStart(e.target.value)}
-                className={`${INPUT_CLASS} w-full h-9`}
+                onChange={(v) => setStart(v)} className="w-full"
               />
             </div>
             <div className="flex flex-col gap-1">
@@ -3870,29 +3869,25 @@ function Asientos({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Desde
             </label>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => {
-                setFrom(e.target.value);
+            <SelectorFecha
+                value={from}
+                onChange={(v) => {
+                setFrom(v);
                 setPage(1);
-              }}
-              className={`${INPUT_CLASS} w-32`}
-            />
+              }} className="w-32"
+              />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Hasta
             </label>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => {
-                setTo(e.target.value);
+            <SelectorFecha
+                value={to}
+                onChange={(v) => {
+                setTo(v);
                 setPage(1);
-              }}
-              className={`${INPUT_CLASS} w-32`}
-            />
+              }} className="w-32"
+              />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
@@ -4478,12 +4473,10 @@ function AsientoEditor({
                 <label className="text-[11px] text-[var(--arca-ink-3)]">
                   Fecha *
                 </label>
-                <input
-                  type="date"
-                  value={entryDate}
-                  onChange={(e) => setEntryDate(e.target.value)}
-                  className={`${INPUT_CLASS} w-full h-9`}
-                />
+                <SelectorFecha
+                value={entryDate}
+                onChange={(v) => setEntryDate(v)} className="w-full"
+              />
               </div>
               <div className="flex flex-col gap-1 flex-1">
                 <label className="text-[11px] text-[var(--arca-ink-3)]">
@@ -5497,23 +5490,19 @@ function Mayor({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Desde
             </label>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className={`${INPUT_CLASS} w-36`}
-            />
+            <SelectorFecha
+                value={from}
+                onChange={(v) => setFrom(v)} className="w-36"
+              />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Hasta
             </label>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className={`${INPUT_CLASS} w-36`}
-            />
+            <SelectorFecha
+                value={to}
+                onChange={(v) => setTo(v)} className="w-36"
+              />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] text-[var(--arca-ink-3)]">
@@ -5925,12 +5914,10 @@ function Balance({
             <label className="text-[10px] text-[var(--arca-ink-3)]">
               Fecha de corte
             </label>
-            <input
-              type="date"
-              value={asOf}
-              onChange={(e) => setAsOf(e.target.value)}
-              className={`${INPUT_CLASS} w-40`}
-            />
+            <SelectorFecha
+                value={asOf}
+                onChange={(v) => setAsOf(v)} className="w-40"
+              />
           </div>
           {data && (
             <span className="text-[12px] text-[var(--arca-ink-3)] self-end pb-1.5">
@@ -8167,12 +8154,10 @@ function FixedAssetEditor({
           </Field>
 
           <Field label="Fecha de adquisición *">
-            <input
-              type="date"
-              value={acquisitionDate}
-              onChange={(e) => setAcquisitionDate(e.target.value)}
-              className={INPUT_CLASS}
-            />
+            <SelectorFecha
+                value={acquisitionDate}
+                onChange={(v) => setAcquisitionDate(v)}
+              />
           </Field>
 
           <Field
@@ -8347,12 +8332,10 @@ function DisposeAssetDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Fecha de baja *">
-            <input
-              type="date"
-              value={disposalDate}
-              onChange={(e) => setDisposalDate(e.target.value)}
-              className={INPUT_CLASS}
-            />
+            <SelectorFecha
+                value={disposalDate}
+                onChange={(v) => setDisposalDate(v)}
+              />
           </Field>
           <Field label="Motivo *">
             <Select
@@ -11951,24 +11934,22 @@ function DatosInicialesView({
               <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
                 Fecha constitución
               </label>
-              <input
-                type="date"
+              <SelectorFecha
                 value={form.fechaConstitucion}
-                onChange={(e) => set('fechaConstitucion', e.target.value)}
+                onChange={(v) => set('fechaConstitucion', v)}
                 disabled={!canEdit}
-                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+                className="w-full"
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-[11px] font-medium text-[var(--arca-ink-2)] uppercase tracking-wide">
                 Fecha inscripción RPC
               </label>
-              <input
-                type="date"
+              <SelectorFecha
                 value={form.fechaInscripcion}
-                onChange={(e) => set('fechaInscripcion', e.target.value)}
+                onChange={(v) => set('fechaInscripcion', v)}
                 disabled={!canEdit}
-                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+                className="w-full"
               />
             </div>
             <div className="space-y-1.5">

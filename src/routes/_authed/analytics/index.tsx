@@ -21,6 +21,7 @@ import {
   Bell,
   Calendar,
 } from 'lucide-react';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import {
@@ -435,17 +436,17 @@ function AnalyticsPage() {
               ))}
             </SelectContent>
           </Select>
-          <input
-            type="date"
-            className={SELECT_CLASS}
+          <SelectorFecha
             value={ratiosFrom}
-            onChange={(e) => setRatiosFrom(e.target.value)}
+            onChange={setRatiosFrom}
+            placeholder="Desde"
+            className="w-[160px]"
           />
-          <input
-            type="date"
-            className={SELECT_CLASS}
+          <SelectorFecha
             value={ratiosTo}
-            onChange={(e) => setRatiosTo(e.target.value)}
+            onChange={setRatiosTo}
+            placeholder="Hasta"
+            className="w-[160px]"
           />
         </div>
 

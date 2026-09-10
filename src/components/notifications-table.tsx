@@ -34,6 +34,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -213,18 +214,16 @@ export function NotificationsTable() {
           </Select>
 
           <div className="flex gap-2">
-            <Input
-              type="date"
-              placeholder="Fecha desde"
+            <SelectorFecha
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={setDateFrom}
+              placeholder="Fecha desde"
               className="w-full md:w-40"
             />
-            <Input
-              type="date"
-              placeholder="Fecha hasta"
+            <SelectorFecha
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={setDateTo}
+              placeholder="Fecha hasta"
               className="w-full md:w-40"
             />
           </div>

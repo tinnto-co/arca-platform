@@ -37,6 +37,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -471,10 +472,10 @@ export function JobsTable() {
             />
           </div>
 
-          <Input
-            type="date"
+          <SelectorFecha
             value={date === 'todo' ? '' : fechaEfectiva}
-            onChange={(e) => setFilter({ date: e.target.value })}
+            onChange={(v) => setFilter({ date: v })}
+            placeholder="Fecha"
             className="flex-1 min-w-[140px]"
           />
 

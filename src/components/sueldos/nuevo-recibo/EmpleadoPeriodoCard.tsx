@@ -7,6 +7,7 @@ import {
   Search,
   User,
 } from 'lucide-react';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { cn } from '@/lib/utils';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { puedeLiquidarPeriodo } from '@/lib/payroll-period-rules';
@@ -377,11 +378,10 @@ export function EmpleadoPeriodoCard({
           {tipo === 'liquidacion_final' && (
             <div>
               {microLabel('Fecha de baja del empleado')}
-              <input
-                type="date"
+              <SelectorFecha
                 value={fechaBaja}
-                onChange={(e) => onFechaBajaChange(e.target.value)}
-                className="h-[34px] w-full px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-700)]"
+                onChange={onFechaBajaChange}
+                placeholder="Fecha de baja"
               />
             </div>
           )}

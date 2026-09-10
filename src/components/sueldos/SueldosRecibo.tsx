@@ -61,6 +61,7 @@ import { dateAPeriodo } from '@/lib/periodo';
 import { tipoReciboLabel, quincenaLabel } from '@/lib/sueldos-labels';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ImprimirRecibosDialog } from '@/components/sueldos/ImprimirRecibosDialog';
@@ -115,7 +116,7 @@ function moneyFmt(v: string | number | null | undefined): string {
 
 /** Suma montos de líneas de detalle (mismo criterio que la grilla del recibo). */
 function sumaMontosDetalle(
-  rows: Array<{ detalle: { monto: string | null | undefined } }>
+  rows: { detalle: { monto: string | null | undefined } }[]
 ): number {
   return rows.reduce((acc, r) => {
     const n = Number(r.detalle.monto ?? 0);
@@ -133,11 +134,11 @@ function esCategoriaGerente(v: string | null | undefined): boolean {
 }
 
 function basicoDesdeDetalle(
-  rows: Array<{
+  rows: {
     detalle: { codigo: string; monto: string | null };
     concepto?: { numeroSos?: number | null; nombre?: string | null } | null;
     conceptoSos?: { codigo?: string | null; nombre?: string | null } | null;
-  }>
+  }[]
 ): number {
   for (const r of rows) {
     const numSos = r.concepto?.numeroSos ?? null;
@@ -1142,11 +1143,11 @@ function sugerirDiasSemestre(
 ): number {
   if (!fechaIngresoStr) return 180;
   const [iy, im, id] = fechaIngresoStr.slice(0, 10).split('-').map(Number);
-  const fechaIngreso = new Date(iy!, (im ?? 1) - 1, id ?? 1);
+  const fechaIngreso = new Date(iy, (im ?? 1) - 1, id ?? 1);
   if (Number.isNaN(fechaIngreso.getTime())) return 180;
   const [yearStr, monthStr] = periodo.split('-');
-  const year = parseInt(yearStr!, 10);
-  const month = parseInt(monthStr!, 10);
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
   const esPrimerSemestre = month <= 6;
   const semStart = new Date(year, esPrimerSemestre ? 0 : 6, 1); // 1/1 ó 1/7
   const semEnd = new Date(
@@ -1227,7 +1228,7 @@ function GenerarSacDialog({
       onClose();
     },
     onError: (err) => {
-      toast.error((err as Error).message ?? 'Error al generar los SAC.');
+      toast.error(err.message ?? 'Error al generar los SAC.');
     },
   });
 
@@ -1236,7 +1237,7 @@ function GenerarSacDialog({
     (p) => selected.has(p.empleadoId) && !p.yaTieneSac && p.mejorMonto > 0
   );
   const semestre =
-    parseInt(periodo.split('-')[1]!, 10) <= 6 ? '1er semestre' : '2do semestre';
+    parseInt(periodo.split('-')[1], 10) <= 6 ? '1er semestre' : '2do semestre';
 
   return (
     <Dialog
@@ -1440,7 +1441,7 @@ function GenerarSacDialog({
 /** Último día del mes de un período YYYY-MM. */
 function lastDayOfPeriodo(periodo: string): string {
   const [y, m] = periodo.split('-');
-  const d = new Date(parseInt(y!), parseInt(m!), 0).getDate();
+  const d = new Date(parseInt(y), parseInt(m), 0).getDate();
   return `${y}-${m}-${String(d).padStart(2, '0')}`;
 }
 
@@ -1513,9 +1514,7 @@ export function GenerarLiqFinalDialog({
       onClose();
     },
     onError: (err) =>
-      toast.error(
-        (err as Error).message ?? 'Error al generar las liquidaciones finales.'
-      ),
+      toast.error(err.message ?? 'Error al generar las liquidaciones finales.'),
   });
 
   return (
@@ -1609,17 +1608,17 @@ export function GenerarLiqFinalDialog({
                       </td>
                       <td className="py-2 pr-3">
                         {!p.yaTiene ? (
-                          <input
-                            type="date"
+                          <SelectorFecha
                             value={fecha}
                             max={defaultFecha}
-                            onChange={(e) =>
+                            onChange={(v) =>
                               setFechaBajaMap((prev) => ({
                                 ...prev,
-                                [p.empleadoId]: e.target.value,
+                                [p.empleadoId]: v,
                               }))
                             }
-                            className="h-7 w-36 rounded border border-input bg-background px-2 text-[12px] font-mono"
+                            placeholder="Fecha"
+                            className="w-36"
                           />
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -1761,10 +1760,7 @@ function ReciboDocumento({
     netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
   const neto = redondeo > 0 ? Math.ceil(netoRaw) : netoRaw;
 
-  const cab = completarCabeceraConLegajo(
-    pickCabecera(liquidacion as unknown as Record<string, unknown>),
-    empleado
-  );
+  const cab = completarCabeceraConLegajo(pickCabecera(liquidacion), empleado);
 
   return (
     <div className="w-full overflow-x-auto">

@@ -124,6 +124,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Paginador } from '@/components/shared/paginador';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { cn } from '@/lib/utils';
 import { periodoLegible } from '@/lib/periodo';
 import { CONDICION_IVA_LABELS } from '@/lib/cliente-labels';
@@ -5010,11 +5011,11 @@ export function RepresentativeDetailPage({
                     <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                       Fecha límite
                     </label>
-                    <Input
-                      type="date"
+                    <SelectorFecha
                       value={newRequestDueAt}
-                      onChange={(e) => setNewRequestDueAt(e.target.value)}
-                      className="mt-1 h-9 text-sm"
+                      onChange={setNewRequestDueAt}
+                      placeholder="Sin fecha límite"
+                      className="mt-1"
                     />
                   </div>
                   <div className="flex justify-end gap-2 pt-2">
