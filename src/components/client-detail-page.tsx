@@ -332,8 +332,11 @@ export function RepresentativeDetailPage({
     now.getFullYear(),
     now.getMonth()
   );
-  const [resumenNotifSelected, setResumenNotifSelected] =
-    useState<NotificacionRow | null>(null);
+  // Click en una notificación del Resumen: abre la solapa Notificaciones
+  // con esa notificación ya seleccionada en el panel de lectura.
+  const [notifPreseleccionada, setNotifPreseleccionada] = useState<
+    string | null
+  >(null);
   const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>(
     initialMultilateralRange.from.toISOString().slice(0, 10)
   );
@@ -2388,7 +2391,10 @@ export function RepresentativeDetailPage({
                         >
                           <button
                             className="flex-1 min-w-0 text-left"
-                            onClick={() => setResumenNotifSelected(notif)}
+                            onClick={() => {
+                              setNotifPreseleccionada(notif.id);
+                              onTabChange('notificaciones');
+                            }}
                           >
                             {notif.clienteRazonSocial && (
                               <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
@@ -2437,80 +2443,6 @@ export function RepresentativeDetailPage({
               </div>
             )}
           </TabsContent>
-
-          {/* Dialog: detalle de notificación no leída (Resumen) */}
-          <Dialog
-            open={!!resumenNotifSelected}
-            onOpenChange={(open) => {
-              if (!open) setResumenNotifSelected(null);
-            }}
-          >
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  <Bell className="h-4 w-4 shrink-0" />
-                  {resumenNotifSelected?.clienteRazonSocial
-                    ? `Notificación — ${resumenNotifSelected.clienteRazonSocial}`
-                    : 'Notificación'}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 text-sm">
-                {/* Fechas */}
-                <div className="flex gap-6 text-xs text-muted-foreground">
-                  {resumenNotifSelected?.publicadaAt && (
-                    <span>
-                      <span className="font-medium text-foreground">
-                        Publicación:{' '}
-                      </span>
-                      {format(
-                        new Date(resumenNotifSelected.publicadaAt),
-                        'dd/MM/yyyy',
-                        { locale: es }
-                      )}
-                    </span>
-                  )}
-                  {resumenNotifSelected?.venceAt && (
-                    <span>
-                      <span className="font-medium text-foreground">
-                        Vencimiento:{' '}
-                      </span>
-                      {format(
-                        new Date(resumenNotifSelected.venceAt),
-                        'dd/MM/yyyy',
-                        { locale: es }
-                      )}
-                    </span>
-                  )}
-                </div>
-                {/* Mensaje completo */}
-                <p className="leading-relaxed whitespace-pre-wrap">
-                  {resumenNotifSelected?.mensaje}
-                </p>
-                {/* Acciones */}
-                <div className="flex justify-between items-center pt-2 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (resumenNotifSelected)
-                        markOpenedMutation.mutate(resumenNotifSelected.id);
-                      setResumenNotifSelected(null);
-                    }}
-                    disabled={markOpenedMutation.isPending}
-                    className="gap-1.5"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Marcar como leída
-                  </Button>
-                  <DialogClose asChild>
-                    <Button variant="ghost" size="sm">
-                      Cerrar
-                    </Button>
-                  </DialogClose>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
 
           {/* Deudas Tab */}
           <TabsContent value="deudas" className="space-y-[14px]">
@@ -3534,6 +3466,7 @@ export function RepresentativeDetailPage({
             <InboxEmbebido
               credencialId={representativeId}
               clienteId={selectedClientId}
+              seleccionInicial={notifPreseleccionada}
               className="h-[calc(100vh-330px)] min-h-[540px]"
             />
           </TabsContent>

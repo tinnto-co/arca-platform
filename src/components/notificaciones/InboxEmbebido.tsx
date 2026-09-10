@@ -49,12 +49,15 @@ type Estado = (typeof TABS)[number]['valor'];
 export function InboxEmbebido({
   credencialId,
   clienteId,
+  seleccionInicial,
   className,
 }: {
   /** Login de AFIP de la ficha: acota todo a sus notificaciones. */
   credencialId: string;
   /** Empresa seleccionada en la ficha (opcional: acota más). */
   clienteId?: string;
+  /** Notificación a abrir de entrada (click en la card del Resumen). */
+  seleccionInicial?: string | null;
   className?: string;
 }) {
   const navigate = useNavigate();
@@ -65,8 +68,18 @@ export function InboxEmbebido({
   const [severidad, setSeveridad] = useState('');
   const [q, setQ] = useState('');
   const [paginas, setPaginas] = useState(1);
-  const [seleccionada, setSeleccionada] = useState<string | null>(null);
+  const [seleccionada, setSeleccionada] = useState<string | null>(
+    seleccionInicial ?? null
+  );
   const [creandoTarea, setCreandoTarea] = useState(false);
+
+  // Un nuevo click en la card del Resumen (con la solapa ya montada) cambia
+  // la selección. Ajuste durante el render, no en un efecto.
+  const [prevInicial, setPrevInicial] = useState(seleccionInicial);
+  if (prevInicial !== seleccionInicial) {
+    setPrevInicial(seleccionInicial);
+    if (seleccionInicial) setSeleccionada(seleccionInicial);
+  }
 
   // Cambiar de empresa en la ficha resetea el recorte (ajuste en render).
   const [prevCliente, setPrevCliente] = useState(clienteId);
