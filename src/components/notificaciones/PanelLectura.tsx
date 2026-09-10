@@ -438,7 +438,7 @@ export function PanelLectura({
       {/* Lo que puso la plataforma: tareas creadas y la fecha que detectó el
           scrapeo. Queda sobre el fondo de la pantalla, sin tarjeta. */}
       {(tareas.length > 0 || n.venceAt) && (
-        <div className="flex flex-col gap-2 px-7 pt-4">
+        <div className="flex shrink-0 flex-col gap-2 px-7 pt-4">
           {tareas.map((t) => (
             <div
               key={t.id}
@@ -497,7 +497,7 @@ export function PanelLectura({
       {/* Lo que llegó de AFIP: una tarjeta con su propia cabecera, como un
           mensaje. Es blanca contra el beige de la pantalla, así se ve de una
           dónde termina lo que hace la plataforma y empieza lo recibido. */}
-      <div className="m-7 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
+      <div className="m-7 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
         <div className="flex items-center gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-5 py-2.5">
           <Landmark className="size-3.5 text-[var(--arca-ink-4)]" />
           <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-3)]">
