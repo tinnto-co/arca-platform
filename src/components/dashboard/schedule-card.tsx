@@ -75,7 +75,7 @@ export function ScheduleCard() {
         <div>
           <div className="font-display text-[15px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)] flex items-center gap-2">
             <CalendarClock className="w-3.5 h-3.5" />
-            Plan de scraping
+            Plan de actualización
           </div>
           <p className="text-[11px] text-[var(--arca-ink-4)] mt-0.5">
             Frecuencias: comprobantes/notif. diario, deuda/venc. semanal, IVA mensual

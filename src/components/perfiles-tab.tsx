@@ -113,7 +113,7 @@ export function PerfilesTab({
       }),
     onSuccess: (_r, p) => {
       invalidate();
-      toast.success(`${p.name} dado de alta. Se encoló el primer scrapeo.`);
+      toast.success(`${p.name} dado de alta. Se encoló la primera actualización.`);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -182,7 +182,7 @@ export function PerfilesTab({
         <CardHeader>
           <CardTitle>Perfiles dados de alta</CardTitle>
           <CardDescription>
-            Solo se scrapean estas empresas. Lo que AFIP muestre y no esté acá
+            Solo se actualizan estas empresas. Lo que AFIP muestre y no esté acá
             se ignora.
           </CardDescription>
         </CardHeader>
@@ -262,7 +262,7 @@ export function PerfilesTab({
           {notEnrolled.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
               No se detectaron perfiles nuevos. Ejecutá &quot;Buscar en
-              AFIP&quot; o esperá el próximo scrapeo.
+              AFIP&quot; o esperá la próxima actualización.
             </p>
           ) : (
             <div className="space-y-2">

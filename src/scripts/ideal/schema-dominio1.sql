@@ -17,6 +17,10 @@ $$ language plpgsql;
 create type tipo_persona as enum ('fisica', 'juridica');
 create type condicion_iva as enum ('responsable_inscripto', 'monotributista', 'exento', 'no_alcanzado');
 create type cliente_estado as enum ('activo', 'pausado', 'baja');
+-- Estado del servicio ante AFIP, lo detecta el scrapper de comprobantes:
+-- 'irregularidades' = AFIP bloquea el servicio (Err: 001, debe regularizar en
+-- la dependencia) y no se pueden traer comprobantes ni IVA de esa empresa.
+create type estado_afip_cliente as enum ('ok', 'irregularidades');
 create type iibb_regimen as enum ('local', 'convenio_multilateral');
 create type credencial_estado as enum ('activa', 'clave_invalida', 'bloqueada');
 create type relacion_fuente as enum ('discovery', 'manual');
@@ -141,6 +145,8 @@ create table cliente (
   telefono text,
   domicilio text,
   notas text,
+  estado_afip estado_afip_cliente,
+  estado_afip_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (org_id, cuit)
@@ -155,6 +161,9 @@ comment on column cliente.condicion_iva is 'Condición frente al IVA. null = sin
 comment on column cliente.iibb_regimen is
   'Régimen de Ingresos Brutos. null = no liquida IIBB (habilita el módulo IIBB cuando no es null).';
 comment on column cliente.estado is 'Relación comercial con el estudio (activo/pausado/baja), NO estado ante AFIP.';
+comment on column cliente.estado_afip is
+  'Estado del servicio ante AFIP, escrito por el scrapper de comprobantes: irregularidades = AFIP bloquea la consulta (el contribuyente debe regularizar en su dependencia) y los comprobantes/IVA quedan sin traer. ok = el último scrapeo entró bien (se autolimpia al regularizar). null = sin determinar.';
+comment on column cliente.estado_afip_at is 'Cuándo se determinó estado_afip por última vez.';
 
 create table credencial_afip (
   id uuid primary key default gen_random_uuid(),
@@ -173,11 +182,33 @@ create table credencial_afip (
   -- La decide una persona desde la pantalla de clientes, no un automatismo.
   comprobantes_frecuencia text not null default 'estandar'
     check (comprobantes_frecuencia in ('estandar', 'semanal', 'pausada')),
+  clave_actualizada_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 create index idx_credencial_afip_org on credencial_afip(org_id);
 create trigger trg_set_updated_at before update on credencial_afip for each row execute function set_updated_at();
+
+-- Cuándo se cambió la CLAVE (updated_at no sirve: se pisa en cada login OK).
+-- Vive en un trigger y no en el handler a propósito: cualquier edición de la
+-- clave —UI, script— queda registrada. Y cierra el loop con el scraper: si el
+-- scraper la marcó clave_invalida, corregir la clave la re-activa sola y el
+-- cron la retoma ('bloqueada' NO se toca: esa la levanta una persona).
+create or replace function trg_credencial_clave_cambiada() returns trigger as $$
+begin
+  if new.clave is distinct from old.clave then
+    new.clave_actualizada_at := now();
+    if old.estado = 'clave_invalida' then
+      new.estado := 'activa';
+    end if;
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+create trigger trg_credencial_clave_cambiada
+  before update on credencial_afip
+  for each row execute function trg_credencial_clave_cambiada();
 
 comment on table credencial_afip is
   'Login de AFIP (clave fiscal): un medio de acceso para scrapear, NO una entidad de negocio. La clave está cifrada AES-256-GCM. nombre/email/telefono = contacto opcional de la persona del login (sin crear un cliente fantasma).';
@@ -186,6 +217,8 @@ comment on column credencial_afip.comprobantes_frecuencia is
   'Con qué frecuencia se scrapean los comprobantes de esta clave. estandar = el cron normal; semanal = solo los lunes; pausada = no se scrapean. Para claves cuyas empresas no facturan y vuelven vacías — ojo: pausada implica no enterarse si empiezan a facturar, semanal es la opción segura. Solo afecta comprobantes; notificaciones/deuda/IVA siguen normal.';
 comment on column credencial_afip.estado is
   'Juicio DERIVADO, no un hecho: se pasa a clave_invalida/bloqueada tras N logins fallidos seguidos, nunca por uno solo — AFIP responde "Clave o usuario incorrecto" también cuando lo que falló fue el captcha. Los hechos son ultimo_login_ok y verificada_at.';
+comment on column credencial_afip.clave_actualizada_at is
+  'Cuándo se cambió por última vez la clave (contraseña) de esta credencial. Distinto de updated_at, que se pisa en cada login exitoso. La setea el trigger trg_credencial_clave_cambiada, que además re-activa la credencial si estaba clave_invalida.';
 comment on column credencial_afip.ultimo_login_ok is 'Hecho: último login exitoso en AFIP con esta clave.';
 comment on column credencial_afip.verificada_at is 'Hecho: última vez que se verificó la clave explícitamente (chequeo puntual, no un scrapeo).';
 

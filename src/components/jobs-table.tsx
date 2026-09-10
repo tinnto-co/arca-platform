@@ -417,7 +417,7 @@ export function JobsTable() {
     <div className="flex flex-col h-full gap-4">
       <PageHeader
         title="Jobs"
-        subtitle="Historial de jobs de scraping por cliente, tipo y estado."
+        subtitle="Historial de actualizaciones por cliente, tipo y estado."
         actions={
           <>
             <Popover>
@@ -436,7 +436,7 @@ export function JobsTable() {
                   <div className="text-sm font-medium">Modo dev</div>
                   <p className="text-xs text-[var(--arca-ink-3)]">
                     Limita la cantidad de clientes a disparar. Útil para probar
-                    sin saturar el scrapper. Vacío = todos.
+                    sin saturar el servicio de actualización. Vacío = todos.
                   </p>
                   <div className="flex items-center gap-2">
                     <Input
@@ -586,7 +586,7 @@ export function JobsTable() {
       {date !== 'todo' && !date && ultimoScrapeo?.fecha && (
         <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-3)]">
           <span>
-            Mostrando el último scrapeo ·{' '}
+            Mostrando la última actualización ·{' '}
             <span className="font-semibold text-[var(--arca-ink)]">
               {fechaLegible(ultimoScrapeo.fecha)}
             </span>
@@ -602,13 +602,13 @@ export function JobsTable() {
       )}
       {date === 'todo' && (
         <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-3)]">
-          <span>Mostrando el histórico completo (todos los scrapeos)</span>
+          <span>Mostrando el histórico completo (todas las actualizaciones)</span>
           <button
             type="button"
             onClick={() => setFilter({ date: '' })}
             className="underline cursor-pointer hover:text-[var(--arca-ink)]"
           >
-            Volver al último scrapeo
+            Volver a la última actualización
           </button>
         </div>
       )}
@@ -931,7 +931,7 @@ export function JobsTable() {
                   <div className="flex flex-col">
                     <p className="font-medium">Resultado</p>
                     <p className="text-[11px] text-[var(--arca-ink-3)]">
-                      Resumen de lo que devolvió el scrapper
+                      Resumen de lo que devolvió la actualización
                     </p>
                   </div>
                   {selectedJob.result && (

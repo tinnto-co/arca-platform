@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, Link } from '@tanstack/react-router';
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarIcon,
   Edit,
@@ -53,7 +54,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
-import { NotificationsView } from '@/components/notifications-view';
+import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
+import { PanelLectura } from '@/components/notificaciones/PanelLectura';
+import { CrearTareaDesdeNotificacion } from '@/components/notificaciones/CrearTareaDesdeNotificacion';
 import {
   InvoicesTable,
   INVOICE_TYPE_LABELS,
@@ -331,8 +334,10 @@ export function RepresentativeDetailPage({
     now.getFullYear(),
     now.getMonth()
   );
-  const [resumenNotifSelected, setResumenNotifSelected] =
-    useState<NotificacionRow | null>(null);
+  // Click en una notificación del Resumen: dialog con el MISMO panel de
+  // lectura de la bandeja (no una vista propia), sin salir del Resumen.
+  const [notifAbierta, setNotifAbierta] = useState<string | null>(null);
+  const [creandoTareaDesdeNotif, setCreandoTareaDesdeNotif] = useState(false);
   const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>(
     initialMultilateralRange.from.toISOString().slice(0, 10)
   );
@@ -1791,6 +1796,28 @@ export function RepresentativeDetailPage({
                       )}
                     </h1>
                   )}
+                  {client.estado === 'clave_invalida' && (
+                    <span
+                      className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)] cursor-help"
+                      title="AFIP rechaza la clave de este login: los datos de sus empresas no se actualizan. Cargá la clave nueva (desde el Inicio o editando la credencial) y la actualización se reanuda sola."
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      Clave de AFIP desactualizada
+                    </span>
+                  )}
+                  {selectedProfile?.estadoAfip === 'irregularidades' && (
+                    <span
+                      className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
+                      title={`AFIP bloquea la consulta de esta empresa: debe presentarse en la dependencia donde está inscripta para regularizar su situación. Hasta entonces no se pueden traer comprobantes ni IVA.${
+                        selectedProfile.estadoAfipAt
+                          ? ` Detectado el ${new Date(selectedProfile.estadoAfipAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}.`
+                          : ''
+                      }`}
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      Irregularidades en AFIP
+                    </span>
+                  )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
                   {selectedProfile?.cuit && (
@@ -1830,6 +1857,18 @@ export function RepresentativeDetailPage({
                       year: 'numeric',
                     })}
                   </span>
+                  {client.claveActualizadaAt && (
+                    <>
+                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                      <span title="Última vez que se cambió la clave fiscal de este login">
+                        Clave actualizada{' '}
+                        {new Date(client.claveActualizadaAt).toLocaleDateString(
+                          'es-AR',
+                          { day: 'numeric', month: 'short', year: 'numeric' }
+                        )}
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
               {/* Actions */}
@@ -1840,7 +1879,7 @@ export function RepresentativeDetailPage({
                   disabled={scrapingAll || !!scrapingSection}
                   onClick={async () => {
                     setScrapingAll(true);
-                    toast('Iniciando scrapeo');
+                    toast('Iniciando actualización');
                     const jobTypes = [
                       'deuda',
                       'vencimientos',
@@ -1860,32 +1899,32 @@ export function RepresentativeDetailPage({
                         }
                       }
                       if (failed === 0) {
-                        toast.success('Scraping completado');
+                        toast.success('Actualización completada');
                       } else if (failed < jobTypes.length) {
                         toast.warning(
-                          `Scraping parcial: ${failed} job(s) fallaron`
+                          `Actualización parcial: ${failed} módulo(s) fallaron`
                         );
                       } else {
-                        toast.error('Todos los jobs fallaron');
+                        toast.error('La actualización falló en todos los módulos');
                       }
                     } catch (err) {
                       toast.error(
                         err instanceof Error
                           ? err.message
-                          : 'Error al encolar scraping'
+                          : 'No se pudo iniciar la actualización'
                       );
                     } finally {
                       setScrapingAll(false);
                     }
                   }}
-                  title="Scrapear todo (deuda, vencimientos, IVA, notificaciones)"
+                  title="Actualizar todo (deuda, vencimientos, IVA, notificaciones)"
                 >
                   {scrapingAll ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
                     <Play className="h-3 w-3" />
                   )}
-                  Scrapear todo
+                  Actualizar todo
                 </Button>
                 <button
                   onClick={() => setEditRepresentativeDialogOpen(true)}
@@ -2312,12 +2351,19 @@ export function RepresentativeDetailPage({
                 <div className="flex items-center gap-2 shrink-0">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
                   <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-                    Notificaciones
+                    Notificaciones sin leer
                   </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {unreadNotifications?.notifications.length ?? 0}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => onTabChange('notificaciones')}
+                    className="text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] hover:underline"
+                  >
+                    Ver todas →
+                  </button>
                 </div>
                 <div className="relative flex-1 min-h-0">
                   {loadingUnreadNotifications ? (
@@ -2346,7 +2392,7 @@ export function RepresentativeDetailPage({
                         >
                           <button
                             className="flex-1 min-w-0 text-left"
-                            onClick={() => setResumenNotifSelected(notif)}
+                            onClick={() => setNotifAbierta(notif.id)}
                           >
                             {notif.clienteRazonSocial && (
                               <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
@@ -2396,79 +2442,62 @@ export function RepresentativeDetailPage({
             )}
           </TabsContent>
 
-          {/* Dialog: detalle de notificación no leída (Resumen) */}
+          {/* Dialog: la notificación del Resumen, con el panel de lectura real */}
           <Dialog
-            open={!!resumenNotifSelected}
+            open={!!notifAbierta}
             onOpenChange={(open) => {
-              if (!open) setResumenNotifSelected(null);
+              if (!open) setNotifAbierta(null);
             }}
           >
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  <Bell className="h-4 w-4 shrink-0" />
-                  {resumenNotifSelected?.clienteRazonSocial
-                    ? `Notificación — ${resumenNotifSelected.clienteRazonSocial}`
-                    : 'Notificación'}
-                </DialogTitle>
+            <DialogContent className="!max-w-5xl w-[92vw] p-0 overflow-hidden gap-0">
+              <DialogHeader className="sr-only">
+                <DialogTitle>Notificación</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 text-sm">
-                {/* Fechas */}
-                <div className="flex gap-6 text-xs text-muted-foreground">
-                  {resumenNotifSelected?.publicadaAt && (
-                    <span>
-                      <span className="font-medium text-foreground">
-                        Publicación:{' '}
-                      </span>
-                      {format(
-                        new Date(resumenNotifSelected.publicadaAt),
-                        'dd/MM/yyyy',
-                        { locale: es }
-                      )}
-                    </span>
-                  )}
-                  {resumenNotifSelected?.venceAt && (
-                    <span>
-                      <span className="font-medium text-foreground">
-                        Vencimiento:{' '}
-                      </span>
-                      {format(
-                        new Date(resumenNotifSelected.venceAt),
-                        'dd/MM/yyyy',
-                        { locale: es }
-                      )}
-                    </span>
-                  )}
-                </div>
-                {/* Mensaje completo */}
-                <p className="leading-relaxed whitespace-pre-wrap">
-                  {resumenNotifSelected?.mensaje}
-                </p>
-                {/* Acciones */}
-                <div className="flex justify-between items-center pt-2 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (resumenNotifSelected)
-                        markOpenedMutation.mutate(resumenNotifSelected.id);
-                      setResumenNotifSelected(null);
-                    }}
-                    disabled={markOpenedMutation.isPending}
-                    className="gap-1.5"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Marcar como leída
-                  </Button>
-                  <DialogClose asChild>
-                    <Button variant="ghost" size="sm">
-                      Cerrar
-                    </Button>
-                  </DialogClose>
-                </div>
+              <div className="flex h-[72vh] min-h-[420px] flex-col">
+                <PanelLectura
+                  notificacionId={notifAbierta}
+                  onCrearTarea={() => setCreandoTareaDesdeNotif(true)}
+                  onIrATarea={(tareaId) => {
+                    setNotifAbierta(null);
+                    void navigate({ to: '/tareas', search: { tarea: tareaId } });
+                  }}
+                  onAnterior={() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    if (i > 0) setNotifAbierta(lista[i - 1].id);
+                  }}
+                  onSiguiente={() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    if (i >= 0 && i < lista.length - 1)
+                      setNotifAbierta(lista[i + 1].id);
+                  }}
+                  hayAnterior={(() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    return lista.findIndex((n) => n.id === notifAbierta) > 0;
+                  })()}
+                  haySiguiente={(() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    return i >= 0 && i < lista.length - 1;
+                  })()}
+                />
               </div>
             </DialogContent>
           </Dialog>
+          <CrearTareaDesdeNotificacion
+            abierto={creandoTareaDesdeNotif}
+            onAbrirChange={setCreandoTareaDesdeNotif}
+            notificacion={
+              unreadNotifications?.notifications.find(
+                (n) => n.id === notifAbierta
+              ) ?? null
+            }
+            onCreada={(tareaId) => {
+              setNotifAbierta(null);
+              void navigate({ to: '/tareas', search: { tarea: tareaId } });
+            }}
+          />
 
           {/* Deudas Tab */}
           <TabsContent value="deudas" className="space-y-[14px]">
@@ -3487,10 +3516,12 @@ export function RepresentativeDetailPage({
                 </Button>
               </div>
             </div>
-            <NotificationsView
-              clientId={representativeId}
-              profileId={selectedClientId}
-              className="min-h-[500px]"
+            {/* La misma bandeja que /notifications, acotada a este login y
+                empresa — reemplaza a la vista vieja de filtros apilados. */}
+            <InboxEmbebido
+              credencialId={representativeId}
+              clienteId={selectedClientId}
+              className="h-[calc(100vh-330px)] min-h-[540px]"
             />
           </TabsContent>
 
@@ -4556,7 +4587,7 @@ export function RepresentativeDetailPage({
                             Actualizar IVA
                           </h3>
                           <p className="text-[12px] leading-relaxed text-[var(--arca-ink-4)] mt-1">
-                            Si las facturas ya están al día, podés scrapear solo
+                            Si las facturas ya están al día, podés actualizar solo
                             IVA para ir más rápido.
                           </p>
                         </div>
@@ -4767,7 +4798,7 @@ export function RepresentativeDetailPage({
                                 </div>
                                 <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
                                   Vuelve a pedirle a AFIP el mes completo. Usala
-                                  si el período quedó incompleto: el scrapeo
+                                  si el período quedó incompleto: la actualización
                                   normal sólo trae lo posterior a la última
                                   factura cargada.
                                 </div>

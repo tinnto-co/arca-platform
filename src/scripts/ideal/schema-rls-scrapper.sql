@@ -53,6 +53,10 @@ grant update (nombre, email, telefono, estado, ultimo_login_ok) on credencial_af
 grant select on cliente_credencial to arca_scrapper;
 grant update (afip_contribuyente_id) on cliente_credencial to arca_scrapper;
 
+-- Del cliente solo marca el estado del servicio ante AFIP (irregularidades/ok),
+-- que detecta el processor de comprobantes. El resto del cliente es del estudio.
+grant update (estado_afip, estado_afip_at) on cliente to arca_scrapper;
+
 -- De las escalas salariales solo agrega/pisa el básico de convenio. Las categorías
 -- y los convenios los arma el estudio: el scrapper los lee para saber a quién aplicar.
 grant select, insert, update on escala_salarial to arca_scrapper;

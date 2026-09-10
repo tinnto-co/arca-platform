@@ -45,7 +45,7 @@ export function GlobalCopilotReadables() {
 
   useCopilotReadable({
     description:
-      'Lista global de clientes de la organización (hasta 100). Cada entrada es un CLIENTE: la entidad fiscal con CUIT propio, identificada por `clienteId`. `credenciales` son los nombres de los logins de AFIP por los que se lo scrapea (contexto extra para reconocerlo, NO son ids navegables). ' +
+      'Lista global de clientes de la organización (hasta 100). Cada entrada es un CLIENTE: la entidad fiscal con CUIT propio, identificada por `clienteId`. `credenciales` son los nombres de los logins de AFIP por los que se consultan sus datos (contexto extra para reconocerlo, NO son ids navegables). ' +
       'REGLA DE RESOLUCIÓN para navegar con `abrirCliente`: buscá por `nombre` o `cuit` con fuzzy match (ignorá mayúsculas, puntos, guiones, espacios y sufijos como "S.A."/"SA"/"SRL") y llamá `abrirCliente` con el `clienteId` de la entrada que coincide. ' +
       'Si varios clientes coinciden, ofrecé la lista para que elija. NUNCA inventes un UUID.',
     value: clientesGlobal,

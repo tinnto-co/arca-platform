@@ -17,12 +17,15 @@ import {
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
-import { FrecuenciaClavesCard } from '@/components/frecuencia-claves-card';
 import { PageShell } from '@/components/shared/page-shell';
 import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 import { dispatchAllJobs } from '@/actions/job';
 
 export const Route = createFileRoute('/_authed/clients/')({
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { filtro?: 'claves_invalidas' } =>
+    search.filtro === 'claves_invalidas' ? { filtro: 'claves_invalidas' } : {},
   component: RouteComponent,
 });
 
@@ -100,6 +103,7 @@ function UpdateAllButton() {
 }
 
 function RouteComponent() {
+  const { filtro } = Route.useSearch();
   return (
     <PageShell>
       <PageHeader
@@ -122,8 +126,9 @@ function RouteComponent() {
           </>
         }
       />
-      <RepresentativesTable />
-      <FrecuenciaClavesCard />
+      <RepresentativesTable
+        soloClavesInvalidas={filtro === 'claves_invalidas'}
+      />
     </PageShell>
   );
 }

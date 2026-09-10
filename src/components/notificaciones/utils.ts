@@ -13,6 +13,27 @@ export const SEVERIDAD_LABEL: Record<string, string> = {
   sin_clasificar: 'Sin clasificar',
 };
 
+// La categoría viene cruda de la clasificación automática (intimacion,
+// comunicacion_general...). El mapa la traduce; lo que no esté mapeado se
+// emprolija igual (guiones bajos → espacios, inicial mayúscula) para que una
+// categoría nueva nunca se vea como código.
+export const CATEGORIA_LABEL: Record<string, string> = {
+  comunicacion_general: 'Comunicación general',
+  deuda: 'Deuda',
+  inspeccion: 'Inspección',
+  intimacion: 'Intimación',
+  otro: 'Otro',
+  requerimiento: 'Requerimiento',
+  vencimiento: 'Vencimiento',
+};
+
+export function categoriaLabel(categoria: string): string {
+  const conocida = CATEGORIA_LABEL[categoria];
+  if (conocida) return conocida;
+  const limpia = categoria.replaceAll('_', ' ').trim();
+  return limpia.charAt(0).toUpperCase() + limpia.slice(1);
+}
+
 export const SEVERIDAD_PILL: Record<string, string> = {
   urgente: 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
   accion_requerida:

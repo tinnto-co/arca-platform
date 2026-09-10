@@ -28,6 +28,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { PhoneInput } from '@/components/ui/phone-input';
 import { createCredencialWithClientes } from '@/actions/client';
 import { consumeSseStream, friendlyError } from '@/lib/sse';
 
@@ -348,9 +349,10 @@ export function CreateRepresentativeDialog({
                           </span>
                         </FormLabel>
                         <FormControl>
-                          <Input
+                          <PhoneInput
                             placeholder="11 1234-5678"
-                            {...field}
+                            value={field.value}
+                            onChange={field.onChange}
                             disabled={discovering}
                           />
                         </FormControl>

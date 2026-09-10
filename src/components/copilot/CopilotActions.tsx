@@ -160,7 +160,7 @@ export function CopilotActions() {
   useCopilotAction({
     name: 'getResumenSaludCliente',
     description:
-      'Devuelve un resumen ejecutivo de salud de un cliente: health score 0-100, facturación del mes, deudas vencidas y totales, notificaciones AFIP no leídas, estado del último scrape de cada tipo (IVA/comprobantes/notificaciones/deuda/vencimientos), y observaciones de atención requerida. INVOCALO cuando el usuario pregunte "cómo está el cliente X", "estado del cliente", "salud del cliente", "qué le pasa al cliente", o quiera un overview general. PASÁ SIEMPRE AMBOS parámetros cuando los tengas en el contexto: el clientId Y el clientName del cliente activo. Si el clientId no resuelve (por ejemplo por un typo), el sistema busca por nombre como fallback.',
+      'Devuelve un resumen ejecutivo de salud de un cliente: health score 0-100, facturación del mes, deudas vencidas y totales, notificaciones AFIP no leídas, estado de la última actualización de cada tipo (IVA/comprobantes/notificaciones/deuda/vencimientos), y observaciones de atención requerida. INVOCALO cuando el usuario pregunte "cómo está el cliente X", "estado del cliente", "salud del cliente", "qué le pasa al cliente", o quiera un overview general. PASÁ SIEMPRE AMBOS parámetros cuando los tengas en el contexto: el clientId Y el clientName del cliente activo. Si el clientId no resuelve (por ejemplo por un typo), el sistema busca por nombre como fallback.',
     parameters: [
       {
         name: 'clientId',
@@ -259,7 +259,7 @@ export function CopilotActions() {
   useCopilotAction({
     name: 'dispararScrape',
     description:
-      'Dispara un job de scraping contra ARCA para un cliente. INVOCÁ ESTA ACTION DIRECTAMENTE en cuanto el usuario lo pida — el componente ya muestra una card visual con botones Cancelar/Confirmar antes de ejecutar el job. NO pidas confirmación en texto antes de invocar la action; la confirmación visual la maneja la UI. Tipos disponibles: iva (posición IVA), comprobantes (facturas), notificaciones (notificaciones AFIP), deuda (deudas), vencimientos (vencimientos fiscales). Usalo cuando el usuario pida explícitamente refrescar/scrapear/actualizar datos de un cliente.',
+      'Dispara una actualización de datos desde ARCA para un cliente. INVOCÁ ESTA ACTION DIRECTAMENTE en cuanto el usuario lo pida — el componente ya muestra una card visual con botones Cancelar/Confirmar antes de ejecutar el job. NO pidas confirmación en texto antes de invocar la action; la confirmación visual la maneja la UI. Tipos disponibles: iva (posición IVA), comprobantes (facturas), notificaciones (notificaciones AFIP), deuda (deudas), vencimientos (vencimientos fiscales). Usalo cuando el usuario pida explícitamente refrescar/scrapear/actualizar datos de un cliente.',
     parameters: [
       {
         name: 'clientId',

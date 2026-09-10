@@ -16,6 +16,7 @@ import {
   asuntoYPreview,
   grupoDeFecha,
   horaOFecha,
+  categoriaLabel,
 } from './utils';
 import { cn } from '@/lib/utils';
 
@@ -222,7 +223,7 @@ export function ListaNotificaciones({
                                 <span
                                   className={`${PILL} border border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]`}
                                 >
-                                  {n.categoria}
+                                  {categoriaLabel(n.categoria)}
                                 </span>
                               )}
 

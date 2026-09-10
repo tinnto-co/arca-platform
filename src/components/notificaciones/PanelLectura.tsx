@@ -47,6 +47,7 @@ import {
   asuntoYPreview,
   fechaHoraLarga,
   iniciales,
+  categoriaLabel,
 } from './utils';
 
 interface Props {
@@ -223,6 +224,11 @@ export function PanelLectura({
     void queryClient.invalidateQueries({
       queryKey: ['notificacion', notificacionId],
     });
+    // La card «Notificaciones sin leer» del Resumen de la ficha usa su
+    // propia query: sin esto, marcar no leída/resuelta desde el panel no
+    // la refresca hasta recargar.
+    void queryClient.invalidateQueries({ queryKey: ['unreadNotifications'] });
+    void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
   };
 
   const resolver = useMutation({
@@ -321,7 +327,8 @@ export function PanelLectura({
             </h2>
 
             <p className="mt-1 text-[11.5px] text-[var(--arca-ink-3)]">
-              {n.categoria ?? 'AFIP'} · Domicilio fiscal electrónico · login{' '}
+              {n.categoria ? categoriaLabel(n.categoria) : 'AFIP'} · Domicilio
+              fiscal electrónico · login{' '}
               <span className="[font-family:var(--ff-mono)]">
                 {n.credencialNombre}
               </span>{' '}
@@ -457,7 +464,7 @@ export function PanelLectura({
         ))}
 
         {(hayCuerpo || n.aiResumen) && (
-          <article className="max-w-[72ch] rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-6 py-[22px]">
+          <article className="max-w-[105ch] rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-6 py-[22px]">
             {n.aiResumen && (
               <p
                 className={`text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
@@ -480,7 +487,7 @@ export function PanelLectura({
         {/* Vencimiento detectado. `vence_at` lo completa el scrapeo cuando
             encuentra una fecha en el cuerpo; si no hay, la tira no aparece. */}
         {n.venceAt && (
-          <div className="flex max-w-[72ch] items-center gap-3 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
+          <div className="flex max-w-[105ch] items-center gap-3 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
             <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
               <Calendar className="size-3.5" />
             </span>
@@ -507,7 +514,7 @@ export function PanelLectura({
 
         {/* Adjuntos */}
         {n.adjuntos.length > 0 && (
-          <div className="flex max-w-[72ch] flex-col">
+          <div className="flex max-w-[105ch] flex-col">
             {n.adjuntos.map((a) => (
               <Adjunto
                 key={a.id}

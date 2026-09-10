@@ -665,7 +665,7 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     else
       observaciones.push({
         severidad: 'warn',
-        mensaje: 'No hay scrapes exitosos en los últimos 7 días',
+        mensaje: 'Sin actualizaciones exitosas en los últimos 7 días',
       });
 
     // 20 pts: ningún job recientemente fallido
