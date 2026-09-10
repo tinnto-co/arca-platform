@@ -7,7 +7,14 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Building2, Loader2, LogIn, Plus } from 'lucide-react';
+import {
+  ArrowRight,
+  Building2,
+  CalendarDays,
+  Loader2,
+  Plus,
+  Users,
+} from 'lucide-react';
 import {
   crearOrganizacion,
   entrarOrganizacion,
@@ -30,14 +37,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 
 export const Route = createFileRoute('/_authed/organizaciones/')({
   beforeLoad: async () => {
@@ -171,77 +170,93 @@ function OrganizacionesPage() {
     <PageShell>
       <PageHeader
         title="Organizaciones"
-        subtitle="Todos los estudios de la plataforma"
+        subtitle={`${orgs.length} ${orgs.length === 1 ? 'estudio' : 'estudios'} · elegí dónde entrar`}
         actions={<NuevaOrganizacionDialog />}
       />
       {isLoading ? (
         <p className="text-[var(--arca-ink-3)]">Cargando...</p>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Organización</TableHead>
-              <TableHead>Identificador</TableHead>
-              <TableHead className="text-right">Miembros</TableHead>
-              <TableHead>Alta</TableHead>
-              <TableHead className="text-right">Acciones</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {orgs.map((org) => (
-              <TableRow key={org.id}>
-                <TableCell>
-                  <div className="flex items-center gap-3">
-                    <Avatar className="size-8 rounded-lg">
-                      <AvatarImage src={org.logo ?? ''} />
-                      <AvatarFallback className="rounded-lg">
-                        <Building2 className="size-4 text-[var(--arca-ink-3)]" />
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="font-medium">{org.name}</span>
-                    {org.id === activa && (
-                      <Badge variant="outline" className="text-[10.5px]">
-                        Cuenta actual
-                      </Badge>
-                    )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {orgs.map((org) => {
+            const esActiva = org.id === activa;
+            return (
+              <div
+                key={org.id}
+                className="flex flex-col rounded-[14px] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]"
+              >
+                <div className="flex items-center gap-3 px-5 pt-5">
+                  <Avatar className="size-11 rounded-full border border-[var(--arca-border)]">
+                    <AvatarImage src={org.logo ?? ''} />
+                    <AvatarFallback className="rounded-full bg-[var(--arca-surface-2)]">
+                      <Building2 className="size-4 text-[var(--arca-ink-3)]" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[14.5px] font-semibold text-[var(--arca-ink)]">
+                        {org.name}
+                      </span>
+                      {esActiva && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 text-[10.5px]"
+                        >
+                          Cuenta actual
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="truncate text-[11.5px] text-[var(--arca-ink-4)] [font-family:var(--ff-mono)]">
+                      {org.slug}
+                    </div>
                   </div>
-                </TableCell>
-                <TableCell className="text-[var(--arca-ink-3)] font-mono text-[12.5px]">
-                  {org.slug}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {org.miembros}
-                </TableCell>
-                <TableCell className="text-[var(--arca-ink-3)]">
-                  {org.createdAt
-                    ? new Date(org.createdAt).toLocaleDateString('es-AR', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })
-                    : '—'}
-                </TableCell>
-                <TableCell className="text-right">
-                  {org.id === activa ? null : (
-                    <Button
-                      size="sm"
-                      variant="outline"
+                </div>
+
+                <div className="flex items-center gap-4 px-5 pb-4 pt-3 text-[12px] text-[var(--arca-ink-3)]">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Users className="size-3.5 text-[var(--arca-ink-4)]" />
+                    <span className="tabular-nums font-medium text-[var(--arca-ink-2)]">
+                      {org.miembros}
+                    </span>
+                    {Number(org.miembros) === 1 ? 'miembro' : 'miembros'}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <CalendarDays className="size-3.5 text-[var(--arca-ink-4)]" />
+                    desde{' '}
+                    <span className="font-medium text-[var(--arca-ink-2)]">
+                      {org.createdAt
+                        ? new Date(org.createdAt).toLocaleDateString('es-AR', {
+                            day: 'numeric',
+                            month: 'short',
+                            year: 'numeric',
+                          })
+                        : '—'}
+                    </span>
+                  </span>
+                </div>
+
+                <div className="mt-auto flex items-center justify-between border-t border-[var(--arca-border)] px-5 py-3">
+                  <span className="text-[12px] text-[var(--arca-ink-4)]">
+                    {esActiva ? 'Estás en esta cuenta' : 'Entrar a esta cuenta'}
+                  </span>
+                  {!esActiva && (
+                    <button
+                      type="button"
                       disabled={entrar.isPending}
                       onClick={() => entrar.mutate(org.id)}
+                      className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--arca-ink)] hover:underline disabled:opacity-50"
                     >
                       {entrandoA === org.id ? (
                         <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <LogIn className="size-3.5" />
-                      )}
-                      Entrar a esta cuenta
-                    </Button>
+                      ) : null}
+                      Entrar
+                      <ArrowRight className="size-3.5" />
+                    </button>
                   )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </PageShell>
   );
