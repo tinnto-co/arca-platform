@@ -22,11 +22,18 @@ import {
   Image as ImageIcon,
   Landmark,
   Mail,
+  MailOpen,
   MoreHorizontal,
   Plus,
   Users,
   Zap,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +65,51 @@ interface Props {
   onSiguiente: () => void;
   hayAnterior: boolean;
   haySiguiente: boolean;
+}
+
+/**
+ * Acción de la barra: sólo ícono, con su nombre en un tooltip.
+ *
+ * Es una barra de aplicación —lo que se le hace a la notificación— y va arriba
+ * de todo, antes del asunto. Sin texto no se puede adivinar qué hace cada uno,
+ * así que el tooltip no es decorativo: es el nombre de la acción, y va también
+ * en `aria-label` para quien navega con lector.
+ */
+function AccionIcono({
+  etiqueta,
+  onClick,
+  disabled,
+  destacada,
+  children,
+}: {
+  etiqueta: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  /** La acción principal, en tinta plena. */
+  destacada?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          aria-label={etiqueta}
+          className={cn(
+            'grid size-8 place-items-center rounded-[var(--arca-r-md)] transition-colors duration-[120ms] disabled:opacity-40',
+            destacada
+              ? 'bg-[var(--arca-ink)] text-white hover:bg-black'
+              : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-border)]'
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{etiqueta}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 const BOTON =
@@ -326,6 +378,126 @@ export function PanelLectura({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--arca-bg)]">
+      {/* Barra de la aplicación: lo que se le hace a la notificación. Va
+          arriba de todo —antes del asunto— y sólo con íconos, con el nombre de
+          cada acción en su tooltip. */}
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-4 py-2">
+        <AccionIcono etiqueta="Crear tarea" onClick={onCrearTarea} destacada>
+          <Plus className="size-4" />
+        </AccionIcono>
+
+        <AccionIcono
+          etiqueta={leida ? 'Marcar como no leída' : 'Marcar como leída'}
+          onClick={() => marcarLeida.mutate(!leida)}
+          disabled={marcarLeida.isPending}
+        >
+          {leida ? (
+            <Mail className="size-4" />
+          ) : (
+            <MailOpen className="size-4" />
+          )}
+        </AccionIcono>
+
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger
+                aria-label={
+                  asignado
+                    ? `Asignada a ${asignado.name}`
+                    : 'Asignar responsable'
+                }
+                className="grid size-8 place-items-center rounded-[var(--arca-r-md)] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-border)]"
+              >
+                {/* Con responsable, sus iniciales en lugar del ícono: se ve de
+                    un vistazo quién la tiene. */}
+                {asignado ? (
+                  <span
+                    className="grid size-[22px] place-items-center rounded-full text-[9px] font-semibold text-white"
+                    style={{ background: 'var(--arca-chart-1)' }}
+                  >
+                    {iniciales(asignado.name)}
+                  </span>
+                ) : (
+                  <Users className="size-4" />
+                )}
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              {asignado ? `Asignada a ${asignado.name}` : 'Asignar responsable'}
+            </TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="start" className="min-w-[190px]">
+            <DropdownMenuItem
+              className="text-[12.5px]"
+              onSelect={() => asignar.mutate(null)}
+            >
+              Sin asignar
+            </DropdownMenuItem>
+            {miembros.map((m) => (
+              <DropdownMenuItem
+                key={m.userId}
+                className="text-[12.5px]"
+                onSelect={() => asignar.mutate(m.userId)}
+              >
+                {m.name}
+                {m.userId === n.asignadaA && (
+                  <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
+                )}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <span
+          className="mx-1 h-5 w-px bg-[var(--arca-border)]"
+          aria-hidden="true"
+        />
+
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger
+                aria-label="Más acciones"
+                className="grid size-8 place-items-center rounded-[var(--arca-r-md)] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-border)]"
+              >
+                <MoreHorizontal className="size-4" />
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Más acciones</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem
+              className="text-[12.5px]"
+              onSelect={() => {
+                void navigator.clipboard.writeText(window.location.href);
+                toast.success('Enlace copiado');
+              }}
+            >
+              Copiar enlace
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Navegación a la derecha, como el "1 de 933" de Gmail. */}
+        <div className="ml-auto flex items-center gap-0.5">
+          <AccionIcono
+            etiqueta="Anterior (K)"
+            onClick={onAnterior}
+            disabled={!hayAnterior}
+          >
+            <ChevronUp className="size-4" />
+          </AccionIcono>
+          <AccionIcono
+            etiqueta="Siguiente (J)"
+            onClick={onSiguiente}
+            disabled={!haySiguiente}
+          >
+            <ChevronDown className="size-4" />
+          </AccionIcono>
+        </div>
+      </div>
+
       {/* Encabezado */}
       <div className="shrink-0 px-6 pt-4 pb-2">
         <div className="flex items-start gap-3">
@@ -386,96 +558,7 @@ export function PanelLectura({
               </span>
             </p>
           </div>
-
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={onAnterior}
-              disabled={!hayAnterior}
-              aria-label="Notificación anterior"
-              title="Anterior (K)"
-              className="grid size-[30px] place-items-center rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-40"
-            >
-              <ChevronUp className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={onSiguiente}
-              disabled={!haySiguiente}
-              aria-label="Notificación siguiente"
-              title="Siguiente (J)"
-              className="grid size-[30px] place-items-center rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-40"
-            >
-              <ChevronDown className="size-3.5" />
-            </button>
-          </div>
         </div>
-      </div>
-
-      {/* Acciones */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--arca-border)] px-6 py-2.5">
-        <button
-          type="button"
-          onClick={onCrearTarea}
-          className="inline-flex items-center gap-1.5 rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors duration-[120ms] hover:bg-black"
-        >
-          <Plus className="size-3.5" />
-          Crear tarea
-        </button>
-
-        <button
-          type="button"
-          onClick={() => marcarLeida.mutate(!leida)}
-          disabled={marcarLeida.isPending}
-          className={BOTON}
-        >
-          <Check className="size-3.5" />
-          {leida ? 'Marcar como no leída' : 'Marcar como leída'}
-        </button>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger className={BOTON}>
-            <Users className="size-3.5" />
-            {asignado ? asignado.name : 'Asignar'}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[190px]">
-            <DropdownMenuItem
-              className="text-[12.5px]"
-              onSelect={() => asignar.mutate(null)}
-            >
-              Sin asignar
-            </DropdownMenuItem>
-            {miembros.map((m) => (
-              <DropdownMenuItem
-                key={m.userId}
-                className="text-[12.5px]"
-                onSelect={() => asignar.mutate(m.userId)}
-              >
-                {m.name}
-                {m.userId === n.asignadaA && (
-                  <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger aria-label="Más acciones" className={BOTON}>
-            <MoreHorizontal className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-[12.5px]"
-              onSelect={() => {
-                void navigator.clipboard.writeText(window.location.href);
-                toast.success('Enlace copiado');
-              }}
-            >
-              Copiar enlace
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       {/* Lo que puso la plataforma: tareas creadas y la fecha que detectó el
