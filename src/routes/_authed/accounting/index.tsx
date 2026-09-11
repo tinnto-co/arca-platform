@@ -113,7 +113,7 @@ import {
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
+import { Badge, BadgeDot } from '@/components/ui/badge';
 import { Ayuda } from '@/components/shared/ayuda';
 import { Paginador } from '@/components/shared/paginador';
 import { chipFiltro, LimpiarFiltros } from '@/components/shared/filtros';
@@ -9414,93 +9414,119 @@ function EstadosContables({
 
   return (
     <div className="space-y-4">
-      {/* Barra: ejercicio + estado de aprobación del paquete */}
-      <ArcaCard>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-          <span className="text-[12px] text-[var(--arca-ink-3)]">
-            Ejercicio
-          </span>
-          <Select
-            value={effectiveFyId}
-            onValueChange={(v) => setSelectedFyId(v)}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {fiscalYears.map((y) => (
-                <SelectItem key={y.id} value={y.id}>
-                  N°{y.numero} ({y.estado === 'abierto' ? 'abierto' : 'cerrado'}
-                  )
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
-            {(
-              [
-                ['ajustado', 'Ajustado por inflación'],
-                ['historico', 'Valores históricos'],
-              ] as ['ajustado' | 'historico', string][]
-            ).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setValuation(k)}
-                title={
-                  k === 'ajustado'
-                    ? `Incluye el asiento de ajuste por inflación (${norma}). Es como se presentan los EECC.`
-                    : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'
-                }
-                className="px-2.5 h-6 text-[11.5px] font-medium rounded-[6px] transition-colors"
-                style={{
-                  background:
-                    valuation === k ? 'var(--arca-surface)' : 'transparent',
-                  color:
-                    valuation === k ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-                }}
-              >
-                {label}
-              </button>
+      {/* Sin card: es la barra de la pantalla, no una tarjeta de contenido. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[12.5px] text-[var(--arca-ink-3)]">
+          Ejercicio
+        </span>
+        <Select value={effectiveFyId} onValueChange={(v) => setSelectedFyId(v)}>
+          <SelectTrigger size="sm" className="w-[180px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {fiscalYears.map((y) => (
+              <SelectItem key={y.id} value={y.id}>
+                N°{y.numero} ({y.estado === 'abierto' ? 'abierto' : 'cerrado'})
+              </SelectItem>
             ))}
-          </div>
-          <div className="flex-1" />
+          </SelectContent>
+        </Select>
+
+        {/* Segmentado del sistema. */}
+        <div
+          role="tablist"
+          className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
+        >
+          {(
+            [
+              ['ajustado', 'Ajustado por inflación'],
+              ['historico', 'Valores históricos'],
+            ] as ['ajustado' | 'historico', string][]
+          ).map(([k, label]) => (
+            <Tooltip key={k}>
+              <TooltipTrigger asChild>
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={valuation === k}
+                  onClick={() => setValuation(k)}
+                  className={cn(
+                    'flex h-[26px] items-center rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
+                    valuation === k
+                      ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                      : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                  )}
+                >
+                  {label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {k === 'ajustado'
+                  ? `Incluye el asiento de ajuste por inflación (${norma}). Es como se presentan los EECC.`
+                  : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
           {approved ? (
             <>
-              <span className="text-[11px] px-2 py-1 rounded-full bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] font-medium">
-                ✓ Aprobado
+              <Badge variant="success" size="sm">
+                <BadgeDot />
+                Aprobado
                 {fs?.approvedByName ? ` · ${fs.approvedByName}` : ''}
                 {fs?.approvedAt
                   ? ` · ${new Date(fs.approvedAt).toLocaleDateString('es-AR')}`
                   : ''}
-              </span>
+              </Badge>
               {isOwner && (
-                <button
-                  onClick={() => reopenMut.mutate()}
-                  disabled={reopenMut.isPending}
-                  className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
-                >
-                  Reabrir
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => reopenMut.mutate()}
+                      disabled={reopenMut.isPending}
+                    >
+                      Reabrir
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Vuelve el paquete a borrador para poder editarlo
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           ) : (
             <>
-              <span className="text-[11px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] font-medium">
+              <Badge variant="outline" size="sm">
+                <BadgeDot />
                 Borrador
-              </span>
+              </Badge>
               {isOwner && (
-                <button
-                  onClick={() => approveMut.mutate()}
-                  disabled={approveMut.isPending}
-                  className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  Aprobar EECC
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => approveMut.mutate()}
+                      disabled={approveMut.isPending}
+                    >
+                      <Check className="size-3.5" strokeWidth={2.4} />
+                      Aprobar EECC
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Cierra el paquete: queda como la versión presentada y deja
+                    de editarse
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           )}
         </div>
-      </ArcaCard>
+      </div>
 
       {/* Índice del balance a la izquierda; el estado elegido, a la derecha. */}
       <div className="flex items-start gap-4">
@@ -9836,7 +9862,17 @@ function EspView({
               ? ` · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`
               : ''}
           </div>
-          <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {/* Sin itálica: en el sistema la aclaración es 11.5px en `ink-4`,
+            como el "Últ. actualización" de las fichas. Y cuando lo que dice
+            es que falta generar el ajuste, es un aviso: va en ámbar. */}
+          <div
+            className={cn(
+              'mt-0.5 text-[11.5px]',
+              valuation === 'ajustado' && !data?.inflationApplied
+                ? 'text-[var(--arca-accent-warn-fg)]'
+                : 'text-[var(--arca-ink-4)]'
+            )}
+          >
             {valuation === 'historico'
               ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
               : data?.inflationApplied
@@ -11689,14 +11725,19 @@ function NotesEditor({
           Formato Markdown
         </span>
         <div className="flex-1" />
+        {/* Tooltips del sistema en vez de `title`: el nativo tarda casi un
+          segundo en aparecer y no se ve como el resto. */}
         {notes.length > 0 && (
-          <button
-            onClick={exportWord}
-            className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
-            title="Exportar todas las notas como documento Word (.docx)"
-          >
-            Exportar Word
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={exportWord}>
+                Exportar Word
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Exportar todas las notas como documento Word (.docx)
+            </TooltipContent>
+          </Tooltip>
         )}
         {editable && (
           <>
@@ -11707,34 +11748,67 @@ function NotesEditor({
               className="hidden"
               onChange={(e) => void elegirArchivo(e.target.files?.[0])}
             />
-            <button
-              onClick={() => inputWord.current?.click()}
-              disabled={importando}
-              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
-              title="Importar notas desde un documento Word (.docx)"
-            >
-              {importando ? 'Leyendo…' : 'Importar Word'}
-            </button>
-            <button
-              onClick={() => setFormatoAbierto(true)}
-              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
-              title="Ver el formato que espera la importación"
-            >
-              Ver formato
-            </button>
-            <button
-              onClick={addNote}
-              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
-            >
-              + Agregar nota
-            </button>
-            <button
-              onClick={() => saveMut.mutate()}
-              disabled={!dirty || saveMut.isPending}
-              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-40"
-            >
-              Guardar
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => inputWord.current?.click()}
+                  disabled={importando}
+                >
+                  {importando ? 'Leyendo…' : 'Importar Word'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Importar notas desde un documento Word (.docx)
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFormatoAbierto(true)}
+                >
+                  Ver formato
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Ver el formato que espera la importación
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={addNote}
+                >
+                  <Plus className="size-3.5" strokeWidth={2.5} />
+                  Agregar nota
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Agrega una nota vacía al final del listado
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  onClick={() => saveMut.mutate()}
+                  disabled={!dirty || saveMut.isPending}
+                >
+                  Guardar
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {dirty
+                  ? 'Guardar los cambios de las notas'
+                  : 'No hay cambios para guardar'}
+              </TooltipContent>
+            </Tooltip>
           </>
         )}
       </div>
@@ -12160,7 +12234,7 @@ function DatosInicialesView({
               onChange={(e) => set('address', e.target.value)}
               disabled={!canEdit}
               placeholder="Av. Corrientes 1234, Buenos Aires"
-              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] placeholder:text-[var(--arca-ink-4)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] disabled:cursor-default disabled:opacity-50"
             />
           </div>
 
@@ -12173,7 +12247,7 @@ function DatosInicialesView({
               onChange={(e) => set('actividadPrincipal', e.target.value)}
               disabled={!canEdit}
               placeholder="Venta al por menor de…"
-              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] placeholder:text-[var(--arca-ink-4)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] disabled:cursor-default disabled:opacity-50"
             />
           </div>
 
@@ -12211,7 +12285,7 @@ function DatosInicialesView({
                 onChange={(e) => set('numeroInscripcion', e.target.value)}
                 disabled={!canEdit}
                 placeholder="12345"
-                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] placeholder:text-[var(--arca-ink-4)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] disabled:cursor-default disabled:opacity-50"
               />
             </div>
           </div>

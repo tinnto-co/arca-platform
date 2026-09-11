@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
-  FileSpreadsheet,
+  Download,
   Info,
   Layers,
   RotateCcw,
@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ArcaCard } from '@/components/dashboard/shared';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -360,13 +362,15 @@ export function AjustePorInflacion({
             </Select>
 
             {preview && !blocked && preview.lines.length > 0 && (
-              <button
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
                 onClick={() => void exportExcel()}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)]"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={2} />
-                Exportar
-              </button>
+                <Download className="size-3.5" strokeWidth={2} />
+                Excel
+              </Button>
             )}
 
             {isOwner &&
@@ -803,9 +807,9 @@ function DetalleTable({ rows }: { rows: InflationAdjustmentPreview['lines'] }) {
             <div className="text-[var(--arca-ink)] truncate">{l.name}</div>
             <div className="text-[11.5px] text-[var(--arca-ink-2)]">
               {l.isOpening ? (
-                <span className="px-1.5 py-px rounded-full bg-[var(--arca-surface-2)] text-[10px] font-medium">
+                <Badge variant="default" size="xs">
                   Apertura
-                </span>
+                </Badge>
               ) : (
                 periodLabel(l.year, l.month)
               )}
@@ -901,9 +905,9 @@ function CoeficientesTable({
             <div className="text-[var(--arca-ink)] flex items-center gap-1.5">
               {periodLabel(c.year, c.month)}
               {isClosing && (
-                <span className="text-[9px] px-1.5 py-px rounded-full bg-[var(--arca-accent)] text-white font-semibold">
-                  cierre
-                </span>
+                <Badge variant="secondary" size="xs">
+                  Cierre
+                </Badge>
               )}
             </div>
             <div className="text-right tabular-nums text-[var(--arca-ink-2)]">

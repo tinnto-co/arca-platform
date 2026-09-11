@@ -51,6 +51,10 @@ const badgeVariants = cva(
         default: 'h-6 gap-1.5 px-[9px] text-[12px] font-medium',
         /* Inline en celda de tabla. */
         sm: 'h-5 gap-1 px-2 text-[11px] font-medium',
+        /* Marca chiquita dentro de una celda densa: "cierre",
+           "apertura". No es una píldora —el sistema no usa píldoras—
+           sino la misma caja de esquina 5px, más chica. */
+        xs: 'h-[18px] gap-1 rounded-[5px] px-1.5 text-[10px] font-semibold',
         /* Numéricas: mono tabular, 22px. */
         num: 'h-[22px] gap-1 px-2 text-[11.5px] font-semibold tabular-nums [font-family:var(--ff-mono)]',
       },
