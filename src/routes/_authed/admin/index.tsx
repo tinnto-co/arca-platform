@@ -206,6 +206,8 @@ function MembersTab() {
   const miembrosDelEstudio =
     members?.filter((m) => !m.esSoporte).length ?? 0;
 
+  const { data: usuarioActual } = useQuery(userQuery);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
@@ -284,9 +286,13 @@ function MembersTab() {
                   <TableCell className="text-right">
                     {/* El acceso de soporte no se revoca desde acá: se cierra
                         saliendo, desde el módulo de plataforma. */}
-                    {m.esSoporte ? (
+                    {m.esSoporte || m.userId === usuarioActual?.id ? (
                       <span
-                        title="Acceso de la plataforma. Se cierra desde Orddo, no desde el estudio."
+                        title={
+                          m.esSoporte
+                            ? 'Acceso de la plataforma. Se cierra desde Orddo, no desde el estudio.'
+                            : 'Sos vos: pedile a otro administrador que te quite.'
+                        }
                         className="text-[11.5px] text-[var(--arca-ink-4)]"
                       >
                         —

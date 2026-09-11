@@ -150,7 +150,32 @@ export const removeMember = createServerFn({
 })
   .validator(z.object({ memberIdOrEmail: z.string() }))
   .handler(async (ctx) => {
-    const { orgId, esSuperadmin } = await requireOwner();
+    const { orgId, userId, esSuperadmin } = await requireOwner();
+
+    // Better Auth impide dejar al estudio sin ningún dueño, pero no impide
+    // que te borres a vos si hay otros. Desde una pantalla que se llama
+    // "Miembros" y tiene una papelera por fila, eso es un botón para quedarte
+    // afuera de tu propio estudio sin querer. Esta pantalla administra a los
+    // demás; irse es otra acción y merece su propio lugar.
+    const [propia] = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(
+        and(
+          eq(member.organizationId, orgId),
+          eq(member.userId, userId),
+          or(
+            eq(member.id, ctx.data.memberIdOrEmail),
+            eq(member.userId, ctx.data.memberIdOrEmail)
+          )
+        )
+      )
+      .limit(1);
+    if (propia) {
+      throw new Error(
+        'No podés quitarte a vos misma desde acá. Pedile a otro administrador que lo haga.'
+      );
+    }
 
     // El acceso de soporte no es del estudio y no se revoca desde acá: se
     // cierra saliendo, desde el módulo de plataforma. Esconder el botón en la
