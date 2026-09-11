@@ -22,6 +22,7 @@ import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
 import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
+import { BuscadorGlobal } from '@/components/shared/buscador-global';
 import { FrontendTools } from '@/components/copilot/FrontendTools';
 import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
 import { VisiblePageReadable } from '@/components/copilot/VisiblePageReadable';
@@ -122,6 +123,7 @@ function RouteComponent() {
           <VisiblePageReadable />
           {shell(!hideAgentInput ? <AgentInput /> : null)}
           {!isChatRoute && !altoCompleto && <CopilotBottomPanel />}
+          <BuscadorGlobal />
         </CopilotAttachmentProvider>
       </CopilotKit>
     );

@@ -67,6 +67,7 @@ import {
 } from '@/components/ui/popover';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
+import { abrirBuscador } from '@/lib/buscador-global';
 
 export { userQuery };
 
@@ -612,9 +613,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
 
         {/* Search */}
-        <div
+        <button
+          type="button"
+          onClick={abrirBuscador}
+          aria-label={colapsado ? `Buscar · ${atajoBuscar}` : undefined}
           className={cn(
-            'flex items-center rounded-lg text-[12.5px] text-[var(--arca-sidebar-muted)] mt-2.5 mb-1.5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-colors duration-[120ms]',
+            'flex shrink-0 items-center rounded-lg text-[12.5px] text-[var(--arca-sidebar-muted)] mt-2.5 mb-1.5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--arca-sidebar-fg)] transition-colors duration-[120ms]',
             colapsado ? 'justify-center size-9 mx-auto' : 'h-8 gap-2 px-2.5'
           )}
           title={colapsado ? `Buscar · ${atajoBuscar}` : undefined}
@@ -639,7 +643,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </kbd>
             </>
           )}
-        </div>
+        </button>
 
         {/* CTA de alta. Abre el mismo diálogo que el "+" de Clientes. */}
         {!isViewer && (
