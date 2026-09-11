@@ -126,6 +126,11 @@ import {
 } from '@/components/ui/dialog';
 import { Paginador } from '@/components/shared/paginador';
 import { SelectorFecha } from '@/components/shared/selector-fecha';
+import {
+  SelectorPeriodo,
+  aPeriodo,
+  dePeriodo,
+} from '@/components/shared/selector-periodo';
 import { cn } from '@/lib/utils';
 import { periodoLegible } from '@/lib/periodo';
 import { CONDICION_IVA_LABELS } from '@/lib/cliente-labels';
@@ -368,7 +373,6 @@ export function RepresentativeDetailPage({
     from: Date;
     to: Date;
   }>(() => getMonthBounds(now.getFullYear(), now.getMonth()));
-  const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
   /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, vencimientos = vencimientos, facturas = comprobantes_full, notificaciones = notificaciones). */
   const [scrapingSection, setScrapingSection] = useState<
     'iva' | 'deudas' | 'vencimientos' | 'facturas' | 'notificaciones' | null
@@ -578,13 +582,6 @@ export function RepresentativeDetailPage({
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
-  const ivaMaxMonthForYear =
-    ivaSelectedYear === now.getFullYear() ? now.getMonth() : 11;
-  const ivaAvailableMonthIndices = Array.from(
-    { length: ivaMaxMonthForYear + 1 },
-    (_, i) => i
-  );
-
   // Periodo para Convenio Multilateral (mismo patrón: año + meses)
   const multilateralSelectedYear =
     multilateralPeriod?.from.getFullYear() ?? now.getFullYear();
@@ -4333,11 +4330,12 @@ export function RepresentativeDetailPage({
 
           {/* IVA Tab */}
           <TabsContent value="iva" className="">
-            <div className="rounded-lg border bg-card p-4 space-y-4">
+            {/* Misma franja de actualización que el resto de las pestañas. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
                     {lastIvaJob?.createdAt ? (
                       <span
                         className={
@@ -4620,84 +4618,30 @@ export function RepresentativeDetailPage({
                       </DialogContent>
                     </Dialog>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => ivaResumeRef.current?.downloadExcel()}
-                    className="gap-2 font-semibold shrink-0"
-                    disabled={!effectiveIvaProfileId}
-                  >
-                    <Download className="h-4 w-4" />
-                    <span className="hidden sm:inline">Descargar Excel</span>
-                  </Button>
                 </div>
               </div>
+
+              {/* El período y la descarga, debajo de la franja: el mismo
+                picker de mes que usan IVA, IIBB y Sueldos. */}
               <div className="flex flex-wrap items-center gap-2">
-                <Popover
-                  open={ivaPeriodPickerOpen}
-                  onOpenChange={setIvaPeriodPickerOpen}
+                <SelectorPeriodo
+                  periodo={aPeriodo(ivaSelectedYear, ivaSelectedMonth)}
+                  onPeriodo={(p) => {
+                    const { anio, mes } = dePeriodo(p);
+                    setIvaResumenDateRange(getMonthBounds(anio, mes));
+                  }}
+                />
+                {/* Sin `size="sm"`: acá el compañero de fila es el
+                  `MesPicker`, que es un control de 36px. */}
+                <Button
+                  variant="outline"
+                  onClick={() => ivaResumeRef.current?.downloadExcel()}
+                  className="shrink-0 gap-1.5"
+                  disabled={!effectiveIvaProfileId}
                 >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                      <span className="text-sm">
-                        {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
-                      </span>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-4" align="end">
-                    <div className="space-y-3">
-                      <Select
-                        value={String(ivaSelectedYear)}
-                        onValueChange={(v) => {
-                          const y = Number(v);
-                          const newMax =
-                            y === now.getFullYear() ? now.getMonth() : 11;
-                          const m = Math.min(ivaSelectedMonth, newMax);
-                          setIvaResumenDateRange(getMonthBounds(y, m));
-                        }}
-                      >
-                        <SelectTrigger className="w-full h-9">
-                          <SelectValue placeholder="Año" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from(
-                            { length: 8 },
-                            (_, i) => now.getFullYear() - i
-                          ).map((y) => (
-                            <SelectItem key={y} value={String(y)}>
-                              {y}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {ivaAvailableMonthIndices.map((i) => (
-                          <Button
-                            key={i}
-                            variant={
-                              ivaSelectedMonth === i ? 'default' : 'outline'
-                            }
-                            size="sm"
-                            className="text-xs h-8"
-                            onClick={() => {
-                              setIvaResumenDateRange(
-                                getMonthBounds(ivaSelectedYear, i)
-                              );
-                              setIvaPeriodPickerOpen(false);
-                            }}
-                          >
-                            {MONTH_NAMES_SHORT[i]}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                  <Download className="size-4" />
+                  <span>Excel</span>
+                </Button>
               </div>
             </div>
             <div className="w-full mt-4">
