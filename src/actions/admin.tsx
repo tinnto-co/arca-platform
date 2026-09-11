@@ -35,13 +35,19 @@ async function requireOwner() {
     throw new Error('Solo el administrador puede realizar esta acción');
   }
 
-  return { session, orgId, userId: session.user.id };
+  return {
+    session,
+    orgId,
+    userId: session.user.id,
+    esSuperadmin:
+      (session.user as { role?: string | null }).role === 'admin',
+  };
 }
 
 export const getOrgMembers = createServerFn({
   method: 'GET',
 }).handler(async () => {
-  const { orgId } = await requireOwner();
+  const { orgId, esSuperadmin } = await requireOwner();
 
   const members = await db
     .select({
@@ -55,10 +61,15 @@ export const getOrgMembers = createServerFn({
     })
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
-    // El acceso de soporte del superadmin no es un miembro del estudio y no
-    // tiene por qué aparecer en su lista: es alguien de la plataforma entrando
-    // a ayudar, y queda registrado en `superadmin_acceso`.
-    .where(and(eq(member.organizationId, orgId), ne(member.role, ROL_SOPORTE)));
+    // Para el estudio, el acceso de soporte no es un miembro suyo y no tiene
+    // por qué aparecer en su lista. Para el superadmin sí: si entró a revisar
+    // quién tiene acceso a este estudio, esconderle justamente los accesos de
+    // plataforma sería mentirle sobre lo que está mirando.
+    .where(
+      esSuperadmin
+        ? eq(member.organizationId, orgId)
+        : and(eq(member.organizationId, orgId), ne(member.role, ROL_SOPORTE))
+    );
 
   return members;
 });

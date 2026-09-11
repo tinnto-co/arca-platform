@@ -15,6 +15,7 @@ import {
   setModuleEnabled,
 } from '@/actions/admin';
 import { getUser } from '@/actions/user';
+import { ROL_SOPORTE } from '@/lib/permissions';
 import {
   getAccountantSignature,
   saveAccountantSignature,
@@ -72,6 +73,7 @@ import {
   Loader2,
   Mail,
   Shield,
+  ShieldCheck,
   Trash2,
   UserPlus,
   Users,
@@ -84,7 +86,11 @@ import { PageShell } from '@/components/shared/page-shell';
 export const Route = createFileRoute('/_authed/admin/')({
   beforeLoad: async () => {
     const user = await getUser();
-    if (!user?.organizationRole || user.organizationRole !== 'owner') {
+    // El acceso de soporte del superadmin llega acá a configurar el estudio o
+    // a ver quién tiene acceso: vale lo mismo que un owner. Sin esto entraba
+    // al estudio y rebotaba justo de la pantalla a la que iba.
+    const rol = user?.organizationRole;
+    if (rol !== 'owner' && rol !== ROL_SOPORTE) {
       throw redirect({ to: '/' });
     }
   },
@@ -95,12 +101,16 @@ const ROLE_LABELS: Record<string, string> = {
   owner: 'Administrador',
   member: 'Miembro',
   viewer: 'Solo lectura',
+  // Sólo lo ve el superadmin: al estudio estas filas se le filtran.
+  [ROL_SOPORTE]: 'Soporte Orddo',
 };
 
 const ROLE_COLORS: Record<string, string> = {
   owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn-fg)]',
   member: 'bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]',
   viewer: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
+  [ROL_SOPORTE]:
+    'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
 };
 
 function AdminPanel() {
@@ -232,26 +242,38 @@ function MembersTab() {
                     {m.email}
                   </TableCell>
                   <TableCell>
-                    <Select
-                      value={m.role}
-                      onValueChange={(role: 'owner' | 'member' | 'viewer') =>
-                        rolesMutation.mutate({ memberId: m.memberId, role })
-                      }
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="owner">
-                          <div className="flex items-center gap-2">
-                            <Shield className="size-3" />
-                            Administrador
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="member">Miembro</SelectItem>
-                        <SelectItem value="viewer">Solo lectura</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {/* El acceso de soporte no es un rol de este estudio: no
+                        se elige de esta lista ni se cambia desde acá. Se
+                        muestra como lo que es y se revoca saliendo. */}
+                    {m.role === ROL_SOPORTE ? (
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-[var(--arca-r-sm)] px-2 py-1 text-[12px] font-medium ${ROLE_COLORS[ROL_SOPORTE]}`}
+                      >
+                        <ShieldCheck className="size-3" />
+                        {ROLE_LABELS[ROL_SOPORTE]}
+                      </span>
+                    ) : (
+                      <Select
+                        value={m.role}
+                        onValueChange={(role: 'owner' | 'member' | 'viewer') =>
+                          rolesMutation.mutate({ memberId: m.memberId, role })
+                        }
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="owner">
+                            <div className="flex items-center gap-2">
+                              <Shield className="size-3" />
+                              Administrador
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="member">Miembro</SelectItem>
+                          <SelectItem value="viewer">Solo lectura</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
                     <Button

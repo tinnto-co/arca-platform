@@ -67,6 +67,7 @@ import {
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
 import { abrirBuscador } from '@/lib/buscador-global';
+import { ROL_SOPORTE } from '@/lib/permissions';
 
 export { userQuery };
 
@@ -586,7 +587,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { runOrgSwitch } = useOrgSwitch();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const isOwner = user?.organizationRole === 'owner';
+  const esSuperadmin =
+    (user as { role?: string | null } | undefined)?.role === 'admin';
+  // El acceso de soporte entra a configurar el estudio: para el menú vale lo
+  // mismo que un owner. Sin esto el superadmin entraba y no veía ni
+  // Administración, que es justo a lo que iba.
+  const isOwner =
+    user?.organizationRole === 'owner' ||
+    user?.organizationRole === ROL_SOPORTE;
   const isViewer = user?.organizationRole === 'viewer';
 
   // El badge cuenta lo mismo que el usuario va a ver al entrar: la bandeja
@@ -626,6 +634,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // hover y flechitas promete una acción que no existe.
   const puedeCambiarOrg =
     ((organizations as ListedOrg[] | undefined)?.length ?? 0) > 1;
+
+  const enSoporte = user?.organizationRole === ROL_SOPORTE;
 
   const displayName = user?.organizationName ?? activeOrg?.name ?? 'Workspace';
   const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? '';
@@ -768,8 +778,25 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 {!colapsado && (
                   <>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12px] font-medium text-white/90 tracking-[-0.01em] truncate">
-                        {displayName}
+                      <div className="flex items-center gap-1.5">
+                        <span className="min-w-0 truncate text-[12px] font-medium text-white/90 tracking-[-0.01em]">
+                          {displayName}
+                        </span>
+                        {/* Este estudio no es tuyo: estás entrando como
+                            soporte. Va pegado a su nombre porque es
+                            exactamente el dato que matiza ese nombre. */}
+                        {enSoporte && (
+                          <span
+                            title="Acceso de soporte: no sos miembro de este estudio"
+                            className="flex shrink-0 items-center gap-1 rounded-[5px] bg-[rgba(127,209,207,0.16)] px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-accent-light)]"
+                          >
+                            <span
+                              aria-hidden
+                              className="size-1 rounded-full bg-[var(--arca-accent-light)]"
+                            />
+                            soporte
+                          </span>
+                        )}
                       </div>
                       <div
                         className="text-[10.5px] text-[var(--arca-sidebar-muted)] truncate"
@@ -880,8 +907,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </NavGroup>
           )}
 
+          {/* Administración es del estudio: sus miembros, su configuración y
+              sus módulos. Va suelta porque quedó sola en su grupo cuando el
+              resto pasó a Plataforma. */}
           {isOwner && (
-            <NavGroup id="operaciones" label="Operaciones">
+            <NavItem to="/admin" icon={Settings} label="Administración" />
+          )}
+
+          {/* Plataforma: lo que es de Orddo y no del estudio. Jobs y Fuentes de
+              datos son la plomería del scrapper, y las alertas se miran para
+              atender a los estudios, no desde adentro de uno. Sólo superadmin.  */}
+          {esSuperadmin && (
+            <NavGroup id="plataforma" label="Plataforma">
+              <NavItem
+                to="/organizaciones"
+                icon={ShieldCheck}
+                label="Superadmin"
+              />
               <NavItem to="/jobs" icon={Clock} label="Jobs" />
               <FuentesDatosItem />
               <NavItem
@@ -889,18 +931,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 icon={AlertTriangle}
                 label="Alertas"
                 urgentCount={openAlertsCount}
-              />
-              <NavItem to="/admin" icon={Settings} label="Administración" />
-            </NavGroup>
-          )}
-
-          {/* Superadmin (rol de usuario, plugin admin): gestión de estudios. */}
-          {(user as { role?: string | null } | undefined)?.role === 'admin' && (
-            <NavGroup id="plataforma" label="Plataforma">
-              <NavItem
-                to="/organizaciones"
-                icon={ShieldCheck}
-                label="Superadmin"
               />
             </NavGroup>
           )}
