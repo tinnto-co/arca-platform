@@ -20,12 +20,20 @@ import {
   FileText,
   PenLine,
   Upload,
+  List,
+  LayoutGrid,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { Button } from '@/components/ui/button';
+import { botonHeader } from '@/components/shared/filtros';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
 import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
@@ -324,16 +332,35 @@ function RouteComponent() {
           </TabsContent>
           <TabsContent value="simulador" className="mt-0">
             {!editReciboData && (
-              <div className="flex justify-end mb-3">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setVistaNuevoRecibo(usaVistaNueva ? 'clasica' : 'nueva')
-                  }
-                  className="h-[28px] px-3 rounded-[9px] text-[12px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] cursor-pointer"
-                >
-                  {usaVistaNueva ? 'Vista clásica' : 'Vista nueva'}
-                </button>
+              // Alineado a la izquierda con el resto de la pantalla, con el
+              // botón del sistema y un tooltip: "Vista clásica" solo no dice
+              // si es lo que estás viendo o a lo que vas.
+              <div className="mb-2 flex">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVistaNuevoRecibo(usaVistaNueva ? 'clasica' : 'nueva')
+                      }
+                      className={botonHeader}
+                    >
+                      {usaVistaNueva ? (
+                        <List className="size-3.5" />
+                      ) : (
+                        <LayoutGrid className="size-3.5" />
+                      )}
+                      {usaVistaNueva ? 'Vista clásica' : 'Vista nueva'}
+                    </button>
+                  </TooltipTrigger>
+                  {/* Hacia la derecha: centrado se metía sobre el sidebar
+                    oscuro y el tooltip oscuro encima se leía mal. */}
+                  <TooltipContent side="right">
+                    {usaVistaNueva
+                      ? 'Volver al formulario de siempre para cargar el recibo'
+                      : 'Pasar al armado nuevo, por bloques'}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             )}
             {usaVistaNueva ? (

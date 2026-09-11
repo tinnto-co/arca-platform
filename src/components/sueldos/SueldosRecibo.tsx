@@ -619,14 +619,17 @@ export function SueldosRecibo({
                 Generar Liq. Final
               </Button>
             )}
-            <button
-              type="button"
+            {/* Es la acción de la pantalla —a esto se viene—, así que va en
+              primario. Y era un <button> a mano de 36px al lado de dos
+              botones de 30: la fila tenía dos alturas. */}
+            <Button
+              size="sm"
+              className="shrink-0 gap-1.5"
               onClick={() => setShowImprimir(true)}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] h-9 px-4 flex items-center gap-2 shrink-0"
             >
-              <Printer style={{ width: 15, height: 15 }} />
+              <Printer className="h-4 w-4" />
               Imprimir PDF
-            </button>
+            </Button>
           </div>
         </div>
 

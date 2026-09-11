@@ -20,13 +20,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Table,
   TableBody,
   TableCell,
@@ -42,6 +35,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { MesPicker } from '@/components/shared/mes-picker';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
@@ -83,11 +77,6 @@ function getPeriodoDefecto(): { year: string; month: string } {
     year: String(d.getFullYear()),
     month: String(d.getMonth() + 1).padStart(2, '0'),
   };
-}
-
-function getYearOptions(): string[] {
-  const current = new Date().getFullYear();
-  return [current - 1, current, current + 1].map(String);
 }
 
 function formatDateTime(date: Date | string | null | undefined): string {
@@ -973,48 +962,16 @@ export function SueldosCargas({ clientId }: SueldosCargasProps) {
 
   return (
     <div className="space-y-4">
-      {/* Selector de período */}
-      <div
-        className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-[var(--arca-r-lg)]"
-        style={{
-          background: 'var(--arca-surface)',
-          border: '1px solid var(--arca-border)',
+      {/* Un solo control de período —el `MesPicker` de siempre— en vez de dos
+        selects dentro de una card que no contenía nada más. */}
+      <MesPicker
+        ano={year}
+        mes={month}
+        onChange={(a, m) => {
+          setYear(a);
+          setMonth(m);
         }}
-      >
-        <span className="text-[13px] font-medium text-[var(--arca-ink-2)] min-w-max">
-          Período
-        </span>
-        <div className="flex items-center gap-2">
-          <Select value={month} onValueChange={setMonth}>
-            <SelectTrigger className="w-[150px] h-8 text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MONTHS.map((m) => (
-                <SelectItem
-                  key={m.value}
-                  value={m.value}
-                  className="text-[13px]"
-                >
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={year} onValueChange={setYear}>
-            <SelectTrigger className="w-[100px] h-8 text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {getYearOptions().map((y) => (
-                <SelectItem key={y} value={y} className="text-[13px]">
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      />
 
       {/* Historial de presentaciones */}
       <div
