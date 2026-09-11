@@ -719,155 +719,153 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     const totalPages = invoicesData?.totalPages || 1;
 
     return (
-      <div className="flex h-full w-full min-w-0 flex-col">
-        <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)]">
-          {/* Toolbar: los filtros viven en la card que filtran. Cuando los
-            filtros los maneja la pantalla de afuera (la ficha del cliente) no
-            queda nada acá adentro, y la barra vacía se veía como una franja
-            blanca sobre el header de la tabla. */}
-          {(!isFiltersControlled || toolbarExtra) && (
-            <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-[var(--arca-border)] px-[18px] py-2.5">
-              <div className="flex flex-1 flex-wrap items-center gap-2">
-                {!isFiltersControlled && isEmbedded && (
-                  <div className="relative">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
-                    <Input
-                      placeholder="Buscar por contraparte (nombre o CUIT)..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="h-8 w-full pl-8 text-[12.5px] md:w-64"
-                    />
-                  </div>
-                )}
-
-                {!isFiltersControlled && (
-                  <SearchableSelect
-                    value={typeFilter}
-                    onValueChange={setTypeFilter}
-                    placeholder="Tipo"
-                    searchPlaceholder="Buscar tipo..."
-                    options={[
-                      { value: 'all', label: 'Todas las facturas' },
-                      ...Object.entries(INVOICE_TYPE_LABELS).map(
-                        ([code, label]) => ({
-                          value: code,
-                          label,
-                        })
-                      ),
-                    ]}
-                    width={160}
+      <div className="flex h-full w-full min-w-0 flex-col gap-[10px]">
+        {/* Los filtros van afuera de la card, como en la ficha del cliente:
+          una fila de controles, y debajo la tabla con su paginado. */}
+        {(!isFiltersControlled || toolbarExtra) && (
+          <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+            <div className="flex flex-1 flex-wrap items-center gap-2">
+              {!isFiltersControlled && isEmbedded && (
+                <div className="relative">
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
+                  <Input
+                    placeholder="Buscar por contraparte (nombre o CUIT)..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="h-8 w-full pl-8 text-[12.5px] md:w-64"
                   />
-                )}
+                </div>
+              )}
 
-                {!isFiltersControlled && (
-                  <SearchableSelect
-                    value={directionFilter}
-                    onValueChange={setDirectionFilter}
-                    placeholder="Dirección"
-                    searchPlaceholder="Buscar dirección..."
-                    options={[
-                      { value: 'all', label: 'Todas las direcciones' },
-                      { value: 'emitido', label: 'Emitida' },
-                      { value: 'recibido', label: 'Recibida' },
-                    ]}
-                    width={150}
-                  />
-                )}
+              {!isFiltersControlled && (
+                <SearchableSelect
+                  value={typeFilter}
+                  onValueChange={setTypeFilter}
+                  placeholder="Tipo"
+                  searchPlaceholder="Buscar tipo..."
+                  options={[
+                    { value: 'all', label: 'Todas las facturas' },
+                    ...Object.entries(INVOICE_TYPE_LABELS).map(
+                      ([code, label]) => ({
+                        value: code,
+                        label,
+                      })
+                    ),
+                  ]}
+                  width={160}
+                />
+              )}
 
-                {!isFiltersControlled &&
-                  !toolbarExtra &&
-                  (isDateControlled ? (
-                    <div
-                      className={cn(
-                        'flex items-center gap-2 h-9 px-3 py-2 rounded-md border bg-muted/50 text-sm',
-                        !dateFrom && !dateTo && 'text-[var(--arca-ink-3)]'
-                      )}
-                    >
-                      <CalendarIcon className="h-4 w-4 shrink-0 text-[var(--arca-ink-3)]" />
-                      {dateFrom && dateTo ? (
-                        <>
-                          {formatDateOnlyString(dateFrom)} –{' '}
-                          {formatDateOnlyString(dateTo)}
-                        </>
-                      ) : (
-                        <span>Sin período seleccionado</span>
-                      )}
-                    </div>
-                  ) : (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button
-                          id="date"
-                          variant="outline"
-                          className={cn(
-                            'w-full md:w-[300px] justify-start text-left font-normal',
-                            !dateRange && 'text-[var(--arca-ink-3)]'
-                          )}
-                        >
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {dateRange?.from ? (
-                            dateRange.to ? (
-                              <>
-                                {format(dateRange.from, 'dd/MM/yyyy', {
-                                  locale: es,
-                                })}{' '}
-                                -{' '}
-                                {format(dateRange.to, 'dd/MM/yyyy', {
-                                  locale: es,
-                                })}
-                              </>
-                            ) : (
-                              format(dateRange.from, 'dd/MM/yyyy', {
-                                locale: es,
-                              })
-                            )
-                          ) : (
-                            <span>Seleccionar rango de fechas</span>
-                          )}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          initialFocus
-                          mode="range"
-                          defaultMonth={dateRange?.from}
-                          selected={dateRange}
-                          onSelect={setDateRange}
-                          numberOfMonths={2}
-                          locale={es}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  ))}
-                {toolbarExtra && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {toolbarExtra}
-                  </div>
-                )}
-                {!isFiltersControlled && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleExportExcel}
-                    disabled={exportingExcel}
-                    className="h-9 gap-1.5 w-full md:w-auto shrink-0 font-normal"
-                  >
-                    {exportingExcel ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4" />
+              {!isFiltersControlled && (
+                <SearchableSelect
+                  value={directionFilter}
+                  onValueChange={setDirectionFilter}
+                  placeholder="Dirección"
+                  searchPlaceholder="Buscar dirección..."
+                  options={[
+                    { value: 'all', label: 'Todas las direcciones' },
+                    { value: 'emitido', label: 'Emitida' },
+                    { value: 'recibido', label: 'Recibida' },
+                  ]}
+                  width={150}
+                />
+              )}
+
+              {!isFiltersControlled &&
+                !toolbarExtra &&
+                (isDateControlled ? (
+                  <div
+                    className={cn(
+                      'flex items-center gap-2 h-9 px-3 py-2 rounded-md border bg-muted/50 text-sm',
+                      !dateFrom && !dateTo && 'text-[var(--arca-ink-3)]'
                     )}
-                    <span>
-                      {selectedIds.size > 0
-                        ? `Excel · ${selectedIds.size} seleccionada${selectedIds.size === 1 ? '' : 's'}`
-                        : 'Excel'}
-                    </span>
-                  </Button>
-                )}
-              </div>
+                  >
+                    <CalendarIcon className="h-4 w-4 shrink-0 text-[var(--arca-ink-3)]" />
+                    {dateFrom && dateTo ? (
+                      <>
+                        {formatDateOnlyString(dateFrom)} –{' '}
+                        {formatDateOnlyString(dateTo)}
+                      </>
+                    ) : (
+                      <span>Sin período seleccionado</span>
+                    )}
+                  </div>
+                ) : (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="date"
+                        variant="outline"
+                        className={cn(
+                          'w-full md:w-[300px] justify-start text-left font-normal',
+                          !dateRange && 'text-[var(--arca-ink-3)]'
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateRange?.from ? (
+                          dateRange.to ? (
+                            <>
+                              {format(dateRange.from, 'dd/MM/yyyy', {
+                                locale: es,
+                              })}{' '}
+                              -{' '}
+                              {format(dateRange.to, 'dd/MM/yyyy', {
+                                locale: es,
+                              })}
+                            </>
+                          ) : (
+                            format(dateRange.from, 'dd/MM/yyyy', {
+                              locale: es,
+                            })
+                          )
+                        ) : (
+                          <span>Seleccionar rango de fechas</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        initialFocus
+                        mode="range"
+                        defaultMonth={dateRange?.from}
+                        selected={dateRange}
+                        onSelect={setDateRange}
+                        numberOfMonths={2}
+                        locale={es}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                ))}
+              {toolbarExtra && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {toolbarExtra}
+                </div>
+              )}
+              {!isFiltersControlled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportExcel}
+                  disabled={exportingExcel}
+                  className="h-9 gap-1.5 w-full md:w-auto shrink-0 font-normal"
+                >
+                  {exportingExcel ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  <span>
+                    {selectedIds.size > 0
+                      ? `Excel · ${selectedIds.size} seleccionada${selectedIds.size === 1 ? '' : 's'}`
+                      : 'Excel'}
+                  </span>
+                </Button>
+              )}
             </div>
-          )}
+          </div>
+        )}
 
+        <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)]">
           {/* Que haya algo tildado tiene que ser visible aunque la fila quedó
             fuera de la página: si no, el botón exporta "3 seleccionadas" y no
             se ve cuáles. */}

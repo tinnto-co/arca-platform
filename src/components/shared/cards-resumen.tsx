@@ -13,7 +13,12 @@ import { cn } from '@/lib/utils';
  * lo vencido, ámbar para lo que está por vencer, acento para lo informativo.
  */
 
-export type TonoResumen = 'neutro' | 'acento' | 'positivo' | 'atencion' | 'urgente';
+export type TonoResumen =
+  | 'neutro'
+  | 'acento'
+  | 'positivo'
+  | 'atencion'
+  | 'urgente';
 
 const BARRA: Record<TonoResumen, string> = {
   neutro: 'var(--arca-border-strong)',
@@ -23,12 +28,23 @@ const BARRA: Record<TonoResumen, string> = {
   urgente: 'var(--arca-accent-neg)',
 };
 
+/** Color de la línea de apoyo, cuando dice algo (una variación, un atraso). */
+export type TonoSub = 'neutro' | 'positivo' | 'urgente';
+
+const SUB_COLOR: Record<TonoSub, string> = {
+  neutro: 'var(--arca-ink-4)',
+  positivo: 'var(--arca-accent-pos-fg)',
+  urgente: 'var(--arca-accent-neg-fg)',
+};
+
 export interface CardResumen {
   label: string;
   /** Ya formateado: la card no sabe si es plata, una cuenta o una fecha. */
   valor: string;
   /** Línea de apoyo bajo la cifra. */
   sub?: string | null;
+  /** Tono de esa línea: gris por defecto, verde o rojo si compara. */
+  subTono?: TonoSub;
   tono?: TonoResumen;
 }
 
@@ -41,10 +57,7 @@ export function CardsResumen({
 }) {
   return (
     <div
-      className={cn(
-        'grid grid-cols-2 gap-[14px] md:grid-cols-4',
-        className
-      )}
+      className={cn('grid grid-cols-2 gap-[14px] md:grid-cols-4', className)}
     >
       {cards.map((c) => (
         <div
@@ -63,7 +76,10 @@ export function CardsResumen({
             {c.valor}
           </div>
           {c.sub && (
-            <div className="pl-[6px] text-[11.5px] text-[var(--arca-ink-4)]">
+            <div
+              className="pl-[6px] text-[11.5px]"
+              style={{ color: SUB_COLOR[c.subTono ?? 'neutro'] }}
+            >
               {c.sub}
             </div>
           )}

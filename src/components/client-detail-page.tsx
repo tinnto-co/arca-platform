@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { CardsResumen } from '@/components/shared/cards-resumen';
+import { CardsResumen, type TonoSub } from '@/components/shared/cards-resumen';
 import { useNavigate, Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -150,6 +150,12 @@ import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
 import { PerfilesTab } from '@/components/perfiles-tab';
 import { FiscalDataCard } from '@/components/fiscal-data-card';
+// `Tooltip` a secas ya es el de recharts en este archivo.
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
@@ -206,50 +212,30 @@ const formatIvaCurrency = (
   }).format(n);
 };
 
-interface MetricDeltaProps {
-  current: number;
-  previous: number;
-  label?: string;
-}
-
-const MetricDelta = ({
-  current,
-  previous,
-  label = 'vs. mes anterior',
-}: MetricDeltaProps) => {
-  if (previous === 0 && current === 0) {
-    return (
-      <p className="text-xs text-muted-foreground mt-1">{label}: sin cambios</p>
-    );
-  }
-
-  if (previous === 0 && current !== 0) {
-    return (
-      <p className="text-xs text-[var(--arca-accent-pos-fg)] mt-1">
-        {label}: nuevo período con actividad
-      </p>
-    );
-  }
-
+/**
+ * La línea "vs. mes anterior" de las cards de resumen: `CardsResumen` recibe
+ * el texto de apoyo ya escrito, no un componente. Devuelve también el tono,
+ * porque una caída del 37% no es una aclaración gris.
+ */
+function delta(
+  current: number,
+  previous: number,
+  label = 'vs. mes anterior'
+): { sub: string; subTono: TonoSub } {
+  if (previous === 0 && current === 0)
+    return { sub: `${label}: sin cambios`, subTono: 'neutro' };
+  if (previous === 0)
+    return {
+      sub: `${label}: nuevo período con actividad`,
+      subTono: 'positivo',
+    };
   const diff = current - previous;
-  const diffPct = (diff / Math.abs(previous)) * 100;
-  const sign = diff > 0 ? '+' : '';
-  const formattedPct = `${sign}${diffPct.toFixed(1)}%`;
-
-  return (
-    <p
-      className={`text-xs mt-1 ${
-        diff > 0
-          ? 'text-[var(--arca-accent-pos-fg)]'
-          : diff < 0
-            ? 'text-[var(--arca-accent-neg-fg)]'
-            : 'text-muted-foreground'
-      }`}
-    >
-      {label}: {formattedPct}
-    </p>
-  );
-};
+  const pct = (diff / Math.abs(previous)) * 100;
+  return {
+    sub: `${label}: ${diff > 0 ? '+' : ''}${pct.toFixed(1)}%`,
+    subTono: diff > 0 ? 'positivo' : diff < 0 ? 'urgente' : 'neutro',
+  };
+}
 
 /** Período "MM/YYYY" del mes que representa la fecha (ej. 1 feb 2026 → "02/2026"). Es el período del resumen que ve el usuario. */
 function getResumenPeriodMMYYYY(from: Date | undefined): string | null {
@@ -587,12 +573,6 @@ export function RepresentativeDetailPage({
     multilateralPeriod?.from.getFullYear() ?? now.getFullYear();
   const multilateralSelectedMonth =
     multilateralPeriod?.from.getMonth() ?? now.getMonth();
-  const multilateralMaxMonthForYear =
-    multilateralSelectedYear === now.getFullYear() ? now.getMonth() : 11;
-  const multilateralAvailableMonthIndices = Array.from(
-    { length: multilateralMaxMonthForYear + 1 },
-    (_, i) => i
-  );
 
   // Período anterior al seleccionado para Convenio Multilateral (para comparativos)
   const multilateralPrevPeriod = useMemo(() => {
@@ -1908,13 +1888,20 @@ export function RepresentativeDetailPage({
                   )}
                   Actualizar todo
                 </Button>
-                <button
-                  onClick={() => setEditRepresentativeDialogOpen(true)}
-                  className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
-                  title="Editar"
-                >
-                  <Edit className="h-3 w-3" />
-                </button>
+                <UiTooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      // 30px para que case con "Actualizar todo", que es `sm`.
+                      className="size-[30px] rounded-[7px]"
+                      onClick={() => setEditRepresentativeDialogOpen(true)}
+                      aria-label="Editar representante"
+                    >
+                      <Edit className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Editar representante</TooltipContent>
+                </UiTooltip>
               </div>
             </div>
 
@@ -1994,7 +1981,10 @@ export function RepresentativeDetailPage({
         </div>
 
         {/* ── Content area ── */}
-        <div className="px-4 md:px-[28px] pt-3 pb-[60px]">
+        {/* Sin `pb` propio: el layout autenticado ya reserva `pb-28` para que
+          la barra flotante del asistente no tape el final de la página, y los
+          dos juntos dejaban 156px de vacío. */}
+        <div className="px-4 pt-3 md:px-[28px]">
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
             {/* Row 1: Estado general (3fr) | Facturación (2fr) | IVA (2fr) */}
@@ -3873,459 +3863,350 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Convenio Multilateral Tab */}
-          <TabsContent value="convenio-multilateral" className="space-y-6">
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              <div className="flex items-center gap-2">
-                <Receipt className="h-5 w-5 shrink-0" />
-                <h3 className="font-semibold text-lg">
-                  Convenio Multilateral (ventas por provincia)
-                </h3>
-              </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
-                    Período:
-                  </span>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="h-9 px-3 text-xs font-normal"
-                      >
-                        {multilateralPeriod
-                          ? `${MONTH_NAMES_SHORT[multilateralSelectedMonth]} ${multilateralSelectedYear}`
-                          : 'Sin filtro'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-4" align="end">
-                      <div className="space-y-3">
-                        <Select
-                          value={String(multilateralSelectedYear)}
-                          onValueChange={(v) => {
-                            const y = Number(v);
-                            const newMax =
-                              y === now.getFullYear() ? now.getMonth() : 11;
-                            const m = Math.min(
-                              multilateralSelectedMonth,
-                              newMax
-                            );
-                            const range = getMonthBounds(y, m);
-                            setMultilateralPeriod(range);
-                            setMultilateralDateFrom(
-                              range.from.toISOString().slice(0, 10)
-                            );
-                            setMultilateralDateTo(
-                              range.to.toISOString().slice(0, 10)
-                            );
-                          }}
-                        >
-                          <SelectTrigger className="w-full h-9">
-                            <SelectValue placeholder="Año" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from(
-                              { length: 8 },
-                              (_, i) => now.getFullYear() - i
-                            ).map((y) => (
-                              <SelectItem key={y} value={String(y)}>
-                                {y}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {multilateralAvailableMonthIndices.map((i) => (
-                            <Button
-                              key={i}
-                              variant={
-                                multilateralSelectedMonth === i
-                                  ? 'default'
-                                  : 'outline'
-                              }
-                              size="sm"
-                              className="text-xs h-8"
-                              onClick={() => {
-                                const range = getMonthBounds(
-                                  multilateralSelectedYear,
-                                  i
-                                );
-                                setMultilateralPeriod(range);
-                                setMultilateralDateFrom(
-                                  range.from.toISOString().slice(0, 10)
-                                );
-                                setMultilateralDateTo(
-                                  range.to.toISOString().slice(0, 10)
-                                );
-                              }}
-                            >
-                              {MONTH_NAMES_SHORT[i]}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
+          <TabsContent value="convenio-multilateral" className="space-y-[14px]">
+            {/* Sin card ni título: la pestaña ya dice "Convenio Multilateral".
+              Queda la aclaración de qué se está mirando y el período, con el
+              mismo picker que el resto de la plataforma. */}
+            <div className="flex flex-wrap items-center gap-3">
+              <SelectorPeriodo
+                periodo={aPeriodo(
+                  multilateralSelectedYear,
+                  multilateralSelectedMonth
+                )}
+                onPeriodo={(p) => {
+                  const { anio, mes } = dePeriodo(p);
+                  const range = getMonthBounds(anio, mes);
+                  setMultilateralPeriod(range);
+                  setMultilateralDateFrom(aFechaLocal(range.from));
+                  setMultilateralDateTo(aFechaLocal(range.to));
+                }}
+              />
+              <span className="text-[12.5px] font-medium text-[var(--arca-ink-3)]">
+                Ventas por provincia
+              </span>
             </div>
 
-            <Card>
-              <CardContent className="pt-6">
-                {multilateralPeriod && multilateralPrevPeriod && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Provincias con actividad
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {multilateralAggCurrent.provinces}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.provinces}
-                          previous={multilateralAggPrev.provinces}
-                        />
-                      </CardContent>
-                    </Card>
+            {multilateralPeriod && multilateralPrevPeriod && (
+              <CardsResumen
+                cards={[
+                  {
+                    label: 'Provincias con actividad',
+                    valor: String(multilateralAggCurrent.provinces),
+                    ...delta(
+                      multilateralAggCurrent.provinces,
+                      multilateralAggPrev.provinces
+                    ),
+                  },
+                  {
+                    label: 'Comprobantes',
+                    valor: String(multilateralAggCurrent.invoices),
+                    ...delta(
+                      multilateralAggCurrent.invoices,
+                      multilateralAggPrev.invoices
+                    ),
+                  },
+                  {
+                    label: 'Total IVA del período',
+                    valor: formatIvaCurrency(multilateralAggCurrent.totalIVA),
+                    ...delta(
+                      multilateralAggCurrent.totalIVA,
+                      multilateralAggPrev.totalIVA
+                    ),
+                    tono: 'acento',
+                  },
+                  {
+                    label: 'Base imponible del período',
+                    valor: formatIvaCurrency(multilateralAggCurrent.totalBase),
+                    ...delta(
+                      multilateralAggCurrent.totalBase,
+                      multilateralAggPrev.totalBase
+                    ),
+                    tono: 'acento',
+                  },
+                ]}
+              />
+            )}
 
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Cantidad de comprobantes
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {multilateralAggCurrent.invoices}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.invoices}
-                          previous={multilateralAggPrev.invoices}
-                        />
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Total IVA del período
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {formatIvaCurrency(multilateralAggCurrent.totalIVA)}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.totalIVA}
-                          previous={multilateralAggPrev.totalIVA}
-                        />
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Base imponible del período
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {formatIvaCurrency(multilateralAggCurrent.totalBase)}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.totalBase}
-                          previous={multilateralAggPrev.totalBase}
-                        />
-                      </CardContent>
-                    </Card>
-                  </div>
+            {/* Gráficos: Actual vs Anterior */}
+            {multilateralPeriod && multilateralPrevPeriod && (
+              <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
+                {convenioActividadChartData.length > 0 && (
+                  <Card className="overflow-hidden">
+                    <CardHeader className="py-2 px-4">
+                      <CardTitle className="text-sm font-semibold">
+                        Actividad: período actual vs anterior
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground font-normal">
+                        Provincias con actividad y cantidad de comprobantes
+                      </p>
+                    </CardHeader>
+                    <CardContent className="pt-0 px-4 pb-4">
+                      <ChartContainer
+                        config={convenioChartConfig}
+                        className="h-[180px] w-full"
+                      >
+                        <BarChart
+                          data={convenioActividadChartData}
+                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                          barCategoryGap={12}
+                        >
+                          <CartesianGrid
+                            vertical={false}
+                            strokeDasharray="3 4"
+                            stroke="var(--arca-border)"
+                          />
+                          <XAxis
+                            dataKey="metrica"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-3)',
+                              fontSize: 10,
+                            }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-4)',
+                              fontSize: 9,
+                            }}
+                          />
+                          <Tooltip
+                            cursor={{ fill: 'rgba(30,52,96,0.06)' }}
+                            contentStyle={{
+                              background: 'var(--arca-ink)',
+                              border: 'none',
+                              borderRadius: 8,
+                              padding: '8px 12px',
+                            }}
+                            labelStyle={{
+                              color: 'var(--arca-ink-4)',
+                              fontSize: 10,
+                              marginBottom: 4,
+                            }}
+                            itemStyle={{
+                              color: 'var(--arca-sidebar-fg)',
+                              fontSize: 11,
+                            }}
+                            formatter={(value) => String(value)}
+                          />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          <Bar
+                            dataKey="actual"
+                            fill="var(--color-actual)"
+                            name="Período actual"
+                            maxBarSize={36}
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="anterior"
+                            fill="var(--color-anterior)"
+                            name="Período anterior"
+                            maxBarSize={36}
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
                 )}
-
-                {/* Gráficos: Actual vs Anterior */}
-                {multilateralPeriod && multilateralPrevPeriod && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
-                    {convenioActividadChartData.length > 0 && (
-                      <Card className="overflow-hidden">
-                        <CardHeader className="py-2 px-4">
-                          <CardTitle className="text-sm font-semibold">
-                            Actividad: período actual vs anterior
-                          </CardTitle>
-                          <p className="text-xs text-muted-foreground font-normal">
-                            Provincias con actividad y cantidad de comprobantes
-                          </p>
-                        </CardHeader>
-                        <CardContent className="pt-0 px-4 pb-4">
-                          <ChartContainer
-                            config={convenioChartConfig}
-                            className="h-[180px] w-full"
-                          >
-                            <BarChart
-                              data={convenioActividadChartData}
-                              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                              barCategoryGap={12}
-                            >
-                              <CartesianGrid
-                                vertical={false}
-                                strokeDasharray="3 4"
-                                stroke="var(--arca-border)"
-                              />
-                              <XAxis
-                                dataKey="metrica"
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{
-                                  fill: 'var(--arca-ink-3)',
-                                  fontSize: 10,
-                                }}
-                              />
-                              <YAxis
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{
-                                  fill: 'var(--arca-ink-4)',
-                                  fontSize: 9,
-                                }}
-                              />
-                              <Tooltip
-                                cursor={{ fill: 'rgba(30,52,96,0.06)' }}
-                                contentStyle={{
-                                  background: 'var(--arca-ink)',
-                                  border: 'none',
-                                  borderRadius: 8,
-                                  padding: '8px 12px',
-                                }}
-                                labelStyle={{
-                                  color: 'var(--arca-ink-4)',
-                                  fontSize: 10,
-                                  marginBottom: 4,
-                                }}
-                                itemStyle={{
-                                  color: 'var(--arca-sidebar-fg)',
-                                  fontSize: 11,
-                                }}
-                                formatter={(value) => String(value)}
-                              />
-                              <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Bar
-                                dataKey="actual"
-                                fill="var(--color-actual)"
-                                name="Período actual"
-                                maxBarSize={36}
-                                radius={[4, 4, 0, 0]}
-                              />
-                              <Bar
-                                dataKey="anterior"
-                                fill="var(--color-anterior)"
-                                name="Período anterior"
-                                maxBarSize={36}
-                                radius={[4, 4, 0, 0]}
-                              />
-                            </BarChart>
-                          </ChartContainer>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {convenioMontosChartData.length > 0 && (
-                      <Card className="overflow-hidden">
-                        <CardHeader className="py-2 px-4">
-                          <CardTitle className="text-sm font-semibold">
-                            Montos: período actual vs anterior
-                          </CardTitle>
-                          <p className="text-xs text-muted-foreground font-normal">
-                            Total IVA y base imponible (ARS)
-                          </p>
-                        </CardHeader>
-                        <CardContent className="pt-0 px-4 pb-4">
-                          <ChartContainer
-                            config={convenioChartConfig}
-                            className="h-[180px] w-full"
-                          >
-                            <BarChart
-                              data={convenioMontosChartData}
-                              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                              barCategoryGap={12}
-                            >
-                              <CartesianGrid
-                                vertical={false}
-                                strokeDasharray="3 4"
-                                stroke="var(--arca-border)"
-                              />
-                              <XAxis
-                                dataKey="metrica"
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{
-                                  fill: 'var(--arca-ink-3)',
-                                  fontSize: 10,
-                                }}
-                              />
-                              <YAxis
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{
-                                  fill: 'var(--arca-ink-4)',
-                                  fontSize: 9,
-                                }}
-                                tickFormatter={(v) =>
-                                  v >= 1e6
-                                    ? `${(v / 1e6).toFixed(1)}M`
-                                    : v >= 1e3
-                                      ? `${(v / 1e3).toFixed(0)}k`
-                                      : String(v)
-                                }
-                              />
-                              <Tooltip
-                                cursor={{ fill: 'rgba(30,52,96,0.06)' }}
-                                contentStyle={{
-                                  background: 'var(--arca-ink)',
-                                  border: 'none',
-                                  borderRadius: 8,
-                                  padding: '8px 12px',
-                                }}
-                                labelStyle={{
-                                  color: 'var(--arca-ink-4)',
-                                  fontSize: 10,
-                                  marginBottom: 4,
-                                }}
-                                itemStyle={{
-                                  color: 'var(--arca-sidebar-fg)',
-                                  fontSize: 11,
-                                }}
-                                formatter={(value) =>
-                                  new Intl.NumberFormat('es-AR', {
-                                    style: 'currency',
-                                    currency: 'ARS',
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 0,
-                                  }).format(Number(value))
-                                }
-                              />
-                              <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Bar
-                                dataKey="actual"
-                                fill="var(--color-actual)"
-                                name="Período actual"
-                                maxBarSize={36}
-                                radius={[4, 4, 0, 0]}
-                              />
-                              <Bar
-                                dataKey="anterior"
-                                fill="var(--color-anterior)"
-                                name="Período anterior"
-                                radius={[4, 4, 0, 0]}
-                              />
-                            </BarChart>
-                          </ChartContainer>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
+                {convenioMontosChartData.length > 0 && (
+                  <Card className="overflow-hidden">
+                    <CardHeader className="py-2 px-4">
+                      <CardTitle className="text-sm font-semibold">
+                        Montos: período actual vs anterior
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground font-normal">
+                        Total IVA y base imponible (ARS)
+                      </p>
+                    </CardHeader>
+                    <CardContent className="pt-0 px-4 pb-4">
+                      <ChartContainer
+                        config={convenioChartConfig}
+                        className="h-[180px] w-full"
+                      >
+                        <BarChart
+                          data={convenioMontosChartData}
+                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                          barCategoryGap={12}
+                        >
+                          <CartesianGrid
+                            vertical={false}
+                            strokeDasharray="3 4"
+                            stroke="var(--arca-border)"
+                          />
+                          <XAxis
+                            dataKey="metrica"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-3)',
+                              fontSize: 10,
+                            }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-4)',
+                              fontSize: 9,
+                            }}
+                            tickFormatter={(v) =>
+                              v >= 1e6
+                                ? `${(v / 1e6).toFixed(1)}M`
+                                : v >= 1e3
+                                  ? `${(v / 1e3).toFixed(0)}k`
+                                  : String(v)
+                            }
+                          />
+                          <Tooltip
+                            cursor={{ fill: 'rgba(30,52,96,0.06)' }}
+                            contentStyle={{
+                              background: 'var(--arca-ink)',
+                              border: 'none',
+                              borderRadius: 8,
+                              padding: '8px 12px',
+                            }}
+                            labelStyle={{
+                              color: 'var(--arca-ink-4)',
+                              fontSize: 10,
+                              marginBottom: 4,
+                            }}
+                            itemStyle={{
+                              color: 'var(--arca-sidebar-fg)',
+                              fontSize: 11,
+                            }}
+                            formatter={(value) =>
+                              new Intl.NumberFormat('es-AR', {
+                                style: 'currency',
+                                currency: 'ARS',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                              }).format(Number(value))
+                            }
+                          />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          <Bar
+                            dataKey="actual"
+                            fill="var(--color-actual)"
+                            name="Período actual"
+                            maxBarSize={36}
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="anterior"
+                            fill="var(--color-anterior)"
+                            name="Período anterior"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
                 )}
+              </div>
+            )}
 
-                {loadingMultilateralSummary ? (
-                  <div className="flex items-center justify-center h-32 text-muted-foreground gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Cargando ventas por provincia…</span>
-                  </div>
-                ) : multilateralSummary.length === 0 ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      No hay facturas emitidas registradas para este cliente
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Provincia</TableHead>
-                          <TableHead className="text-right">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
-                              onClick={() => toggleMultilateralSort('count')}
-                            >
-                              Cant. comprobantes
-                              {multilateralSortKey === 'count' &&
-                                (multilateralSortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                ))}
-                            </button>
-                          </TableHead>
-                          <TableHead className="text-right">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
-                              onClick={() => toggleMultilateralSort('iva')}
-                            >
-                              Total IVA
-                              {multilateralSortKey === 'iva' &&
-                                (multilateralSortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                ))}
-                            </button>
-                          </TableHead>
-                          <TableHead className="text-right">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
-                              onClick={() => toggleMultilateralSort('base')}
-                            >
-                              Base imponible (amount_taxed)
-                              {multilateralSortKey === 'base' &&
-                                (multilateralSortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                ))}
-                            </button>
-                          </TableHead>
+            {loadingMultilateralSummary ? (
+              <div className="flex h-32 items-center justify-center gap-2 text-[13px] text-[var(--arca-ink-3)]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Cargando ventas por provincia…</span>
+              </div>
+            ) : multilateralSummary.length === 0 ? (
+              <div className="flex h-32 items-center justify-center text-[13px] text-[var(--arca-ink-3)]">
+                No hay facturas emitidas registradas para este cliente
+              </div>
+            ) : (
+              /* Una sola card: el borde de la tabla y el de la card se
+                superponían, y el `rounded-md border` de adentro sumaba un
+                tercero. */
+              <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)] [&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provincia</TableHead>
+                      <TableHead className="text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
+                          onClick={() => toggleMultilateralSort('count')}
+                        >
+                          Cant. comprobantes
+                          {multilateralSortKey === 'count' &&
+                            (multilateralSortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            ))}
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
+                          onClick={() => toggleMultilateralSort('iva')}
+                        >
+                          Total IVA
+                          {multilateralSortKey === 'iva' &&
+                            (multilateralSortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            ))}
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
+                          onClick={() => toggleMultilateralSort('base')}
+                        >
+                          Base imponible (amount_taxed)
+                          {multilateralSortKey === 'base' &&
+                            (multilateralSortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            ))}
+                        </button>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedMultilateralSummary.map((row: any) => {
+                      const provinceLabel =
+                        row.receiptProvince || 'Capital Federal';
+                      const provinceValue = row.receiptProvince ?? null; // null para agrupar "Capital Federal"
+                      return (
+                        <TableRow
+                          key={provinceLabel}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => {
+                            setSelectedMultilateralProvince(provinceValue);
+                            setSelectedMultilateralProvinceLabel(provinceLabel);
+                            setMultilateralDetailOpen(true);
+                          }}
+                        >
+                          <TableCell className="font-medium">
+                            {provinceLabel}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.invoiceCount}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalIVA)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalTaxed)}
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sortedMultilateralSummary.map((row: any) => {
-                          const provinceLabel =
-                            row.receiptProvince || 'Capital Federal';
-                          const provinceValue = row.receiptProvince ?? null; // null para agrupar "Capital Federal"
-                          return (
-                            <TableRow
-                              key={provinceLabel}
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => {
-                                setSelectedMultilateralProvince(provinceValue);
-                                setSelectedMultilateralProvinceLabel(
-                                  provinceLabel
-                                );
-                                setMultilateralDetailOpen(true);
-                              }}
-                            >
-                              <TableCell className="font-medium">
-                                {provinceLabel}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {row.invoiceCount}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {formatIvaCurrency(row.totalIVA)}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {formatIvaCurrency(row.totalTaxed)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </TabsContent>
 
           {/* IVA Tab */}
