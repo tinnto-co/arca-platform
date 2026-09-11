@@ -422,6 +422,8 @@ export const getLibroIvaPeriodo = createServerFn({ method: 'GET' })
           presentadaAt: ivaDeclaracion.presentadaAt,
           debitoFiscal: ivaDeclaracion.debitoFiscal,
           creditoFiscal: ivaDeclaracion.creditoFiscal,
+          actualizadaAt: ivaDeclaracion.updatedAt,
+          fuente: ivaDeclaracion.fuente,
         })
         .from(ivaDeclaracion)
         .innerJoin(cliente, eq(cliente.id, ivaDeclaracion.clienteId))
@@ -436,9 +438,25 @@ export const getLibroIvaPeriodo = createServerFn({ method: 'GET' })
         .limit(1),
     ]);
 
+    // La frescura del ESTIMADO es la de los comprobantes del cliente, no la
+    // del último job `iva` (Portal IVA): son pipelines distintos y el cartel
+    // de la ficha mentía cuando uno fallaba con el otro al día.
+    const [frescura] = await db
+      .select({
+        ultimaEmision: sql<string | null>`max(${comprobante.fechaEmision})`,
+      })
+      .from(comprobante)
+      .where(
+        and(
+          eq(comprobante.clienteId, ctx.data.clienteId),
+          eq(comprobante.orgId, orgId)
+        )
+      );
+
     return {
       libro: libroRows[0] ?? null,
       declaracion: declRows[0] ?? null,
+      ultimaEmision: frescura?.ultimaEmision ?? null,
     };
   });
 

@@ -38,7 +38,6 @@ import {
 import type { NcAlicuota } from '@/lib/iva-calc';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import { getLibroIvaPeriodo, updateIvaDeclaracionManual } from '@/actions/iva';
 import { estadoLibroIva } from '@/lib/libro-iva-estado';
 import { Input } from '@/components/ui/input';
@@ -47,7 +46,6 @@ import {
   getComprobantesEnRango,
   getComprobanteStats,
 } from '@/actions/comprobante';
-import { getLastJobByType } from '@/actions/client';
 
 const currencyFormatter = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -707,7 +705,6 @@ export const RenderIvaResume = React.forwardRef<
   RenderIvaResumeProps
 >(function RenderIvaResume(
   {
-    representativeId,
     clientName,
     clientIva: clientIvaCredit,
     selectedProfileId,
@@ -770,15 +767,6 @@ export const RenderIvaResume = React.forwardRef<
         },
       }),
     enabled: !!selectedProfileId && !!dateRange.from && !!dateRange.to,
-  });
-
-  const { data: lastScrapeJob } = useQuery({
-    queryKey: ['lastIvaJob', representativeId],
-    queryFn: () =>
-      getLastJobByType({
-        data: { credencialId: representativeId, jobType: 'iva' },
-      }),
-    enabled: !!representativeId,
   });
 
   /**
@@ -1425,28 +1413,54 @@ export const RenderIvaResume = React.forwardRef<
               </span>
             </div>
           )}
+          {/* La frescura es la del DATO que se está mostrando, no la del
+              último job `iva`: el Portal IVA puede fallar con el estimado de
+              comprobantes perfectamente al día (handoff del scraper 11/09). */}
           <div className="text-[12px] text-[var(--arca-ink-3)]">
-            Última actualización{' '}
-            {lastScrapeJob?.createdAt ? (
-              <span
-                className={
-                  lastScrapeJob.success
-                    ? 'font-medium text-[var(--arca-accent-pos-fg)]'
-                    : 'font-medium text-[var(--arca-accent-neg-fg)]'
-                }
-                title={
-                  friendlyFailedReason(lastScrapeJob.failedReason) ?? undefined
-                }
-              >
-                {new Date(lastScrapeJob.createdAt).toLocaleDateString('es-AR', {
+            {(() => {
+              const fmt = (d: Date | string) =>
+                new Date(d).toLocaleDateString('es-AR', {
                   day: '2-digit',
                   month: 'short',
                   year: 'numeric',
-                })}
-              </span>
-            ) : (
-              '—'
-            )}
+                });
+              const ok = 'font-medium text-[var(--arca-accent-pos-fg)]';
+              if (ddjjPresentada) {
+                return (
+                  <>
+                    DDJJ presentada
+                    {ddjjPresentada.fuente === 'manual'
+                      ? ' (carga manual)'
+                      : ''}{' '}
+                    ·{' '}
+                    <span className={ok}>
+                      {fmt(
+                        ddjjPresentada.actualizadaAt ??
+                          ddjjPresentada.presentadaAt ??
+                          new Date()
+                      )}
+                    </span>
+                  </>
+                );
+              }
+              if (libro?.actualizadoAt) {
+                return (
+                  <>
+                    Libro de IVA actualizado el{' '}
+                    <span className={ok}>{fmt(libro.actualizadoAt)}</span>
+                  </>
+                );
+              }
+              if (libroInfo?.ultimaEmision) {
+                return (
+                  <>
+                    Estimado con comprobantes al{' '}
+                    <span className={ok}>{fmt(libroInfo.ultimaEmision)}</span>
+                  </>
+                );
+              }
+              return <>Sin comprobantes cargados del cliente</>;
+            })()}
           </div>
         </div>
       </div>

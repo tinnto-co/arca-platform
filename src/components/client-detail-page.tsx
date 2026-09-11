@@ -72,6 +72,7 @@ import {
   markNotificationOpened,
 } from '@/actions/notification';
 import { scrapSingleJob, updateDeudaEstado } from '@/actions/client';
+import { getLibroIvaPeriodo } from '@/actions/iva';
 import {
   listSolicitudes,
   createSolicitud,
@@ -796,6 +797,20 @@ export function RepresentativeDetailPage({
         data: { credencialId: representativeId, jobType: 'iva' },
       }),
     enabled: !!representativeId,
+  });
+
+  // Frescura del dato de la pestaña IVA (misma query que la ficha del
+  // resumen: comparte cache por queryKey).
+  const { data: frescuraIva } = useQuery({
+    queryKey: ['libro-iva', selectedClientId, periodUsedForResumen],
+    queryFn: () =>
+      getLibroIvaPeriodo({
+        data: {
+          clienteId: selectedClientId!,
+          periodo: periodUsedForResumen!,
+        },
+      }),
+    enabled: !!selectedClientId && !!periodUsedForResumen,
   });
 
   const { data: lastNotificacionesJob } = useQuery({
@@ -4525,21 +4540,21 @@ export function RepresentativeDetailPage({
             <div className="rounded-lg border bg-card p-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
+                  {/* La frescura de la pestaña es la de los COMPROBANTES (la
+                      fuente del estimado), no la del job del Portal IVA: son
+                      pipelines distintos y el rojo global mentía cuando el
+                      Portal fallaba con los comprobantes al día. */}
                   <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
-                    {lastIvaJob?.createdAt ? (
-                      <span
-                        className={
-                          lastIvaJob.success
-                            ? 'text-[var(--arca-accent-pos-fg)] font-medium'
-                            : 'text-destructive'
-                        }
-                        title={
-                          friendlyFailedReason(lastIvaJob.failedReason) ??
-                          undefined
-                        }
-                      >
-                        {formatLastUpdateAt(lastIvaJob.createdAt)}
+                    Comprobantes al día al{' '}
+                    {frescuraIva?.ultimaEmision ? (
+                      <span className="text-[var(--arca-accent-pos-fg)] font-medium">
+                        {new Date(
+                          frescuraIva.ultimaEmision
+                        ).toLocaleDateString('es-AR', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
                       </span>
                     ) : (
                       '—'
@@ -4548,7 +4563,9 @@ export function RepresentativeDetailPage({
                   {lastIvaJob &&
                     !lastIvaJob.success &&
                     lastIvaJob.failedReason && (
-                      <p className="text-[11px] text-destructive max-w-md">
+                      <p className="text-[11px] max-w-md text-[var(--arca-accent-warn-fg)]">
+                        El último intento de traer la DDJJ del Portal IVA (
+                        {formatLastUpdateAt(lastIvaJob.createdAt)}) falló:{' '}
                         {friendlyFailedReason(lastIvaJob.failedReason)}
                       </p>
                     )}
