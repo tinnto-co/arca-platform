@@ -64,9 +64,9 @@ function Leyenda({ pico, unidad }: { pico: number; unidad: 'día' | 'semana' }) 
 
   return (
     <div
-      className="flex items-center justify-between flex-wrap"
+      className="flex flex-wrap items-center"
       style={{
-        padding: '10px 16px',
+        padding: '10px 14px',
         gap: 12,
         borderTop: '1px solid var(--arca-border)',
         background: 'var(--arca-surface-2)',
@@ -191,9 +191,9 @@ export function FranjaDias({
               key={c.clave}
               type="button"
               onClick={() => onSeleccionar(activa ? null : c.clave)}
-              className="relative flex flex-col items-center gap-2 cursor-pointer transition-colors duration-150"
+              className="relative flex cursor-pointer flex-col items-start gap-2 text-left transition-colors duration-150"
               style={{
-                padding: '18px 0 15px',
+                padding: '14px 14px 13px',
                 borderRight:
                   i < celdas.length - 1
                     ? '1px solid var(--arca-border)'

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { CardsResumen, type TonoSub } from '@/components/shared/cards-resumen';
+import { LimpiarFiltros } from '@/components/shared/filtros';
 import { useNavigate, Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -405,6 +406,12 @@ export function RepresentativeDetailPage({
     []
   );
   const [facturasSearchTerm, setFacturasSearchTerm] = useState('');
+  /** Cuántos filtros de la pestaña de Facturas están puestos. */
+  const facturasFiltrosPuestos =
+    (facturasPeriodType !== 'none' ? 1 : 0) +
+    (facturasTypeFilter !== 'all' ? 1 : 0) +
+    (facturasDirectionFilter !== 'all' ? 1 : 0) +
+    (facturasSearchTerm ? 1 : 0);
   const [facturasDebouncedSearchTerm, setFacturasDebouncedSearchTerm] =
     useState('');
   useEffect(() => {
@@ -3845,6 +3852,17 @@ export function RepresentativeDetailPage({
                   <Download className="size-3.5" />
                   <span>Excel</span>
                 </Button>
+                {facturasFiltrosPuestos > 0 && (
+                  <LimpiarFiltros
+                    onLimpiar={() => {
+                      setFacturasPeriodType('none');
+                      setFacturasTypeFilter('all');
+                      setFacturasDirectionFilter('all');
+                      setFacturasSearchTerm('');
+                      setFacturasDateRange(undefined);
+                    }}
+                  />
+                )}
               </div>
             </div>
 

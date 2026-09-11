@@ -1197,15 +1197,15 @@ function RouteComponent() {
           </TabsList>
         </div>
 
-        <TabsContent value="ri" className="mt-6">
+        <TabsContent value="ri" className="mt-3">
           <IvaResumenRI search={search} />
         </TabsContent>
 
-        <TabsContent value="monotributo" className="mt-6">
+        <TabsContent value="monotributo" className="mt-3">
           <MonotributistasTab search={search} />
         </TabsContent>
 
-        <TabsContent value="otras" className="mt-6">
+        <TabsContent value="otras" className="mt-3">
           <OtrasEmpresasTab search={search} />
         </TabsContent>
       </Tabs>

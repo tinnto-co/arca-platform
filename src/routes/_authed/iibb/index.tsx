@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Globe, MapPin, Plus, X } from 'lucide-react';
+import { Globe, Info, MapPin, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -410,7 +410,7 @@ function IIBBDesglose({
   return (
     <div>
       {/* Selectors — la empresa se elige en el selector global del header. */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div className="mb-4 flex flex-wrap gap-3">
         <SelectorPeriodo
           periodo={periodo}
           onPeriodo={(p) => {
@@ -435,11 +435,20 @@ function IIBBDesglose({
           </div>
         ) : (
           <div>
+            {/* Es un aviso sobre lo que se está viendo —la empresa elegida no
+                entra en esta pantalla— no una leyenda de la tabla: va como
+                banner tonal, con el ícono y el color del sistema. */}
             {clienteGlobal && (
-              <p className="mb-3 text-[12px] text-[var(--arca-ink-3)]">
-                La empresa elegida no tiene {regimenLabel} configurado — estas
-                son las que sí. Click en una fila para ver su detalle.
-              </p>
+              <div
+                role="status"
+                className="mb-3 flex items-start gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-accent-info)]/25 bg-[var(--arca-accent-info-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-info-fg)]"
+              >
+                <Info className="mt-[1px] size-3.5 shrink-0" />
+                <span>
+                  La empresa elegida no tiene {regimenLabel} configurado — estas
+                  son las que sí. Click en una fila para ver su detalle.
+                </span>
+              </div>
             )}
             <div
               style={{
@@ -864,11 +873,11 @@ function RouteComponent() {
           </TabsList>
         </div>
 
-        <TabsContent value="local" className="mt-6">
+        <TabsContent value="local" className="mt-3">
           <IIBBDesglose clients={localClients} regimen="local" />
         </TabsContent>
 
-        <TabsContent value="multilateral" className="mt-6">
+        <TabsContent value="multilateral" className="mt-3">
           <IIBBDesglose
             clients={multilateralClients}
             regimen="convenio_multilateral"

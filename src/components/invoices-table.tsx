@@ -26,6 +26,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { LimpiarFiltros } from '@/components/shared/filtros';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Dialog,
@@ -718,6 +719,13 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
     const totalPages = invoicesData?.totalPages || 1;
 
+    /** Cuántos filtros propios están puestos: si hay alguno, se puede limpiar. */
+    const filtrosPuestos =
+      (searchTerm ? 1 : 0) +
+      (typeFilter !== 'all' ? 1 : 0) +
+      (directionFilter !== 'all' ? 1 : 0) +
+      (dateRange?.from ? 1 : 0);
+
     return (
       <div className="flex h-full w-full min-w-0 flex-col gap-[10px]">
         {/* Los filtros van afuera de la card, como en la ficha del cliente:
@@ -860,6 +868,16 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                       : 'Excel'}
                   </span>
                 </Button>
+              )}
+              {!isFiltersControlled && filtrosPuestos > 0 && (
+                <LimpiarFiltros
+                  onLimpiar={() => {
+                    setSearchTerm('');
+                    setTypeFilter('all');
+                    setDirectionFilter('all');
+                    setDateRange(undefined);
+                  }}
+                />
               )}
             </div>
           </div>
