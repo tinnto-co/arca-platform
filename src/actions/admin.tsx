@@ -10,7 +10,7 @@ import {
   linkDeInvitacion,
 } from '@/lib/send-invitation-email';
 import { organizationModule, orgModule } from '@/drizzle/schema';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 
@@ -47,7 +47,7 @@ async function requireOwner() {
 export const getOrgMembers = createServerFn({
   method: 'GET',
 }).handler(async () => {
-  const { orgId, esSuperadmin } = await requireOwner();
+  const { orgId } = await requireOwner();
 
   const members = await db
     .select({
@@ -61,17 +61,15 @@ export const getOrgMembers = createServerFn({
     })
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
-    // Para el estudio, el acceso de soporte no es un miembro suyo y no tiene
-    // por qué aparecer en su lista. Para el superadmin sí: si entró a revisar
-    // quién tiene acceso a este estudio, esconderle justamente los accesos de
-    // plataforma sería mentirle sobre lo que está mirando.
-    .where(
-      esSuperadmin
-        ? eq(member.organizationId, orgId)
-        : and(eq(member.organizationId, orgId), ne(member.role, ROL_SOPORTE))
-    );
+    // Los accesos de soporte se muestran, también al estudio. Esconderle a un
+    // contador que alguien de la plataforma puede ver los datos fiscales de
+    // sus clientes es exactamente lo que no se puede hacer: que sea visible y
+    // auditable es la condición para que exista. Lo que no corresponde es
+    // contarlos entre su gente ni dejar que los revoquen, y de eso se encargan
+    // el conteo de abajo y `removeMember`.
+    .where(eq(member.organizationId, orgId));
 
-  return members;
+  return members.map((m) => ({ ...m, esSoporte: m.role === ROL_SOPORTE }));
 });
 
 export const getOrgDetails = createServerFn({
@@ -152,7 +150,32 @@ export const removeMember = createServerFn({
 })
   .validator(z.object({ memberIdOrEmail: z.string() }))
   .handler(async (ctx) => {
-    await requireOwner();
+    const { orgId, esSuperadmin } = await requireOwner();
+
+    // El acceso de soporte no es del estudio y no se revoca desde acá: se
+    // cierra saliendo, desde el módulo de plataforma. Esconder el botón en la
+    // pantalla no alcanza —la server function se puede llamar igual—, así que
+    // la regla vive donde se aplica.
+    if (!esSuperadmin) {
+      const [objetivo] = await db
+        .select({ role: member.role })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, orgId),
+            or(
+              eq(member.id, ctx.data.memberIdOrEmail),
+              eq(member.userId, ctx.data.memberIdOrEmail)
+            )
+          )
+        )
+        .limit(1);
+      if (objetivo?.role === ROL_SOPORTE) {
+        throw new Error(
+          'El acceso de soporte de Orddo no se quita desde acá. Escribinos y lo cerramos.'
+        );
+      }
+    }
 
     await auth.api.removeMember({
       headers: getRequestHeaders(),

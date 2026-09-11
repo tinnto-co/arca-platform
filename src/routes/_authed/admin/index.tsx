@@ -200,13 +200,19 @@ function MembersTab() {
 
   const removingMember = members?.find((m) => m.memberId === removeMemberId);
 
+  // El acceso de soporte de la plataforma no es gente del estudio: se muestra
+  // —esconderlo sería ocultarle a un contador quién puede ver los datos de sus
+  // clientes— pero no se cuenta entre los suyos ni ocupa un lugar.
+  const miembrosDelEstudio =
+    members?.filter((m) => !m.esSoporte).length ?? 0;
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Miembros</CardTitle>
           <CardDescription>
-            {members?.length ?? 0} miembros en la organización
+            {miembrosDelEstudio} miembros en la organización
           </CardDescription>
         </div>
         <InviteDialog />
@@ -276,13 +282,24 @@ function MembersTab() {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setRemoveMemberId(m.memberId)}
-                    >
-                      <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
-                    </Button>
+                    {/* El acceso de soporte no se revoca desde acá: se cierra
+                        saliendo, desde el módulo de plataforma. */}
+                    {m.esSoporte ? (
+                      <span
+                        title="Acceso de la plataforma. Se cierra desde Orddo, no desde el estudio."
+                        className="text-[11.5px] text-[var(--arca-ink-4)]"
+                      >
+                        —
+                      </span>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setRemoveMemberId(m.memberId)}
+                      >
+                        <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
+                      </Button>
+                    )}
                     <AlertDialog
                       open={removeMemberId === m.memberId}
                       onOpenChange={(open) =>
