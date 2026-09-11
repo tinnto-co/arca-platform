@@ -243,9 +243,26 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     );
     const [currentPage, setCurrentPage] = useState(1);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    /**
+     * El tilde del encabezado manda sobre la página que se está viendo, y sólo
+     * sobre ella: suma o quita esos ids conservando lo tildado en las otras.
+     *
+     * Antes reemplazaba el conjunto entero, así que tildar todo en la página 2
+     * borraba la selección de la página 1 —y destildar ahí borraba todo—. La
+     * exportación siempre supo cruzar ids de varias páginas; lo que no dejaba
+     * era juntarlos.
+     */
     const toggleAllInvoices = (ids: string[]) => {
-      const allSel = ids.length > 0 && ids.every((id) => selectedIds.has(id));
-      setSelectedIds(allSel ? new Set() : new Set(ids));
+      const yaEstabanTodas =
+        ids.length > 0 && ids.every((id) => selectedIds.has(id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (yaEstabanTodas) next.delete(id);
+          else next.add(id);
+        }
+        return next;
+      });
     };
     const toggleInvoiceRow = (id: string) => {
       setSelectedIds((prev) => {
@@ -683,7 +700,11 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       return (
         <Badge
           variant={typeInfo.variant}
-          className="!whitespace-normal break-words text-[10px] px-1.5 py-0.5 inline-block max-w-full leading-tight"
+          // `inline-block` está a propósito —hace falta para que "Ticket
+          // Factura A" parta en dos líneas en vez de desbordar la columna—,
+          // pero pisa el `justify-center` de la variante base y deja las
+          // líneas pegadas a la izquierda. `text-center` lo repone.
+          className="!whitespace-normal break-words text-[10px] px-1.5 py-0.5 inline-block max-w-full leading-tight text-center"
         >
           {typeInfo.label}
         </Badge>
