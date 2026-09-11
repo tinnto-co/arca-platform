@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Badge, BadgeDot } from '@/components/ui/badge';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronLeft,
@@ -81,6 +82,23 @@ function buildCalendarGrid(year: number, month: number): Date[] {
 }
 
 /* ─── Main component ─── */
+
+/**
+ * Los vencimientos vienen titulados "301 - SUSS": el código de impuesto es
+ * una cifra y va en mono, el nombre en sans. Si el título no trae código,
+ * se dibuja tal cual.
+ */
+function CodigoYNombre({ titulo }: { titulo: string }) {
+  const m = /^(\d+)\s*-\s*(.+)$/.exec(titulo);
+  if (!m) return <>{titulo}</>;
+  return (
+    <>
+      <span className="tabular-nums [font-family:var(--ff-mono)]">{m[1]}</span>
+      <span className="opacity-60"> · </span>
+      {m[2]}
+    </>
+  );
+}
 
 export function VencimientosCalendar() {
   const today = new Date();
@@ -268,11 +286,11 @@ export function VencimientosCalendar() {
                   <div className="flex items-center gap-2 text-[13px] text-[var(--arca-ink-2)]">
                     <Clock
                       className="w-4 h-4"
-                      style={{ color: 'oklch(0.55 0.10 240)' }}
+                      style={{ color: 'var(--arca-accent)' }}
                     />
                     Vencimientos
                   </div>
-                  <span className="font-[family-name:var(--ff-display)] font-bold text-[20px] tabular-nums text-[var(--arca-ink)]">
+                  <span className="text-[20px] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
                     {totalDue}
                   </span>
                 </div>
@@ -280,13 +298,13 @@ export function VencimientosCalendar() {
                   <div className="flex items-center gap-2 text-[13px] text-[var(--arca-ink-2)]">
                     <AlertTriangle
                       className="w-4 h-4"
-                      style={{ color: 'oklch(0.58 0.15 25)' }}
+                      style={{ color: 'var(--arca-accent-neg)' }}
                     />
                     Deudas
                   </div>
                   <span
-                    className="font-[family-name:var(--ff-display)] font-bold text-[20px] tabular-nums"
-                    style={{ color: 'oklch(0.50 0.15 25)' }}
+                    className="text-[20px] font-semibold tabular-nums [font-family:var(--ff-mono)]"
+                    style={{ color: 'var(--arca-accent-neg-fg)' }}
                   >
                     {totalDebt}
                   </span>
@@ -333,22 +351,14 @@ export function VencimientosCalendar() {
                         <span className="text-[13px] font-semibold text-[var(--arca-ink)] truncate flex-1">
                           {ev.clientName || 'General'}
                         </span>
-                        <span
-                          className="text-[10.5px] font-semibold rounded-full px-[8px] py-[2px] shrink-0"
-                          style={
-                            ev.kind === 'due'
-                              ? {
-                                  color: 'oklch(0.42 0.12 240)',
-                                  backgroundColor: 'oklch(0.94 0.04 240)',
-                                }
-                              : {
-                                  color: 'oklch(0.47 0.14 25)',
-                                  backgroundColor: 'oklch(0.94 0.04 25)',
-                                }
-                          }
+                        <Badge
+                          variant={ev.kind === 'due' ? 'info' : 'error'}
+                          size="sm"
+                          className="shrink-0"
                         >
+                          <BadgeDot />
                           {ev.kind === 'due' ? 'Vencimiento' : 'Deuda'}
-                        </span>
+                        </Badge>
                       </div>
                       {/* Obligation */}
                       <div className="flex items-start gap-2">
@@ -383,7 +393,7 @@ export function VencimientosCalendar() {
                                 'line-through text-[var(--arca-ink-4)]'
                             )}
                           >
-                            {ev.title}
+                            <CodigoYNombre titulo={ev.title} />
                           </div>
                           {ev.subtitle && (
                             <div
@@ -397,8 +407,8 @@ export function VencimientosCalendar() {
                           )}
                           {ev.balance && (
                             <div
-                              className="text-[12px] font-semibold mt-1"
-                              style={{ color: 'oklch(0.50 0.15 25)' }}
+                              className="mt-1 text-[12px] font-semibold tabular-nums [font-family:var(--ff-mono)]"
+                              style={{ color: 'var(--arca-accent-neg-fg)' }}
                             >
                               $ {parseFloat(ev.balance).toLocaleString('es-AR')}
                             </div>
@@ -528,7 +538,7 @@ export function VencimientosCalendar() {
                           <div
                             key={ev.id}
                             className={cn(
-                              'text-[9.5px] font-medium leading-tight px-1 py-px rounded truncate',
+                              'truncate rounded-md px-1.5 py-px text-[10px] leading-tight font-medium',
                               evCompleted &&
                                 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] line-through',
                               !evCompleted &&
@@ -543,12 +553,12 @@ export function VencimientosCalendar() {
                                 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
                             )}
                           >
-                            {ev.title}
+                            <CodigoYNombre titulo={ev.title} />
                           </div>
                         );
                       })}
                       {events.length > 2 && (
-                        <span className="text-[9px] text-[var(--arca-ink-4)] px-1">
+                        <span className="px-1 text-[10px] tabular-nums text-[var(--arca-ink-3)] [font-family:var(--ff-mono)]">
                           +{events.length - 2} más
                         </span>
                       )}
