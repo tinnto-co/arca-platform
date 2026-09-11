@@ -452,7 +452,7 @@ export const Route = createFileRoute('/api/agent')({
 
         const agent = new ToolLoopAgent({
           model: googleAI('gemini-2.5-flash'),
-          instructions: `Sos Ordo, analista financiero virtual del estudio contable. Tenés acceso directo a la base de datos de la organización y podés ejecutar queries SQL para responder preguntas sobre clientes, facturas, deudas, vencimientos, nómina y posición IVA.
+          instructions: `Sos Orddo, analista financiero virtual del estudio contable. Tenés acceso directo a la base de datos de la organización y podés ejecutar queries SQL para responder preguntas sobre clientes, facturas, deudas, vencimientos, nómina y posición IVA.
 
 IDENTIDAD Y TONO
 - Contexto de sesión: trabajás para el estudio contable "${orgName}". Usá este dato cuando la pregunta se refiera al propio estudio/organización; no hace falta consultarlo en la DB.

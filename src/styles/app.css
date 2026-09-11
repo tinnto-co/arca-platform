@@ -10,6 +10,60 @@
   display: none;            /* Chrome, Safari */
 }
 
+/**
+ * Scroll sobrio: fino, sin pista ni flechas, y con el pulgar invisible hasta
+ * que el cursor entra en el área que scrollea. La barra del sistema mide unos
+ * 15px y es una banda gris opaca: en el rail de 56px del menú se come el
+ * ícono, y en cualquier panel angosto canta.
+ *
+ * El color va por variable para que cada contexto ponga el suyo: sobre el
+ * navy del menú el pulgar es blanco translúcido, sobre fondo claro es tinta.
+ *
+ * Chrome, Edge, Safari y Brave toman los 3px de `::-webkit-scrollbar` en las
+ * tres plataformas. Firefox no acepta un ancho en píxeles: `thin` es lo más
+ * angosto que ofrece (unos 10px en Windows), pero sí respeta `scrollbar-color`,
+ * así que ahí también queda invisible en reposo.
+ *
+ * Importa sobre todo en Windows y Linux: ahí la barra del sistema no flota
+ * sobre el contenido como en macOS, sino que le come ~15px de ancho fijos y
+ * permanentes. Es la diferencia entre una banda gris siempre presente y una
+ * franja de 3px transparente.
+ */
+.arca-scroll-sutil {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 150ms ease;
+}
+
+.arca-scroll-sutil:hover,
+.arca-scroll-sutil:focus-within {
+  scrollbar-color: var(--arca-scroll-thumb, rgba(16, 23, 32, 0.22)) transparent;
+}
+
+.arca-scroll-sutil::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.arca-scroll-sutil::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.arca-scroll-sutil::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+  transition: background 150ms ease;
+}
+
+.arca-scroll-sutil:hover::-webkit-scrollbar-thumb,
+.arca-scroll-sutil:focus-within::-webkit-scrollbar-thumb {
+  background: var(--arca-scroll-thumb, rgba(16, 23, 32, 0.22));
+}
+
+.arca-scroll-sutil::-webkit-scrollbar-thumb:hover {
+  background: var(--arca-scroll-thumb-hover, rgba(16, 23, 32, 0.38));
+}
+
 
 @custom-variant dark (&:is(.dark *));
 

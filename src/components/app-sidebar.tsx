@@ -601,13 +601,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           'flex flex-col h-full py-3.5 gap-1',
           colapsado ? 'px-2' : 'px-3'
         )}
-        style={{
-          background: 'var(--arca-sidebar)',
-          color: 'var(--arca-sidebar-fg)',
-        }}
+        style={
+          {
+            background: 'var(--arca-sidebar)',
+            color: 'var(--arca-sidebar-fg)',
+            // Sobre el navy, el pulgar del scroll va en blanco translúcido.
+            '--arca-scroll-thumb': 'rgba(255,255,255,0.16)',
+            '--arca-scroll-thumb-hover': 'rgba(255,255,255,0.3)',
+          } as React.CSSProperties
+        }
       >
         {/* Identidad del producto. Va arriba del switcher para que quede claro
-            que Ordo es la app y el estudio es el workspace, no al revés: por eso
+            que Orddo es la app y el estudio es el workspace, no al revés: por eso
             manda en tamaño y el estudio queda un escalón abajo. */}
         <div
           className={cn(
@@ -618,7 +623,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           {colapsado ? (
             <img
               src="/brand/ordo-app-icon.svg"
-              alt="Ordo Suite Contable"
+              alt="Orddo Suite Contable"
               className="block size-[34px] rounded-[10px]"
             />
           ) : (
@@ -629,7 +634,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 className="block size-[28px] shrink-0"
               />
               <span className="text-[21px] leading-none font-semibold tracking-[-0.03em] text-white">
-                Ordo
+                Orddo
               </span>
             </>
           )}
@@ -753,7 +758,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         )}
 
         {/* ─── Nav ─── */}
-        <nav className="flex flex-col gap-0.5 flex-1 overflow-y-auto overflow-x-visible min-h-0">
+        <nav className="arca-scroll-sutil flex flex-col gap-0.5 flex-1 overflow-y-auto overflow-x-visible min-h-0">
           <NavItem to="/" icon={Home} label="Inicio" />
 
           <NavGroup id="clientes" label="Clientes" porDefecto>
