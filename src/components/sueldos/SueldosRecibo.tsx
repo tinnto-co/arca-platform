@@ -622,7 +622,7 @@ export function SueldosRecibo({
             <button
               type="button"
               onClick={() => setShowImprimir(true)}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2 shrink-0"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] h-9 px-4 flex items-center gap-2 shrink-0"
             >
               <Printer style={{ width: 15, height: 15 }} />
               Imprimir PDF

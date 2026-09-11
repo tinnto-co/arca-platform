@@ -130,7 +130,7 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
         <button
           type="button"
           onClick={() => setSeleccionarConvenioOpen(true)}
-          className="bg-[var(--arca-accent)] text-white rounded-lg px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] flex items-center gap-2"
+          className="bg-[var(--arca-accent)] text-white rounded-lg h-9 px-4 text-[13px] font-semibold hover:bg-[var(--arca-accent-hover)] flex items-center gap-2"
         >
           <CheckCircle2 className="h-[15px] w-[15px]" />
           Seleccionar convenio
@@ -138,7 +138,7 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
         <button
           type="button"
           onClick={() => setNewConvenioOpen(true)}
-          className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
+          className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] h-9 px-4 flex items-center gap-2"
         >
           <Plus className="h-[15px] w-[15px]" />
           Nuevo convenio
@@ -484,7 +484,7 @@ function ConvenioCard({
               <button
                 type="button"
                 onClick={() => setAddCategoria(true)}
-                className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
+                className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] h-9 px-4 flex items-center gap-2"
               >
                 <Plus className="h-[15px] w-[15px]" />
                 Nueva categoría

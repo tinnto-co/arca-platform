@@ -1929,7 +1929,7 @@ export function SueldosEmpleados({
             type="button"
             onClick={() => sincronizar.mutate()}
             disabled={sincronizar.isPending}
-            className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ color: 'var(--arca-ink-2)' }}
           >
             <RefreshCw
@@ -1941,7 +1941,7 @@ export function SueldosEmpleados({
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors"
+            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg h-9 px-4 text-[13px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors"
           >
             <Plus style={{ width: 14, height: 14 }} />
             Nuevo empleado
@@ -1965,7 +1965,7 @@ export function SueldosEmpleados({
             placeholder="Buscar por nombre, CUIL o legajo…"
             value={busqueda}
             onChange={(e) => handleBusqueda(e.target.value)}
-            className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13.5px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             style={{ paddingLeft: 36 }}
           />
         </div>

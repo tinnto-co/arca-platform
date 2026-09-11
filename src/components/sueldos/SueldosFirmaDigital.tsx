@@ -119,7 +119,7 @@ export function SueldosFirmaDigital({ clientId }: SueldosFirmaDigitalProps) {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={saving}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13px] font-semibold h-9 px-4 hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
               style={{ color: 'var(--arca-ink-2)' }}
             >
               <Upload style={{ width: 14, height: 14 }} />
@@ -129,7 +129,7 @@ export function SueldosFirmaDigital({ clientId }: SueldosFirmaDigitalProps) {
               type="button"
               onClick={handleRemove}
               disabled={saving}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13px] font-semibold h-9 px-4 hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
               style={{ color: 'var(--arca-accent-neg)' }}
             >
               {saving ? (
@@ -173,7 +173,7 @@ export function SueldosFirmaDigital({ clientId }: SueldosFirmaDigitalProps) {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={saving}
-            className="bg-[var(--arca-accent)] text-white rounded-lg px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] disabled:opacity-50 flex items-center gap-2 transition-colors"
+            className="bg-[var(--arca-accent)] text-white rounded-lg h-9 px-4 text-[13px] font-semibold hover:bg-[var(--arca-accent-hover)] disabled:opacity-50 flex items-center gap-2 transition-colors"
           >
             {saving ? (
               <Loader2

@@ -527,7 +527,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
               type="button"
               onClick={() => setPagina((p) => Math.max(1, p - 1))}
               disabled={paginaActual === 1}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13px] font-semibold h-9 px-4 hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
               style={{ color: 'var(--arca-ink-2)' }}
             >
               <ChevronLeft style={{ width: 14, height: 14 }} />
@@ -537,7 +537,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
               type="button"
               onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
               disabled={paginaActual === totalPaginas}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13px] font-semibold h-9 px-4 hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
               style={{ color: 'var(--arca-ink-2)' }}
             >
               Siguiente

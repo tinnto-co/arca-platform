@@ -399,7 +399,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               empleados.length === 0 ||
               !permiteLiquidar
             }
-            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg h-9 px-4 text-[13px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {liquidacionMasiva.isPending ? (
               <Loader2
@@ -415,7 +415,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
       </div>
 
       {/* KPI band */}
-      <div className="grid grid-cols-4 border-t border-b border-[var(--arca-border)] py-6 mb-[44px]">
+      <div className="mb-7 grid grid-cols-4 gap-8 border-b border-[var(--arca-border)] pb-5">
         {/* Col 1 */}
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
@@ -432,21 +432,12 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               Empleados activos
             </span>
           </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
+          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
             {importEmpleados.filter((e) => e.empleado.activo).length}
           </div>
         </div>
         {/* Col 2 */}
-        <div className="flex flex-col gap-1 border-l border-[var(--arca-border)] pl-7">
+        <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
             <FileText
               style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
@@ -461,21 +452,12 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               Liquidaciones (período)
             </span>
           </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
+          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
             {loadingLiq ? '—' : liquidaciones.length}
           </div>
         </div>
         {/* Col 3 */}
-        <div className="flex flex-col gap-1 border-l border-[var(--arca-border)] pl-7">
+        <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
             <Calculator
               style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
@@ -490,23 +472,14 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               Total bruto
             </span>
           </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
+          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
             {loadingLiq
               ? '—'
               : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`}
           </div>
         </div>
         {/* Col 4 */}
-        <div className="flex flex-col gap-1 border-l border-[var(--arca-border)] pl-7">
+        <div className="flex flex-col gap-1">
           <div className="flex items-center gap-1.5">
             <LayoutDashboard
               style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
@@ -521,16 +494,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               Total neto
             </span>
           </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
+          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
             {loadingLiq
               ? '—'
               : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`}
@@ -567,7 +531,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               type="button"
               onClick={() => setDeleteLiquidacionesOpen(true)}
               disabled={loadingLiq || liquidacionesGeneradas.length === 0}
-              className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg h-9 px-3 text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ color: 'var(--arca-accent-neg)' }}
             >
               <Trash2 style={{ width: 14, height: 14 }} />
@@ -772,7 +736,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               </p>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
+                className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg h-9 px-3 text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
                 style={{ color: 'var(--arca-ink-2)' }}
               >
                 <Upload style={{ width: 14, height: 14 }} />

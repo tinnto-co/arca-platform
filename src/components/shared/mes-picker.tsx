@@ -69,7 +69,7 @@ export function MesPicker({
         <Button
           variant="outline"
           className={cn(
-            'justify-start gap-2 bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] text-[13.5px] font-normal capitalize shadow-none',
+            'justify-start gap-2 bg-white border-[var(--arca-border-strong)] rounded-lg px-3 text-[13px] font-normal capitalize shadow-none',
             className
           )}
         >
