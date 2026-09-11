@@ -42,7 +42,7 @@ const POR_PAGINA = 50;
 const TABS = [
   { valor: 'sin_leer', label: 'Sin leer' },
   { valor: 'todas', label: 'Todas' },
-  { valor: 'resueltas', label: 'Resueltas' },
+  { valor: 'leidas', label: 'Leídas' },
 ] as const;
 type Estado = (typeof TABS)[number]['valor'];
 
@@ -104,9 +104,9 @@ export function InboxEmbebido({
     categoria: categoria || undefined,
     severidad: severidad || undefined,
     search: q || undefined,
-    leida: estado === 'sin_leer' ? false : undefined,
+    leida:
+      estado === 'sin_leer' ? false : estado === 'leidas' ? true : undefined,
     onlyUnresolved: estado === 'sin_leer' ? true : undefined,
-    soloResueltas: estado === 'resueltas' ? true : undefined,
   };
 
   const { data, isLoading } = useQuery({
@@ -170,7 +170,7 @@ export function InboxEmbebido({
       <div className="flex flex-wrap items-center gap-2 pb-3">
         <div
           role="tablist"
-          className="flex items-center gap-0.5 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] p-[2px]"
+          className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
         >
           {TABS.map((t) => (
             <button
@@ -183,10 +183,10 @@ export function InboxEmbebido({
                 setPaginas(1);
               }}
               className={cn(
-                'rounded-[8px] px-2.5 py-1 text-[12px] transition-colors duration-[120ms]',
+                'flex h-[26px] items-center rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
                 estado === t.valor
-                  ? 'bg-[var(--arca-ink)] font-medium text-white'
-                  : 'text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)]'
+                  ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                  : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
               )}
             >
               {t.label}
@@ -292,8 +292,8 @@ export function InboxEmbebido({
           vacio={
             estado === 'sin_leer'
               ? 'Estás al día'
-              : estado === 'resueltas'
-                ? 'Todavía no hay notificaciones resueltas'
+              : estado === 'leidas'
+                ? 'Todavía no hay notificaciones leídas'
                 : 'No hay notificaciones con estos filtros'
           }
           hayMas={hayMas}

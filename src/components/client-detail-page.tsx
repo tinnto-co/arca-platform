@@ -2595,7 +2595,7 @@ export function RepresentativeDetailPage({
                       setScrapingSection(null);
                     }
                   }}
-                  className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
+                  className="shrink-0"
                 >
                   {scrapingSection === 'deudas' ? (
                     <>
@@ -2626,7 +2626,10 @@ export function RepresentativeDetailPage({
                         setDebtPage(1);
                       }}
                     >
-                      <SelectTrigger size="sm" className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                      <SelectTrigger
+                        size="sm"
+                        className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors"
+                      >
                         <SelectValue placeholder="Todos" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2650,7 +2653,10 @@ export function RepresentativeDetailPage({
                         setDebtPage(1);
                       }}
                     >
-                      <SelectTrigger size="sm" className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                      <SelectTrigger
+                        size="sm"
+                        className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors"
+                      >
                         <SelectValue placeholder="Todos" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2989,7 +2995,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Vencimientos Tab */}
-          <TabsContent value="vencimientos" className="space-y-6">
+          <TabsContent value="vencimientos" className="space-y-[14px]">
             {/* Resumen, con la misma banda que Deudas. Los acentos los
                 elige el significado: rojo lo vencido, ámbar lo que se viene,
                 acento lo informativo. */}
@@ -3115,7 +3121,7 @@ export function RepresentativeDetailPage({
                       Actualizando…
                     </>
                   ) : (
-                    'Actualizar Vencimientos'
+                    'Actualizar vencimientos'
                   )}
                 </Button>
               </div>
@@ -3124,103 +3130,100 @@ export function RepresentativeDetailPage({
             {/* Una sola card: la pestaña ya dice Vencimientos, y el borde de
                 adentro sumaba un segundo marco alrededor de la tabla. */}
             <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)]">
-                {loadingDueDates ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      Cargando vencimientos...
-                    </div>
+              {loadingDueDates ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="text-muted-foreground">
+                    Cargando vencimientos...
                   </div>
-                ) : dueDates.length === 0 ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      No hay vencimientos registrados para este cliente
-                    </div>
+                </div>
+              ) : dueDates.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="text-muted-foreground">
+                    No hay vencimientos registrados para este cliente
                   </div>
-                ) : (
-                  <div className="[&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
-                    <div className="overflow-x-auto">
-                      <Table className="w-full table-fixed">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[14%]">Impuesto</TableHead>
-                            <TableHead className="w-[16%]">Concepto</TableHead>
-                            <TableHead className="w-[16%]">
-                              Subconcepto
-                            </TableHead>
-                            <TableHead className="w-[10%]">Período</TableHead>
-                            <TableHead className="w-[7%]">Cuota</TableHead>
-                            <TableHead className="w-[12%]">
-                              Vencimiento
-                            </TableHead>
-                            <TableHead className="w-[25%]">Detalle</TableHead>
+                </div>
+              ) : (
+                <div className="[&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
+                  <div className="overflow-x-auto">
+                    <Table className="w-full table-fixed">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[14%]">Impuesto</TableHead>
+                          <TableHead className="w-[16%]">Concepto</TableHead>
+                          <TableHead className="w-[16%]">Subconcepto</TableHead>
+                          <TableHead className="w-[10%]">Período</TableHead>
+                          <TableHead className="w-[7%]">Cuota</TableHead>
+                          <TableHead className="w-[12%]">Vencimiento</TableHead>
+                          <TableHead className="w-[25%]">Detalle</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pagedDueDates.map((dueDate) => (
+                          <TableRow key={dueDate.id}>
+                            <TableCell
+                              className="font-medium truncate"
+                              title={dueDate.impuesto || '-'}
+                            >
+                              {dueDate.impuesto || '-'}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={dueDate.concepto || '-'}
+                            >
+                              {dueDate.concepto || '-'}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={dueDate.subConcepto || '-'}
+                            >
+                              {dueDate.subConcepto || '-'}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={periodoLegible(dueDate.periodo)}
+                            >
+                              {periodoLegible(dueDate.periodo)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-center">
+                              {dueDate.cuota || '-'}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {new Date(dueDate.venceAt).toLocaleDateString(
+                                'es-AR'
+                              )}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={dueDate.detalle || '-'}
+                            >
+                              {dueDate.detalle || '-'}
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pagedDueDates.map((dueDate) => (
-                            <TableRow key={dueDate.id}>
-                              <TableCell
-                                className="font-medium truncate"
-                                title={dueDate.impuesto || '-'}
-                              >
-                                {dueDate.impuesto || '-'}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={dueDate.concepto || '-'}
-                              >
-                                {dueDate.concepto || '-'}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={dueDate.subConcepto || '-'}
-                              >
-                                {dueDate.subConcepto || '-'}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={periodoLegible(dueDate.periodo)}
-                              >
-                                {periodoLegible(dueDate.periodo)}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap text-center">
-                                {dueDate.cuota || '-'}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap">
-                                {new Date(dueDate.venceAt).toLocaleDateString(
-                                  'es-AR'
-                                )}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={dueDate.detalle || '-'}
-                              >
-                                {dueDate.detalle || '-'}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    {dueDateTotalPages > 1 && (
-                      <Paginador
-                        pagina={dueDatePage}
-                        totalPaginas={dueDateTotalPages}
-                        onPagina={setDueDatePage}
-                        className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
-                      />
-                    )}
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
-                )}
+                  {dueDateTotalPages > 1 && (
+                    <Paginador
+                      pagina={dueDatePage}
+                      totalPaginas={dueDateTotalPages}
+                      onPagina={setDueDatePage}
+                      className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
+                    />
+                  )}
+                </div>
+              )}
             </div>
           </TabsContent>
 
           {/* Notificaciones Tab - mismo formato que la vista del navbar */}
-          <TabsContent value="notificaciones" className="space-y-3 mt-4">
-            <div className="rounded-lg border bg-card px-4 py-2">
+          <TabsContent value="notificaciones" className="mt-2 space-y-[14px]">
+            {/* Misma franja de actualización que Deudas y Vencimientos. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-0.5">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
                     {lastNotificacionesJob?.createdAt ? (
                       <span
                         className={
@@ -3301,7 +3304,7 @@ export function RepresentativeDetailPage({
                       Actualizando…
                     </>
                   ) : (
-                    'Actualizar Notificaciones'
+                    'Actualizar notificaciones'
                   )}
                 </Button>
               </div>
