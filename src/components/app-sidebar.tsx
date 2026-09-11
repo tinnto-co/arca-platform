@@ -153,7 +153,7 @@ function NavItem({
       to={to}
       aria-label={colapsado ? label : undefined}
       className={cn(
-        'flex items-center rounded-lg relative text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none',
+        'flex shrink-0 items-center rounded-lg relative text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none',
         colapsado ? 'justify-center size-9 mx-auto' : 'h-[34px] gap-2.5 px-2.5',
         isActive
           ? 'bg-[var(--arca-sidebar-active)] text-white'
@@ -251,7 +251,7 @@ function FuentesDatosItem() {
           aria-label={colapsado ? 'Fuentes de datos' : undefined}
           title={colapsado ? 'Fuentes de datos' : undefined}
           className={cn(
-            'flex items-center rounded-lg text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none text-left',
+            'flex shrink-0 items-center rounded-lg text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none text-left',
             colapsado
               ? 'justify-center size-9 mx-auto'
               : 'h-[34px] gap-2.5 px-2.5 w-full',
@@ -383,7 +383,7 @@ function NavGroup({
         <div
           role="separator"
           aria-label={label}
-          className="mx-auto my-2 h-px w-5 bg-[rgba(255,255,255,0.10)]"
+          className="mx-auto my-2 h-px w-5 shrink-0 bg-[rgba(255,255,255,0.10)]"
         />
         {children}
       </>
@@ -392,7 +392,7 @@ function NavGroup({
 
   return (
     <Collapsible open={abierto} onOpenChange={setAbierto}>
-      <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-lg px-2.5 pt-3 pb-1 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--arca-sidebar-label)] uppercase transition-colors duration-[120ms] hover:text-[var(--arca-sidebar-fg)]">
+      <CollapsibleTrigger className="flex w-full shrink-0 items-center gap-1.5 rounded-lg px-2.5 pt-3 pb-1 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--arca-sidebar-label)] uppercase transition-colors duration-[120ms] hover:text-[var(--arca-sidebar-fg)]">
         <span className="flex-1 text-left">{label}</span>
         <ChevronRight
           className={cn(
@@ -402,7 +402,7 @@ function NavGroup({
           strokeWidth={2.5}
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="flex flex-col gap-0.5 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+      <CollapsibleContent className="flex shrink-0 flex-col gap-0.5 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
         {children}
       </CollapsibleContent>
     </Collapsible>
@@ -641,12 +641,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           )}
         </div>
 
-        {/* Crear nuevo CTA */}
+        {/* CTA de alta. Abre el mismo diálogo que el "+" de Clientes. */}
         {!isViewer && (
           <CreateRepresentativeDialog>
             <button
-              aria-label={colapsado ? 'Crear nuevo' : undefined}
-              title={colapsado ? 'Crear nuevo' : undefined}
+              aria-label={colapsado ? 'Nuevo cliente' : undefined}
+              title={colapsado ? 'Nuevo cliente' : undefined}
               className={cn(
                 'flex items-center rounded-lg text-[13px] font-semibold mb-3 transition-colors duration-[120ms]',
                 'bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]',
@@ -656,7 +656,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               )}
             >
               <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
-              {!colapsado && 'Crear nuevo'}
+              {!colapsado && 'Nuevo cliente'}
             </button>
           </CreateRepresentativeDialog>
         )}
