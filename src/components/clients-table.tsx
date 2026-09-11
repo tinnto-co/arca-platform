@@ -160,11 +160,12 @@ export function RepresentativesTable({
         credencialCuit: cred?.cuit ?? null,
       };
     });
+  // Sin ids: las tools del asistente identifican la empresa por nombre y
+  // resuelven el id ellas mismas (ver `resolver-cliente.ts`).
   const clientesResumen = clientsTyped.slice(0, 30).map((c) => ({
-    id: c.id,
-    name: c.razonSocial,
+    nombre: c.razonSocial,
     cuit: c.cuit,
-    representante: c.credencialNombre,
+    loginArca: c.credencialNombre,
   }));
 
   const deleteMutation = useMutation({
@@ -403,7 +404,7 @@ export function RepresentativesTable({
     <>
       {aiAgentEnabled && (
         <CopilotReadableEntity
-          description="Listado de empresas (clientes) visible en pantalla. clientesResumen incluye los primeros 30 con id/CUIT/representante — usá el id para referenciar una empresa al invocar acciones."
+          description="Listado de empresas visible en pantalla, con el filtro que el usuario tenga puesto. `clientesResumen` son las primeras 30 tal como se ven. Para invocar una tool sobre alguna, pasá su `nombre`: el id lo resuelve el sistema."
           value={{
             modulo: 'clientes',
             vista: 'lista',

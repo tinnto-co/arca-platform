@@ -30,6 +30,7 @@ import {
   unregisterCopilotControl,
 } from './copilot-control';
 import { AttachmentBar } from './AttachmentBar';
+import { INSTRUCCIONES_ASISTENTE } from './instrucciones';
 
 const CLAVE_ANCHO = 'arca-copilot-panel-ancho-px';
 const ANCHO_DEFAULT = 420;
@@ -261,7 +262,10 @@ export function CopilotSidePanel() {
       <div className="relative min-h-0 flex-1">
         {/* El ícono de enviar es el que trae CopilotKit: una flecha al alza de
             trazo 1.5, que es justo la que usa la barra flotante. */}
-        <CopilotChat labels={{ placeholder: 'Preguntale al asistente…' }} />
+        <CopilotChat
+          instructions={INSTRUCCIONES_ASISTENTE}
+          labels={{ placeholder: 'Preguntale al asistente…' }}
+        />
       </div>
       <AttachmentBar />
     </div>

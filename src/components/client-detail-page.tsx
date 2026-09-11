@@ -1697,15 +1697,22 @@ export function RepresentativeDetailPage({
     <div>
       {aiAgentEnabled && client && (
         <CopilotReadableEntity
-          description="Cliente actualmente visible en pantalla y la sección que está mirando el usuario. Usá tabActiva para entender el foco actual: resumen=overview, deudas=AFIP debts, vencimientos=próximos, notificaciones=AFIP, facturas=invoices, iva=IVA scrape, convenio-multilateral=Multilateral, solicitudes=requests."
+          description="Ficha abierta en pantalla. `empresa` es la empresa que el usuario está mirando: cuando pida algo sin nombrar ninguna otra ('cómo está', 'actualizá el IVA', 'llevame a facturas'), es ésta, y a las tools se les pasa su `nombre`, nunca un id. `loginArca` es el acceso por el que se la consulta, y agrupa varias empresas. `tabActiva` dice qué sección está mirando."
           value={{
             modulo: 'cliente-detalle',
             tabActiva: activeTab,
-            id: client.id,
-            name: client.nombre,
-            cuit: client.cuit,
-            fiscalCondition: selectedProfile?.condicionIva ?? null,
-            status: client.estado,
+            empresa: selectedProfile
+              ? {
+                  nombre: selectedProfile.razonSocial,
+                  cuit: selectedProfile.cuit,
+                  condicionIva: selectedProfile.condicionIva ?? null,
+                }
+              : null,
+            loginArca: {
+              nombre: client.nombre,
+              cuit: client.cuit,
+              estado: client.estado,
+            },
           }}
         />
       )}

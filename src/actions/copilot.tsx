@@ -42,6 +42,13 @@ function periodoADate(periodo: string): string {
 
 const n = (v: string | number | null | undefined) => Number(v ?? 0) || 0;
 
+/** `$ 1.234.567`. El texto de las observaciones lo lee el usuario tal cual. */
+function formatArs(monto: number): string {
+  const abs = Math.abs(Math.round(monto));
+  const entero = String(abs).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return monto < 0 ? `-$ ${entero}` : `$ ${entero}`;
+}
+
 /**
  * Los clientes que el usuario quiso nombrar. Busca por razón social y, si no
  * encuentra nada, por el nombre del login de AFIP (que agrupa varias empresas).
@@ -78,6 +85,12 @@ async function resolverClientes(orgId: string, nombre: string) {
 }
 
 const getIvaPositionInput = z.object({
+  /**
+   * La empresa ya resuelta en el cliente. Es el camino normal: el asistente
+   * nombra la empresa, el navegador la empareja contra la cartera y manda el
+   * id, que acá se valida contra la org igual.
+   */
+  clienteId: z.string().uuid().optional(),
   clientName: z.string(),
   /** Período fiscal "MM/YYYY". Por defecto, el último declarado. */
   periodo: z.string().optional(),
@@ -137,9 +150,19 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
   .validator(getIvaPositionInput)
   .handler(async (ctx): Promise<GetIvaPositionForCopilotResult> => {
     const { orgId } = await getSessionWithOrg();
-    const { clientName } = ctx.data;
+    const { clienteId, clientName } = ctx.data;
 
-    const clientes = await resolverClientes(orgId, clientName);
+    const clientes = clienteId
+      ? await dbReadonly
+          .select({
+            id: cliente.id,
+            razonSocial: cliente.razonSocial,
+            cuit: cliente.cuit,
+          })
+          .from(cliente)
+          .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
+          .limit(1)
+      : await resolverClientes(orgId, clientName);
     if (clientes.length === 0) {
       return { error: `No encontré clientes con nombre "${clientName}"` };
     }
@@ -201,7 +224,10 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
           comprobante,
           eq(comprobanteAlicuota.comprobanteId, comprobante.id)
         )
-        .innerJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
+        .innerJoin(
+          comprobanteTipo,
+          eq(comprobante.tipo, comprobanteTipo.codigo)
+        )
         .where(
           and(
             eq(comprobante.clienteId, c.id),
@@ -280,52 +306,6 @@ export const getIvaPositionForCopilot = createServerFn({ method: 'POST' })
         : null;
 
     return { periodo, clientes: results, totales };
-  });
-
-/* =========================================================================
-   Resolución de cliente por nombre o id, acotada al estudio.
-   Usada por el escáner de extractos para que el LLM pueda pasar un nombre.
-   ========================================================================= */
-const resolveClientInput = z
-  .object({
-    clienteId: z.string().optional(),
-    clientName: z.string().optional(),
-  })
-  .refine((v) => Boolean(v.clienteId ?? v.clientName), {
-    message: 'Se requiere clienteId o clientName',
-  });
-
-export type ResolveClientResult =
-  | { id: string; name: string }
-  | { error: string; options?: string[] };
-
-export const resolveClientForCopilot = createServerFn({ method: 'POST' })
-  .validator(resolveClientInput)
-  .handler(async (ctx): Promise<ResolveClientResult> => {
-    const { orgId } = await getSessionWithOrg();
-    const { clienteId, clientName } = ctx.data;
-
-    if (clienteId) {
-      const [row] = await dbReadonly
-        .select({ id: cliente.id, razonSocial: cliente.razonSocial })
-        .from(cliente)
-        .where(and(eq(cliente.id, clienteId), eq(cliente.orgId, orgId)))
-        .limit(1);
-      if (!row) return { error: 'Cliente no encontrado o fuera del estudio.' };
-      return { id: row.id, name: row.razonSocial };
-    }
-
-    const matches = await resolverClientes(orgId, clientName!);
-    if (matches.length === 0) {
-      return { error: `No encontré clientes con nombre "${clientName!}"` };
-    }
-    if (matches.length > 1) {
-      return {
-        error: 'Más de un cliente coincide',
-        options: matches.map((c) => c.razonSocial),
-      };
-    }
-    return { id: matches[0].id, name: matches[0].razonSocial };
   });
 
 /* =========================================================================
@@ -506,7 +486,10 @@ export type GetResumenSaludClienteResult =
         diasDesde: number | null;
         failedReason: string | null;
       }[];
-      observaciones: { severidad: 'info' | 'warn' | 'error'; mensaje: string }[];
+      observaciones: {
+        severidad: 'info' | 'warn' | 'error';
+        mensaje: string;
+      }[];
     };
 
 export const getResumenSaludCliente = createServerFn({ method: 'POST' })
@@ -654,7 +637,7 @@ export const getResumenSaludCliente = createServerFn({ method: 'POST' })
     else
       observaciones.push({
         severidad: 'error',
-        mensaje: `${vencidas.length} deudas vencidas por $${vencidasMonto.toFixed(0)}`,
+        mensaje: `${vencidas.length} ${vencidas.length === 1 ? 'deuda vencida' : 'deudas vencidas'} por ${formatArs(vencidasMonto)}`,
       });
 
     // 20 pts: scrape reciente (cualquier tipo, <7 días)

@@ -369,12 +369,15 @@
   max-width: 100%;
 }
 
-/* Las tarjetas que el agente devuelve están pensadas para el ancho de una
-   pantalla, no para una columna de 420px: ahí se apilan. Sin esto los números
-   y sus etiquetas se pisan. */
-.copilot-panel .copilotKitMessages [class*='grid-cols-'] {
-  grid-template-columns: minmax(0, 1fr) !important;
-}
+/* Acá vivía una regla que apilaba en una columna CUALQUIER grilla dentro del
+   chat. Era un parche para las tarjetas de pantalla que el asistente
+   reutilizaba, y de paso rompía las que sí saben ser angostas: la fila de un
+   vencimiento es `46px 1fr auto` —una fecha chiquita y el texto al lado— y
+   apilada convertía la fecha en una banda del ancho del panel.
+
+   Cada componente decide su propio ancho: los del chat (`chat-card.tsx`) van
+   a dos columnas, que entran en los 340px del panel más angosto, y a los de
+   pantalla se les pasa la grilla que corresponda al invocarlos. */
 
 /* Acoplado a la derecha el panel es angosto: cada píxel de margen se le resta
    al texto, así que el aire es el mínimo que evita que toque los bordes. */

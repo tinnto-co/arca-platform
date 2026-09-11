@@ -231,15 +231,11 @@ function RouteComponent() {
       <div className="px-9 pt-7 pb-0">
         {aiAgentEnabled && selectedOption && (
           <CopilotReadableEntity
-            description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
+            description="Módulo Sueldos abierto en pantalla. `empresa.nombre` es la empresa liquidándose: cuando el usuario no nombre otra, es ésta, y a las tools se les pasa ese nombre, nunca un id. `mesLiquidable` es el único período sobre el que se pueden calcular liquidaciones."
             value={{
               modulo: 'sueldos',
               tabActiva: activeTab,
-              cliente: {
-                optionId: selectedOption.id,
-                clientId: clienteId,
-                label: selectedOption.label,
-              },
+              empresa: { nombre: selectedOption.name },
               mesActual: getPeriodoMesActual(),
               mesLiquidable: getPeriodoMesAnterior(),
             }}

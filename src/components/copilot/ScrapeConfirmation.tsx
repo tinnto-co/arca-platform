@@ -1,22 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  getCliente,
-  getClienteCredenciales,
-  scrapSingleJob,
-} from '@/actions/client';
+import { getClienteCredenciales, scrapSingleJob } from '@/actions/client';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { ChatCard, ChatCardHead } from './chat-card';
+import { EstadoFase, type Fase } from './ConfirmationCard';
 
 export type ScrapeJobType =
   | 'iva'
@@ -27,65 +16,61 @@ export type ScrapeJobType =
 
 const JOB_TYPE_LABELS: Record<ScrapeJobType, string> = {
   iva: 'Posición IVA',
-  comprobantes: 'Comprobantes (facturas)',
-  notificaciones: 'Notificaciones ARCA',
+  comprobantes: 'Comprobantes',
+  notificaciones: 'Notificaciones de ARCA',
   deuda: 'Deudas',
   vencimientos: 'Vencimientos',
 };
 
-type Phase = 'pending' | 'submitting' | 'done' | 'failed' | 'cancelled';
-
 interface ScrapeConfirmationProps {
   clienteId: string;
+  /** Ya resuelto por el asistente: no hace falta volver a buscarlo. */
+  clienteNombre: string;
   jobType: ScrapeJobType;
   respond: (result: unknown) => void;
 }
 
+/**
+ * Confirmación de una actualización contra ARCA.
+ *
+ * El job se dispara contra un acceso de ARCA, no contra la empresa: cada
+ * corrida recorre todas las empresas de ese acceso. Se usa el preferido, que
+ * es el primero que devuelve `getClienteCredenciales`.
+ */
 export function ScrapeConfirmation({
   clienteId,
+  clienteNombre,
   jobType,
   respond,
 }: ScrapeConfirmationProps) {
-  const [phase, setPhase] = React.useState<Phase>('pending');
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [fase, setFase] = React.useState<Fase>('pendiente');
+  const [error, setError] = React.useState<string | null>(null);
 
-  const { data: client, isLoading: clientLoading } = useQuery({
-    queryKey: ['cliente', clienteId],
-    queryFn: () => getCliente({ data: { id: clienteId } }),
-    staleTime: 60_000,
-  });
-
-  // El scrape se dispara contra un login de AFIP, no contra el cliente: cada
-  // job recorre todas las empresas de ese login. Se usa el login preferido
-  // (`getClienteCredenciales` ya los ordena por `preferida`).
-  const { data: credenciales } = useQuery({
+  const { data: credenciales, isLoading } = useQuery({
     queryKey: ['clienteCredenciales', clienteId],
     queryFn: () => getClienteCredenciales({ data: { clienteId } }),
     staleTime: 60_000,
   });
 
-  const clientName = client?.razonSocial ?? null;
   const credencialId = credenciales?.[0]?.id ?? null;
-  const jobLabel = JOB_TYPE_LABELS[jobType] ?? jobType;
+  const etiqueta = JOB_TYPE_LABELS[jobType] ?? jobType;
 
-  const handleConfirm = async () => {
-    setPhase('submitting');
-    setErrorMsg(null);
+  const confirmar = async () => {
+    setFase('ejecutando');
+    setError(null);
     try {
       if (!credencialId) {
         throw new Error(
-          'El cliente no tiene ninguna credencial de ARCA asociada.'
+          `${clienteNombre} no tiene ningún acceso de ARCA asociado.`
         );
       }
-      const result = await scrapSingleJob({
-        data: { credencialId, jobType },
-      });
-      setPhase('done');
+      const result = await scrapSingleJob({ data: { credencialId, jobType } });
+      setFase('hecho');
       respond({
         confirmed: true,
         success: true,
         clienteId,
-        clientName,
+        clienteNombre,
         jobType,
         result,
       });
@@ -93,112 +78,76 @@ export function ScrapeConfirmation({
       const msg =
         err instanceof Error
           ? err.message
-          : `Error al ejecutar el job ${jobType}`;
-      setErrorMsg(msg);
-      setPhase('failed');
+          : `Error al ejecutar la actualización de ${etiqueta}.`;
+      setError(msg);
+      setFase('fallo');
       respond({
         confirmed: true,
         success: false,
         clienteId,
-        clientName,
+        clienteNombre,
         jobType,
         error: msg,
       });
     }
   };
 
-  const handleCancel = () => {
-    setPhase('cancelled');
-    respond({ cancelled: true, clienteId, jobType });
+  const cancelar = () => {
+    setFase('cancelado');
+    respond({ cancelled: true, clienteId, clienteNombre, jobType });
   };
 
+  const sinAcceso = !isLoading && !credencialId;
+
   return (
-    <Card className="my-2 max-w-lg">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-warn-fg)]" />
-          Confirmar scrape: {jobLabel}
-        </CardTitle>
-        <CardDescription>
-          {clientLoading ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Cargando cliente…
-            </span>
-          ) : clientName ? (
-            <>
-              Cliente: <span className="font-medium">{clientName}</span>
-            </>
-          ) : (
-            <>
-              Cliente ID:{' '}
-              <span className="font-mono text-xs">
-                {clienteId.slice(0, 8)}…
+    <ChatCard className="my-1.5">
+      <ChatCardHead
+        title={`Actualizar ${etiqueta.toLowerCase()}`}
+        sub={clienteNombre}
+      />
+      <div className="px-3 py-2.5 text-[12.5px]">
+        <EstadoFase
+          fase={fase}
+          pendingText={
+            sinAcceso ? (
+              <span className="text-[var(--arca-accent-warn-fg)]">
+                {clienteNombre} no tiene ningún acceso de ARCA asociado, así que
+                no se puede actualizar.
               </span>
-            </>
-          )}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="text-sm text-[var(--arca-ink-2)]">
-        {phase === 'pending' && (
-          <p>
-            Esta acción dispara un job de tipo{' '}
-            <span className="font-medium">{jobLabel}</span> contra ARCA. Puede
-            tardar varios segundos. ¿Querés continuar?
-          </p>
-        )}
-        {phase === 'submitting' && (
-          <div className="flex items-center gap-2 text-[var(--arca-ink-3)]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Ejecutando {jobLabel}…
-          </div>
-        )}
-        {phase === 'done' && (
-          <div className="flex items-center gap-2 text-[var(--arca-accent-pos-fg)]">
-            <CheckCircle2 className="h-4 w-4" />
-            Job ejecutado correctamente.
-          </div>
-        )}
-        {phase === 'failed' && (
-          <div className="flex items-start gap-2 text-destructive">
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{errorMsg ?? 'Error al ejecutar el job.'}</span>
-          </div>
-        )}
-        {phase === 'cancelled' && (
-          <p className="text-[var(--arca-ink-3)]">
-            Acción cancelada. No se ejecutó ningún job.
-          </p>
-        )}
-      </CardContent>
-
-      {(phase === 'pending' || phase === 'submitting') && (
-        <CardFooter className="flex justify-end gap-2">
+            ) : (
+              <>
+                Se va a pedir a ARCA los datos de{' '}
+                <span className="font-medium text-[var(--arca-ink)]">
+                  {etiqueta.toLowerCase()}
+                </span>{' '}
+                del acceso de {clienteNombre}. Puede tardar unos segundos.
+              </>
+            )
+          }
+          submittingLabel={`Actualizando ${etiqueta.toLowerCase()}…`}
+          successText="Actualización encolada."
+          error={error}
+        />
+      </div>
+      {(fase === 'pendiente' || fase === 'ejecutando') && (
+        <div className="flex justify-end gap-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2">
           <Button
             variant="secondary"
             size="sm"
-            onClick={handleCancel}
-            disabled={phase === 'submitting'}
+            onClick={cancelar}
+            disabled={fase === 'ejecutando'}
           >
             Cancelar
           </Button>
           <Button
             size="sm"
-            onClick={handleConfirm}
-            disabled={phase === 'submitting'}
+            onClick={confirmar}
+            disabled={fase === 'ejecutando' || isLoading || sinAcceso}
           >
-            {phase === 'submitting' ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Ejecutando…
-              </>
-            ) : (
-              'Confirmar'
-            )}
+            {fase === 'ejecutando' ? 'Actualizando…' : 'Actualizar'}
           </Button>
-        </CardFooter>
+        </div>
       )}
-    </Card>
+    </ChatCard>
   );
 }
