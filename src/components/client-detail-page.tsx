@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CardsResumen } from '@/components/shared/cards-resumen';
 import { useNavigate, Link } from '@tanstack/react-router';
 import {
   AlertTriangle,
@@ -79,9 +80,6 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import {
-  Clock,
-  CalendarCheck,
-  CalendarX,
   Loader2,
   Play,
   Activity,
@@ -309,6 +307,15 @@ function findBestMatchingProfileId(
 
   return profiles[0].id;
 }
+
+/** Pesos sin centavos, que es como se leen los totales de la ficha. */
+const fmtPesos = (n: number) =>
+  new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n);
 
 export function RepresentativeDetailPage({
   representativeId,
@@ -2485,64 +2492,35 @@ export function RepresentativeDetailPage({
 
           {/* Deudas Tab */}
           <TabsContent value="deudas" className="space-y-[14px]">
-            {/* KPI Cards */}
+            {/* Resumen. La forma la pone `CardsResumen`; acá sólo qué
+                significa cada cifra y con qué acento se lee. */}
             {!loadingDebts && debts.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
-                {(
-                  [
-                    {
-                      label: 'Total Deudas',
-                      value: debtStats.totalBalance,
-                      sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`,
-                      accent: 'var(--arca-accent-neg)',
-                    },
-                    {
-                      label: 'Total con Intereses',
-                      value: debtStats.totalDebt,
-                      sub: `+ ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`,
-                      accent: 'var(--arca-accent-neg)',
-                    },
-                    {
-                      label: 'Int. Compensatorio',
-                      value: debtStats.totalCompensatoryInterest,
-                      sub: null,
-                      accent: 'var(--arca-accent-warn)',
-                    },
-                    {
-                      label: 'Int. Punitorio',
-                      value: debtStats.totalPunitiveInterest,
-                      sub: null,
-                      accent: 'var(--arca-accent-warn)',
-                    },
-                  ] as const
-                ).map((kpi) => (
-                  <div
-                    key={kpi.label}
-                    className="relative overflow-hidden bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_18px] flex flex-col gap-2"
-                  >
-                    <div
-                      className="absolute left-0 top-[14px] bottom-[14px] w-[2px] rounded-[0_2px_2px_0]"
-                      style={{ background: kpi.accent }}
-                    />
-                    <span className="pl-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                      {kpi.label}
-                    </span>
-                    <div className="pl-[6px] text-[22px] leading-none font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
-                      {new Intl.NumberFormat('es-AR', {
-                        style: 'currency',
-                        currency: 'ARS',
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      }).format(kpi.value)}
-                    </div>
-                    {kpi.sub && (
-                      <div className="pl-[6px] text-[11.5px] text-[var(--arca-ink-4)]">
-                        {kpi.sub}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <CardsResumen
+                cards={[
+                  {
+                    label: 'Total deudas',
+                    valor: fmtPesos(debtStats.totalBalance),
+                    sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`,
+                    tono: 'urgente',
+                  },
+                  {
+                    label: 'Total con intereses',
+                    valor: fmtPesos(debtStats.totalDebt),
+                    sub: `+ ${fmtPesos(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`,
+                    tono: 'urgente',
+                  },
+                  {
+                    label: 'Int. compensatorio',
+                    valor: fmtPesos(debtStats.totalCompensatoryInterest),
+                    tono: 'atencion',
+                  },
+                  {
+                    label: 'Int. punitorio',
+                    valor: fmtPesos(debtStats.totalPunitiveInterest),
+                    tono: 'atencion',
+                  },
+                ]}
+              />
             )}
 
             {/* Barra de actualización y filtros. No es una card a propósito:
@@ -3012,91 +2990,59 @@ export function RepresentativeDetailPage({
 
           {/* Vencimientos Tab */}
           <TabsContent value="vencimientos" className="space-y-6">
-            {/* Due Date Summary Cards */}
+            {/* Resumen, con la misma banda que Deudas. Los acentos los
+                elige el significado: rojo lo vencido, ámbar lo que se viene,
+                acento lo informativo. */}
             {!loadingDueDates && dueDates.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <CalendarCheck className="h-4 w-4 text-[var(--arca-ink)]" />
-                      Vencimientos Futuros
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-[var(--arca-ink)]">
-                      {dueDateStats.future}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Próximos vencimientos
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <CalendarX className="h-4 w-4 text-[var(--arca-ink)]" />
-                      Vencimientos Vencidos
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-[var(--arca-ink)]">
-                      {dueDateStats.overdue}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Requieren atención
-                    </p>
-                  </CardContent>
-                </Card>
-
-                {dueDateStats.nextDueDate && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-[var(--arca-ink)]" />
-                        Próximo Vencimiento
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-lg font-bold">
-                        {new Date(
+              <CardsResumen
+                cards={[
+                  {
+                    label: 'Vencidos',
+                    valor: String(dueDateStats.overdue),
+                    sub:
+                      dueDateStats.overdue === 1
+                        ? 'vencimiento impago'
+                        : 'vencimientos impagos',
+                    tono: 'urgente',
+                  },
+                  {
+                    label: 'Próximo vencimiento',
+                    valor: dueDateStats.nextDueDate?.venceAt
+                      ? new Date(
                           dueDateStats.nextDueDate.venceAt
                         ).toLocaleDateString('es-AR', {
-                          day: 'numeric',
-                          month: 'short',
+                          day: '2-digit',
+                          month: '2-digit',
                           year: 'numeric',
-                        })}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {dueDateStats.nextDueDate.impuesto || 'Sin impuesto'}
-                      </p>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Próximos 30 Días
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {dueDateStats.next30Days}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Vencimientos del mes
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+                        })
+                      : '—',
+                    sub:
+                      dueDateStats.nextDueDate?.impuesto ?? 'Sin vencimientos',
+                    tono: 'atencion',
+                  },
+                  {
+                    label: 'Próximos 30 días',
+                    valor: String(dueDateStats.next30Days),
+                    sub: 'vencimientos del mes',
+                    tono: 'acento',
+                  },
+                  {
+                    label: 'Total',
+                    valor: String(dueDateStats.total),
+                    sub: 'vencimientos cargados',
+                    tono: 'neutro',
+                  },
+                ]}
+              />
             )}
 
-            <div className="rounded-lg border bg-card p-4 space-y-4">
+            {/* Franja de actualización, con la convención de Deudas: sin
+                card ni sombra, que era el marco que metía el aire. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
                     {lastVencimientosJob?.createdAt ? (
                       <span
                         className={
@@ -3175,14 +3121,9 @@ export function RepresentativeDetailPage({
               </div>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Vencimientos del Cliente
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+            {/* Una sola card: la pestaña ya dice Vencimientos, y el borde de
+                adentro sumaba un segundo marco alrededor de la tabla. */}
+            <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)]">
                 {loadingDueDates ? (
                   <div className="flex items-center justify-center h-32">
                     <div className="text-muted-foreground">
@@ -3196,8 +3137,8 @@ export function RepresentativeDetailPage({
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="rounded-md border overflow-x-auto">
+                  <div className="[&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
+                    <div className="overflow-x-auto">
                       <Table className="w-full table-fixed">
                         <TableHeader>
                           <TableRow>
@@ -3261,18 +3202,16 @@ export function RepresentativeDetailPage({
                       </Table>
                     </div>
                     {dueDateTotalPages > 1 && (
-                      <div className="w-full min-w-0">
-                        <Paginador
-                          pagina={dueDatePage}
-                          totalPaginas={dueDateTotalPages}
-                          onPagina={setDueDatePage}
-                        />
-                      </div>
+                      <Paginador
+                        pagina={dueDatePage}
+                        totalPaginas={dueDateTotalPages}
+                        onPagina={setDueDatePage}
+                        className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
+                      />
                     )}
                   </div>
                 )}
-              </CardContent>
-            </Card>
+            </div>
           </TabsContent>
 
           {/* Notificaciones Tab - mismo formato que la vista del navbar */}
