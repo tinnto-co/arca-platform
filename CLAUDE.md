@@ -142,6 +142,15 @@ VITE_BETTER_AUTH_URL=http://localhost:3000/api/auth
 BETTER_AUTH_SECRET=<secret>
 SCRAPPER_JOBS_URL=http://localhost:3002
 GEMINI_API_KEY=<key>
+
+# Correo saliente — invitaciones a la organización (Resend)
+# Sin estas dos la invitación se crea igual, pero no sale ningún mail: la
+# pantalla lo avisa y ofrece copiar el link para pasarlo a mano.
+RESEND_API_KEY=<key>                       # https://resend.com/api-keys
+RESEND_FROM=Orddo <noreply@tinnto.co>      # dominio verificado en Resend
+# Para probar sin dominio propio: RESEND_FROM=onboarding@resend.dev, que sólo
+# puede enviar a la casilla con la que se registró la cuenta de Resend.
+BETTER_AUTH_URL=http://localhost:3000      # base del link de la invitación
 CREDENTIAL_ENCRYPTION_KEY=<64-char-hex>  # AES-256-GCM key for encrypting AFIP credentials (generate with: openssl rand -hex 32)
 
 # Cloudflare R2 — file storage (documents, signatures, EECC PDFs)

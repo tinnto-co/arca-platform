@@ -5,6 +5,10 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
 import { ROL_SOPORTE } from '@/lib/permissions';
+import {
+  hayCorreoConfigurado,
+  linkDeInvitacion,
+} from '@/lib/send-invitation-email';
 import { organizationModule, orgModule } from '@/drizzle/schema';
 import { and, eq, ne } from 'drizzle-orm';
 import { getSessionWithOrg } from './helpers';
@@ -122,7 +126,14 @@ export const inviteMember = createServerFn({
       },
     });
 
-    return result;
+    // La invitación se crea siempre; el correo sale sólo si hay con qué
+    // mandarlo. Sin esto la pantalla decía "Invitación enviada" aunque el
+    // envío se hubiera salteado, y el invitado nunca se enteraba.
+    return {
+      ...result,
+      emailEnviado: hayCorreoConfigurado(),
+      link: linkDeInvitacion(result.id),
+    };
   });
 
 export const removeMember = createServerFn({

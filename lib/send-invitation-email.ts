@@ -22,20 +22,34 @@ interface InvitationEmailPayload {
   };
 }
 
-export async function sendOrganizationInvitationEmail(
-  data: InvitationEmailPayload
-): Promise<void> {
+/**
+ * Si hay con qué mandar correo. Lo consulta también quien crea la invitación,
+ * para no decirle al usuario "enviada" cuando en realidad no salió nada.
+ */
+export function hayCorreoConfigurado(): boolean {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
+  return !!apiKey?.trim() && !!from?.trim();
+}
+
+/** El link que abre la invitación, con o sin correo de por medio. */
+export function linkDeInvitacion(invitationId: string): string {
   const base =
     process.env.BETTER_AUTH_URL ||
     process.env.PUBLIC_APP_URL ||
-    // 'http://localhost:3000'; // rollback: cambiar a 3000
-    'http://localhost:3001';
-  const inviteLink = `${base.replace(/\/$/, '')}/invite/${data.id}`;
+    'http://localhost:3000';
+  return `${base.replace(/\/$/, '')}/invite/${invitationId}`;
+}
+
+export async function sendOrganizationInvitationEmail(
+  data: InvitationEmailPayload
+): Promise<void> {
+  const inviteLink = linkDeInvitacion(data.id);
 
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM || process.env.EMAIL_FROM;
 
-  if (!apiKey?.trim() || !from?.trim()) {
+  if (!hayCorreoConfigurado()) {
     console.warn(
       '[invitation] No hay RESEND_API_KEY o RESEND_FROM/EMAIL_FROM. No se envió email. Link para el invitado:',
       inviteLink
@@ -53,7 +67,7 @@ export async function sendOrganizationInvitationEmail(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: from.trim(),
+      from: from!.trim(),
       to: [data.email],
       subject: `Invitación a ${data.organization.name} — ARCA`,
       html: `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;line-height:1.5;color:#1a1a1a">
