@@ -2,9 +2,15 @@
 
 import { useFrontendTool } from '@copilotkit/react-core';
 import { useNavigate } from '@tanstack/react-router';
-import { Loader2, ArrowUpRight } from 'lucide-react';
+import { Check } from 'lucide-react';
 
-/** Render compacto para las tools de navegación: evita el bloque gigante por defecto de CopilotKit. */
+/**
+ * Lo que hizo el agente, en una línea. No es un mensaje suyo —es una nota al
+ * margen—, así que no lleva recuadro: hecho, una marca en un cuadradito
+ * turquesa; en curso, un punto que late. En los dos casos arranca en el mismo
+ * margen izquierdo que la respuesta, para que la conversación se lea en una
+ * sola columna.
+ */
 function NavToolStatus({
   status,
   result,
@@ -20,13 +26,18 @@ function NavToolStatus({
         ? 'Listo'
         : 'Navegando…';
   return (
-    <div className="inline-flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-1 text-xs text-muted-foreground">
+    <div className="flex items-start gap-2 text-[12px] leading-[1.45] text-[var(--arca-ink-3)]">
       {done ? (
-        <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
+        <span className="mt-px grid size-[17px] shrink-0 place-items-center rounded-[5px] bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent)]">
+          <Check className="size-[11px]" strokeWidth={2.6} />
+        </span>
       ) : (
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+        <span
+          aria-hidden
+          className="mt-[5px] ml-[4px] mr-[4px] size-2 shrink-0 rounded-full bg-[var(--arca-accent-light)] motion-safe:animate-pulse"
+        />
       )}
-      <span>{text}</span>
+      <span className="min-w-0">{text}</span>
     </div>
   );
 }
@@ -103,8 +114,7 @@ export function FrontendTools() {
         return 'Falta un clientId válido. Obtenelo del contexto del listado de clientes.';
       }
       const tabStr = tab ? String(tab) : undefined;
-      const validTab =
-        tabStr && isClientDetailTab(tabStr) ? tabStr : undefined;
+      const validTab = tabStr && isClientDetailTab(tabStr) ? tabStr : undefined;
       void navigate({
         to: '/clients/$clientId',
         params: { clientId },

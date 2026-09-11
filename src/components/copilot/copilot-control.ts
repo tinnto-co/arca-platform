@@ -128,3 +128,45 @@ export function subscribePensando(cb: () => void) {
 export function getPensando() {
   return pensando;
 }
+
+/**
+ * Forma en que aparece el asistente cuando el panel está cerrado: la barra
+ * flotante o el orbe en la esquina. Es una preferencia de trabajo, no de
+ * sesión, así que se guarda.
+ *
+ * Vive acá y no en `AgentInput` porque el panel también la escribe: desde su
+ * cabecera se puede volver a la barra, que si no quedaría inalcanzable una vez
+ * que el asistente pasó al orbe.
+ */
+export type ModoAsistente = 'barra' | 'fab';
+
+const CLAVE_MODO = 'arca-asistente-modo';
+const oyentesModo = new Set<() => void>();
+
+export function suscribirModo(cb: () => void) {
+  oyentesModo.add(cb);
+  window.addEventListener('storage', cb);
+  return () => {
+    oyentesModo.delete(cb);
+    window.removeEventListener('storage', cb);
+  };
+}
+
+export function leerModo(): ModoAsistente {
+  try {
+    return (
+      (window.localStorage.getItem(CLAVE_MODO) as ModoAsistente) ?? 'barra'
+    );
+  } catch {
+    return 'barra';
+  }
+}
+
+export function guardarModo(modo: ModoAsistente) {
+  try {
+    window.localStorage.setItem(CLAVE_MODO, modo);
+  } catch {
+    /* modo privado: alterna igual, sólo no se recuerda */
+  }
+  oyentesModo.forEach((cb) => cb());
+}

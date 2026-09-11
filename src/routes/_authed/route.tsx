@@ -21,7 +21,7 @@ import { CopilotKit } from '@copilotkit/react-core';
 import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
-import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
+import { CopilotSidePanel } from '@/components/copilot/CopilotSidePanel';
 import { BuscadorGlobal } from '@/components/shared/buscador-global';
 import { FrontendTools } from '@/components/copilot/FrontendTools';
 import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
@@ -86,7 +86,10 @@ function RouteComponent() {
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
   const hideAgentInput = isChatRoute || sinInputAgente || !aiAgentEnabled;
 
-  const shell = (agentInputSlot: React.ReactNode) => (
+  const shell = (
+    agentInputSlot: React.ReactNode,
+    asistenteSlot: React.ReactNode
+  ) => (
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
@@ -104,6 +107,9 @@ function RouteComponent() {
           </div>
           {agentInputSlot}
         </SidebarInset>
+        {/* Hermano flex del contenido: al abrirse lo empuja, no lo tapa. Vive
+            dentro del provider porque necesita colapsar el menú lateral. */}
+        {asistenteSlot}
         <MobileNavbar />
       </SidebarProvider>
     </OrgSwitchProvider>
@@ -139,9 +145,11 @@ function RouteComponent() {
             <VisiblePageReadable />
           </>
         )}
-        {shell(aiAgentEnabled && !hideAgentInput ? <AgentInput /> : null)}
-        {aiAgentEnabled && !isChatRoute && !altoCompleto && (
-          <CopilotBottomPanel />
+        {shell(
+          aiAgentEnabled && !hideAgentInput ? <AgentInput /> : null,
+          aiAgentEnabled && !isChatRoute && !altoCompleto ? (
+            <CopilotSidePanel />
+          ) : null
         )}
         <BuscadorGlobal />
       </CopilotAttachmentProvider>

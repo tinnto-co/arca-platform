@@ -170,6 +170,10 @@
   --arca-shadow-popover: 0 8px 24px rgba(16, 23, 32, 0.08);
   --arca-shadow-float:
     0 10px 30px rgba(16, 23, 32, 0.12), 0 1px 3px rgba(16, 23, 32, 0.06);
+  /* La barra del asistente flota sobre el contenido de la página, no sobre el
+     fondo: necesita despegarse un poco más que el resto. */
+  --arca-shadow-float-lg:
+    0 14px 38px rgba(16, 23, 32, 0.17), 0 2px 6px rgba(16, 23, 32, 0.08);
   --arca-shadow-modal: 0 24px 60px rgba(16, 23, 32, 0.3);
 
   /* Radios */
@@ -327,21 +331,21 @@
 
 /* CopilotKit chat (now embedded in CopilotBottomPanel — no sidebar/window
    chrome). The .copilotKitChat root takes the full panel area. */
-.copilot-bottom-panel .copilotKitChat {
+.copilot-panel .copilotKitChat {
   width: 100%;
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.copilot-bottom-panel .copilotKitMessages {
+.copilot-panel .copilotKitMessages {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
 }
 
 /* Messages + generative UI: wider (1100px) so cards and tables breathe. */
-.copilot-bottom-panel .copilotKitMessages {
+.copilot-panel .copilotKitMessages {
   max-width: 1100px;
   margin-left: auto;
   margin-right: auto;
@@ -350,7 +354,7 @@
 
 /* Input: kept narrower (768px) so the typing area stays compact and easy
    to scan. The textarea inside grows vertically as the user types. */
-.copilot-bottom-panel .copilotKitInput {
+.copilot-panel .copilotKitInput {
   max-width: 768px;
   margin-left: auto;
   margin-right: auto;
@@ -358,71 +362,150 @@
 }
 
 /* Generative-UI components inside the chat: never let tables explode the panel */
-.copilot-bottom-panel table,
-.copilot-bottom-panel .arca-table {
+.copilot-panel table,
+.copilot-panel .arca-table {
   display: block;
   overflow-x: auto;
   max-width: 100%;
 }
 
-/* Avatar de las respuestas del agente: el orbe. CopilotKit no renderiza un
-   elemento de avatar, así que lo ponemos como pseudo-elemento — es el mismo
-   orbe de la barra y del FAB, y así la respuesta se lee como suya. */
-.copilot-bottom-panel .copilotKitAssistantMessage {
-  position: relative;
-  padding-left: 26px;
+/* Las tarjetas que el agente devuelve están pensadas para el ancho de una
+   pantalla, no para una columna de 420px: ahí se apilan. Sin esto los números
+   y sus etiquetas se pisan. */
+.copilot-panel .copilotKitMessages [class*='grid-cols-'] {
+  grid-template-columns: minmax(0, 1fr) !important;
 }
 
-.copilot-bottom-panel .copilotKitAssistantMessage::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 9px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: var(--arca-orb);
+/* Acoplado a la derecha el panel es angosto: cada píxel de margen se le resta
+   al texto, así que el aire es el mínimo que evita que toque los bordes. */
+.copilot-panel .copilotKitMessages {
+  padding: 0;
+}
+
+/* Acá vive el padding que se ve: CopilotKit le pone `1rem 24px` al contenedor
+   de los mensajes. En un panel de 420px esos 48px laterales son el 11% del
+   ancho útil. */
+.copilot-panel .copilotKitMessagesContainer {
+  padding: 6px 8px;
+}
+
+.copilot-panel .copilotKitInput {
+  width: calc(100% - 12px);
+  padding: 8px 10px;
+  min-height: 0;
+  border-radius: var(--arca-r-lg);
+  margin-bottom: 4px;
+}
+
+/* La acción del agente y la respuesta son un solo turno, así que van pegadas.
+   CopilotKit envuelve lo que renderiza una tool en un div con
+   `margin-bottom: 0.5rem` en línea, y a un estilo en línea sólo se lo gana
+   con `!important`. */
+.copilot-panel [style*='margin-bottom: 0.5rem'] {
+  margin-bottom: 2px !important;
+}
+
+/* El pie de CopilotKit se queda —es su marca— pero no se lleva una franja
+   entera. Sus propias reglas van con `!important`, así que éstas también. */
+.copilot-panel .poweredBy {
+  font-size: 9px !important;
+  padding: 1px 0 2px !important;
+  opacity: 0.6;
 }
 
 /* Compact chat typography — defaults are too large for our context */
-.copilot-bottom-panel .copilotKitMessage {
-  font-size: 0.8125rem;
+.copilot-panel .copilotKitMessage {
+  font-size: 0.78125rem;
   line-height: 1.5;
-  padding: 6px 10px 6px 0;
+  padding: 1px 0;
+}
+
+/* Las respuestas del agente van a sangre, sin avatar por mensaje: la cabecera
+   del panel ya dice de quién es la voz, y en una columna angosta la sangría se
+   la sacaba al texto. El `!important` es porque CopilotKit declara su propio
+   `padding-left` con la misma especificidad y su hoja carga después. */
+.copilot-panel .copilotKitAssistantMessage {
+  position: relative;
+  padding-left: 0 !important;
 }
 
 /* User bubble: brand navy, balanced padding, tighter line-height.
    CopilotKit's stylesheet is imported after this file, so we use
    !important to win the cascade. */
-.copilot-bottom-panel .copilotKitUserMessage {
-  font-size: 0.8125rem !important;
-  line-height: 1.55 !important;
-  padding: 8px 12px !important;
+.copilot-panel .copilotKitUserMessage {
+  font-size: 0.78125rem !important;
+  line-height: 1.45 !important;
+  /* Simétrico arriba y abajo: el texto queda centrado en la burbuja. */
+  padding: 9px 12px !important;
   background-color: var(--primary) !important;
   color: var(--primary-foreground) !important;
-  border-radius: 14px !important;
-  margin-top: 16px !important;
+  border-radius: 8px !important;
+  margin-top: 10px !important;
   margin-bottom: 4px !important;
 }
 
-.copilot-bottom-panel .copilotKitMarkdown,
-.copilot-bottom-panel .copilotKitParagraph {
-  font-size: 0.8125rem;
+.copilot-panel .copilotKitMarkdown,
+.copilot-panel .copilotKitParagraph {
+  font-size: 0.78125rem;
   line-height: 1.55;
 }
 
-.copilot-bottom-panel .copilotKitMarkdown p {
+.copilot-panel .copilotKitMarkdown p {
   margin: 0 0 0.5rem 0;
 }
 
-.copilot-bottom-panel .copilotKitMarkdown p:last-child {
+.copilot-panel .copilotKitMarkdown p:last-child {
   margin-bottom: 0;
 }
 
 /* Input textarea: smaller, matches body */
-.copilot-bottom-panel .copilotKitInput textarea {
-  font-size: 0.8125rem;
+.copilot-panel .copilotKitInput textarea {
+  font-size: 0.78125rem;
   line-height: 1.5;
+}
+
+/* Enviar: el único botón sólido del chat, en el acento de la marca. La flecha
+   ya viene fina de CopilotKit (stroke 1.5); acá sólo se achica. */
+.copilot-panel .copilotKitInputControls button:last-child {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--arca-r-md);
+  background: var(--arca-accent);
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.copilot-panel .copilotKitInputControls button:last-child:hover:not(:disabled) {
+  background: var(--arca-accent-hover);
+}
+
+.copilot-panel .copilotKitInputControls button:last-child:disabled {
+  opacity: 0.4;
+}
+
+.copilot-panel .copilotKitInputControls button:last-child svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.75;
+}
+
+/* Adjuntar va en la misma línea que enviar, a su izquierda. */
+.copilot-panel .copilot-attach-btn {
+  bottom: 29px;
+  right: 50px;
+}
+
+/* El primer mensaje arranca pegado a la cabecera: el margen superior de la
+   burbuja es para separarla de la respuesta anterior, y arriba no hay ninguna. */
+/* Arriba de todo no hay respuesta anterior de la que separarse, así que el
+   margen entre mensajes sobra —pero algo de aire contra la cabecera sí hace
+   falta. */
+.copilot-panel .copilotKitMessages > *:first-child,
+.copilot-panel .copilotKitMessagesContainer > *:first-child,
+.copilot-panel .copilotKitMessagesContainer > *:first-child > *:first-child,
+.copilot-panel .copilotKitUserMessage:first-child {
+  margin-top: 0 !important;
 }
 
 /* The "initial" greeting is rendered as an assistant message but it's not a
