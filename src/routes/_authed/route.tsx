@@ -98,7 +98,10 @@ function RouteComponent() {
             data-arca-content
             className={cn(
               'min-w-0 flex-1 min-h-0 overflow-y-auto',
-              isChatDetail || altoCompleto
+              // `/chat` maneja su propio alto y su propio scroll. Si entra por
+              // la rama de abajo se le suma el scroll del shell y la pantalla
+              // queda con dos barras, una dentro de la otra.
+              isChatRoute || altoCompleto
                 ? 'h-full overflow-hidden'
                 : 'bg-[var(--arca-bg)] pb-28 md:pb-24 min-h-full'
             )}

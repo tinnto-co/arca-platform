@@ -120,6 +120,13 @@
       "when": 1789020000000,
       "tag": "0016_notificacion_categoria_prioridad",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789030000000,
+      "tag": "0017_agent_conversation_fijado_etiqueta_compartido",
+      "breakpoints": true
     }
   ]
 }

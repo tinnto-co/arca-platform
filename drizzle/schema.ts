@@ -110,6 +110,12 @@ export const agentConversation = pgTable("agent_conversation", {
 	userId: text("user_id").notNull(),
 	clienteId: uuid("cliente_id"),
 	titulo: text().default('Nueva conversación').notNull(),
+	/** Anclada arriba del listado por decisión del usuario. */
+	fijado: boolean().default(false).notNull(),
+	/** De qué habla, en una palabra. La escribe el agente al cerrar el primer turno. */
+	etiqueta: text(),
+	/** Legible por cualquier miembro de la misma organización, en solo lectura. */
+	compartido: boolean().default(false).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
