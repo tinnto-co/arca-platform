@@ -23,13 +23,47 @@ export default function LoginPage() {
     <div className="flex min-h-svh w-full bg-[var(--arca-bg)] font-sans text-[var(--arca-ink)]">
       {/* Left — form */}
       <div className="flex min-w-0 flex-1 flex-col px-6 py-8 md:px-12 md:py-10 lg:basis-1/2">
-        {/* Brand */}
+        {/* Brand.
+            El wordmark va inline y no como <img>: dentro de un <img> el SVG es
+            un documento aparte que no ve la webfont de la página, así que
+            "Ordo" y el descriptor caían a system-ui. Es el mismo dibujo que
+            public/brand/ordo-wordmark-descriptor.svg. */}
         <div className="flex items-center">
-          <img
-            src="/brand/ordo-wordmark-descriptor.svg"
-            alt="Ordo Suite Contable"
-            className="block h-[44px] w-auto"
-          />
+          <svg
+            role="img"
+            aria-label="Ordo Suite Contable"
+            viewBox="0 0 200 72"
+            fill="none"
+            className="block h-[44px] w-auto [font-family:var(--ff-display)]"
+          >
+            <path
+              d="M20 10a14 14 0 1 0 14 14"
+              stroke="#101720"
+              strokeWidth="4.4"
+              strokeLinecap="round"
+            />
+            <circle cx="34" cy="13.5" r="4.4" fill="#4FB3BC" />
+            <text
+              x="46"
+              y="36"
+              fontWeight="600"
+              fontSize="34"
+              letterSpacing="-1"
+              fill="#101720"
+            >
+              Ordo
+            </text>
+            <text
+              x="46"
+              y="60"
+              fontWeight="500"
+              fontSize="10.5"
+              letterSpacing="2.3"
+              fill="#1F7A86"
+            >
+              SUITE CONTABLE
+            </text>
+          </svg>
         </div>
 
         {/* Centered form block */}
