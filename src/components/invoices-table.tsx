@@ -700,11 +700,12 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       return (
         <Badge
           variant={typeInfo.variant}
-          // `inline-block` está a propósito —hace falta para que "Ticket
-          // Factura A" parta en dos líneas en vez de desbordar la columna—,
-          // pero pisa el `justify-center` de la variante base y deja las
-          // líneas pegadas a la izquierda. `text-center` lo repone.
-          className="!whitespace-normal break-words text-[10px] px-1.5 py-0.5 inline-block max-w-full leading-tight text-center"
+          // Se queda con el `inline-flex items-center justify-center` de la
+          // variante base: con `inline-block` el texto se apoyaba arriba de la
+          // caja de `h-6` y dejaba el aire abajo. Lo que sí hay que soltar es
+          // esa altura fija, porque "Ticket Factura A" necesita dos líneas y
+          // la base recorta con `overflow-hidden`.
+          className="!h-auto !whitespace-normal break-words text-[10px] px-1.5 py-1 max-w-full leading-tight text-center"
         >
           {typeInfo.label}
         </Badge>
