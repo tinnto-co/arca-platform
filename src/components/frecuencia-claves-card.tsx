@@ -93,7 +93,7 @@ export function FrecuenciaClavesCard() {
             <th className="px-5 py-2 text-right font-semibold">Frecuencia</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="bg-[var(--arca-surface)]">
           {claves.map((c) => (
             <tr
               key={c.id}
@@ -117,7 +117,7 @@ export function FrecuenciaClavesCard() {
                 <span className="text-[var(--arca-ink-2)]">{c.scrapeosOk}</span>
                 {c.scrapeosOk < SCRAPEOS_MINIMOS && (
                   <span
-                    className="ml-1.5 rounded-[20px] px-1.5 py-0.5 text-[10.5px] font-medium"
+                    className="ml-1.5 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium"
                     style={{
                       background: 'var(--arca-accent-warn-bg)',
                       color: 'var(--arca-accent-warn-fg)',

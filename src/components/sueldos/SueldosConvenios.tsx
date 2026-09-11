@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -127,22 +128,21 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap justify-end gap-2">
-        <button
-          type="button"
+        {/* Crear va en primario y elegir del catálogo en secundario, como
+          "Nuevo cliente" y "Nuevo empleado" en el resto de la plataforma:
+          acá estaban al revés. */}
+        <Button
+          variant="outline"
+          className="gap-2"
           onClick={() => setSeleccionarConvenioOpen(true)}
-          className="bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] flex items-center gap-2"
         >
-          <CheckCircle2 className="h-[15px] w-[15px]" />
+          <CheckCircle2 className="size-4" />
           Seleccionar convenio
-        </button>
-        <button
-          type="button"
-          onClick={() => setNewConvenioOpen(true)}
-          className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
-        >
-          <Plus className="h-[15px] w-[15px]" />
+        </Button>
+        <Button className="gap-2" onClick={() => setNewConvenioOpen(true)}>
+          <Plus className="size-4" />
           Nuevo convenio
-        </button>
+        </Button>
       </div>
 
       <Dialog
@@ -206,22 +206,29 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
       </Dialog>
 
       <Dialog open={newConvenioOpen} onOpenChange={setNewConvenioOpen}>
-        <DialogContent>
+        {/* Los campos iban en un <div> pelado: el rótulo quedaba pegado al
+          input y el anillo de foco se lo comía. */}
+        <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle>Nuevo convenio colectivo</DialogTitle>
+            <DialogDescription>
+              El CCT es opcional: se puede cargar después.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label>Nombre</Label>
+          <div className="grid gap-4">
+            <div className="grid gap-1.5">
+              <Label htmlFor="convenio-nombre">Nombre</Label>
               <Input
+                id="convenio-nombre"
                 value={newConvenioNombre}
                 onChange={(e) => setNewConvenioNombre(e.target.value)}
                 placeholder="Ej. Comercio"
               />
             </div>
-            <div>
-              <Label>Número CCT</Label>
+            <div className="grid gap-1.5">
+              <Label htmlFor="convenio-cct">Número CCT</Label>
               <Input
+                id="convenio-cct"
                 value={newConvenioCct}
                 onChange={(e) => setNewConvenioCct(e.target.value)}
                 placeholder="Ej. 130/75"
@@ -229,11 +236,14 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
             </div>
           </div>
           <DialogFooter>
+            <Button variant="outline" onClick={() => setNewConvenioOpen(false)}>
+              Cancelar
+            </Button>
             <Button
               onClick={() => createConv.mutate()}
               disabled={!newConvenioNombre.trim() || createConv.isPending}
             >
-              Crear
+              {createConv.isPending ? 'Creando…' : 'Crear'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -398,7 +408,7 @@ function ConvenioCard({
               </button>
               <button
                 type="button"
-                className="h-8 w-8 flex items-center justify-center rounded hover:bg-red-50 transition-colors"
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-[var(--arca-accent-neg-bg)] transition-colors"
                 onClick={(e) => {
                   e.preventDefault();
                   setDeleteOpen(true);
@@ -484,7 +494,7 @@ function ConvenioCard({
               <button
                 type="button"
                 onClick={() => setAddCategoria(true)}
-                className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
+                className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] h-9 px-4 flex items-center gap-2"
               >
                 <Plus className="h-[15px] w-[15px]" />
                 Nueva categoría
@@ -726,7 +736,7 @@ function CategoriaRow({
                 )}
                 <button
                   type="button"
-                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-50 transition-colors shrink-0"
+                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-[var(--arca-accent-neg-bg)] transition-colors shrink-0"
                   onClick={() =>
                     setEscalaToDelete({
                       id: e.id,

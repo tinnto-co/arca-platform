@@ -20,12 +20,20 @@ import {
   FileText,
   PenLine,
   Upload,
+  List,
+  LayoutGrid,
 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/shared/page-header';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { Button } from '@/components/ui/button';
+import { botonHeader } from '@/components/shared/filtros';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { SueldosDashboard } from '@/components/sueldos/SueldosDashboard';
 import { SueldosEmpleados } from '@/components/sueldos/SueldosEmpleados';
 import { SueldosConvenios } from '@/components/sueldos/SueldosConvenios';
@@ -90,9 +98,9 @@ interface EditReciboData {
 
 const tabTriggerCls = () =>
   cn(
-    'relative h-auto flex-none px-[14px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+    'relative h-auto flex-none whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 pb-2.5 text-[13px] gap-[7px] cursor-pointer',
+    'font-medium text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink-2)]',
+    'data-[state=active]:border-[var(--arca-accent)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-none'
   );
 
 function RouteComponent() {
@@ -193,14 +201,11 @@ function RouteComponent() {
           subtitle="Esta empresa no liquida sueldos"
           actions={<SelectorClienteGlobal />}
         />
-        <div
-          className="mt-6 flex items-center gap-2 rounded-[10px] border px-4 py-2.5 text-[13px]"
-          style={{
-            background: 'var(--arca-accent-warn-bg)',
-            borderColor: 'var(--arca-border)',
-            color: 'var(--arca-accent-warn-fg)',
-          }}
-        >
+        <div className="mt-6 flex items-center gap-3 rounded-[10px] border border-[oklch(0.88_0.08_75)] bg-[oklch(0.97_0.03_75)] px-[14px] py-[10px] text-[13px] text-[var(--arca-accent-warn-fg)]">
+          <span
+            aria-hidden
+            className="size-2 shrink-0 rounded-full bg-[var(--arca-accent-warn)]"
+          />
           La empresa de este link no liquida sueldos (o ya no existe). Volvé al
           listado y agregala con «Agregar empresa» si corresponde.
         </div>
@@ -226,15 +231,11 @@ function RouteComponent() {
       <div className="px-9 pt-7 pb-0">
         {aiAgentEnabled && selectedOption && (
           <CopilotReadableEntity
-            description="Estado actual del módulo Sueldos visible en pantalla. Usá clientId al invocar acciones de payroll. mesLiquidable es el único período sobre el que se pueden calcular liquidaciones."
+            description="Módulo Sueldos abierto en pantalla. `empresa.nombre` es la empresa liquidándose: cuando el usuario no nombre otra, es ésta, y a las tools se les pasa ese nombre, nunca un id. `mesLiquidable` es el único período sobre el que se pueden calcular liquidaciones."
             value={{
               modulo: 'sueldos',
               tabActiva: activeTab,
-              cliente: {
-                optionId: selectedOption.id,
-                clientId: clienteId,
-                label: selectedOption.label,
-              },
+              empresa: { nombre: selectedOption.name },
               mesActual: getPeriodoMesActual(),
               mesLiquidable: getPeriodoMesAnterior(),
             }}
@@ -327,16 +328,35 @@ function RouteComponent() {
           </TabsContent>
           <TabsContent value="simulador" className="mt-0">
             {!editReciboData && (
-              <div className="flex justify-end mb-3">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setVistaNuevoRecibo(usaVistaNueva ? 'clasica' : 'nueva')
-                  }
-                  className="h-[28px] px-3 rounded-[9px] text-[12px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] cursor-pointer"
-                >
-                  {usaVistaNueva ? 'Vista clásica' : 'Vista nueva'}
-                </button>
+              // Alineado a la izquierda con el resto de la pantalla, con el
+              // botón del sistema y un tooltip: "Vista clásica" solo no dice
+              // si es lo que estás viendo o a lo que vas.
+              <div className="mb-2 flex">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVistaNuevoRecibo(usaVistaNueva ? 'clasica' : 'nueva')
+                      }
+                      className={botonHeader}
+                    >
+                      {usaVistaNueva ? (
+                        <List className="size-3.5" />
+                      ) : (
+                        <LayoutGrid className="size-3.5" />
+                      )}
+                      {usaVistaNueva ? 'Vista clásica' : 'Vista nueva'}
+                    </button>
+                  </TooltipTrigger>
+                  {/* Hacia la derecha: centrado se metía sobre el sidebar
+                    oscuro y el tooltip oscuro encima se leía mal. */}
+                  <TooltipContent side="right">
+                    {usaVistaNueva
+                      ? 'Volver al formulario de siempre para cargar el recibo'
+                      : 'Pasar al armado nuevo, por bloques'}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             )}
             {usaVistaNueva ? (

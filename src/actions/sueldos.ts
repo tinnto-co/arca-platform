@@ -4485,6 +4485,10 @@ const cierreLiquidacionSchema = z.object({
 /**
  * Estado del cierre de sueldos de un período: si está cerrado, con qué asiento
  * y cuántos conceptos quedaron sin regla.
+ *
+ * Devuelve además cuántos recibos confirmados hay. Sin ese dato la pantalla
+ * no tenía cómo saber si el cierre era posible y ofrecía los botones igual:
+ * recién al hacer click aparecía un toast diciendo que no había recibos.
  */
 export const getCierreLiquidacion = createServerFn({ method: 'GET' })
   .validator(cierreLiquidacionSchema)
@@ -4512,7 +4516,23 @@ export const getCierreLiquidacion = createServerFn({ method: 'GET' })
         )
       )
       .limit(1);
-    return { periodo, cierre: row ?? null };
+
+    const [conteo] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(recibo)
+      .where(
+        and(
+          eq(recibo.clienteId, ctx.data.clientId),
+          eq(recibo.periodo, `${periodo}-01`),
+          eq(recibo.confirmado, true)
+        )
+      );
+
+    return {
+      periodo,
+      cierre: row ?? null,
+      recibosConfirmados: conteo?.n ?? 0,
+    };
   });
 
 /**

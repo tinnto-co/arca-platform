@@ -148,7 +148,7 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
         </div>
         <div className="rounded-xl border bg-card p-4 flex flex-col justify-center">
           <p className="text-sm text-muted-foreground">Total Egresos</p>
-          <p className="text-xl font-bold text-[var(--arca-accent-neg)]">
+          <p className="text-xl font-bold text-[var(--arca-accent-neg-fg)]">
             {totalEgresos.toLocaleString('es-AR', {
               style: 'currency',
               currency: 'ARS',
@@ -161,7 +161,7 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
       <Collapsible open={openIngresos} onOpenChange={setOpenIngresos}>
         <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border bg-muted/50 px-4 py-3 text-base hover:bg-muted/70 transition-colors">
           <span className="font-medium">Ingresos</span>
-          <TrendingUp className="h-5 w-5 text-[var(--arca-accent-pos)] shrink-0" />
+          <TrendingUp className="h-5 w-5 text-[var(--arca-accent-pos-fg)] shrink-0" />
         </CollapsibleTrigger>
         <CollapsibleContent
           forceMount
@@ -192,7 +192,7 @@ export function RenderPdfInfo({ data }: RenderPdfInfoProps) {
       <Collapsible open={openEgresos} onOpenChange={setOpenEgresos}>
         <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border bg-muted/50 px-4 py-3 text-base hover:bg-muted/70 transition-colors">
           <span className="font-medium">Egresos</span>
-          <TrendingDown className="h-5 w-5 text-[var(--arca-accent-neg)] shrink-0" />
+          <TrendingDown className="h-5 w-5 text-[var(--arca-accent-neg-fg)] shrink-0" />
         </CollapsibleTrigger>
         <CollapsibleContent
           forceMount

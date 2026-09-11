@@ -75,8 +75,7 @@ export const SEVERIDAD_PILL: Record<string, string> = {
     'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
   informativa:
     'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
-  sin_clasificar:
-    'bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)] border border-[var(--arca-border)]',
+  sin_clasificar: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]',
 };
 
 /**

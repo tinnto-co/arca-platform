@@ -63,7 +63,7 @@ export function Delta({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 px-[7px] py-[2px] rounded-[20px] text-[11.5px] font-semibold tabular-nums',
+        'inline-flex items-center gap-1 px-[7px] py-[2px] rounded-md text-[11.5px] font-semibold tabular-nums',
         kind === 'pos' &&
           'text-[var(--arca-accent-pos-fg)] bg-[var(--arca-accent-pos-bg)]',
         kind === 'neg' &&
@@ -88,7 +88,7 @@ export function StatusTag({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-[5px] px-2 py-[2px] rounded-[20px] text-[11px] font-medium',
+        'inline-flex items-center gap-[5px] px-2 py-[2px] rounded-md text-[11px] font-medium',
         kind === 'ok' &&
           'text-[var(--arca-accent-pos-fg)] bg-[var(--arca-accent-pos-bg)]',
         kind === 'pend' &&
@@ -231,7 +231,7 @@ export function Chip({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-[5px] px-2 py-[3px] rounded-[20px] text-[11px] font-medium',
+        'inline-flex items-center gap-[5px] px-2 py-[3px] rounded-md text-[11px] font-medium',
         variant === 'neg'
           ? 'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
           : 'bg-[var(--arca-surface-2)] border border-[var(--arca-border)] text-[var(--arca-ink-3)]'

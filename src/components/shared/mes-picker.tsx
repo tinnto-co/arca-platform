@@ -29,10 +29,13 @@ export function MesPicker({
   maxPeriodo,
   minAno,
   className,
+  placeholder,
+  onLimpiar,
+  size = 'default',
 }: {
-  /** Año seleccionado, ej. "2026". */
+  /** Año seleccionado, ej. "2026". Vacío = sin período elegido. */
   ano: string;
-  /** Mes seleccionado, "01".."12". */
+  /** Mes seleccionado, "01".."12". Vacío = sin período elegido. */
   mes: string;
   onChange: (ano: string, mes: string) => void;
   /** Último período elegible, "YYYY-MM". Meses posteriores se deshabilitan. */
@@ -40,6 +43,12 @@ export function MesPicker({
   /** Primer año navegable (default: 5 años atrás del máximo). */
   minAno?: number;
   className?: string;
+  /** Qué decir cuando no hay período elegido, ej. "Periodo: todos". */
+  placeholder?: string;
+  /** Si se pasa, el popover ofrece volver a "sin período". */
+  onLimpiar?: () => void;
+  /** `sm` (32px) para barras de filtro; el default es 36px. */
+  size?: 'default' | 'sm';
 }) {
   const [open, setOpen] = useState(false);
 
@@ -49,9 +58,12 @@ export function MesPicker({
   const pisoAno = minAno ?? maxAno - 5;
   const [anoVista, setAnoVista] = useState(Number(ano) || maxAno);
 
-  const label = format(new Date(Number(ano), Number(mes) - 1, 1), 'MMMM yyyy', {
-    locale: es,
-  });
+  const vacio = !ano || !mes;
+  const label = vacio
+    ? (placeholder ?? 'Sin período')
+    : format(new Date(Number(ano), Number(mes) - 1, 1), 'MMMM yyyy', {
+        locale: es,
+      });
 
   const deshabilitado = (m: number) =>
     maxPeriodo != null &&
@@ -69,7 +81,9 @@ export function MesPicker({
         <Button
           variant="outline"
           className={cn(
-            'justify-start gap-2 bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] text-[13.5px] font-normal capitalize shadow-none',
+            'justify-start gap-2 rounded-lg border-[var(--arca-border-strong)] bg-white px-3 font-normal capitalize shadow-none',
+            size === 'sm' ? 'h-8 text-[12.5px]' : 'text-[13px]',
+            vacio && 'text-[var(--arca-ink-3)] normal-case',
             className
           )}
         >
@@ -107,7 +121,7 @@ export function MesPicker({
           {MESES_CORTOS.map((nombre, i) => {
             const m = i + 1;
             const valor = String(m).padStart(2, '0');
-            const activo = String(anoVista) === ano && valor === mes;
+            const activo = !vacio && String(anoVista) === ano && valor === mes;
             return (
               <button
                 key={valor}
@@ -130,6 +144,18 @@ export function MesPicker({
             );
           })}
         </div>
+        {onLimpiar && (
+          <button
+            type="button"
+            onClick={() => {
+              onLimpiar();
+              setOpen(false);
+            }}
+            className="mt-2 w-full rounded-[8px] border-t border-[var(--arca-border)] pt-2 text-[12px] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+          >
+            Sin período
+          </button>
+        )}
       </PopoverContent>
     </Popover>
   );

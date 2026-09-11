@@ -230,8 +230,10 @@ export function OrdenDocumento({
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)]">
         <label className="flex items-center gap-2 text-[12px] text-[var(--arca-ink-2)] cursor-pointer">
+          {/* `accent-color`: sin esto el navegador lo pinta de su azul. */}
           <input
             type="checkbox"
+            className="size-3.5 cursor-pointer accent-[var(--arca-accent)]"
             disabled={!canEdit}
             checked={anexoIMuestraComparativo(labels)}
             onChange={(e) =>

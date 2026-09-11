@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   ArrowDownWideNarrow,
   CheckCheck,
@@ -23,7 +24,6 @@ import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
   ConteoResultados,
   LimpiarFiltros,
-  botonHeader,
   chipFiltro,
   chipMasFiltros,
 } from '@/components/shared/filtros';
@@ -112,14 +112,10 @@ export function InboxHeader({
               vistas. */}
           <SelectorClienteGlobal />
 
-          <button
-            type="button"
-            onClick={onMarcarTodasLeidas}
-            className={botonHeader}
-          >
+          <Button size="sm" onClick={onMarcarTodasLeidas}>
             <CheckCheck className="size-3.5" />
             Marcar todas leídas
-          </button>
+          </Button>
         </>
       }
       filters={
@@ -137,7 +133,7 @@ export function InboxHeader({
                 aria-selected={filtros.estado === t.valor}
                 onClick={() => onFiltro({ estado: t.valor })}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-[5px] text-[12.5px] font-medium transition-colors duration-[120ms]',
+                  'flex h-[26px] items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
                   filtros.estado === t.valor
                     ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
                     : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
@@ -164,6 +160,7 @@ export function InboxHeader({
               sacaba: Radix abre en pointerdown, así que el menú se desplegaba
               antes de que el click llegara a cortarse. */}
           <SearchableSelect
+            size="sm"
             value={filtros.categoria || 'all'}
             onValueChange={(v) => onFiltro({ categoria: v === 'all' ? '' : v })}
             placeholder="Categoría"
@@ -179,6 +176,7 @@ export function InboxHeader({
           />
 
           <SearchableSelect
+            size="sm"
             value={filtros.severidad || 'all'}
             onValueChange={(v) => onFiltro({ severidad: v === 'all' ? '' : v })}
             placeholder="Importancia"

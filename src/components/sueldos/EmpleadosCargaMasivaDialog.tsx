@@ -251,7 +251,7 @@ export function EmpleadosCargaMasivaDialog({
                 {result.created} empleado(s) cargados
               </p>
               {result.errors.length > 0 && (
-                <ul className="mt-2 max-h-32 overflow-y-auto text-[var(--arca-accent-neg)]">
+                <ul className="mt-2 max-h-32 overflow-y-auto text-[var(--arca-accent-neg-fg)]">
                   {result.errors.map((e, i) => (
                     <li key={i}>
                       Fila {e.row}: {e.message}

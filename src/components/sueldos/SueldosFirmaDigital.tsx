@@ -13,9 +13,7 @@ interface SueldosFirmaDigitalProps {
   clientId: string;
 }
 
-export function SueldosFirmaDigital({
-  clientId,
-}: SueldosFirmaDigitalProps) {
+export function SueldosFirmaDigital({ clientId }: SueldosFirmaDigitalProps) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
@@ -92,7 +90,10 @@ export function SueldosFirmaDigital({
       </div>
 
       {/* Description */}
-      <p className="text-[13.5px] mb-[22px]" style={{ color: 'var(--arca-ink-3)' }}>
+      <p
+        className="text-[13.5px] mb-[22px]"
+        style={{ color: 'var(--arca-ink-3)' }}
+      >
         La imagen se imprimirá sobre la línea &quot;Firma y sello del
         empleador&quot; en todos los recibos de esta empresa.
       </p>
@@ -101,8 +102,11 @@ export function SueldosFirmaDigital({
         /* Signature preview */
         <div className="flex items-center gap-5">
           <div
-            className="flex h-24 w-56 items-center justify-center rounded-[10px] p-2"
-            style={{ border: '1px solid var(--arca-border)', background: 'var(--arca-surface-2)' }}
+            className="flex h-24 w-56 items-center justify-center rounded-lg p-2"
+            style={{
+              border: '1px solid var(--arca-border)',
+              background: 'var(--arca-surface-2)',
+            }}
           >
             <img
               src={firmaUrl}
@@ -115,7 +119,7 @@ export function SueldosFirmaDigital({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={saving}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13px] font-semibold h-9 px-4 hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
               style={{ color: 'var(--arca-ink-2)' }}
             >
               <Upload style={{ width: 14, height: 14 }} />
@@ -125,11 +129,14 @@ export function SueldosFirmaDigital({
               type="button"
               onClick={handleRemove}
               disabled={saving}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13px] font-semibold h-9 px-4 hover:bg-[var(--arca-surface-2)] disabled:opacity-50 flex items-center gap-2 transition-colors"
               style={{ color: 'var(--arca-accent-neg)' }}
             >
               {saving ? (
-                <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+                <Loader2
+                  style={{ width: 14, height: 14 }}
+                  className="animate-spin"
+                />
               ) : (
                 <X style={{ width: 14, height: 14 }} />
               )}
@@ -148,22 +155,31 @@ export function SueldosFirmaDigital({
         >
           {/* Upload icon tile */}
           <div
-            className="w-11 h-11 rounded-[10px] bg-white flex items-center justify-center mb-[14px]"
+            className="w-11 h-11 rounded-lg bg-white flex items-center justify-center mb-[14px]"
             style={{ border: '1px solid var(--arca-border)' }}
           >
-            <Upload style={{ width: 18, height: 18, color: 'var(--arca-ink-4)' }} />
+            <Upload
+              style={{ width: 18, height: 18, color: 'var(--arca-ink-4)' }}
+            />
           </div>
-          <p className="text-[13px] mb-[18px] max-w-[320px]" style={{ color: 'var(--arca-ink-4)' }}>
-            Arrastrá una imagen (PNG con fondo transparente) o subila desde tu equipo.
+          <p
+            className="text-[13px] mb-[18px] max-w-[320px]"
+            style={{ color: 'var(--arca-ink-4)' }}
+          >
+            Arrastrá una imagen (PNG con fondo transparente) o subila desde tu
+            equipo.
           </p>
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={saving}
-            className="bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] disabled:opacity-50 flex items-center gap-2 transition-colors"
+            className="bg-[var(--arca-accent)] text-white rounded-lg h-9 px-4 text-[13px] font-semibold hover:bg-[var(--arca-accent-hover)] disabled:opacity-50 flex items-center gap-2 transition-colors"
           >
             {saving ? (
-              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+              <Loader2
+                style={{ width: 14, height: 14 }}
+                className="animate-spin"
+              />
             ) : (
               <Upload style={{ width: 14, height: 14 }} />
             )}

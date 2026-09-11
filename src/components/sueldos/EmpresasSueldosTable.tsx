@@ -10,10 +10,15 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Plus, Users, X } from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toast } from 'sonner';
 
 import { DataTable } from '@/components/ui/data-table';
-import { Badge } from '@/components/ui/badge';
+import { Badge, BadgeDot } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
@@ -173,9 +178,15 @@ export function EmpresasSueldosTable({
       header: 'Estado',
       cell: ({ row }) =>
         row.original.estado === 'activo' ? (
-          <Badge variant="outline">Activo</Badge>
+          <Badge variant="success">
+            <BadgeDot />
+            Activo
+          </Badge>
         ) : (
-          <Badge variant="secondary">{row.original.estado}</Badge>
+          <Badge>
+            <BadgeDot />
+            {row.original.estado}
+          </Badge>
         ),
     },
     {
@@ -185,19 +196,24 @@ export function EmpresasSueldosTable({
         const e = row.original;
         return (
           <div onClick={(ev) => ev.stopPropagation()} className="text-right">
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              disabled={togglear.isPending}
-              title={`Quitar ${e.razonSocial} de Sueldos (no borra nada; se re-agrega cuando quieras)`}
-              aria-label={`Quitar ${e.razonSocial} de Sueldos`}
-              onClick={() =>
-                togglear.mutate({ clientId: e.id, liquidaSueldos: false })
-              }
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={togglear.isPending}
+                  aria-label={`Quitar ${e.razonSocial} de Sueldos`}
+                  onClick={() =>
+                    togglear.mutate({ clientId: e.id, liquidaSueldos: false })
+                  }
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">
+                Quitar de Sueldos — no borra nada, se re-agrega cuando quieras
+              </TooltipContent>
+            </Tooltip>
           </div>
         );
       },
@@ -213,6 +229,9 @@ export function EmpresasSueldosTable({
       // global del header.
       pagination
       pageSize={20}
+      // Sin checkbox: no hay ninguna acción en lote sobre estas filas, y el
+      // click en la fila abre el módulo de la empresa.
+      showSelection={false}
       emptyMessage="Ninguna empresa liquida sueldos todavía — agregá la primera con el + de arriba"
       onRowClick={(row) => onSelect(row.id)}
     />
@@ -257,16 +276,18 @@ export function AgregarEmpresaDialog() {
         if (!o) setElegida('');
       }}
     >
-      <DialogTrigger asChild>
-        <Button
-          size="icon"
-          aria-label="Agregar empresa a Sueldos"
-          title="Agregar empresa a Sueldos"
-          className="bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-        </Button>
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
+            {/* El acento ya lo pone la variante `default` del botón: no hace
+                falta repintarlo con clases. */}
+            <Button size="icon" aria-label="Agregar empresa a Sueldos">
+              <Plus className="size-3.5" strokeWidth={2.2} />
+            </Button>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Agregar empresa a Sueldos</TooltipContent>
+      </Tooltip>
       <DialogContent className="sm:max-w-[440px]">
         <DialogHeader>
           <DialogTitle>Agregar empresa a Sueldos</DialogTitle>

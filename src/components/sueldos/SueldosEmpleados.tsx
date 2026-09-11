@@ -10,8 +10,6 @@ import {
   Pencil,
   Save,
   Search,
-  ChevronLeft,
-  ChevronRight,
   FileText,
   Bookmark,
   BookmarkCheck,
@@ -22,6 +20,22 @@ import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge, BadgeDot } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Paginador } from '@/components/shared/paginador';
+import { chipFiltro } from '@/components/shared/filtros';
 import { Label } from '@/components/ui/label';
 import {
   Dialog,
@@ -1917,19 +1931,16 @@ export function SueldosEmpleados({
 
       {/* Top action row */}
       <div className="flex items-center justify-between gap-2">
-        <p
-          className="break-words"
-          style={{ fontSize: '13.5px', color: 'var(--arca-ink-4)' }}
-        >
+        <span className="text-[12.5px] font-medium break-words text-[var(--arca-ink-3)]">
           Empleados del perfil fiscal (importados desde LSD o creados
-          manualmente).
-        </p>
+          manualmente)
+        </span>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={() => sincronizar.mutate()}
             disabled={sincronizar.isPending}
-            className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ color: 'var(--arca-ink-2)' }}
           >
             <RefreshCw
@@ -1941,7 +1952,7 @@ export function SueldosEmpleados({
           <button
             type="button"
             onClick={() => setOpen(true)}
-            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors"
+            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg h-9 px-4 text-[13px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors"
           >
             <Plus style={{ width: 14, height: 14 }} />
             Nuevo empleado
@@ -1949,360 +1960,258 @@ export function SueldosEmpleados({
         </div>
       </div>
 
-      {/* Search + filter row */}
-      <div className="flex items-center gap-3">
-        <div className="relative" style={{ width: 320 }}>
-          <Search
-            className="absolute top-1/2 -translate-y-1/2"
-            style={{
-              left: 13,
-              width: 14,
-              height: 14,
-              color: 'var(--arca-ink-4)',
-            }}
-          />
+      {/* Buscador y filtro del sistema: el input de 32px que usan Facturas y
+        Notificaciones, y el estado como chip —un checkbox negro no es un
+        control de filtro en esta plataforma. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute top-[8px] left-2 size-4 text-[var(--arca-ink-4)]" />
           <Input
             placeholder="Buscar por nombre, CUIL o legajo…"
             value={busqueda}
             onChange={(e) => handleBusqueda(e.target.value)}
-            className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] h-auto py-[8px] pr-[13px] shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-            style={{ paddingLeft: 36 }}
+            className="h-8 w-[280px] pl-8 text-[12.5px]"
           />
         </div>
-        <label
-          className="flex cursor-pointer items-center gap-2 select-none"
-          style={{ fontSize: '13.5px', color: 'var(--arca-ink-3)' }}
-        >
-          <span
-            className="relative flex items-center justify-center shrink-0"
-            style={{ width: 19, height: 19 }}
-          >
-            <input
-              type="checkbox"
-              checked={ocultarBajas}
-              onChange={(e) => {
-                setOcultarBajas(e.target.checked);
-                setPagina(1);
-              }}
-              className="peer absolute opacity-0 inset-0 w-full h-full cursor-pointer"
-            />
-            <span
-              className="pointer-events-none flex items-center justify-center rounded-[4px] transition-colors"
-              style={{
-                width: 19,
-                height: 19,
-                backgroundColor: ocultarBajas ? 'var(--arca-ink)' : '#FFFFFF',
-                border: ocultarBajas
-                  ? 'none'
-                  : '1px solid var(--arca-border-strong)',
-              }}
-            >
-              {ocultarBajas && (
-                <svg width="11" height="8" viewBox="0 0 11 8" fill="none">
-                  <path
-                    d="M1 3.5L4 6.5L10 1"
-                    stroke="white"
-                    strokeWidth="1.7"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
-            </span>
-          </span>
-          Ocultar bajas
-        </label>
-      </div>
-
-      {/* Navy-header grid table */}
-      <div className="w-full min-w-0 max-w-full overflow-x-auto">
-        {/* Header */}
-        <div
-          className="grid items-center bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] rounded-t-[10px] px-5"
-          style={{
-            height: 44,
-            gridTemplateColumns: '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
-            fontSize: '10.5px',
-            fontWeight: 600,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
+        <button
+          type="button"
+          aria-pressed={ocultarBajas}
+          onClick={() => {
+            setOcultarBajas(!ocultarBajas);
+            setPagina(1);
           }}
+          className={chipFiltro(ocultarBajas)}
         >
-          <span>Nombre</span>
-          <span>CUIL</span>
-          <span>Legajo</span>
-          <span>Fecha alta</span>
-          <span>Categoría</span>
-          <span>Estado</span>
-          <span>Recibos</span>
-          <span />
-        </div>
-
-        {/* Body */}
-        <div className="border border-t-0 border-[var(--arca-border)] rounded-b-[10px] overflow-hidden">
-          {isLoading ? (
-            <div
-              className="flex items-center justify-center py-8"
-              style={{ color: 'var(--arca-ink-4)', fontSize: 13 }}
-            >
-              Cargando…
-            </div>
-          ) : filtrados.length === 0 ? (
-            <div
-              className="flex items-center justify-center py-8 px-5 text-center"
-              style={{ color: 'var(--arca-ink-4)', fontSize: 13 }}
-            >
-              {busqueda
-                ? 'Sin resultados para la búsqueda.'
-                : ocultarBajas
-                  ? 'No hay empleados activos. Desactivá "Ocultar bajas" para ver todos.'
-                  : 'No hay empleados para este perfil. Importá el Excel de empleados o creá uno manualmente.'}
-            </div>
-          ) : (
-            paginaRows.map((r) => {
-              const e = r.empleado;
-              const baja = e.fechaBaja != null;
-              const esManual = e.fuente === 'manual';
-              return (
-                <div
-                  key={e.id}
-                  className="grid items-center px-5 border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-[background] duration-[120ms] cursor-pointer last:border-b-0"
-                  style={{
-                    gridTemplateColumns:
-                      '1.7fr 1.2fr 0.6fr 1fr 1.6fr 0.9fr 0.9fr auto',
-                    paddingTop: 14,
-                    paddingBottom: 14,
-                  }}
-                  onClick={() => setDetalleRow(r)}
-                >
-                  {/* Nombre */}
-                  <span
-                    className="min-w-0 break-words pr-3"
-                    style={{
-                      fontSize: '13.5px',
-                      fontWeight: 600,
-                      color: 'var(--arca-ink)',
-                    }}
-                  >
-                    {formatTitleCaseDisplay(e.nombre)}
-                  </span>
-
-                  {/* CUIL */}
-                  <span
-                    className="font-[family-name:var(--ff-mono)] whitespace-nowrap"
-                    style={{ fontSize: '12.5px', color: 'var(--arca-ink-2)' }}
-                  >
-                    {e.cuil}
-                  </span>
-
-                  {/* Legajo */}
-                  <span
-                    className="tabular-nums whitespace-nowrap"
-                    style={{ fontSize: 13, color: 'var(--arca-ink-2)' }}
-                  >
-                    {legajoParaMostrar(e.legajo)}
-                  </span>
-
-                  {/* Fecha alta */}
-                  <span
-                    className="tabular-nums whitespace-nowrap"
-                    style={{ fontSize: 13, color: 'var(--arca-ink-2)' }}
-                  >
-                    {formatDate(e.fechaAlta ?? undefined)}
-                  </span>
-
-                  {/* Categoría */}
-                  <span
-                    className="min-w-0 break-words pr-3"
-                    style={{ fontSize: 13, color: 'var(--arca-ink-2)' }}
-                  >
-                    {r.categoriaNombre
-                      ? formatTitleCaseDisplay(r.categoriaNombre)
-                      : formatTitleCaseDisplay(e.categoriaTexto)}
-                  </span>
-
-                  {/* Estado */}
-                  <div onClick={(ev) => ev.stopPropagation()}>
-                    {baja ? (
-                      <button
-                        type="button"
-                        disabled={reactivar.isPending}
-                        title="Reactivar empleado"
-                        onClick={() => reactivar.mutate(e.id)}
-                        className="inline-flex items-center gap-1 rounded-full cursor-pointer hover:opacity-75 transition-opacity"
-                        style={{
-                          color: 'oklch(0.45 0.13 20)',
-                          backgroundColor: 'oklch(0.94 0.04 20)',
-                          padding: '2px 9px',
-                          fontSize: 11,
-                          fontWeight: 600,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        <span
-                          className="rounded-full shrink-0"
-                          style={{
-                            width: 5,
-                            height: 5,
-                            backgroundColor: 'oklch(0.55 0.18 20)',
-                          }}
-                        />
-                        Baja {e.fechaBaja ? formatDate(e.fechaBaja) : ''}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        title="Dar de baja"
-                        onClick={() => {
-                          setFechaBajaInput(format(new Date(), 'yyyy-MM-dd'));
-                          setDialogBaja({ id: e.id, nombre: e.nombre });
-                        }}
-                        className="inline-flex items-center gap-1 rounded-full cursor-pointer hover:opacity-75 transition-opacity"
-                        style={{
-                          color: 'oklch(0.45 0.13 160)',
-                          backgroundColor: 'oklch(0.94 0.04 160)',
-                          padding: '2px 9px',
-                          fontSize: 11,
-                          fontWeight: 600,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        <span
-                          className="rounded-full shrink-0"
-                          style={{
-                            width: 5,
-                            height: 5,
-                            backgroundColor: 'oklch(0.55 0.18 160)',
-                          }}
-                        />
-                        Activo
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Recibos */}
-                  <div
-                    className="flex items-center justify-end gap-0.5"
-                    onClick={(ev) => ev.stopPropagation()}
-                  >
-                    {onVerRecibos && (
-                      <button
-                        type="button"
-                        title="Ver recibos del empleado"
-                        onClick={() => onVerRecibos(e.id)}
-                        className="flex items-center justify-center rounded-md hover:bg-[var(--arca-surface-2)] transition-colors"
-                        style={{
-                          width: 28,
-                          height: 28,
-                          color: 'var(--arca-ink-4)',
-                        }}
-                      >
-                        <FileText style={{ width: 15, height: 15 }} />
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      title={
-                        plantillaEmpleadoId === e.id
-                          ? 'Quitar como plantilla base'
-                          : 'Usar como plantilla base para nuevos recibos'
-                      }
-                      disabled={setPlantilla.isPending}
-                      onClick={() =>
-                        setPlantilla.mutate(
-                          plantillaEmpleadoId === e.id ? null : e.id
-                        )
-                      }
-                      className="flex items-center justify-center rounded-md hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40"
-                      style={{
-                        width: 28,
-                        height: 28,
-                        color:
-                          plantillaEmpleadoId === e.id
-                            ? '#d97706'
-                            : 'var(--arca-ink-4)',
-                      }}
-                    >
-                      {plantillaEmpleadoId === e.id ? (
-                        <BookmarkCheck style={{ width: 15, height: 15 }} />
-                      ) : (
-                        <Bookmark style={{ width: 15, height: 15 }} />
-                      )}
-                    </button>
-                  </div>
-
-                  {/* Delete (manual only) */}
-                  <div onClick={(ev) => ev.stopPropagation()}>
-                    {esManual && (
-                      <button
-                        type="button"
-                        disabled={eliminar.isPending}
-                        onClick={() => eliminar.mutate(e.id)}
-                        className="flex items-center justify-center rounded-md hover:bg-[#FEF2F2] transition-colors disabled:opacity-40"
-                        style={{
-                          width: 28,
-                          height: 28,
-                          color: 'var(--arca-accent-neg)',
-                        }}
-                      >
-                        <Trash2 style={{ width: 14, height: 14 }} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+          Ocultar bajas
+        </button>
       </div>
 
-      {/* Pagination */}
-      {!isLoading && filtrados.length > 0 && (
-        <div className="flex items-center justify-between py-4 px-[2px]">
-          <span style={{ fontSize: '12.5px', color: 'var(--arca-ink-4)' }}>
-            {filtrados.length === rows.length
-              ? `${rows.length} empleados`
-              : `${filtrados.length} de ${rows.length} empleados`}
-            {' · '}página {paginaActual} de {totalPaginas}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPagina((p) => Math.max(1, p - 1))}
-              disabled={paginaActual === 1}
-              className="inline-flex items-center gap-1.5 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
-              style={{
-                color:
-                  paginaActual === 1
-                    ? 'var(--arca-ink-4)'
-                    : 'var(--arca-ink-2)',
-                opacity: paginaActual === 1 ? 0.6 : 1,
-                cursor: paginaActual === 1 ? 'default' : 'pointer',
-              }}
-            >
-              <ChevronLeft style={{ width: 14, height: 14 }} />
-              Anterior
-            </button>
-            <button
-              type="button"
-              onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-              disabled={paginaActual === totalPaginas}
-              className="inline-flex items-center gap-1.5 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[7px] text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
-              style={{
-                color:
-                  paginaActual === totalPaginas
-                    ? 'var(--arca-ink-4)'
-                    : 'var(--arca-ink-2)',
-                opacity: paginaActual === totalPaginas ? 0.6 : 1,
-                cursor: paginaActual === totalPaginas ? 'default' : 'pointer',
-              }}
-            >
-              Siguiente
-              <ChevronRight style={{ width: 14, height: 14 }} />
-            </button>
-          </div>
-        </div>
-      )}
+      {/* La tabla del sistema: `Table` de shadcn dentro de una card, con el
+        paginado compartido adentro. Era una grilla de divs con su propio
+        header, sus propios badges pintados a mano en oklch y un paginador
+        de dos botones "Anterior/Siguiente" que no decía en qué página se
+        estaba ni dejaba saltar. */}
+      <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)] [&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
+        <Table className="table-fixed">
+          <colgroup>
+            <col style={{ width: '24%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '8%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '19%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '12%' }} />
+          </colgroup>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nombre</TableHead>
+              <TableHead>CUIL</TableHead>
+              <TableHead className="text-right">Legajo</TableHead>
+              <TableHead className="text-right">Fecha alta</TableHead>
+              <TableHead>Categoría</TableHead>
+              <TableHead>Estado</TableHead>
+              <TableHead className="text-right">Recibos</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="py-8 text-center text-[13px] text-[var(--arca-ink-3)]"
+                >
+                  Cargando…
+                </TableCell>
+              </TableRow>
+            ) : filtrados.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={7}
+                  className="py-8 text-center text-[13px] text-[var(--arca-ink-3)]"
+                >
+                  {busqueda
+                    ? 'Sin resultados para la búsqueda.'
+                    : ocultarBajas
+                      ? 'No hay empleados activos. Sacá el filtro "Ocultar bajas" para ver todos.'
+                      : 'No hay empleados para este perfil. Importá el Excel de empleados o creá uno manualmente.'}
+                </TableCell>
+              </TableRow>
+            ) : (
+              paginaRows.map((r) => {
+                const e = r.empleado;
+                const baja = e.fechaBaja != null;
+                const esManual = e.fuente === 'manual';
+                return (
+                  <TableRow
+                    key={e.id}
+                    className="cursor-pointer"
+                    onClick={() => setDetalleRow(r)}
+                  >
+                    <TableCell className="truncate font-medium text-[var(--arca-ink)]">
+                      {formatTitleCaseDisplay(e.nombre)}
+                    </TableCell>
+                    <TableCell className="tabular-nums [font-family:var(--ff-mono)]">
+                      {e.cuil}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {legajoParaMostrar(e.legajo)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums [font-family:var(--ff-mono)]">
+                      {formatDate(e.fechaAlta ?? undefined)}
+                    </TableCell>
+                    <TableCell className="truncate">
+                      {r.categoriaNombre
+                        ? formatTitleCaseDisplay(r.categoriaNombre)
+                        : formatTitleCaseDisplay(e.categoriaTexto)}
+                    </TableCell>
+
+                    {/* El badge es el botón: click alterna alta/baja. */}
+                    <TableCell onClick={(ev) => ev.stopPropagation()}>
+                      {baja ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              asChild
+                              variant="error"
+                              size="sm"
+                              className="cursor-pointer hover:opacity-80"
+                            >
+                              <button
+                                type="button"
+                                disabled={reactivar.isPending}
+                                onClick={() => reactivar.mutate(e.id)}
+                              >
+                                <BadgeDot />
+                                Baja
+                              </button>
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Reactivar empleado
+                            {e.fechaBaja
+                              ? ` · baja ${formatDate(e.fechaBaja)}`
+                              : ''}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge
+                              asChild
+                              variant="success"
+                              size="sm"
+                              className="cursor-pointer hover:opacity-80"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFechaBajaInput(
+                                    format(new Date(), 'yyyy-MM-dd')
+                                  );
+                                  setDialogBaja({ id: e.id, nombre: e.nombre });
+                                }}
+                              >
+                                <BadgeDot />
+                                Activo
+                              </button>
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>Dar de baja</TooltipContent>
+                        </Tooltip>
+                      )}
+                    </TableCell>
+
+                    <TableCell
+                      className="text-right"
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-end gap-0.5">
+                        {onVerRecibos && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label="Ver recibos del empleado"
+                                onClick={() => onVerRecibos(e.id)}
+                              >
+                                <FileText className="size-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              Ver recibos del empleado
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              disabled={setPlantilla.isPending}
+                              aria-label="Usar como plantilla base"
+                              className={
+                                plantillaEmpleadoId === e.id
+                                  ? 'text-[var(--arca-accent-warn-fg)]'
+                                  : undefined
+                              }
+                              onClick={() =>
+                                setPlantilla.mutate(
+                                  plantillaEmpleadoId === e.id ? null : e.id
+                                )
+                              }
+                            >
+                              {plantillaEmpleadoId === e.id ? (
+                                <BookmarkCheck className="size-3.5" />
+                              ) : (
+                                <Bookmark className="size-3.5" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {plantillaEmpleadoId === e.id
+                              ? 'Quitar como plantilla base'
+                              : 'Usar como plantilla base para nuevos recibos'}
+                          </TooltipContent>
+                        </Tooltip>
+                        {esManual && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={eliminar.isPending}
+                                aria-label="Eliminar empleado"
+                                className="text-[var(--arca-accent-neg)] hover:bg-[var(--arca-accent-neg-bg)] hover:text-[var(--arca-accent-neg-fg)]"
+                                onClick={() => eliminar.mutate(e.id)}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Eliminar empleado</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+
+        {!isLoading && filtrados.length > 0 && (
+          <Paginador
+            className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
+            pagina={paginaActual}
+            totalPaginas={totalPaginas}
+            onPagina={setPagina}
+            total={filtrados.length}
+            unidad="empleado"
+            unidadPlural="empleados"
+          />
+        )}
+      </div>
 
       <NuevoEmpleadoDialog
         open={open}

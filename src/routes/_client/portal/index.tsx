@@ -375,13 +375,13 @@ function PortalDashboard() {
                   ? `mailto:${contador.email}?subject=${encodeURIComponent(`Consulta — ${cliente.razonSocial} (${cliente.cuit})`)}`
                   : '#'
               }
-              className="flex h-9 items-center justify-center rounded-[10px] bg-[var(--arca-bg)] text-[13px] font-semibold text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-white"
+              className="flex h-9 items-center justify-center rounded-lg bg-[var(--arca-bg)] text-[13px] font-semibold text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-white"
             >
               Enviar consulta
             </a>
             <Link
               to="/portal/solicitudes"
-              className="flex h-[34px] items-center justify-center rounded-[10px] border border-white/[0.14] text-[12.5px] font-medium text-[var(--arca-bg)] transition-colors duration-[120ms] hover:bg-white/[0.06]"
+              className="flex h-[34px] items-center justify-center rounded-lg border border-white/[0.14] text-[12.5px] font-medium text-[var(--arca-bg)] transition-colors duration-[120ms] hover:bg-white/[0.06]"
             >
               Ver lo que te pide el estudio
               {solicitudesAbiertas.length > 0 &&
@@ -422,7 +422,7 @@ function Pildora({
 }) {
   return (
     <span
-      className="rounded-[20px] px-[9px] py-0.5 text-[11px] font-medium"
+      className="rounded-md px-[9px] py-0.5 text-[11px] font-medium"
       style={{
         color: `var(--arca-accent-${tono}-fg)`,
         background: `var(--arca-accent-${tono}-bg)`,
@@ -483,7 +483,7 @@ function FilaDeuda({ deuda }: { deuda: DeudaFila }) {
           </span>
           {etiqueta && (
             <span
-              className="rounded-[20px] px-2 py-px text-[10.5px] font-medium"
+              className="rounded-md px-2 py-px text-[10.5px] font-medium"
               style={{
                 color: `var(--arca-accent-${etiqueta.tono}-fg)`,
                 background: `var(--arca-accent-${etiqueta.tono}-bg)`,
@@ -494,7 +494,7 @@ function FilaDeuda({ deuda }: { deuda: DeudaFila }) {
           )}
           {deuda.intimada && (
             <span
-              className="rounded-[20px] px-2 py-px text-[10.5px] font-medium"
+              className="rounded-md px-2 py-px text-[10.5px] font-medium"
               style={{
                 color: 'var(--arca-accent-info-fg)',
                 background: 'var(--arca-accent-info-bg)',

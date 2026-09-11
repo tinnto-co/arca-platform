@@ -59,8 +59,9 @@ interface Props {
   orden?: 'fecha' | 'prioridad';
 }
 
+/** Mismo contorno que `<Badge size="sm">`: radio 6, 20px de alto, 11/500. */
 const PILL =
-  'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium';
+  'inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium';
 
 export function ListaNotificaciones({
   notificaciones,

@@ -40,7 +40,6 @@ import {
   History,
   Copy,
   Ban,
-  ChevronLeft,
   Download,
   FileSpreadsheet,
   Workflow,
@@ -56,6 +55,7 @@ import {
   Boxes,
   CheckCircle2,
   XCircle,
+  X,
   Check,
   Bookmark,
   BookmarkPlus,
@@ -113,6 +113,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Button } from '@/components/ui/button';
+import { Badge, BadgeDot } from '@/components/ui/badge';
+import { Ayuda } from '@/components/shared/ayuda';
+import { Paginador } from '@/components/shared/paginador';
+import { chipFiltro, LimpiarFiltros } from '@/components/shared/filtros';
 import {
   Popover,
   PopoverContent,
@@ -360,8 +365,10 @@ export const Route = createFileRoute('/_authed/accounting/')({
 });
 
 /* ─── Shared styles ─── */
+/** El `focus:outline-none` pelado dejaba los inputs sin ninguna marca de
+ *  foco: ahora toman el borde y el anillo de acento del sistema. */
 const INPUT_CLASS =
-  'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
+  'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border-strong)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)]';
 
 /* ─── Barra de filtros y acciones ─── */
 
@@ -375,16 +382,12 @@ const INPUT_CLASS =
  * la acción principal sin nada que los distinguiera, y el hueco de la
  * izquierda la hacía leer como una tira suelta.
  */
-const TOOLBAR_ACCIONES = 'ml-auto flex items-center gap-1.5';
-const TOOLBAR_SEP = 'w-px h-5 mx-1 shrink-0 bg-[var(--arca-border)]';
 const TOOLBAR_BTN =
   'flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors';
 /** Solo icono: los controles de vista se repiten en cada pantalla y el rótulo
  *  costaba el ancho que necesitaban los filtros. El nombre va en el `title`. */
 const TOOLBAR_ICON_BTN =
   'flex items-center justify-center h-7 w-7 rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors';
-const TOOLBAR_BTN_PRIMARIO =
-  'flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity';
 
 /* ─── Badges ─── */
 function TypeBadge({ type }: { type: 'imputable' | 'grupo' }) {
@@ -589,12 +592,8 @@ function TabBar({
       const anchoSolapa = anchos.slice(0, solapas.length);
       const disponible = bar.getBoundingClientRect().width;
       const GAP = 4;
-      const SEPARADOR = 1 + 8 * 2; // línea + su margen (mx-2)
 
-      const extra = (i: number) =>
-        anchoSolapa[i] +
-        (i === 0 ? 0 : GAP) +
-        (i > 0 && solapas[i].grupo !== solapas[i - 1].grupo ? SEPARADOR : 0);
+      const extra = (i: number) => anchoSolapa[i] + (i === 0 ? 0 : GAP);
 
       const todas = anchoSolapa.reduce((s, _, i) => s + extra(i), 0);
       if (todas <= disponible) {
@@ -633,21 +632,26 @@ function TabBar({
     ? desbordan.filter((t) => t.id !== active)
     : desbordan;
 
+  /**
+   * Tab de sección: subrayada, no un bloque de tinta.
+   *
+   * El subrayado se apoya en el borde de 1px de la barra —de ahí el
+   * `-mb-1.5`, que lo baja a esa línea— y por eso antes "colgaba": le
+   * faltaba el borde del contenedor, que hoy sí está.
+   */
   const claseSolapa =
-    'flex items-center gap-1.5 px-2 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap';
-  const estiloSolapa = (id: Tab) => ({
-    // El activo se marca con fondo y no con subrayado: el subrayado colgaba
-    // del borde de la barra y dejó de tener dónde apoyarse.
-    background: active === id ? 'var(--arca-ink)' : 'transparent',
-    color: active === id ? 'var(--arca-surface)' : 'var(--arca-ink-3)',
-  });
+    'flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 pb-2 -mb-1.5 text-[13px] transition-colors duration-[120ms]';
+  const claseActiva = (id: Tab) =>
+    active === id
+      ? 'border-[var(--arca-accent)] font-semibold text-[var(--arca-ink)]'
+      : 'font-medium text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)]';
 
   const contenido = (tab: (typeof solapas)[number]) => (
     <>
       <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
       {tab.label}
       {tab.id === 'pendientes' && pendingCount > 0 && (
-        <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+        <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
           {pendingCount}
         </span>
       )}
@@ -673,20 +677,13 @@ function TabBar({
       ref={barRef}
       className="relative flex items-center gap-1 mb-5 pb-1.5 border-b border-[var(--arca-border)]"
     >
-      {mostradas.map((tab, i) => (
+      {mostradas.map((tab) => (
         <Fragment key={tab.id}>
-          {i > 0 && tab.grupo !== mostradas[i - 1].grupo && (
-            <span
-              aria-hidden
-              className="w-px h-4 mx-2 shrink-0 bg-[var(--arca-border)]"
-            />
-          )}
           <button
             onClick={() => onChange(tab.id)}
             aria-current={active === tab.id ? 'page' : undefined}
             title={`${tab.grupo} · ${tab.label}`}
-            className={claseSolapa}
-            style={estiloSolapa(tab.id)}
+            className={cn(claseSolapa, claseActiva(tab.id))}
           >
             {contenido(tab)}
           </button>
@@ -717,7 +714,7 @@ function TabBar({
                   />
                   {tab.label}
                   {tab.id === 'pendientes' && pendingCount > 0 && (
-                    <span className="ml-auto text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+                    <span className="ml-auto rounded-full bg-[var(--arca-accent-neg-bg)] px-1.5 py-px text-[10.5px] font-semibold tabular-nums text-[var(--arca-accent-neg-fg)] [font-family:var(--ff-mono)]">
                       {pendingCount}
                     </span>
                   )}
@@ -1093,8 +1090,18 @@ function PlanDeCuentas({
       return next;
     });
 
-  const expandAll = () => setExpanded(new Set(accounts.map((a) => a.id)));
-  const collapseAll = () => setExpanded(new Set());
+  /** Con todo abierto el botón colapsa; si no, expande. Eran dos botones
+   *  seguidos donde uno siempre sobraba. */
+  const todoExpandido = accounts.length > 0 && expanded.size >= accounts.length;
+  const alternarArbol = () =>
+    setExpanded(todoExpandido ? new Set() : new Set(accounts.map((a) => a.id)));
+
+  /** Cuántos filtros están puestos, para ofrecer limpiarlos. */
+  const filtrosPuestos =
+    (search ? 1 : 0) +
+    (rubro ? 1 : 0) +
+    (origin !== 'all' ? 1 : 0) +
+    (onlyActive ? 1 : 0);
 
   function onToggleActive(account: ChartAccount) {
     if (account.isActive) {
@@ -1277,172 +1284,183 @@ function PlanDeCuentas({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          {/* Elástico a propósito: es el único control que puede ceder ancho.
-              Con ancho fijo, la barra entraba por un pelo y cualquier
-              diferencia de renderizado la mandaba a un segundo renglón. */}
-          <div className="relative flex-1 min-w-[150px] max-w-[260px]">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--arca-ink-3)]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar código o nombre…"
-              className={`${INPUT_CLASS} pl-7 w-full`}
-            />
-          </div>
-
-          <Select
-            value={rubro === '' ? 'all' : rubro}
-            onValueChange={(v) => setRubro(v === 'all' ? '' : v)}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los rubros</SelectItem>
-              {ACCOUNT_GROUP_SECTIONS.map((sec) => (
-                <SelectGroup key={sec.section}>
-                  <SelectLabel>{sec.section}</SelectLabel>
-                  {sec.groups.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {ACCOUNT_GROUP_LABELS[g]}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={origin}
-            onValueChange={(v) => setOrigin(v as 'all' | 'base' | 'propia')}
-          >
-            <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Base y propias</SelectItem>
-              <SelectItem value="base">Solo base</SelectItem>
-              <SelectItem value="propia">Solo propias</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={onlyActive}
-              onChange={(e) => setOnlyActive(e.target.checked)}
-              className="accent-[var(--arca-accent)]"
-            />
-            Solo activas
-          </label>
-
-          {/* A la derecha, lo que se hace: primero abrir/cerrar el árbol, y
-              después las acciones. Las de armado inicial —plantillas, importar,
-              plan base— van juntas en un menú: se usan al dar de alta la
-              empresa y casi nunca más, pero ocupaban media barra. */}
-          <div className={TOOLBAR_ACCIONES}>
-            {/* Delimita las zonas aunque no sobre ancho: sin esto, cuando la
-                barra se llena los filtros y las acciones quedan pegados. */}
-            <span aria-hidden className={TOOLBAR_SEP} />
-            <button
-              onClick={expandAll}
-              title="Expandir todo el árbol"
-              aria-label="Expandir todo el árbol"
-              className={TOOLBAR_ICON_BTN}
-            >
-              <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
-            </button>
-            <button
-              onClick={collapseAll}
-              title="Colapsar todo el árbol"
-              aria-label="Colapsar todo el árbol"
-              className={TOOLBAR_ICON_BTN}
-            >
-              <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
-            </button>
-            {isOwner && (
-              <>
-                <span aria-hidden className={TOOLBAR_SEP} />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className={TOOLBAR_BTN}>
-                      <FileSpreadsheet className="w-3 h-3" strokeWidth={2} />
-                      Importar / Exportar
-                      <ChevronDown className="w-3 h-3" strokeWidth={2} />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuItem
-                      onClick={() =>
-                        void downloadChartTemplate({
-                          mode: 'blank',
-                          label: 'estudio',
-                        })
-                      }
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Plantilla vacía</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          Esqueleto de rubros para armar desde cero
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={accounts.length === 0}
-                      onClick={() =>
-                        void downloadChartTemplate({
-                          mode: 'current',
-                          accounts: accountsToTemplate(accounts),
-                        })
-                      }
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Plan actual</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          El plan de hoy, para editar y reimportar
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
-                      <Upload className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Importar desde Excel</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          Cargar el plan desde una planilla
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setFormMode({ kind: 'base-create' })}
-                    >
-                      <Layers className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Nueva cuenta del plan base</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          Se agrega al plan que comparten las empresas
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <button
-                  onClick={() => setFormMode({ kind: 'custom' })}
-                  className={TOOLBAR_BTN_PRIMARIO}
-                >
-                  <Plus className="w-3 h-3" strokeWidth={2.5} />
-                  Nueva cuenta
-                </button>
-              </>
-            )}
-          </div>
+      {/* Filtros afuera de la card, todos de 32px y en una línea. */}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        <div className="relative w-[240px]">
+          <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-[var(--arca-ink-4)]" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar código o nombre…"
+            className={cn(INPUT_CLASS, 'h-8 w-full pl-7')}
+          />
         </div>
 
+        <Select
+          value={rubro === '' ? 'all' : rubro}
+          onValueChange={(v) => setRubro(v === 'all' ? '' : v)}
+        >
+          <SelectTrigger size="sm" className="w-[180px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los rubros</SelectItem>
+            {ACCOUNT_GROUP_SECTIONS.map((sec) => (
+              <SelectGroup key={sec.section}>
+                <SelectLabel>{sec.section}</SelectLabel>
+                {sec.groups.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {ACCOUNT_GROUP_LABELS[g]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={origin}
+          onValueChange={(v) => setOrigin(v as 'all' | 'base' | 'propia')}
+        >
+          <SelectTrigger size="sm" className="w-[150px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Base y propias</SelectItem>
+            <SelectItem value="base">Solo base</SelectItem>
+            <SelectItem value="propia">Solo propias</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Chip, como "Incluir anulados" en Asientos. */}
+        <button
+          type="button"
+          aria-pressed={onlyActive}
+          onClick={() => setOnlyActive(!onlyActive)}
+          className={chipFiltro(onlyActive)}
+        >
+          Solo activas
+        </button>
+
+        {filtrosPuestos > 0 && (
+          <LimpiarFiltros
+            onLimpiar={() => {
+              setSearch('');
+              setRubro('');
+              setOrigin('all');
+              setOnlyActive(false);
+            }}
+          />
+        )}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={alternarArbol}
+                aria-label={
+                  todoExpandido ? 'Colapsar el árbol' : 'Expandir el árbol'
+                }
+                className={cn(TOOLBAR_ICON_BTN, 'size-8')}
+              >
+                {todoExpandido ? (
+                  <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
+                ) : (
+                  <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {todoExpandido
+                ? 'Colapsar todo el árbol'
+                : 'Expandir todo el árbol'}
+            </TooltipContent>
+          </Tooltip>
+          {isOwner && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={cn(TOOLBAR_BTN, 'h-8')}>
+                    <FileSpreadsheet className="w-3 h-3" strokeWidth={2} />
+                    Importar / Exportar
+                    <ChevronDown className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuItem
+                    onClick={() =>
+                      void downloadChartTemplate({
+                        mode: 'blank',
+                        label: 'estudio',
+                      })
+                    }
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Plantilla vacía</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        Esqueleto de rubros para armar desde cero
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={accounts.length === 0}
+                    onClick={() =>
+                      void downloadChartTemplate({
+                        mode: 'current',
+                        accounts: accountsToTemplate(accounts),
+                      })
+                    }
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Plan actual</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        El plan de hoy, para editar y reimportar
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                    <Upload className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Importar desde Excel</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        Cargar el plan desde una planilla
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setFormMode({ kind: 'base-create' })}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Nueva cuenta del plan base</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        Se agrega al plan que comparten las empresas
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setFormMode({ kind: 'custom' })}
+                    aria-label="Nueva cuenta"
+                    className="flex size-8 items-center justify-center rounded-[8px] bg-[var(--arca-accent)] text-white transition-opacity hover:opacity-90"
+                  >
+                    <Plus className="size-3.5" strokeWidth={2.5} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Nueva cuenta</TooltipContent>
+              </Tooltip>
+            </>
+          )}
+        </div>
+      </div>
+
+      <ArcaCard>
         {/* Body */}
         {isLoading ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
@@ -2276,27 +2294,32 @@ function Ejercicios({
             <button
               key={y.id}
               onClick={() => setSelectedFyId(y.id)}
-              className="flex items-center gap-2 h-9 px-3 rounded-[10px] border transition-colors text-[12.5px]"
-              style={{
-                borderColor: active ? 'var(--arca-ink)' : 'var(--arca-border)',
-                background: active
-                  ? 'var(--arca-surface-2)'
-                  : 'var(--arca-surface)',
-                color: active ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
-              }}
+              className={cn(
+                'flex h-9 items-center gap-2 rounded-lg border px-3 text-[12.5px] transition-colors duration-[120ms]',
+                // Seleccionado = acento tonal, como cualquier chip activo de
+                // la plataforma. Antes era borde de tinta sobre gris, que no
+                // es un estado activo de este sistema.
+                active
+                  ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
+                  : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-bg)]'
+              )}
             >
               <span className="font-semibold">Ejercicio N°{y.numero}</span>
               <span className="text-[var(--arca-ink-3)]">
                 {fmtFecha(y.fechaDesde)} – {fmtFecha(y.fechaHasta)}
               </span>
               {y.soloReferencia ? (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                  style={{ background: '#eef2ff', color: '#4338ca' }}
-                  title="Cargado solo para la columna comparativa. No se cierra ni se ajusta."
-                >
-                  Referencia
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="info" size="xs">
+                      Referencia
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Cargado solo para la columna comparativa. No se cierra ni se
+                    ajusta.
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 <>
                   <FyStatusBadge status={y.estado} />
@@ -2311,7 +2334,7 @@ function Ejercicios({
         {isOwner && (
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-medium rounded-[10px] border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            className="flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-medium rounded-lg border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
           >
             <CalendarPlus className="w-3.5 h-3.5" strokeWidth={2} />
             Nuevo ejercicio
@@ -2493,22 +2516,20 @@ function FyStatusBadge({
 }: {
   status: 'abierto' | 'en_cierre' | 'cerrado';
 }) {
-  const color =
-    status === 'abierto'
-      ? 'oklch(0.45 0.14 145)'
-      : status === 'en_cierre'
-        ? 'oklch(0.55 0.15 50)'
-        : 'oklch(0.50 0.02 260)';
   return (
-    <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
-      style={{
-        background: `color-mix(in oklch, ${color}, transparent 86%)`,
-        color,
-      }}
+    <Badge
+      variant={
+        status === 'abierto'
+          ? 'success'
+          : status === 'en_cierre'
+            ? 'warning'
+            : 'default'
+      }
+      size="xs"
+      className="shrink-0"
     >
       {FISCAL_YEAR_STATUS_LABELS[status]}
-    </span>
+    </Badge>
   );
 }
 
@@ -2527,45 +2548,46 @@ function PeriodCard({
 }) {
   const closed = period.status === 'cerrado';
   const hasPending = period.pendingCount > 0;
+  // El período en curso se marca con el acento de la plataforma, no con un
+  // verde crudo en oklch: el verde acá es el estado "cerrado/al día" y se
+  // estaba usando para decir "es este".
   const estado = closed
-    ? { label: 'Cerrado', color: 'oklch(0.50 0.02 260)' }
+    ? { label: 'Cerrado', variante: 'default' as const }
     : period.isCurrent
-      ? { label: 'Abierto · actual', color: 'oklch(0.45 0.14 145)' }
-      : { label: 'Por abrir', color: 'oklch(0.55 0.02 260)' };
+      ? { label: 'Abierto · actual', variante: 'secondary' as const }
+      : { label: 'Por abrir', variante: 'default' as const };
 
   return (
     <div
-      className="rounded-[10px] border p-3 flex flex-col gap-2"
-      style={{
-        borderColor: period.isCurrent
-          ? 'oklch(0.45 0.14 145)'
-          : 'var(--arca-border)',
-        background: period.isCurrent
-          ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 95%)'
-          : 'var(--arca-surface)',
-        boxShadow: period.isCurrent
-          ? '0 0 0 1px color-mix(in oklch, oklch(0.45 0.14 145), transparent 70%)'
-          : 'none',
-      }}
+      className={cn(
+        'flex flex-col gap-2 rounded-[var(--arca-r-md)] border p-3',
+        period.isCurrent
+          ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)]'
+          : 'border-[var(--arca-border)] bg-[var(--arca-surface)]'
+      )}
     >
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
           {MONTH_NAMES[period.month]} {period.year}
         </span>
-        <span
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
-          style={{
-            background: `color-mix(in oklch, ${estado.color}, transparent 86%)`,
-            color: estado.color,
-          }}
+        {/* Sobre la card tonal del período en curso, un badge tonal del mismo
+          acento se pierde: ahí va sobre la superficie blanca. */}
+        <Badge
+          variant={estado.variante}
+          size="xs"
+          className={
+            period.isCurrent
+              ? 'border-[var(--arca-accent)]/30 bg-[var(--arca-surface)]'
+              : undefined
+          }
         >
           {closed ? (
-            <Lock className="w-2.5 h-2.5" strokeWidth={2} />
+            <Lock className="size-2.5" strokeWidth={2} />
           ) : (
-            <LockOpen className="w-2.5 h-2.5" strokeWidth={2} />
+            <LockOpen className="size-2.5" strokeWidth={2} />
           )}
           {estado.label}
-        </span>
+        </Badge>
       </div>
 
       <div className="text-[11.5px] text-[var(--arca-ink-3)]">
@@ -2576,7 +2598,7 @@ function PeriodCard({
       {!closed && hasPending && (
         <button
           onClick={onGoToPending}
-          className="flex items-center gap-1 text-[11px] text-amber-700 hover:underline text-left"
+          className="flex items-center gap-1 text-[11px] text-[var(--arca-accent-warn-fg)] hover:underline text-left"
         >
           <AlertTriangle className="w-3 h-3 shrink-0" strokeWidth={2} />
           {period.pendingCount} pendiente{period.pendingCount === 1 ? '' : 's'}{' '}
@@ -2675,17 +2697,17 @@ function CierreChecklist({
           <div key={c.key} className="flex items-start gap-3 px-5 py-2.5">
             {c.status === 'pass' ? (
               <CheckCircle2
-                className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600"
+                className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-pos-fg)]"
                 strokeWidth={2}
               />
             ) : c.status === 'warn' ? (
               <AlertTriangle
-                className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+                className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-warn-fg)]"
                 strokeWidth={2}
               />
             ) : (
               <XCircle
-                className="w-4 h-4 shrink-0 mt-0.5 text-red-600"
+                className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-neg-fg)]"
                 strokeWidth={2}
               />
             )}
@@ -2795,13 +2817,13 @@ function EditableEntryTable({
   return (
     <table className="w-full text-[12px]">
       <thead>
-        <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+        <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <th className="py-1.5">Cuenta</th>
           <th className="py-1.5 text-right w-32">Debe</th>
           <th className="py-1.5 text-right w-32">Haber</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody className="bg-[var(--arca-surface)]">
         {lines.map((l, i) => (
           <tr
             key={l.accountId}
@@ -2844,9 +2866,13 @@ function EditableEntryTable({
         <tr className="font-semibold border-t border-[var(--arca-ink-3)]">
           <td className="py-1.5 text-right">
             {balanced ? (
-              <span className="text-emerald-600">✓ Balanceado</span>
+              <span className="text-[var(--arca-accent-pos-fg)]">
+                ✓ Balanceado
+              </span>
             ) : (
-              <span className="text-red-600">Descuadrado</span>
+              <span className="text-[var(--arca-accent-neg-fg)]">
+                Descuadrado
+              </span>
             )}
           </td>
           <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
@@ -3016,7 +3042,7 @@ function ClosingWizard({
               >
                 {st === 'completada' ? (
                   <CheckCircle2
-                    className="w-3.5 h-3.5 text-emerald-600"
+                    className="w-3.5 h-3.5 text-[var(--arca-accent-pos-fg)]"
                     strokeWidth={2}
                   />
                 ) : st === 'en curso' ? (
@@ -3038,22 +3064,22 @@ function ClosingWizard({
               <p className="text-[12.5px] text-[var(--arca-ink-3)]">
                 Precondiciones para cerrar el ejercicio.
               </p>
-              <div className="divide-y divide-[var(--arca-border)] border border-[var(--arca-border)] rounded-[10px]">
+              <div className="divide-y divide-[var(--arca-border)] border border-[var(--arca-border)] rounded-xl">
                 {checklist.checks.map((c: YearEndCheck) => (
                   <div key={c.key} className="flex items-start gap-2 px-3 py-2">
                     {c.status === 'pass' ? (
                       <CheckCircle2
-                        className="w-4 h-4 mt-0.5 text-emerald-600 shrink-0"
+                        className="w-4 h-4 mt-0.5 text-[var(--arca-accent-pos-fg)] shrink-0"
                         strokeWidth={2}
                       />
                     ) : c.status === 'warn' ? (
                       <AlertTriangle
-                        className="w-4 h-4 mt-0.5 text-amber-600 shrink-0"
+                        className="w-4 h-4 mt-0.5 text-[var(--arca-accent-warn-fg)] shrink-0"
                         strokeWidth={2}
                       />
                     ) : (
                       <XCircle
-                        className="w-4 h-4 mt-0.5 text-red-600 shrink-0"
+                        className="w-4 h-4 mt-0.5 text-[var(--arca-accent-neg-fg)] shrink-0"
                         strokeWidth={2}
                       />
                     )}
@@ -3347,7 +3373,7 @@ function StageEntry({
 
       {done ? (
         <>
-          <div className="rounded-[8px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-700">
+          <div className="rounded-[8px] bg-[var(--arca-accent-pos-bg)] border border-[var(--arca-accent-pos)] px-3 py-2 text-[12px] text-[var(--arca-accent-pos-fg)]">
             ✓ {doneLabel ?? 'Registrado'}
           </div>
           <EditableEntryTable preview={preview} readOnly />
@@ -3873,6 +3899,14 @@ function Asientos({
       .catch((e: Error) => toast.error(e.message));
   };
 
+  /** Cuántos filtros están puestos: si hay alguno, se ofrece limpiarlos. */
+  const filtrosPuestos =
+    (from ? 1 : 0) +
+    (to ? 1 : 0) +
+    (accountId ? 1 : 0) +
+    (origin ? 1 : 0) +
+    (includeVoided ? 1 : 0);
+
   function openEditorFromDetail(
     action: 'edit' | 'duplicate',
     d: EditorInitial
@@ -3882,177 +3916,190 @@ function Asientos({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Desde
-            </label>
-            <SelectorFecha
-              value={from}
-              onChange={(v) => {
-                setFrom(v);
-                setPage(1);
-              }}
-              className="w-32"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Hasta
-            </label>
-            <SelectorFecha
-              value={to}
-              onChange={(v) => {
-                setTo(v);
-                setPage(1);
-              }}
-              className="w-32"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Cuenta
-            </label>
-            <Select
-              value={accountId === '' ? 'all' : accountId}
-              onValueChange={(v) => {
-                setAccountId(v === 'all' ? '' : v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger size="sm" className="w-40 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las cuentas</SelectItem>
-                {postable.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.code} · {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Origen
-            </label>
-            <Select
-              value={origin === '' ? 'all' : origin}
-              onValueChange={(v) => {
-                setOrigin(v === 'all' ? '' : (v as JournalOrigin));
-                setPage(1);
-              }}
-            >
-              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none h-8">
-            <input
-              type="checkbox"
-              checked={includeVoided}
-              onChange={(e) => {
-                setIncludeVoided(e.target.checked);
-                setPage(1);
-              }}
-              className="accent-[var(--arca-accent)]"
-            />
-            Incluir anulados
-          </label>
+      {/* Los filtros van afuera de la card de la tabla, en una sola línea de
+        32px: antes vivían adentro, cada control con su micro-rótulo encima y
+        tres alturas distintas conviviendo. */}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        <SelectorFecha
+          size="sm"
+          value={from}
+          onChange={(v) => {
+            setFrom(v);
+            setPage(1);
+          }}
+          placeholder="Desde"
+          aria-label="Asientos desde"
+          className="w-[132px]"
+        />
+        <SelectorFecha
+          size="sm"
+          value={to}
+          onChange={(v) => {
+            setTo(v);
+            setPage(1);
+          }}
+          placeholder="Hasta"
+          aria-label="Asientos hasta"
+          className="w-[132px]"
+        />
 
-          {/* El orden es un filtro más, así que va con los filtros y con
-              rótulo: suelto en la fila de acciones y sin nombre, «N° (desc)»
-              no decía de qué era. */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Orden
-            </label>
-            <Select
-              value={`${sortBy}:${sortDir}`}
-              onValueChange={(v) => {
-                const [b, d2] = v.split(':');
-                setSortBy(b as 'number' | 'date');
-                setSortDir(d2 as 'asc' | 'desc');
-              }}
-            >
-              <SelectTrigger size="sm" className="w-32 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="number:desc">N° desc</SelectItem>
-                <SelectItem value="number:asc">N° asc</SelectItem>
-                <SelectItem value="date:desc">Fecha desc</SelectItem>
-                <SelectItem value="date:asc">Fecha asc</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        {/* El plan de cuentas es largo: el select con buscador es el único que
+          sirve acá. */}
+        <SearchableSelect
+          size="sm"
+          width={200}
+          value={accountId === '' ? 'all' : accountId}
+          onValueChange={(v) => {
+            setAccountId(v === 'all' ? '' : v);
+            setPage(1);
+          }}
+          placeholder="Cuenta"
+          searchPlaceholder="Buscar cuenta…"
+          label="Cuenta"
+          options={[
+            { value: 'all', label: 'Todas las cuentas' },
+            ...postable.map((a) => ({
+              value: a.id,
+              label: `${a.code} · ${a.name}`,
+            })),
+          ]}
+        />
 
-          {/* A la derecha, lo que se hace: abrir/cerrar el detalle, y después
-              exportar y crear. */}
-          <div className={`${TOOLBAR_ACCIONES} self-end`}>
-            <span aria-hidden className={TOOLBAR_SEP} />
-            <button
-              onClick={toggleExpandAll}
-              disabled={rows.length === 0}
-              title={
-                allExpanded
-                  ? 'Colapsar el detalle de todos los asientos'
-                  : 'Expandir el detalle de todos los asientos'
-              }
-              aria-label={
-                allExpanded
-                  ? 'Colapsar el detalle de todos los asientos'
-                  : 'Expandir el detalle de todos los asientos'
-              }
-              className={`${TOOLBAR_ICON_BTN} disabled:opacity-40`}
-            >
-              {allExpanded ? (
-                <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
-              ) : (
-                <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
-              )}
-            </button>
-            {(isOwner || canWrite) && (
-              <span aria-hidden className={TOOLBAR_SEP} />
-            )}
-            {/* Solo icono: con cinco filtros más el orden, la barra no da para
-                dos botones rotulados. El nombre va en el `title`. */}
-            {isOwner && (
+        {/* Origen y Orden son listas cortas: el select simple alcanza, el
+          buscador sobra. */}
+        <Select
+          value={origin === '' ? 'all' : origin}
+          onValueChange={(v) => {
+            setOrigin(v === 'all' ? '' : (v as JournalOrigin));
+            setPage(1);
+          }}
+        >
+          {/* `data-[size=sm]:h-8` y no `h-8` a secas: el selector por
+            atributo de la variante le gana en especificidad. */}
+          <SelectTrigger size="sm" className="w-[150px] data-[size=sm]:h-8">
+            <SelectValue placeholder="Origen" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los orígenes</SelectItem>
+            {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Un interruptor de filtro es un chip, no un checkbox. */}
+        <button
+          type="button"
+          aria-pressed={includeVoided}
+          onClick={() => {
+            setIncludeVoided(!includeVoided);
+            setPage(1);
+          }}
+          className={chipFiltro(includeVoided)}
+        >
+          Incluir anulados
+        </button>
+
+        <Select
+          value={`${sortBy}:${sortDir}`}
+          onValueChange={(v) => {
+            const [b, d2] = v.split(':');
+            setSortBy(b as 'number' | 'date');
+            setSortDir(d2 as 'asc' | 'desc');
+          }}
+        >
+          <SelectTrigger size="sm" className="w-[140px] data-[size=sm]:h-8">
+            <SelectValue placeholder="Orden" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="number:desc">N° desc</SelectItem>
+            <SelectItem value="number:asc">N° asc</SelectItem>
+            <SelectItem value="date:desc">Fecha desc</SelectItem>
+            <SelectItem value="date:asc">Fecha asc</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {filtrosPuestos > 0 && (
+          <LimpiarFiltros
+            onLimpiar={() => {
+              setFrom('');
+              setTo('');
+              setAccountId('');
+              setOrigin('');
+              setIncludeVoided(false);
+              setPage(1);
+            }}
+          />
+        )}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
               <button
-                onClick={exportLibroDiario}
-                title="Descargar el Libro Diario en PDF, para rubricar"
-                aria-label="Descargar el Libro Diario en PDF, para rubricar"
-                className={TOOLBAR_ICON_BTN}
+                onClick={toggleExpandAll}
+                disabled={rows.length === 0}
+                aria-label={
+                  allExpanded
+                    ? 'Colapsar el detalle de todos los asientos'
+                    : 'Expandir el detalle de todos los asientos'
+                }
+                className={cn(TOOLBAR_ICON_BTN, 'size-8 disabled:opacity-40')}
               >
-                <Download className="w-3.5 h-3.5" strokeWidth={2} />
+                {allExpanded ? (
+                  <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
+                ) : (
+                  <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
+                )}
               </button>
-            )}
-            {canWrite && (
-              <button
-                onClick={() => setEditor({ mode: 'create' })}
-                className={TOOLBAR_BTN_PRIMARIO}
-              >
-                <Plus className="w-3 h-3" strokeWidth={2.5} />
-                Nuevo asiento
-              </button>
-            )}
-          </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {allExpanded
+                ? 'Colapsar el detalle de todos los asientos'
+                : 'Expandir el detalle de todos los asientos'}
+            </TooltipContent>
+          </Tooltip>
+
+          {isOwner && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={exportLibroDiario}
+                  aria-label="Descargar el Libro Diario en PDF"
+                  className={cn(TOOLBAR_ICON_BTN, 'size-8')}
+                >
+                  <Download className="w-3.5 h-3.5" strokeWidth={2} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Descargar el Libro Diario en PDF, para rubricar
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {canWrite && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setEditor({ mode: 'create' })}
+                  aria-label="Nuevo asiento"
+                  className="flex size-8 items-center justify-center rounded-[8px] bg-[var(--arca-accent)] text-white transition-opacity hover:opacity-90"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Nuevo asiento</TooltipContent>
+            </Tooltip>
+          )}
         </div>
+      </div>
 
-        {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+      <ArcaCard>
+        {/* Los rótulos llevaban `text-white` al final de la lista de clases
+          —resto de una versión con header navy—, así que se dibujaban blancos
+          sobre fondo claro: invisibles. */}
+        <div className="flex items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <div className="w-4 shrink-0" />
           <div className="w-12 shrink-0">N°</div>
           <div className="w-24 shrink-0">Fecha</div>
@@ -4084,32 +4131,17 @@ function Asientos({
           ))
         )}
 
-        {/* Pagination */}
+        {/* El paginado de la plataforma, dentro de la card. */}
         {total > 0 && (
-          <div className="flex items-center justify-between px-4 py-2.5 text-[12px] text-[var(--arca-ink-3)]">
-            <span>
-              {total} asiento{total === 1 ? '' : 's'}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="h-7 w-7 flex items-center justify-center rounded-[8px] border border-[var(--arca-border)] disabled:opacity-40"
-              >
-                <ChevronLeft className="w-4 h-4" strokeWidth={1.8} />
-              </button>
-              <span>
-                Página {page} de {totalPages}
-              </span>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="h-7 w-7 flex items-center justify-center rounded-[8px] border border-[var(--arca-border)] disabled:opacity-40"
-              >
-                <ChevronRight className="w-4 h-4" strokeWidth={1.8} />
-              </button>
-            </div>
-          </div>
+          <Paginador
+            className="w-full min-w-0 border-t border-[var(--arca-border)] px-4 py-[11px]"
+            pagina={page}
+            totalPaginas={totalPages}
+            onPagina={setPage}
+            total={total}
+            unidad="asiento"
+            unidadPlural="asientos"
+          />
         )}
       </ArcaCard>
 
@@ -4475,7 +4507,7 @@ function AsientoEditor({
           </DialogHeader>
 
           {outOfRangeFy && (
-            <div className="flex items-start gap-2 rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+            <div className="flex items-start gap-2 rounded-[8px] border border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-warn-fg)]">
               <AlertTriangle
                 className="w-3.5 h-3.5 mt-0.5 shrink-0"
                 strokeWidth={2}
@@ -4684,8 +4716,8 @@ function AsientoEditor({
             )}
 
             {/* Líneas */}
-            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+            <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-40">Detalle</div>
                 <div className="w-24 text-right">Debe</div>
@@ -5002,8 +5034,8 @@ function EntryDetailBody({
       )}
 
       {/* Líneas */}
-      <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden bg-[var(--arca-surface)]">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+      <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden bg-[var(--arca-surface)]">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
           <div className="flex-1">Cuenta</div>
           <div className="w-28 text-right">Debe</div>
           <div className="w-28 text-right">Haber</div>
@@ -5301,7 +5333,6 @@ function Mayor({
   const [origin, setOrigin] = useState<'' | JournalOrigin>('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [sheetPerAccount, setSheetPerAccount] = useState(false);
 
   const { data: fiscalYears = [] } = useQuery({
     queryKey: ['accounting', 'fiscal-years', clientId],
@@ -5406,7 +5437,11 @@ function Mayor({
     };
   }
 
-  const exportXlsx = () => {
+  /** Cuántos filtros propios están puestos (el ejercicio y el modo no son
+   *  filtros: son en qué se está parado). */
+  const filtrosPuestos = (from ? 1 : 0) + (to ? 1 : 0) + (origin ? 1 : 0);
+
+  const exportXlsx = (sheetPerAccount: boolean) => {
     const data = buildExportData();
     if (!data || data.sections.length === 0) {
       toast.error('No hay datos para exportar');
@@ -5446,141 +5481,158 @@ function Mayor({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="flex rounded-[8px] border border-[var(--arca-border)] overflow-hidden h-8 self-end">
-            {(['cuenta', 'consolidado'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className="px-3 text-[12px] font-medium transition-colors"
-                style={{
-                  background:
-                    mode === m ? 'var(--arca-accent)' : 'transparent',
-                  color: mode === m ? 'white' : 'var(--arca-ink-2)',
-                }}
-              >
-                {m === 'cuenta' ? 'Por cuenta' : 'Consolidado'}
-              </button>
-            ))}
-          </div>
-
-          {fiscalYears.length > 1 && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">
-                Ejercicio
-              </label>
-              <Select
-                value={effectiveFyId}
-                onValueChange={(v) => setFiscalYearId(v)}
-              >
-                <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {fiscalYears.map((y) => (
-                    <SelectItem key={y.id} value={y.id}>
-                      N°{y.numero}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {mode === 'cuenta' && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">
-                Cuenta
-              </label>
-              <Select value={accountId} onValueChange={(v) => setAccountId(v)}>
-                <SelectTrigger size="sm" className="w-72 text-[12.5px]">
-                  <SelectValue placeholder="— Elegí una cuenta —" />
-                </SelectTrigger>
-                <SelectContent>
-                  {imputables.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} · {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Desde
-            </label>
-            <SelectorFecha
-              value={from}
-              onChange={(v) => setFrom(v)}
-              className="w-36"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Hasta
-            </label>
-            <SelectorFecha
-              value={to}
-              onChange={(v) => setTo(v)}
-              className="w-36"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Origen
-            </label>
-            <Select
-              value={origin === '' ? 'all' : origin}
-              onValueChange={(v) =>
-                setOrigin(v === 'all' ? '' : (v as JournalOrigin))
-              }
-            >
-              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2 self-end">
-            {mode === 'consolidado' && (
-              <label className="flex items-center gap-1.5 text-[11px] text-[var(--arca-ink-2)] cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={sheetPerAccount}
-                  onChange={(e) => setSheetPerAccount(e.target.checked)}
-                  className="accent-[var(--arca-accent)]"
-                />
-                Excel: hoja por cuenta
-              </label>
-            )}
-            <button
-              onClick={exportXlsx}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
+      {/* Los filtros, afuera de la card. Arriba las descargas —así nunca se
+        caen de renglón cuando aparece "Limpiar"— y debajo los filtros, todos
+        de la misma altura. */}
+      <div className="mb-[10px] flex flex-wrap items-center justify-end gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Download className="size-3.5" strokeWidth={1.8} />
               Excel
-            </button>
-            <button
-              onClick={exportPdf}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            </Button>
+          </DropdownMenuTrigger>
+          {/* "Excel: hoja por cuenta" era un checkbox al lado del botón, y no
+            se entendía qué cambiaba. Ahora la pregunta aparece al tocar
+            Excel, que es cuando importa. */}
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-[12.5px]"
+              onSelect={() => exportXlsx(false)}
             >
-              <Download className="w-3.5 h-3.5" strokeWidth={1.8} /> PDF
+              Una sola hoja
+            </DropdownMenuItem>
+            {mode === 'consolidado' && (
+              <DropdownMenuItem
+                className="text-[12.5px]"
+                onSelect={() => exportXlsx(true)}
+              >
+                Una hoja por cuenta
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={exportPdf}
+        >
+          <Download className="size-3.5" strokeWidth={1.8} />
+          PDF
+        </Button>
+      </div>
+
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        {/* Segmentado del sistema, el mismo de "14 días · Mes · Trimestre". */}
+        <div
+          role="tablist"
+          className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
+        >
+          {(['cuenta', 'consolidado'] as const).map((m) => (
+            <button
+              key={m}
+              role="tab"
+              type="button"
+              aria-selected={mode === m}
+              onClick={() => setMode(m)}
+              className={cn(
+                'flex h-[26px] items-center rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
+                mode === m
+                  ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                  : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+              )}
+            >
+              {m === 'cuenta' ? 'Por cuenta' : 'Consolidado'}
             </button>
-          </div>
+          ))}
         </div>
 
+        {fiscalYears.length > 1 && (
+          <Select
+            value={effectiveFyId}
+            onValueChange={(v) => setFiscalYearId(v)}
+          >
+            {/* Al ancho del rótulo más largo: "Ejercicio N°12" entraba justo
+              y se truncaba. */}
+            <SelectTrigger size="sm" className="w-[160px] data-[size=sm]:h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fiscalYears.map((y) => (
+                <SelectItem key={y.id} value={y.id}>
+                  Ejercicio N°{y.numero}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {mode === 'cuenta' && (
+          <SearchableSelect
+            size="sm"
+            width={230}
+            value={accountId}
+            onValueChange={(v) => setAccountId(v)}
+            placeholder="— Elegí una cuenta —"
+            searchPlaceholder="Buscar cuenta…"
+            label="Cuenta"
+            options={imputables.map((a) => ({
+              value: a.id,
+              label: `${a.code} · ${a.name}`,
+            }))}
+          />
+        )}
+
+        <SelectorFecha
+          size="sm"
+          value={from}
+          onChange={(v) => setFrom(v)}
+          placeholder="Desde"
+          aria-label="Mayor desde"
+          className="w-[132px]"
+        />
+        <SelectorFecha
+          size="sm"
+          value={to}
+          onChange={(v) => setTo(v)}
+          placeholder="Hasta"
+          aria-label="Mayor hasta"
+          className="w-[132px]"
+        />
+
+        <Select
+          value={origin === '' ? 'all' : origin}
+          onValueChange={(v) =>
+            setOrigin(v === 'all' ? '' : (v as JournalOrigin))
+          }
+        >
+          <SelectTrigger size="sm" className="w-[180px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los orígenes</SelectItem>
+            {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {filtrosPuestos > 0 && (
+          <LimpiarFiltros
+            onLimpiar={() => {
+              setFrom('');
+              setTo('');
+              setOrigin('');
+            }}
+          />
+        )}
+      </div>
+
+      <ArcaCard>
         {/* Body */}
         {mode === 'cuenta' ? (
           !accountId ? (
@@ -5617,7 +5669,9 @@ function Mayor({
           <div>
             {/* Sin encabezado, las tres columnas de plata no decían cuál era
                 el Debe, cuál el Haber y cuál el saldo. */}
-            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10.5px] font-semibold uppercase tracking-wide text-white">
+            {/* Misma altura que el header de la tabla del sistema (38px): a
+              py-1.5 el rótulo quedaba aplastado contra las filas. */}
+            <div className="flex h-[38px] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
               <span className="w-4 shrink-0" aria-hidden />
               <span className={MAYOR_COL_CODE}>Código</span>
               <span className="flex-1 min-w-0">Cuenta</span>
@@ -5683,7 +5737,7 @@ function LedgerTable({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+      <div className="flex h-[38px] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
         <div className="w-24 shrink-0">Fecha</div>
         <div className="w-12 shrink-0">N°</div>
         <div className="flex-1 min-w-0">Descripción</div>
@@ -5910,84 +5964,109 @@ function Balance({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          {fiscalYears.length > 1 && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">
-                Ejercicio
-              </label>
-              <Select
-                value={effectiveFyId}
-                onValueChange={(v) => setFiscalYearId(v)}
-              >
-                <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {fiscalYears.map((y) => (
-                    <SelectItem key={y.id} value={y.id}>
-                      N°{y.numero}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Fecha de corte
-            </label>
-            <SelectorFecha
-              value={asOf}
-              onChange={(v) => setAsOf(v)}
-              className="w-40"
-            />
-          </div>
-          {data && (
-            <span className="text-[12px] text-[var(--arca-ink-3)] self-end pb-1.5">
-              al {fmtFecha(data.asOf)}
-            </span>
-          )}
+      {/* Descargas arriba a la derecha y filtros debajo, como en Mayor. */}
+      <div className="mb-[10px] flex flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => doExport('xlsx')}
+        >
+          <Download className="size-3.5" strokeWidth={1.8} />
+          Excel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => doExport('pdf')}
+        >
+          <Download className="size-3.5" strokeWidth={1.8} />
+          PDF
+        </Button>
+      </div>
 
-          <div className="ml-auto flex items-center gap-2 self-end">
-            <button
-              onClick={() => doExport('xlsx')}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
-              Excel
-            </button>
-            <button
-              onClick={() => doExport('pdf')}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-            >
-              <Download className="w-3.5 h-3.5" strokeWidth={1.8} /> PDF
-            </button>
-          </div>
-        </div>
-
-        {/* Alerta de descuadre */}
-        {data && !data.balanced && (
-          <div
-            className="px-4 py-2.5 text-[12.5px] font-medium border-b border-[var(--arca-border)]"
-            style={{
-              background:
-                'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)',
-              color: 'oklch(0.45 0.18 25)',
-            }}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        {fiscalYears.length > 1 && (
+          <Select
+            value={effectiveFyId}
+            onValueChange={(v) => setFiscalYearId(v)}
           >
-            ⚠ El balance NO cuadra. Débitos $ {fmtMoney(data.totals.sumaDebe)}{' '}
-            vs Créditos $ {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
-            {fmtMoney(Math.abs(data.totals.sumaDebe - data.totals.sumaHaber))})
-            · Saldos deudores $ {fmtMoney(data.totals.saldoDeudor)} vs
-            acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
-          </div>
+            <SelectTrigger size="sm" className="w-[150px] data-[size=sm]:h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fiscalYears.map((y) => (
+                <SelectItem key={y.id} value={y.id}>
+                  Ejercicio N°{y.numero}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
+        <SelectorFecha
+          size="sm"
+          value={asOf}
+          onChange={(v) => setAsOf(v)}
+          placeholder="Fecha de corte"
+          aria-label="Fecha de corte"
+          className="w-[150px]"
+        />
+        {data && (
+          <span className="text-[12.5px] text-[var(--arca-ink-3)]">
+            al {fmtFecha(data.asOf)}
+          </span>
+        )}
+      </div>
 
+      {/* Que cuadre o no es el resultado de la pantalla, no una nota al pie de
+        la tabla: va como banner tonal arriba, verde cuando cuadra y rojo
+        cuando no. Antes el "no cuadra" era una franja dentro de la card con
+        colores propios en oklch, y el "cuadra" una línea suelta abajo de
+        todo. */}
+      {data && (
+        <div
+          role="status"
+          className={cn(
+            'mb-[10px] flex items-start gap-2 rounded-[var(--arca-r-md)] border px-3 py-2 text-[12.5px]',
+            data.balanced
+              ? 'border-[var(--arca-accent-pos)]/25 bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
+              : 'border-[var(--arca-accent-neg)]/25 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
+          )}
+        >
+          {data.balanced ? (
+            <Check className="mt-px size-3.5 shrink-0" strokeWidth={2.4} />
+          ) : (
+            <AlertTriangle
+              className="mt-px size-3.5 shrink-0"
+              strokeWidth={2}
+            />
+          )}
+          <span>
+            {data.balanced ? (
+              <>
+                El balance cuadra: débitos = créditos y saldos deudores =
+                acreedores.
+              </>
+            ) : (
+              <>
+                El balance <strong>no cuadra</strong>. Débitos ${' '}
+                {fmtMoney(data.totals.sumaDebe)} vs créditos ${' '}
+                {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
+                {fmtMoney(
+                  Math.abs(data.totals.sumaDebe - data.totals.sumaHaber)
+                )}
+                ) · saldos deudores $ {fmtMoney(data.totals.saldoDeudor)} vs
+                acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
+              </>
+            )}
+          </span>
+        </div>
+      )}
+
+      <ArcaCard>
         {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+        <div className="flex h-[38px] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <div className="w-24 shrink-0">Código</div>
           <div className="flex-1 min-w-0">Cuenta</div>
           <div className={BALANCE_COL_MONEY}>Suma Debe</div>
@@ -6036,10 +6115,8 @@ function Balance({
                 </div>
               </button>
             ))}
-            <div
-              className="flex items-center gap-3 px-4 py-2.5 border-t-2 text-[12.5px] font-semibold"
-              style={{ borderColor: 'var(--arca-border)' }}
-            >
+            {/* Gris, como los "Totales generales" del Mayor. */}
+            <div className="flex items-center gap-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3 text-[13px] font-semibold">
               <div className="w-24 shrink-0" />
               <div className="flex-1 min-w-0">Totales</div>
               {/* Sin el «$» que traía de más: el cuerpo de la tabla va sin
@@ -6057,12 +6134,6 @@ function Balance({
                 {fmtMoney(data.totals.saldoAcreedor)}
               </div>
             </div>
-            {data.balanced && (
-              <div className="px-4 py-2 text-[11.5px] text-[oklch(0.40_0.14_145)] flex items-center gap-1.5">
-                ✓ El balance cuadra (débitos = créditos y saldos deudores =
-                acreedores).
-              </div>
-            )}
           </>
         )}
       </ArcaCard>
@@ -6126,7 +6197,7 @@ function LedgerDialog({
               Click en un movimiento abre el asiento.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto border border-[var(--arca-border)] rounded-[10px]">
+          <div className="max-h-[60vh] overflow-y-auto border border-[var(--arca-border)] rounded-lg">
             {isLoading || !data ? (
               <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
                 Cargando…
@@ -6301,9 +6372,11 @@ function FilaRegla({
         {r.name}
       </div>
       <div className="w-24 shrink-0">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+        {/* Píldora de 10px en gris sobre gris: era ilegible. El badge del
+          sistema, neutro, con el tamaño de celda. */}
+        <Badge variant="default" size="sm">
           {MAPPING_SOURCE_LABELS[r.sourceModule as ModuloRegla]}
-        </span>
+        </Badge>
       </div>
       <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
         {MAPPING_RULE_TYPE_LABELS[r.ruleType as 'default' | 'condicional']}
@@ -6313,23 +6386,29 @@ function FilaRegla({
       </div>
       <div className="w-24 shrink-0 flex justify-center">
         {isOwner ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle();
-            }}
-            title={r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
-            style={{
-              background: r.isActive
-                ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
-                : 'var(--arca-surface-2)',
-              color: r.isActive ? 'oklch(0.40 0.14 145)' : 'var(--arca-ink-3)',
-            }}
-          >
-            <Power className="w-2.5 h-2.5" strokeWidth={2} />
-            {r.isActive ? 'Activa' : 'Inactiva'}
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                asChild
+                variant={r.isActive ? 'success' : 'default'}
+                size="sm"
+                className="cursor-pointer hover:opacity-80"
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle();
+                  }}
+                >
+                  <Power className="size-2.5" strokeWidth={2} />
+                  {r.isActive ? 'Activa' : 'Inactiva'}
+                </button>
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
+            </TooltipContent>
+          </Tooltip>
         ) : (
           <span className="text-[10.5px] text-[var(--arca-ink-3)]">
             {r.isActive ? 'Activa' : 'Inactiva'}
@@ -6444,52 +6523,62 @@ function Reglas({
 
   return (
     <>
-      <ArcaCard>
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Módulo origen
-            </label>
-            <Select
-              value={moduleFilter === '' ? 'all' : moduleFilter}
-              onValueChange={(v) =>
-                setModuleFilter(
-                  v === 'all'
-                    ? ''
-                    : (v as 'comprobante' | 'recibo' | 'movimiento_bancario')
-                )
-              }
-            >
-              <SelectTrigger size="sm" className="w-40 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="comprobante">Facturas</SelectItem>
-                <SelectItem value="recibo">Sueldos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {isOwner && (
-            <div className="ml-auto flex items-center gap-2 self-end">
-              <button
-                onClick={() => setImportOpen(true)}
-                className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-              >
-                <Upload className="w-3.5 h-3.5" strokeWidth={1.8} /> Importar de
-                otra empresa
-              </button>
-              <button
-                onClick={() => setEditor({ mode: 'create' })}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
-              >
-                <Plus className="w-3 h-3" strokeWidth={2.5} /> Nueva regla
-              </button>
-            </div>
-          )}
-        </div>
+      {/* Los filtros, afuera de la card: a la izquierda el módulo con su
+        rótulo al lado —no encima, que obligaba a la barra a tener dos
+        renglones— y a la derecha lo que se hace. */}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        <span className="text-[12.5px] text-[var(--arca-ink-3)]">Módulo</span>
+        <Select
+          value={moduleFilter === '' ? 'all' : moduleFilter}
+          onValueChange={(v) =>
+            setModuleFilter(
+              v === 'all'
+                ? ''
+                : (v as 'comprobante' | 'recibo' | 'movimiento_bancario')
+            )
+          }
+        >
+          {/* 30px, la altura de los botones `sm` que lo acompañan en la fila. */}
+          <SelectTrigger size="sm" className="w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="comprobante">Facturas</SelectItem>
+            <SelectItem value="recibo">Sueldos</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+        {isOwner && (
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload className="size-3.5" strokeWidth={1.8} />
+              Importar de otra empresa
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setEditor({ mode: 'create' })}
+            >
+              <Plus className="size-3.5" strokeWidth={2.5} />
+              Nueva regla
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <ArcaCard>
+        {/* Mismo `text-white` colgado que en Asientos: los rótulos se
+          dibujaban blancos sobre fondo claro. Abajo, la fila gris con el
+          nombre del módulo no es un segundo header: separa los grupos
+          —arrastrar reordena dentro de un módulo, no entre módulos— y por eso
+          va más chica, sin mayúsculas anchas y sobre otro fondo. */}
+        <div className="flex items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <div className="w-8 shrink-0" aria-hidden />
           <div className="flex-1 min-w-0">Nombre</div>
           <div className="w-24 shrink-0">Módulo</div>
@@ -6532,7 +6621,7 @@ function Reglas({
                   que deja claro que arrastrar mueve dentro del módulo y no
                   contra las reglas de otro. */}
                 {!moduleFilter && (
-                  <div className="px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+                  <div className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
                     {MAPPING_SOURCE_LABELS[modulo]}
                   </div>
                 )}
@@ -6754,34 +6843,23 @@ function RuleEditorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Recuadro de ayuda en criollo */}
-        <div
-          className="flex gap-2 text-[12px] rounded-[10px] px-3 py-2.5 leading-relaxed"
-          style={{
-            background:
-              'color-mix(in oklch, var(--arca-accent), transparent 94%)',
-            color: 'var(--arca-ink-2)',
-          }}
-        >
-          <Lightbulb
-            className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent)]"
-            strokeWidth={1.8}
-          />
-          <div>
-            <strong>¿Cómo funciona?</strong> Cuando entra un comprobante del
-            módulo elegido (una factura o una liquidación de sueldos), el
-            sistema arma un asiento usando estas líneas. Cada línea define{' '}
-            <strong>qué cuenta</strong> tocar, si va al{' '}
-            <strong>Debe o Haber</strong>, y de{' '}
+        {/* La explicación va detrás del botón de ayuda, como en el resto de
+          la plataforma: ocupaba cinco renglones arriba del formulario y se
+          lee una sola vez. */}
+        <Ayuda titulo="Cómo funciona una regla" etiqueta="Cómo funciona">
+          <p>
+            Cuando entra un comprobante del módulo elegido (una factura o una
+            liquidación de sueldos), el sistema arma un asiento usando estas
+            líneas. Cada línea define <strong>qué cuenta</strong> tocar, si va
+            al <strong>Debe o Haber</strong>, y de{' '}
             <strong>qué monto del comprobante</strong> sale (el total, el neto,
             el IVA…).
-            <br />
-            <span className="text-[var(--arca-ink-3)]">
-              Ejemplo (factura de venta): Deudores por ventas → Debe → Total ·
-              Ventas → Haber → Neto · IVA débito → Haber → IVA.
-            </span>
-          </div>
-        </div>
+          </p>
+          <p className="text-[var(--arca-ink-3)]">
+            Ejemplo (factura de venta): Deudores por ventas → Debe → Total ·
+            Ventas → Haber → Neto · IVA débito → Haber → IVA.
+          </p>
+        </Ayuda>
 
         {isEdit && existing && existing.generatedOpenCount > 0 && (
           <div
@@ -7016,8 +7094,8 @@ function RuleEditorDialog({
         </div>
 
         {/* Líneas-plantilla */}
-        <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+        <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
             <div className="flex-1">Cuenta</div>
             <div className="w-20 flex items-center gap-1">
               Lado
@@ -7212,8 +7290,8 @@ function RuleDetailDialog({
               </div>
             )}
 
-            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+            <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-16">Lado</div>
                 <div className="w-48">Base del monto</div>
@@ -7542,65 +7620,67 @@ function Contabilizar({
 
   return (
     <div className="space-y-4">
-      {/* Explicación */}
-      <div className="flex gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
-        <Lightbulb
-          className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent)]"
-          strokeWidth={1.8}
-        />
-        <div>
-          <strong>Contabilizar comprobantes.</strong> Acá generás los asientos
-          automáticos de las facturas aplicando las{' '}
-          <strong>reglas de mapeo</strong>. Revisá la regla que matchea cada
-          comprobante y generá los que estén correctos. Si una factura no tiene
-          regla (o tiene percepciones/otros impuestos sin mapear), el asiento se
-          crea con la cuenta <strong>Pendiente de revisión</strong>, que bloquea
-          el cierre hasta que la corrijas a mano.
-        </div>
+      {/* Los filtros afuera de la tabla y la explicación detrás del botón de
+        ayuda: eran cuatro renglones fijos arriba de todo. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={direction}
+          onValueChange={(v) => {
+            setDirection(v as 'all' | 'emitido' | 'recibido');
+            setSelected(new Set());
+          }}
+        >
+          <SelectTrigger size="sm" className="w-[176px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Ventas y compras</SelectItem>
+            <SelectItem value="emitido">Solo ventas</SelectItem>
+            <SelectItem value="recibido">Solo compras</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Chip, como "Incluir anulados" y "Ocultar bajas": en esta
+          plataforma un filtro de sí/no es un chip, no un checkbox. */}
+        <button
+          type="button"
+          aria-pressed={includePosted}
+          onClick={() => setIncludePosted(!includePosted)}
+          className={chipFiltro(includePosted)}
+        >
+          Mostrar ya contabilizadas
+        </button>
+
+        <Ayuda titulo="Contabilizar comprobantes" etiqueta="Cómo funciona">
+          <p>
+            Acá generás los asientos automáticos de las facturas aplicando las{' '}
+            <strong>reglas de mapeo</strong>. Revisá la regla que matchea cada
+            comprobante y generá los que estén correctos.
+          </p>
+          <p>
+            Si una factura no tiene regla (o tiene percepciones u otros
+            impuestos sin mapear), el asiento se crea con la cuenta{' '}
+            <strong>Pendiente de revisión</strong>, que bloquea el cierre hasta
+            que la corrijas a mano.
+          </p>
+        </Ayuda>
+
+        {canWrite && (
+          <Button
+            size="sm"
+            className="ml-auto gap-1.5"
+            onClick={() => genMut.mutate([...selected])}
+            disabled={selected.size === 0 || genMut.isPending}
+          >
+            <Zap className="size-3.5" strokeWidth={2} />
+            {genMut.isPending
+              ? 'Generando…'
+              : `Generar ${selected.size > 0 ? `(${selected.size})` : 'seleccionadas'}`}
+          </Button>
+        )}
       </div>
 
-      {/* Controles */}
       <ArcaCard>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <Select
-            value={direction}
-            onValueChange={(v) => {
-              setDirection(v as 'all' | 'emitido' | 'recibido');
-              setSelected(new Set());
-            }}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Ventas y compras</SelectItem>
-              <SelectItem value="emitido">Solo ventas</SelectItem>
-              <SelectItem value="recibido">Solo compras</SelectItem>
-            </SelectContent>
-          </Select>
-          <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--arca-ink-2)] cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={includePosted}
-              onChange={(e) => setIncludePosted(e.target.checked)}
-            />
-            Mostrar ya contabilizadas
-          </label>
-          <div className="flex-1" />
-          {canWrite && (
-            <button
-              onClick={() => genMut.mutate([...selected])}
-              disabled={selected.size === 0 || genMut.isPending}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50 inline-flex items-center gap-1.5"
-            >
-              <Zap className="w-3.5 h-3.5" strokeWidth={2} />
-              {genMut.isPending
-                ? 'Generando…'
-                : `Generar ${selected.size > 0 ? `(${selected.size})` : 'seleccionadas'}`}
-            </button>
-          )}
-        </div>
-
         {isLoading ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             Cargando comprobantes…
@@ -7614,7 +7694,7 @@ function Contabilizar({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+              <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                 <th className="w-9 py-2 pl-4">
                   {canWrite && selectable.length > 0 && (
                     <button
@@ -7641,7 +7721,7 @@ function Contabilizar({
                 <th className="py-2 pr-4 text-right">Acción</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {invoices.map((inv) => (
                 <PostingRow
                   key={inv.id}
@@ -7758,11 +7838,11 @@ function PostingRow({
       <td className="py-2 pl-4">
         {inv.posted ? (
           <span className="inline-flex items-center gap-1.5">
-            <span className="px-1.5 py-px rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] border border-[var(--arca-accent-pos)]">
               Asiento N°{inv.entryNumber}
             </span>
             {inv.entryEdited && (
-              <span className="px-1.5 py-px rounded-full text-[11px] bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)] border border-[var(--arca-accent)]">
                 editado
               </span>
             )}
@@ -7774,7 +7854,7 @@ function PostingRow({
             <span>{inv.ruleName}</span>
             {inv.willUsePendingReview && (
               <span
-                className="px-1.5 py-px rounded-full text-[11px] bg-amber-50 text-amber-700 border border-amber-200"
+                className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border border-[var(--arca-accent-warn)]"
                 title="Tiene otros impuestos/percepciones sin mapear: la diferencia irá a Pendiente de revisión"
               >
                 + pendiente
@@ -7782,7 +7862,7 @@ function PostingRow({
             )}
           </span>
         ) : (
-          <span className="px-1.5 py-px rounded-full text-[11px] bg-amber-50 text-amber-700 border border-amber-200">
+          <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border border-[var(--arca-accent-warn)]">
             Sin regla → Pendiente de revisión
           </span>
         )}
@@ -7842,12 +7922,15 @@ function Pendientes({
 
   return (
     <div className="space-y-4">
-      {/* Explicación */}
-      <div className="flex gap-2 rounded-[10px] border border-amber-200 bg-amber-50/60 px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
-        <AlertTriangle
-          className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
-          strokeWidth={1.8}
-        />
+      {/* Es un aviso de verdad —bloquea el cierre— así que se queda como
+        banner y no como botón de ayuda. Lo que cambia es el color: el texto
+        va en el `-fg` del estado, no en `ink-2`, y el borde a un cuarto de
+        opacidad como el resto de los banners tonales. */}
+      <div
+        role="status"
+        className="flex gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-accent-warn)]/25 bg-[var(--arca-accent-warn-bg)] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--arca-accent-warn-fg)]"
+      >
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" strokeWidth={1.8} />
         <div>
           <strong>Pendientes de revisión.</strong> Asientos automáticos que el
           sistema no pudo imputar del todo a una cuenta concreta (falta una
@@ -7871,7 +7954,7 @@ function Pendientes({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+              <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                 <th className="py-2 pl-4">N°</th>
                 <th className="py-2">Fecha</th>
                 <th className="py-2">Período</th>
@@ -7882,7 +7965,7 @@ function Pendientes({
                 <th className="py-2 pr-4 text-right">Acción</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {entries.map((e) => (
                 <PendingRow
                   key={e.id}
@@ -7937,7 +8020,9 @@ function PendingRow({
   const closed = entry.periodStatus === 'cerrado';
   return (
     <tr className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]">
-      <td className="py-2 pl-4 tabular-nums [font-family:var(--ff-mono)]">{entry.number}</td>
+      <td className="py-2 pl-4 tabular-nums [font-family:var(--ff-mono)]">
+        {entry.number}
+      </td>
       <td className="py-2 whitespace-nowrap">{fmtFecha(entry.entryDate)}</td>
       <td className="py-2 whitespace-nowrap">
         {MONTH_NAMES[entry.periodMonth]} {entry.periodYear}
@@ -7953,7 +8038,7 @@ function PendingRow({
       <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap">
         $ {fmtMoney(entry.total)}
       </td>
-      <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap text-amber-700 font-medium">
+      <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap text-[var(--arca-accent-warn-fg)] font-medium">
         $ {fmtMoney(entry.pendingAmount)}
       </td>
       <td className="py-2 pl-4 max-w-[280px]">
@@ -8106,7 +8191,7 @@ function BienesDeUso({
           ) : (
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-4">Nombre</th>
                   <th className="py-2">Categoría</th>
                   <th className="py-2">Fecha adq.</th>
@@ -8117,7 +8202,7 @@ function BienesDeUso({
                   <th className="py-2 pr-4 text-right">Acción</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {assets.map((a) => (
                   <tr
                     key={a.id}
@@ -8151,7 +8236,7 @@ function BienesDeUso({
                       {canWrite && a.status === 'activo' && (
                         <button
                           onClick={() => setDisposeTarget(a)}
-                          className="text-[12px] text-[var(--arca-ink-2)] hover:text-red-600"
+                          className="text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-accent-neg-fg)]"
                         >
                           Dar de baja
                         </button>
@@ -8458,7 +8543,7 @@ function FixedAssetEditor({
           </span>
         </div>
         {rv >= ov && ov > 0 && (
-          <p className="text-[11px] text-red-600">
+          <p className="text-[11px] text-[var(--arca-accent-neg-fg)]">
             El valor residual debe ser menor al valor de origen.
           </p>
         )}
@@ -8559,7 +8644,7 @@ function DisposeAssetDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!disposalDate || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-red-600 text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent-neg-fg)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Procesando…' : 'Confirmar baja'}
           </button>
@@ -8810,7 +8895,7 @@ function AnexoIView({
               className={`w-full min-w-[1000px] text-[11.5px] ${COL_FIJA}`}
             >
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th
                     className="py-2 pl-4 text-left align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
@@ -8895,7 +8980,7 @@ function AnexoIView({
                   <th className="px-3 py-1.5 text-right">Monto</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.categories.map((cat) => (
                   <AnexoICategoryRows
                     key={cat.category}
@@ -8970,13 +9055,13 @@ function AnexoIView({
             </p>
             <table className="w-full text-[12.5px] mb-3">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-1.5">Cuenta</th>
                   <th className="py-1.5 text-right">Debe</th>
                   <th className="py-1.5 text-right">Haber</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.suggestion.lines.map((l, i) => (
                   <tr
                     key={i}
@@ -9351,93 +9436,119 @@ function EstadosContables({
 
   return (
     <div className="space-y-4">
-      {/* Barra: ejercicio + estado de aprobación del paquete */}
-      <ArcaCard>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-          <span className="text-[12px] text-[var(--arca-ink-3)]">
-            Ejercicio
-          </span>
-          <Select
-            value={effectiveFyId}
-            onValueChange={(v) => setSelectedFyId(v)}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {fiscalYears.map((y) => (
-                <SelectItem key={y.id} value={y.id}>
-                  N°{y.numero} ({y.estado === 'abierto' ? 'abierto' : 'cerrado'}
-                  )
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="inline-flex rounded-[8px] border border-[var(--arca-border)] p-0.5 bg-[var(--arca-surface-2)]">
-            {(
-              [
-                ['ajustado', 'Ajustado por inflación'],
-                ['historico', 'Valores históricos'],
-              ] as ['ajustado' | 'historico', string][]
-            ).map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setValuation(k)}
-                title={
-                  k === 'ajustado'
-                    ? `Incluye el asiento de ajuste por inflación (${norma}). Es como se presentan los EECC.`
-                    : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'
-                }
-                className="px-2.5 h-6 text-[11.5px] font-medium rounded-[6px] transition-colors"
-                style={{
-                  background:
-                    valuation === k ? 'var(--arca-surface)' : 'transparent',
-                  color:
-                    valuation === k ? 'var(--arca-ink)' : 'var(--arca-ink-3)',
-                }}
-              >
-                {label}
-              </button>
+      {/* Sin card: es la barra de la pantalla, no una tarjeta de contenido. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[12.5px] text-[var(--arca-ink-3)]">
+          Ejercicio
+        </span>
+        <Select value={effectiveFyId} onValueChange={(v) => setSelectedFyId(v)}>
+          <SelectTrigger size="sm" className="w-[180px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {fiscalYears.map((y) => (
+              <SelectItem key={y.id} value={y.id}>
+                N°{y.numero} ({y.estado === 'abierto' ? 'abierto' : 'cerrado'})
+              </SelectItem>
             ))}
-          </div>
-          <div className="flex-1" />
+          </SelectContent>
+        </Select>
+
+        {/* Segmentado del sistema. */}
+        <div
+          role="tablist"
+          className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
+        >
+          {(
+            [
+              ['ajustado', 'Ajustado por inflación'],
+              ['historico', 'Valores históricos'],
+            ] as ['ajustado' | 'historico', string][]
+          ).map(([k, label]) => (
+            <Tooltip key={k}>
+              <TooltipTrigger asChild>
+                <button
+                  role="tab"
+                  type="button"
+                  aria-selected={valuation === k}
+                  onClick={() => setValuation(k)}
+                  className={cn(
+                    'flex h-[26px] items-center rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
+                    valuation === k
+                      ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                      : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                  )}
+                >
+                  {label}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {k === 'ajustado'
+                  ? `Incluye el asiento de ajuste por inflación (${norma}). Es como se presentan los EECC.`
+                  : 'Excluye el asiento de ajuste. Queda como papel de trabajo.'}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
           {approved ? (
             <>
-              <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">
-                ✓ Aprobado
+              <Badge variant="success" size="sm">
+                <BadgeDot />
+                Aprobado
                 {fs?.approvedByName ? ` · ${fs.approvedByName}` : ''}
                 {fs?.approvedAt
                   ? ` · ${new Date(fs.approvedAt).toLocaleDateString('es-AR')}`
                   : ''}
-              </span>
+              </Badge>
               {isOwner && (
-                <button
-                  onClick={() => reopenMut.mutate()}
-                  disabled={reopenMut.isPending}
-                  className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
-                >
-                  Reabrir
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => reopenMut.mutate()}
+                      disabled={reopenMut.isPending}
+                    >
+                      Reabrir
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Vuelve el paquete a borrador para poder editarlo
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           ) : (
             <>
-              <span className="text-[11px] px-2 py-1 rounded-full bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] font-medium">
+              <Badge variant="outline" size="sm">
+                <BadgeDot />
                 Borrador
-              </span>
+              </Badge>
               {isOwner && (
-                <button
-                  onClick={() => approveMut.mutate()}
-                  disabled={approveMut.isPending}
-                  className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  Aprobar EECC
-                </button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => approveMut.mutate()}
+                      disabled={approveMut.isPending}
+                    >
+                      <Check className="size-3.5" strokeWidth={2.4} />
+                      Aprobar EECC
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Cierra el paquete: queda como la versión presentada y deja
+                    de editarse
+                  </TooltipContent>
+                </Tooltip>
               )}
             </>
           )}
         </div>
-      </ArcaCard>
+      </div>
 
       {/* Índice del balance a la izquierda; el estado elegido, a la derecha. */}
       <div className="flex items-start gap-4">
@@ -9773,7 +9884,17 @@ function EspView({
               ? ` · Ejercicio N°${data.fiscalYearNumber} · ${data.periodLabel}`
               : ''}
           </div>
-          <div className="text-[11px] text-[var(--arca-ink-3)] italic mt-0.5">
+          {/* Sin itálica: en el sistema la aclaración es 11.5px en `ink-4`,
+            como el "Últ. actualización" de las fichas. Y cuando lo que dice
+            es que falta generar el ajuste, es un aviso: va en ámbar. */}
+          <div
+            className={cn(
+              'mt-0.5 text-[11.5px]',
+              valuation === 'ajustado' && !data?.inflationApplied
+                ? 'text-[var(--arca-accent-warn-fg)]'
+                : 'text-[var(--arca-ink-4)]'
+            )}
+          >
             {valuation === 'historico'
               ? 'Expresado en valores históricos, sin ajuste por inflación. Papel de trabajo.'
               : data?.inflationApplied
@@ -9790,7 +9911,7 @@ function EspView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-3 text-left">Rubro</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -9802,7 +9923,7 @@ function EspView({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {macros.map(({ macro, title }) => {
                   const secs = data.sections.filter((s) => s.macro === macro);
                   const totalCur = secs.reduce((s, x) => s + x.current, 0);
@@ -9858,16 +9979,16 @@ function EspView({
             {/* Validación A = P + PN */}
             <div className="px-3 mt-3">
               {data.balancedCurrent ? (
-                <div className="text-[12px] text-emerald-700">
-                  ✓ Activo = Pasivo + Patrimonio Neto (${' '}
+                <NotaCuadre cuadra>
+                  Activo = Pasivo + Patrimonio Neto ($
                   {fmtMoney(data.totals.activo.current)})
-                </div>
+                </NotaCuadre>
               ) : (
-                <div className="text-[12px] text-red-600 font-medium">
-                  ✗ No cuadra: Activo $ {fmtMoney(data.totals.activo.current)} ≠
+                <NotaCuadre cuadra={false}>
+                  No cuadra: Activo $ {fmtMoney(data.totals.activo.current)} ≠
                   Pasivo + PN $ {fmtMoney(data.totals.pasivoMasPn.current)}. La
                   emisión está bloqueada hasta corregir.
-                </div>
+                </NotaCuadre>
               )}
               <div className="mt-1">
                 <PriorNotAdjustedNote
@@ -10070,7 +10191,7 @@ function InventarioView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+            <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
               <th className="text-left font-semibold px-4 py-1.5">Conceptos</th>
               {[1, 2, 3, 4].map((n) => (
                 <th
@@ -10082,7 +10203,7 @@ function InventarioView({
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="bg-[var(--arca-surface)]">
             {macros.map(({ macro, title, total }) => {
               const secs = data.sections.filter((s) => s.macro === macro);
               if (secs.every((s) => s.rubros.length === 0)) return null;
@@ -10275,7 +10396,7 @@ function Nota3View({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
             <div>Nota</div>
             <div>Concepto</div>
             <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
@@ -10354,6 +10475,40 @@ function Nota3View({
  * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no las
  * homogeneiza. El comparativo sirve de referencia, pero no es exacto.
  */
+/**
+ * La línea de cuadre al pie de un estado: "✓ cuadra" / "✗ no cuadra".
+ *
+ * Existía cuatro veces con tres formas distintas: dos usaban los tokens
+ * `-fg` —los que llegan a contraste sobre blanco— y las otras dos el color
+ * del punto (`--arca-accent-pos` / `--arca-accent-neg`), que es el del
+ * indicador y no el del texto.
+ */
+function NotaCuadre({
+  cuadra,
+  children,
+}: {
+  cuadra: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-1.5 text-[12px]',
+        cuadra
+          ? 'text-[var(--arca-accent-pos-fg)]'
+          : 'font-medium text-[var(--arca-accent-neg-fg)]'
+      )}
+    >
+      {cuadra ? (
+        <Check className="mt-px size-3.5 shrink-0" strokeWidth={2.4} />
+      ) : (
+        <X className="mt-px size-3.5 shrink-0" strokeWidth={2.4} />
+      )}
+      <span>{children}</span>
+    </div>
+  );
+}
+
 function PriorNotAdjustedNote({
   hasPrior,
   priorInflationApplied,
@@ -10367,7 +10522,7 @@ function PriorNotAdjustedNote({
     return null;
   }
   return (
-    <div className="text-[11.5px] text-amber-600">
+    <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
       El ejercicio anterior no tiene su ajuste por inflación generado, así que
       la columna comparativa parte de valores históricos. Generá el ajuste de
       ese ejercicio para que el comparativo sea exacto.
@@ -10481,7 +10636,7 @@ function EfeView({
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
         <div>Concepto</div>
         <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
         <div className="text-right">
@@ -10549,18 +10704,11 @@ function EfeView({
       />
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
-        <div
-          className="text-[12px]"
-          style={{
-            color: data.cuadra
-              ? 'var(--arca-accent-pos)'
-              : 'var(--arca-accent-neg)',
-          }}
-        >
+        <NotaCuadre cuadra={data.cuadra}>
           {data.cuadra
-            ? '✓ Las causas explican la variación del efectivo.'
-            : `✗ Las causas ($ ${money(data.totalCausas.current)}) no explican la variación ($ ${money(data.variacion.current)}).`}
-        </div>
+            ? 'Las causas explican la variación del efectivo.'
+            : `Las causas ($ ${money(data.totalCausas.current)}) no explican la variación ($ ${money(data.variacion.current)}).`}
+        </NotaCuadre>
         {valuation === 'ajustado' && data.coeficienteInicio !== null && (
           <div className="text-[11.5px] text-[var(--arca-ink-3)]">
             El efectivo al inicio se reexpresó con coeficiente{' '}
@@ -10573,7 +10721,7 @@ function EfeView({
           </div>
         )}
         {valuation === 'ajustado' && !data.inflationApplied && (
-          <div className="text-[11.5px] text-amber-600">
+          <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
             El ajuste por inflación del ejercicio todavía no está generado, así
             que los flujos son históricos.
           </div>
@@ -10584,7 +10732,7 @@ function EfeView({
           valuation={valuation}
         />
         {data.sinActividad.length > 0 && (
-          <div className="text-[11.5px] text-amber-600">
+          <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
             {data.sinActividad.length} cuenta(s) sin actividad asignada; se usó
             la clasificación por defecto del rubro:{' '}
             {data.sinActividad
@@ -10690,7 +10838,7 @@ function EepnView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+            <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
               <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
                 Concepto
               </th>
@@ -10732,7 +10880,7 @@ function EepnView({
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="bg-[var(--arca-surface)]">
             {data.rows.map((row) => {
               const strong = row.kind === 'inicio' || row.kind === 'cierre';
               return (
@@ -10787,20 +10935,13 @@ function EepnView({
       </div>
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
-        <div
-          className="text-[12px]"
-          style={{
-            color: data.matchesEsp
-              ? 'var(--arca-accent-pos)'
-              : 'var(--arca-accent-neg)',
-          }}
-        >
+        <NotaCuadre cuadra={data.matchesEsp}>
           {data.matchesEsp
-            ? `✓ El saldo al cierre coincide con el Patrimonio Neto del ESP ($ ${money(data.espTotal)}).`
-            : `✗ El saldo al cierre no coincide con el ESP ($ ${money(data.espTotal)}). Revisá el ejercicio.`}
-        </div>
+            ? `El saldo al cierre coincide con el Patrimonio Neto del ESP ($ ${money(data.espTotal)}).`
+            : `El saldo al cierre no coincide con el ESP ($ ${money(data.espTotal)}). Revisá el ejercicio.`}
+        </NotaCuadre>
         {valuation === 'ajustado' && !data.inflationApplied && (
-          <div className="text-[11.5px] text-amber-600">
+          <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
             El ajuste por inflación del ejercicio todavía no está generado, así
             que los importes son históricos. Generalo en la solapa «Ajuste por
             inflación».
@@ -10824,7 +10965,7 @@ function EepnView({
               .
             </div>
           ) : (
-            <div className="text-[11.5px] text-amber-600">
+            <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
               No hay índice para reexpresar el ejercicio anterior: la columna
               comparativa quedó en valores históricos.
             </div>
@@ -10915,7 +11056,7 @@ function ErView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-3 text-left">Concepto</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -10927,7 +11068,7 @@ function ErView({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.lines.map((line: ErLine) => {
                   if (line.kind === 'subtotal') {
                     const isFinal = line.key === 'resultado_ejercicio';
@@ -11019,17 +11160,17 @@ function ErView({
             {/* US 6.2.2 — validación de consistencia ER ↔ ESP */}
             <div className="px-3 mt-3">
               {data.matchesEspCurrent ? (
-                <div className="text-[12px] text-emerald-700">
-                  ✓ El Resultado del ejercicio del ER coincide con el del ESP ($
+                <NotaCuadre cuadra>
+                  El Resultado del ejercicio del ER coincide con el del ESP ($
                   {fmtMoney(data.resultadoCurrent)}).
-                </div>
+                </NotaCuadre>
               ) : (
-                <div className="text-[12px] text-red-600 font-medium">
-                  ✗ Discrepancia: Resultado del ER $
+                <NotaCuadre cuadra={false}>
+                  Discrepancia: Resultado del ER $
                   {fmtMoney(data.resultadoCurrent)} ≠ Resultado del ESP $
                   {fmtMoney(data.espResultadoCurrent)}. La emisión está
                   bloqueada hasta corregir.
-                </div>
+                </NotaCuadre>
               )}
               <div className="mt-1">
                 <PriorNotAdjustedNote
@@ -11336,7 +11477,7 @@ function AnexoIIView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-3 text-left">Función / cuenta</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -11348,7 +11489,7 @@ function AnexoIIView({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.functions.map((fn: AnexoIIFunction) => (
                   <Fragment key={fn.key}>
                     <tr className="bg-[var(--arca-surface-2)]">
@@ -11626,14 +11767,19 @@ function NotesEditor({
           Formato Markdown
         </span>
         <div className="flex-1" />
+        {/* Tooltips del sistema en vez de `title`: el nativo tarda casi un
+          segundo en aparecer y no se ve como el resto. */}
         {notes.length > 0 && (
-          <button
-            onClick={exportWord}
-            className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
-            title="Exportar todas las notas como documento Word (.docx)"
-          >
-            Exportar Word
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" onClick={exportWord}>
+                Exportar Word
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Exportar todas las notas como documento Word (.docx)
+            </TooltipContent>
+          </Tooltip>
         )}
         {editable && (
           <>
@@ -11644,34 +11790,67 @@ function NotesEditor({
               className="hidden"
               onChange={(e) => void elegirArchivo(e.target.files?.[0])}
             />
-            <button
-              onClick={() => inputWord.current?.click()}
-              disabled={importando}
-              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50"
-              title="Importar notas desde un documento Word (.docx)"
-            >
-              {importando ? 'Leyendo…' : 'Importar Word'}
-            </button>
-            <button
-              onClick={() => setFormatoAbierto(true)}
-              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
-              title="Ver el formato que espera la importación"
-            >
-              Ver formato
-            </button>
-            <button
-              onClick={addNote}
-              className="text-[12px] px-3 h-7 rounded-[6px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
-            >
-              + Agregar nota
-            </button>
-            <button
-              onClick={() => saveMut.mutate()}
-              disabled={!dirty || saveMut.isPending}
-              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-40"
-            >
-              Guardar
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => inputWord.current?.click()}
+                  disabled={importando}
+                >
+                  {importando ? 'Leyendo…' : 'Importar Word'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Importar notas desde un documento Word (.docx)
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFormatoAbierto(true)}
+                >
+                  Ver formato
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Ver el formato que espera la importación
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={addNote}
+                >
+                  <Plus className="size-3.5" strokeWidth={2.5} />
+                  Agregar nota
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Agrega una nota vacía al final del listado
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="sm"
+                  onClick={() => saveMut.mutate()}
+                  disabled={!dirty || saveMut.isPending}
+                >
+                  Guardar
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {dirty
+                  ? 'Guardar los cambios de las notas'
+                  : 'No hay cambios para guardar'}
+              </TooltipContent>
+            </Tooltip>
           </>
         )}
       </div>
@@ -11802,7 +11981,7 @@ function NotesEditor({
       </AlertDialog>
 
       {approved && (
-        <div className="px-5 py-2 text-[11.5px] text-emerald-700 bg-emerald-50 border-b border-[var(--arca-border)]">
+        <div className="px-5 py-2 text-[11.5px] text-[var(--arca-accent-pos-fg)] bg-[var(--arca-accent-pos-bg)] border-b border-[var(--arca-border)]">
           Los EECC están aprobados — las notas son de solo lectura. Reabrí a
           borrador para editarlas.
         </div>
@@ -11911,7 +12090,7 @@ function NotesEditor({
                     </button>
                     <button
                       onClick={() => remove(note.id)}
-                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-red-500 hover:bg-red-50"
+                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-accent-neg-fg)] hover:bg-[var(--arca-accent-neg-bg)]"
                       title="Eliminar"
                     >
                       ✕
@@ -11920,7 +12099,7 @@ function NotesEditor({
                 )}
               </div>
               {isPreview ? (
-                <div className="px-4 py-3 text-[13px] text-[var(--arca-ink-2)] [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-[var(--arca-ink)] [&_em]:italic [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:my-2 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:my-2 [&_h3]:font-semibold [&_a]:text-blue-600 [&_a]:underline [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-[var(--arca-surface-2)] [&_code]:px-1 [&_code]:rounded [&_table]:w-full [&_th]:text-left [&_th]:border-b [&_th]:border-[var(--arca-border)] [&_td]:py-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--arca-border)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--arca-ink-3)]">
+                <div className="px-4 py-3 text-[13px] text-[var(--arca-ink-2)] [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-[var(--arca-ink)] [&_em]:italic [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:my-2 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:my-2 [&_h3]:font-semibold [&_a]:text-[var(--arca-accent-hover)] [&_a]:underline [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-[var(--arca-surface-2)] [&_code]:px-1 [&_code]:rounded [&_table]:w-full [&_th]:text-left [&_th]:border-b [&_th]:border-[var(--arca-border)] [&_td]:py-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--arca-border)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--arca-ink-3)]">
                   {note.content.trim() ? (
                     <Markdown remarkPlugins={[remarkGfm]}>
                       {fillAuditReport(note.content, vars)}
@@ -12097,7 +12276,7 @@ function DatosInicialesView({
               onChange={(e) => set('address', e.target.value)}
               disabled={!canEdit}
               placeholder="Av. Corrientes 1234, Buenos Aires"
-              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] placeholder:text-[var(--arca-ink-4)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] disabled:cursor-default disabled:opacity-50"
             />
           </div>
 
@@ -12110,7 +12289,7 @@ function DatosInicialesView({
               onChange={(e) => set('actividadPrincipal', e.target.value)}
               disabled={!canEdit}
               placeholder="Venta al por menor de…"
-              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+              className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] placeholder:text-[var(--arca-ink-4)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] disabled:cursor-default disabled:opacity-50"
             />
           </div>
 
@@ -12148,7 +12327,7 @@ function DatosInicialesView({
                 onChange={(e) => set('numeroInscripcion', e.target.value)}
                 disabled={!canEdit}
                 placeholder="12345"
-                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-ink)] disabled:opacity-50 disabled:cursor-default"
+                className="w-full h-8 px-2.5 rounded-[7px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] placeholder:text-[var(--arca-ink-4)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] disabled:cursor-default disabled:opacity-50"
               />
             </div>
           </div>

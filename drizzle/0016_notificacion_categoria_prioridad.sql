@@ -13,3 +13,10 @@ ALTER TABLE "notificacion_categoria_prioridad" ADD CONSTRAINT "notificacion_cate
 ALTER TABLE "notificacion_categoria_prioridad" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 CREATE POLICY "tenant" ON "notificacion_categoria_prioridad" AS PERMISSIVE FOR ALL TO "arca_agent", "arca_app" USING ((org_id = current_setting('app.org_id'::text, true))) WITH CHECK ((org_id = current_setting('app.org_id'::text, true)));
+--> statement-breakpoint
+-- La policy filtra filas, pero no da acceso a la tabla: sin estos GRANT el rol
+-- de la app recibe "permission denied" en la primera consulta. Mismos permisos
+-- que `notificacion`, que es la tabla de la que cuelga esta.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "notificacion_categoria_prioridad" TO "arca_app";
+--> statement-breakpoint
+GRANT SELECT ON TABLE "notificacion_categoria_prioridad" TO "arca_agent";

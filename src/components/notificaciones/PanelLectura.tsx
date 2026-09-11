@@ -524,7 +524,7 @@ export function PanelLectura({
                 </span>
               )}
               <span
-                className={`rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium ${SEVERIDAD_PILL[n.severidad]}`}
+                className={`inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium ${SEVERIDAD_PILL[n.severidad]}`}
               >
                 {SEVERIDAD_LABEL[n.severidad]}
               </span>

@@ -12,7 +12,6 @@ import {
   Calendar,
   BarChart2,
   Settings,
-  ChevronDown,
   ChevronsUpDown,
   Check,
   Building,
@@ -67,6 +66,7 @@ import {
 } from '@/components/ui/popover';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
+import { abrirBuscador } from '@/lib/buscador-global';
 
 export { userQuery };
 
@@ -111,6 +111,95 @@ function BotonColapsar() {
   );
 }
 
+/**
+ * Colapsado el sidebar mide 56px y el botón queda reducido al ícono: sin
+ * tooltip no hay forma de saber qué hace.
+ */
+function BotonBuscar({
+  colapsado,
+  atajo,
+}: {
+  colapsado: boolean;
+  atajo: string;
+}) {
+  const boton = (
+    <button
+      type="button"
+      onClick={abrirBuscador}
+      aria-label={colapsado ? `Buscar · ${atajo}` : undefined}
+      className={cn(
+        'group flex shrink-0 items-center rounded-lg text-[12px] text-[var(--arca-sidebar-muted)] mt-2 mb-1.5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] hover:text-[var(--arca-sidebar-fg)] transition-colors duration-[120ms]',
+        colapsado ? 'justify-center size-9 mx-auto' : 'h-7 gap-2 px-2'
+      )}
+      style={{
+        background: 'rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.07)',
+      }}
+    >
+      <Search className="w-[13px] h-[13px] shrink-0" strokeWidth={2} />
+      {!colapsado && (
+        <>
+          <span className="flex-1 text-left">Buscar</span>
+          {/* El atajo es una ayuda, no un elemento de la interfaz: sin
+              recuadro y apenas visible hasta que el cursor pasa por acá. */}
+          <kbd
+            className="text-[10.5px] text-[var(--arca-sidebar-muted)] opacity-40 transition-opacity duration-[120ms] group-hover:opacity-100"
+            style={{ fontFamily: 'var(--ff-mono)' }}
+          >
+            {atajo}
+          </kbd>
+        </>
+      )}
+    </button>
+  );
+
+  if (!colapsado) return boton;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{boton}</TooltipTrigger>
+      <TooltipContent side="right" className="text-[12.5px]">
+        Buscar · {atajo}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Va adentro de `CreateRepresentativeDialog`, que lo monta con
+ * `DialogTrigger asChild`: por eso reenvía props y ref al `<button>` real —
+ * si no, el diálogo no se abre. El tooltip se apila encima del mismo nodo.
+ */
+const BotonNuevoCliente = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<'button'> & { colapsado: boolean }
+>(function BotonNuevoCliente({ colapsado, ...props }, ref) {
+  const boton = (
+    <button
+      ref={ref}
+      {...props}
+      aria-label={colapsado ? 'Nuevo cliente' : undefined}
+      className={cn(
+        'flex items-center rounded-lg text-[13px] font-semibold mb-3 transition-colors duration-[120ms]',
+        'bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]',
+        colapsado ? 'justify-center size-9 mx-auto' : 'h-9 gap-2 px-3 w-full'
+      )}
+    >
+      <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
+      {!colapsado && 'Nuevo cliente'}
+    </button>
+  );
+
+  if (!colapsado) return boton;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{boton}</TooltipTrigger>
+      <TooltipContent side="right" className="text-[12.5px]">
+        Nuevo cliente
+      </TooltipContent>
+    </Tooltip>
+  );
+});
+
 interface ListedOrg {
   id: string;
   name: string;
@@ -153,7 +242,7 @@ function NavItem({
       to={to}
       aria-label={colapsado ? label : undefined}
       className={cn(
-        'flex items-center rounded-lg relative text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none',
+        'flex shrink-0 items-center rounded-lg relative text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none',
         colapsado ? 'justify-center size-9 mx-auto' : 'h-[34px] gap-2.5 px-2.5',
         isActive
           ? 'bg-[var(--arca-sidebar-active)] text-white'
@@ -251,7 +340,7 @@ function FuentesDatosItem() {
           aria-label={colapsado ? 'Fuentes de datos' : undefined}
           title={colapsado ? 'Fuentes de datos' : undefined}
           className={cn(
-            'flex items-center rounded-lg text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none text-left',
+            'flex shrink-0 items-center rounded-lg text-[13px] font-medium cursor-pointer transition-colors duration-[120ms] select-none text-left',
             colapsado
               ? 'justify-center size-9 mx-auto'
               : 'h-[34px] gap-2.5 px-2.5 w-full',
@@ -295,7 +384,7 @@ function FuentesDatosItem() {
                   </div>
                   {f.ultimoErrorAt &&
                     (!f.ultimoOkAt || f.ultimoErrorAt > f.ultimoOkAt) && (
-                      <div className="text-[11px] leading-snug text-[var(--arca-accent-neg)]">
+                      <div className="text-[11px] leading-snug text-[var(--arca-accent-neg-fg)]">
                         Último intento falló {relativeTime(f.ultimoErrorAt)}
                       </div>
                     )}
@@ -383,7 +472,7 @@ function NavGroup({
         <div
           role="separator"
           aria-label={label}
-          className="mx-auto my-2 h-px w-5 bg-[rgba(255,255,255,0.10)]"
+          className="mx-auto my-2 h-px w-5 shrink-0 bg-[rgba(255,255,255,0.10)]"
         />
         {children}
       </>
@@ -392,7 +481,7 @@ function NavGroup({
 
   return (
     <Collapsible open={abierto} onOpenChange={setAbierto}>
-      <CollapsibleTrigger className="flex w-full items-center gap-1.5 rounded-lg px-2.5 pt-3 pb-1 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--arca-sidebar-label)] uppercase transition-colors duration-[120ms] hover:text-[var(--arca-sidebar-fg)]">
+      <CollapsibleTrigger className="flex w-full shrink-0 items-center gap-1.5 rounded-lg px-2.5 pt-3 pb-1 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--arca-sidebar-label)] uppercase transition-colors duration-[120ms] hover:text-[var(--arca-sidebar-fg)]">
         <span className="flex-1 text-left">{label}</span>
         <ChevronRight
           className={cn(
@@ -402,7 +491,7 @@ function NavGroup({
           strokeWidth={2.5}
         />
       </CollapsibleTrigger>
-      <CollapsibleContent className="flex flex-col gap-0.5 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+      <CollapsibleContent className="flex shrink-0 flex-col gap-0.5 overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
         {children}
       </CollapsibleContent>
     </Collapsible>
@@ -455,6 +544,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     isEnabled('banco') ||
     isEnabled('analytics') ||
     isEnabled('ai_agent');
+
+  // Con una sola organización el switcher no tiene a dónde ir: dejarlo con
+  // hover y flechitas promete una acción que no existe.
+  const puedeCambiarOrg =
+    ((organizations as ListedOrg[] | undefined)?.length ?? 0) > 1;
 
   const displayName = user?.organizationName ?? activeOrg?.name ?? 'Workspace';
   const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? '';
@@ -512,7 +606,39 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           color: 'var(--arca-sidebar-fg)',
         }}
       >
-        {/* Workspace switcher + botón de colapsar */}
+        {/* Identidad del producto. Va arriba del switcher para que quede claro
+            que Ordo es la app y el estudio es el workspace, no al revés: por eso
+            manda en tamaño y el estudio queda un escalón abajo. */}
+        <div
+          className={cn(
+            'flex items-center border-b border-[rgba(255,255,255,0.07)] pb-3 mb-2',
+            colapsado ? 'flex-col gap-1.5' : 'gap-2.5 px-2'
+          )}
+        >
+          {colapsado ? (
+            <img
+              src="/brand/ordo-app-icon.svg"
+              alt="Ordo Suite Contable"
+              className="block size-[34px] rounded-[10px]"
+            />
+          ) : (
+            <>
+              <img
+                src="/brand/ordo-symbol-white.svg"
+                alt=""
+                className="block size-[28px] shrink-0"
+              />
+              <span className="text-[21px] leading-none font-semibold tracking-[-0.03em] text-white">
+                Ordo
+              </span>
+            </>
+          )}
+          <div className={cn(!colapsado && 'ml-auto')}>
+            <BotonColapsar />
+          </div>
+        </div>
+
+        {/* Workspace switcher */}
         <div
           className={cn(
             'flex items-center',
@@ -522,18 +648,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
+                disabled={!puedeCambiarOrg}
                 aria-label={colapsado ? displayName : undefined}
                 title={colapsado ? displayName : undefined}
                 className={cn(
-                  'flex items-center rounded-[10px] text-left hover:bg-[rgba(255,255,255,0.04)] transition-colors duration-[150ms] group',
+                  'flex items-center rounded-[10px] text-left transition-colors duration-[150ms] group',
+                  puedeCambiarOrg
+                    ? 'hover:bg-[rgba(255,255,255,0.04)]'
+                    : 'cursor-default',
                   colapsado
                     ? 'justify-center p-1'
-                    : 'gap-2.5 px-2 py-2 flex-1 min-w-0'
+                    : 'gap-2 px-2 py-1 flex-1 min-w-0'
                 )}
               >
                 {/* Logo tile */}
                 <div
-                  className="w-[30px] h-[30px] rounded-lg flex items-center justify-center text-[12px] font-bold shrink-0 bg-[var(--arca-accent)] text-white"
+                  className="w-[26px] h-[26px] rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 bg-[rgba(255,255,255,0.08)] text-white"
                   style={{
                     letterSpacing: '-0.02em',
                     fontFamily: 'var(--ff-display)',
@@ -547,7 +677,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       // ícono de imagen rota en el rincón de la app. Mejor las
                       // iniciales.
                       onError={() => setLogoRoto(true)}
-                      className="w-[30px] h-[30px] rounded-lg object-cover"
+                      className="w-[26px] h-[26px] rounded-lg object-cover"
                     />
                   ) : (
                     initials || <Building className="w-4 h-4" />
@@ -556,22 +686,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 {!colapsado && (
                   <>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] font-semibold text-white tracking-[-0.01em] truncate">
+                      <div className="text-[12px] font-medium text-white/90 tracking-[-0.01em] truncate">
                         {displayName}
                       </div>
                       <div
-                        className="text-[11.5px] text-[var(--arca-sidebar-muted)] truncate"
+                        className="text-[10.5px] text-[var(--arca-sidebar-muted)] truncate"
                         style={{ fontFamily: 'var(--ff-mono)' }}
                       >
                         {displaySlug}
                       </div>
                     </div>
-                    <ChevronsUpDown className="w-3.5 h-3.5 text-[var(--arca-sidebar-muted)] shrink-0" />
+                    {puedeCambiarOrg && (
+                      <ChevronsUpDown className="w-3.5 h-3.5 text-[var(--arca-sidebar-muted)] shrink-0" />
+                    )}
                   </>
                 )}
               </button>
             </DropdownMenuTrigger>
-            {organizations && (organizations as ListedOrg[]).length > 1 && (
+            {puedeCambiarOrg && (
               <DropdownMenuContent
                 className="min-w-56 rounded-lg"
                 align="start"
@@ -608,56 +740,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </DropdownMenuContent>
             )}
           </DropdownMenu>
-          <BotonColapsar />
         </div>
 
         {/* Search */}
-        <div
-          className={cn(
-            'flex items-center rounded-lg text-[12.5px] text-[var(--arca-sidebar-muted)] mt-2.5 mb-1.5 cursor-pointer hover:bg-[rgba(255,255,255,0.04)] transition-colors duration-[120ms]',
-            colapsado ? 'justify-center size-9 mx-auto' : 'h-8 gap-2 px-2.5'
-          )}
-          title={colapsado ? `Buscar · ${atajoBuscar}` : undefined}
-          style={{
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.07)',
-          }}
-        >
-          <Search className="w-[13px] h-[13px] shrink-0" strokeWidth={2} />
-          {!colapsado && (
-            <>
-              <span className="flex-1">Buscar</span>
-              <kbd
-                className="text-[10.5px] text-[var(--arca-sidebar-muted)] rounded px-[5px] py-px"
-                style={{
-                  fontFamily: 'var(--ff-mono)',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                {atajoBuscar}
-              </kbd>
-            </>
-          )}
-        </div>
+        <BotonBuscar colapsado={colapsado} atajo={atajoBuscar} />
 
-        {/* Crear nuevo CTA */}
+        {/* CTA de alta. Abre el mismo diálogo que el "+" de Clientes. */}
         {!isViewer && (
           <CreateRepresentativeDialog>
-            <button
-              aria-label={colapsado ? 'Crear nuevo' : undefined}
-              title={colapsado ? 'Crear nuevo' : undefined}
-              className={cn(
-                'flex items-center rounded-lg text-[13px] font-semibold mb-3 transition-colors duration-[120ms]',
-                'bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]',
-                colapsado
-                  ? 'justify-center size-9 mx-auto'
-                  : 'h-9 gap-2 px-3 w-full'
-              )}
-            >
-              <Plus className="w-3.5 h-3.5 shrink-0" strokeWidth={2.2} />
-              {!colapsado && 'Crear nuevo'}
-            </button>
+            <BotonNuevoCliente colapsado={colapsado} />
           </CreateRepresentativeDialog>
         )}
 
@@ -733,73 +824,79 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           )}
         </nav>
 
-        {/* ─── Footer: user card ─── */}
+        {/* ─── Footer: user card ───
+            La tarjeta es informativa: no abre nada, así que no es un botón.
+            Cerrar sesión es su propia acción, con ícono y tooltip. */}
         <div
-          className="mt-auto pt-2.5"
+          className={cn(
+            'mt-auto pt-2',
+            colapsado
+              ? 'flex flex-col items-center gap-1'
+              : 'flex items-center gap-1'
+          )}
           style={{ borderTop: '1px solid rgba(255,255,255,0.07)' }}
         >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                aria-label={colapsado ? (user?.name ?? 'Cuenta') : undefined}
-                title={colapsado ? (user?.name ?? 'Cuenta') : undefined}
-                className={cn(
-                  'flex items-center rounded-[10px] hover:bg-[rgba(255,255,255,0.04)] transition-colors duration-[120ms] text-left',
-                  colapsado
-                    ? 'justify-center p-1 mx-auto'
-                    : 'gap-2.5 w-full px-2 py-2'
-                )}
-              >
-                {/* User avatar */}
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 text-white"
-                  style={{
-                    background: 'linear-gradient(135deg, #1F7A86, #4FB3BC)',
-                  }}
-                >
-                  {user?.image ? (
-                    <img
-                      src={user.image}
-                      alt=""
-                      className="w-full h-full rounded-full object-cover"
-                    />
-                  ) : (
-                    userInitials
-                  )}
-                </div>
-                {!colapsado && (
-                  <>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[12.5px] font-semibold text-white truncate">
-                        {user?.name}
-                      </div>
-                      <div className="text-[11px] text-[var(--arca-sidebar-muted)] truncate">
-                        {user?.email}
-                      </div>
-                    </div>
-                    <ChevronDown className="w-3.5 h-3.5 text-[var(--arca-sidebar-muted)] shrink-0" />
-                  </>
-                )}
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="min-w-56 rounded-lg"
-              side={isMobile ? 'bottom' : 'right'}
-              align="end"
-              sideOffset={4}
+          <div
+            aria-label={colapsado ? (user?.name ?? 'Cuenta') : undefined}
+            title={colapsado ? (user?.name ?? 'Cuenta') : undefined}
+            className={cn(
+              'flex items-center',
+              colapsado
+                ? 'justify-center p-1'
+                : 'gap-2.5 min-w-0 flex-1 px-2 py-1'
+            )}
+          >
+            {/* User avatar */}
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 text-white"
+              style={{
+                background: 'linear-gradient(135deg, #1F7A86, #4FB3BC)',
+              }}
             >
-              <DropdownMenuItem
-                className="gap-2 text-destructive"
+              {user?.image ? (
+                <img
+                  src={user.image}
+                  alt=""
+                  className="w-full h-full rounded-full object-cover"
+                />
+              ) : (
+                userInitials
+              )}
+            </div>
+            {!colapsado && (
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="text-[12.5px] font-semibold text-white truncate">
+                  {user?.name}
+                </div>
+                <div className="text-[11px] text-[var(--arca-sidebar-muted)] truncate">
+                  {user?.email}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Cerrar sesión"
                 onClick={async () => {
                   await authClient.signOut();
                   await navigate({ to: '/login' });
                 }}
+                className={cn(
+                  'grid size-7 shrink-0 place-items-center rounded-lg text-[var(--arca-sidebar-muted)] transition-colors duration-[120ms]',
+                  'hover:bg-[rgba(255,255,255,0.06)] hover:text-white',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-accent-light)]'
+                )}
               >
                 <LogOut className="size-4" />
-                Cerrar sesión
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side={isMobile ? 'top' : 'right'}>
+              Cerrar sesión
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 

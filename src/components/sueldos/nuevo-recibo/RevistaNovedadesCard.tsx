@@ -43,7 +43,7 @@ function microLabel(text: string) {
 }
 
 const inputCls =
-  'h-[34px] w-full px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)] placeholder:text-[var(--arca-ink-4)]';
+  'h-[34px] w-full px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)] placeholder:text-[var(--arca-ink-4)]';
 
 export function RevistaNovedadesCard({
   abierta,
@@ -124,7 +124,7 @@ export function RevistaNovedadesCard({
                         })
                       }
                     >
-                      <SelectTrigger className="h-[34px] rounded-[10px] border-[var(--arca-border-strong)] text-[12.5px]">
+                      <SelectTrigger className="h-[34px] rounded-lg border-[var(--arca-border-strong)] text-[12.5px]">
                         <SelectValue placeholder="—" />
                       </SelectTrigger>
                       <SelectContent>
@@ -159,7 +159,7 @@ export function RevistaNovedadesCard({
           <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3.5">
             <div>
               {microLabel('Días trabajados')}
-              <div className="h-[34px] px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 focus-within:border-[var(--arca-accent)]">
+              <div className="h-[34px] px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 focus-within:border-[var(--arca-accent)]">
                 <input
                   value={dias}
                   onChange={(e) => {
@@ -197,7 +197,7 @@ export function RevistaNovedadesCard({
             </div>
             <div>
               {microLabel('Maternidad art. 13')}
-              <label className="h-[34px] px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 cursor-pointer select-none">
+              <label className="h-[34px] px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={maternidad}

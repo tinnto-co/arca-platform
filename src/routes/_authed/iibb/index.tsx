@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Globe, MapPin, Plus, X } from 'lucide-react';
+import { Globe, Info, MapPin, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -42,9 +42,9 @@ function formatARS(value: string | number | null | undefined): string {
 
 const tabCls = () =>
   cn(
-    'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+    'relative h-auto flex-none whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 pb-2.5 text-[13px] gap-[7px] cursor-pointer',
+    'font-medium text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink-2)]',
+    'data-[state=active]:border-[var(--arca-accent)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-none'
   );
 
 interface LiqRow {
@@ -410,7 +410,7 @@ function IIBBDesglose({
   return (
     <div>
       {/* Selectors — la empresa se elige en el selector global del header. */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div className="mb-4 flex flex-wrap gap-3">
         <SelectorPeriodo
           periodo={periodo}
           onPeriodo={(p) => {
@@ -435,16 +435,26 @@ function IIBBDesglose({
           </div>
         ) : (
           <div>
+            {/* Es un aviso sobre lo que se está viendo —la empresa elegida no
+                entra en esta pantalla— no una leyenda de la tabla: va como
+                banner tonal, con el ícono y el color del sistema. */}
             {clienteGlobal && (
-              <p className="mb-3 text-[12px] text-[var(--arca-ink-3)]">
-                La empresa elegida no tiene {regimenLabel} configurado — estas
-                son las que sí. Click en una fila para ver su detalle.
-              </p>
+              <div
+                role="status"
+                className="mb-3 flex items-start gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-accent-info)]/25 bg-[var(--arca-accent-info-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-info-fg)]"
+              >
+                <Info className="mt-[1px] size-3.5 shrink-0" />
+                <span>
+                  La empresa elegida no tiene {regimenLabel} configurado — estas
+                  son las que sí. Click en una fila para ver su detalle.
+                </span>
+              </div>
             )}
             <div
               style={{
                 border: '1px solid var(--arca-border)',
-                borderRadius: 8,
+                borderRadius: 12,
+                background: 'var(--arca-surface)',
                 overflowX: 'auto',
               }}
             >
@@ -454,27 +464,27 @@ function IIBBDesglose({
               >
                 <thead>
                   <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold whitespace-nowrap">
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">
                       Empresa
                     </th>
-                    <th className="px-3 py-2.5 text-left text-[11px] font-semibold whitespace-nowrap">
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">
                       CUIT
                     </th>
-                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
                       Comprobantes
                     </th>
-                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
                       Provincias
                     </th>
-                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
                       Base imponible
                     </th>
-                    <th className="px-3 py-2.5 text-right text-[11px] font-semibold whitespace-nowrap">
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
                       IVA
                     </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="bg-[var(--arca-surface)]">
                   {resumenEmpresas.map((r, i) => (
                     <tr
                       key={r.clienteId}
@@ -525,7 +535,8 @@ function IIBBDesglose({
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -539,42 +550,42 @@ function IIBBDesglose({
           >
             <thead>
               <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
-                <th className="text-left px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-left px-2 py-2.5 font-semibold whitespace-nowrap">
                   Provincia
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Comp.
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Base imponible
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Alícuota %
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Imp. determ.
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Saldo a favor
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Perc. Agentes
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Perc. Aduan.
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Ret. Agentes
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Ret. Banc.
                 </th>
-                <th className="text-right px-2 py-2.5 text-[11px] font-semibold whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Liquidación
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {filasDisplay.map((fila, i) => {
                 const prov = fila.key;
                 const liq = getLiq(prov);
@@ -862,11 +873,11 @@ function RouteComponent() {
           </TabsList>
         </div>
 
-        <TabsContent value="local" className="mt-6">
+        <TabsContent value="local" className="mt-3">
           <IIBBDesglose clients={localClients} regimen="local" />
         </TabsContent>
 
-        <TabsContent value="multilateral" className="mt-6">
+        <TabsContent value="multilateral" className="mt-3">
           <IIBBDesglose
             clients={multilateralClients}
             regimen="convenio_multilateral"

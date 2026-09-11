@@ -29,6 +29,11 @@ interface SearchableSelectProps {
   emptyMessage?: string;
   /** Width of both trigger and popover (default 280px) */
   width?: number | string;
+  /** `sm` (32px) para barras de filtro, donde alinea con los chips; el
+      default (36px) es la altura de control del sistema. */
+  size?: 'default' | 'sm';
+  /** Micro-label que encabeza el popover, como el "ESTADO" de la referencia. */
+  label?: string;
   align?: 'start' | 'end' | 'center';
   disabled?: boolean;
 }
@@ -41,6 +46,8 @@ export function SearchableSelect({
   searchPlaceholder = 'Buscar...',
   emptyMessage = 'Sin resultados',
   width = 280,
+  size = 'default',
+  label,
   align = 'start',
   disabled = false,
 }: SearchableSelectProps) {
@@ -57,7 +64,12 @@ export function SearchableSelect({
         <button
           disabled={disabled}
           style={{ width: widthClass }}
-          className="inline-flex items-center justify-between gap-2 px-3 py-[7px] rounded-[var(--arca-r-md)] text-[13px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] disabled:opacity-50 disabled:pointer-events-none"
+          className={cn(
+            'inline-flex items-center justify-between gap-2 rounded-lg border border-[var(--arca-border-strong)] px-3',
+            'bg-[var(--arca-surface)] text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-[var(--arca-bg)] disabled:pointer-events-none disabled:opacity-40',
+            'focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] focus-visible:outline-none',
+            size === 'sm' ? 'h-8 text-[12.5px]' : 'h-9 text-[13px]'
+          )}
         >
           <span
             className={cn('truncate', !selected && 'text-[var(--arca-ink-3)]')}
@@ -74,6 +86,11 @@ export function SearchableSelect({
         sideOffset={6}
       >
         <Command>
+          {label && (
+            <div className="px-3 pt-2.5 pb-1 text-[10.5px] font-semibold tracking-[0.08em] text-[var(--arca-ink-3)] uppercase">
+              {label}
+            </div>
+          )}
           <CommandInput
             placeholder={searchPlaceholder}
             className="text-[13px]"
@@ -96,15 +113,19 @@ export function SearchableSelect({
                     onValueChange(o.value);
                     setOpen(false);
                   }}
-                  className="text-[13px] gap-2"
+                  className={cn(
+                    'gap-2 text-[13px]',
+                    value === o.value &&
+                      'bg-[var(--arca-accent-bg)] font-medium text-[var(--arca-accent-hover)]'
+                  )}
                 >
+                  <span className="flex-1 truncate">{o.label}</span>
                   <Check
                     className={cn(
-                      'w-3.5 h-3.5 shrink-0',
+                      'size-3.5 shrink-0 text-[var(--arca-accent)]',
                       value === o.value ? 'opacity-100' : 'opacity-0'
                     )}
                   />
-                  {o.label}
                 </CommandItem>
               ))}
             </CommandGroup>

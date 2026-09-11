@@ -70,7 +70,7 @@ function StatusPill({
 }) {
   if (isOverdue && status === 'abierta') {
     return (
-      <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[var(--arca-accent-neg)] whitespace-nowrap">
+      <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[var(--arca-accent-neg-fg)] whitespace-nowrap">
         Vencida
       </span>
     );
@@ -391,7 +391,7 @@ export function DeudasTab({
           </div>
           <div className="mt-[10px] text-[12.5px] text-[var(--arca-ink-3)]">
             {debtStats.totalDebts} deudas ·{' '}
-            <span className="text-[var(--arca-accent-neg)] font-semibold">
+            <span className="text-[var(--arca-accent-neg-fg)] font-semibold">
               {debtStats.overdueCount} vencidas
             </span>
           </div>
@@ -447,7 +447,7 @@ export function DeudasTab({
                   'font-bold',
                   lastDeudaJob.success
                     ? 'text-[var(--arca-accent-pos-fg)]'
-                    : 'text-[var(--arca-accent-neg)]'
+                    : 'text-[var(--arca-accent-neg-fg)]'
                 )}
               >
                 {formatLastUpdateAt(lastDeudaJob.createdAt)}
@@ -465,8 +465,8 @@ export function DeudasTab({
                   friendlyFailedReason(lastDeudaJob.failedReason) ?? undefined
                 }
               >
-                <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-neg)] cursor-help" />
-                <span className="text-[12px] text-[var(--arca-accent-neg)] max-w-[280px] truncate hidden sm:block">
+                <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-neg-fg)] cursor-help" />
+                <span className="text-[12px] text-[var(--arca-accent-neg-fg)] max-w-[280px] truncate hidden sm:block">
                   {friendlyFailedReason(lastDeudaJob.failedReason)}
                 </span>
                 <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[var(--arca-ink)] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
@@ -477,12 +477,12 @@ export function DeudasTab({
           {lastDeudaJob &&
             !lastDeudaJob.success &&
             !lastDeudaJob.failedReason && (
-              <Info className="h-4 w-4 text-[var(--arca-accent-neg)]" />
+              <Info className="h-4 w-4 text-[var(--arca-accent-neg-fg)]" />
             )}
         </div>
 
         <button
-          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-lg px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
           disabled={!!scrapingSection}
           onClick={handleUpdateDeudas}
         >
@@ -509,7 +509,7 @@ export function DeudasTab({
           value={filterImpuesto || '__all__'}
           onValueChange={(v) => setFilterImpuesto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
               <span className="text-[var(--arca-ink-4)]">Impuesto</span>
               <span className="font-bold text-[var(--arca-ink)] truncate">
@@ -533,7 +533,7 @@ export function DeudasTab({
           value={filterConcepto || '__all__'}
           onValueChange={(v) => setFilterConcepto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
               <span className="text-[var(--arca-ink-4)]">Concepto</span>
               <span className="font-bold text-[var(--arca-ink)] truncate">
@@ -563,8 +563,8 @@ export function DeudasTab({
       </div>
 
       {/* ── Table ── */}
-      <div className="border-t border-[var(--arca-border)]">
-        {/* Navy header */}
+      <div className="border-t border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        {/* Header claro con micro-label */}
         <div
           className="grid items-center px-6 h-12 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[12px] font-semibold"
           style={{ gridTemplateColumns: GRID_COLS }}
@@ -694,7 +694,7 @@ export function DeudasTab({
                     className={cn(
                       'text-[11.5px] font-semibold text-left underline underline-offset-2 transition-colors',
                       debt.intimada
-                        ? 'text-[var(--arca-accent-neg)] hover:text-[#a93226]'
+                        ? 'text-[var(--arca-accent-neg-fg)] hover:text-[#a93226]'
                         : 'text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-3)]'
                     )}
                     onClick={() =>

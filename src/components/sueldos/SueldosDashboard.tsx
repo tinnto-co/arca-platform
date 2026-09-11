@@ -13,6 +13,7 @@ import {
   Upload,
   FileCheck,
 } from 'lucide-react';
+import { CardsResumen } from '@/components/shared/cards-resumen';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -399,7 +400,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               empleados.length === 0 ||
               !permiteLiquidar
             }
-            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg h-9 px-4 text-[13px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {liquidacionMasiva.isPending ? (
               <Loader2
@@ -414,129 +415,44 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
         </div>
       </div>
 
-      {/* KPI band */}
-      <div className="grid grid-cols-4 border-t border-b border-[var(--arca-border)] py-6 mb-[44px]">
-        {/* Col 1 */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5">
-            <Users
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Empleados activos
-            </span>
-          </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
-            {importEmpleados.filter((e) => e.empleado.activo).length}
-          </div>
-        </div>
-        {/* Col 2 */}
-        <div className="flex flex-col gap-1 border-l border-[var(--arca-border)] pl-7">
-          <div className="flex items-center gap-1.5">
-            <FileText
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Liquidaciones (período)
-            </span>
-          </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
-            {loadingLiq ? '—' : liquidaciones.length}
-          </div>
-        </div>
-        {/* Col 3 */}
-        <div className="flex flex-col gap-1 border-l border-[var(--arca-border)] pl-7">
-          <div className="flex items-center gap-1.5">
-            <Calculator
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Total bruto
-            </span>
-          </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
-            {loadingLiq
+      {/* La misma banda de resumen que Deudas, Vencimientos y Convenio: los
+        números viven en cards, no sueltos sobre el fondo. La barra de acento
+        va en turquesa porque acá ningún número es una mala noticia. */}
+      <CardsResumen
+        className="mb-5"
+        cards={[
+          {
+            label: 'Empleados activos',
+            valor: String(
+              importEmpleados.filter((e) => e.empleado.activo).length
+            ),
+            icono: Users,
+            tono: 'acento',
+          },
+          {
+            label: 'Liquidaciones (período)',
+            valor: loadingLiq ? '—' : String(liquidaciones.length),
+            icono: FileText,
+            tono: 'acento',
+          },
+          {
+            label: 'Total bruto',
+            valor: loadingLiq
               ? '—'
-              : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`}
-          </div>
-        </div>
-        {/* Col 4 */}
-        <div className="flex flex-col gap-1 border-l border-[var(--arca-border)] pl-7">
-          <div className="flex items-center gap-1.5">
-            <LayoutDashboard
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Total neto
-            </span>
-          </div>
-          <div
-            className="font-[family-name:var(--ff-display)] font-semibold tabular-nums"
-            style={{
-              fontSize: 30,
-              letterSpacing: '-0.025em',
-              color: 'var(--arca-ink)',
-              lineHeight: 1.1,
-              marginTop: 4,
-            }}
-          >
-            {loadingLiq
+              : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`,
+            icono: Calculator,
+            tono: 'acento',
+          },
+          {
+            label: 'Total neto',
+            valor: loadingLiq
               ? '—'
-              : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`}
-          </div>
-        </div>
-      </div>
+              : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`,
+            icono: LayoutDashboard,
+            tono: 'acento',
+          },
+        ]}
+      />
 
       {/* Cierre contable del período (US 3.3.1) */}
       <SueldosCierreContable clientId={clientId} periodo={periodo} />
@@ -567,7 +483,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               type="button"
               onClick={() => setDeleteLiquidacionesOpen(true)}
               disabled={loadingLiq || liquidacionesGeneradas.length === 0}
-              className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg h-9 px-3 text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ color: 'var(--arca-accent-neg)' }}
             >
               <Trash2 style={{ width: 14, height: 14 }} />
@@ -772,7 +688,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               </p>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
+                className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg h-9 px-3 text-[13px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
                 style={{ color: 'var(--arca-ink-2)' }}
               >
                 <Upload style={{ width: 14, height: 14 }} />

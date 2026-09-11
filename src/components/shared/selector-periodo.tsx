@@ -4,11 +4,14 @@
  * Reemplaza al par mes + año, que obligaba a dos decisiones para una sola
  * cosa y dejaba pasar combinaciones inválidas —elegir diciembre y después
  * 2026 estando en septiembre— que cada pantalla tenía que corregir a mano.
- * Acá la lista ya es cronológica y no llega más allá del mes en curso.
  *
- * Habla en `YYYY-MM`, que es como se arma el período en el resto del sistema.
+ * Por dentro es el `MesPicker` —el mismo calendario de Sueldos—, así que
+ * elegir un período se ve y se opera igual en toda la plataforma. Esta capa
+ * existe porque IVA e IIBB hablan en `YYYY-MM` y el picker en (año, mes)
+ * por separado: traduce entre los dos y mantiene el contrato que esas dos
+ * pantallas ya usaban.
  */
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import { MesPicker } from '@/components/shared/mes-picker';
 
 const MESES = [
   'Enero',
@@ -47,43 +50,28 @@ export function SelectorPeriodo({
   onPeriodo,
   /** Cuántos años hacia atrás ofrecer. */
   aniosAtras = 5,
-  width = 190,
   className,
 }: {
   /** `YYYY-MM`. */
   periodo: string;
   onPeriodo: (periodo: string) => void;
   aniosAtras?: number;
-  width?: number;
   className?: string;
 }) {
   const hoy = new Date();
-
-  // Del mes en curso hacia atrás: el futuro no es un período liquidable.
-  const opciones: { value: string; label: string }[] = [];
-  for (let i = 0; i < aniosAtras * 12; i++) {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    const p = aPeriodo(d.getFullYear(), d.getMonth());
-    opciones.push({ value: p, label: nombrePeriodo(p) });
-  }
-
-  // Un período viejo que venga de la URL o de un dato guardado tiene que poder
-  // mostrarse aunque quede fuera de la ventana.
-  if (periodo && !opciones.some((o) => o.value === periodo)) {
-    opciones.push({ value: periodo, label: nombrePeriodo(periodo) });
-    opciones.sort((a, b) => b.value.localeCompare(a.value));
-  }
+  // El futuro no es un período liquidable: el picker apaga los meses
+  // posteriores al corriente en vez de dejarlos elegir.
+  const maxPeriodo = aPeriodo(hoy.getFullYear(), hoy.getMonth());
+  const [ano, mes] = periodo.split('-');
 
   return (
-    <div className={className}>
-      <SearchableSelect
-        value={periodo}
-        onValueChange={onPeriodo}
-        placeholder="Período"
-        searchPlaceholder="Buscar mes o año..."
-        options={opciones}
-        width={width}
-      />
-    </div>
+    <MesPicker
+      ano={ano}
+      mes={mes}
+      onChange={(a, m) => onPeriodo(`${a}-${m}`)}
+      maxPeriodo={maxPeriodo}
+      minAno={hoy.getFullYear() - aniosAtras}
+      className={className}
+    />
   );
 }

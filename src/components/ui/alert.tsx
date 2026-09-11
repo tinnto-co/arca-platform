@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
  * botón de la acción. El texto va siempre en el `-fg` del estado.
  */
 const alertVariants = cva(
-  'relative w-full rounded-[10px] border py-[10px] px-[14px] text-[13px] grid has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] grid-cols-[0_1fr] has-[>svg]:gap-x-3 gap-y-0.5 items-start [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current',
+  'relative w-full rounded-lg border py-[10px] px-[14px] text-[13px] grid has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] grid-cols-[0_1fr] has-[>svg]:gap-x-3 gap-y-0.5 items-start [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current',
   {
     variants: {
       variant: {

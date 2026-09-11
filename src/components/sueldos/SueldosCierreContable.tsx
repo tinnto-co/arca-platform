@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -63,6 +64,11 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
   });
 
   const cerrado = estado?.cierre ?? null;
+  // Sin recibos confirmados no hay nada que cerrar ni que previsualizar. Se
+  // dice en el banner y se apagan los botones, en vez de dejar hacer click y
+  // contestar con un toast de error.
+  const recibosConfirmados = estado?.recibosConfirmados ?? 0;
+  const sinRecibos = !cerrado && !isLoading && recibosConfirmados === 0;
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -143,7 +149,9 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
               ? 'Consultando estado…'
               : cerrado
                 ? `Liquidación de ${periodo} cerrada. Asiento N.º ${cerrado.entryNumber ?? '—'} sobre ${cerrado.recibos} recibo(s).`
-                : `Genera un único asiento con los recibos confirmados de ${periodo}.`}
+                : sinRecibos
+                  ? `No hay recibos confirmados en ${periodo}: confirmá al menos uno para poder cerrar el período.`
+                  : `Genera un único asiento con ${recibosConfirmados} recibo(s) confirmado(s) de ${periodo}.`}
           </p>
           {cerrado && cerrado.conceptosSinRegla > 0 && (
             <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-[var(--arca-accent-warn-fg)]">
@@ -160,7 +168,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
               <Link
                 to="/accounting"
                 search={{ clientId, tab: 'asientos' }}
-                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors"
+                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-lg h-9 px-4 text-[13px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors"
               >
                 <BookOpen style={{ width: 15, height: 15 }} />
                 Ver en el diario
@@ -169,7 +177,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
                 type="button"
                 onClick={() => setReopenOpen(true)}
                 disabled={busy}
-                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-lg h-9 px-4 text-[13px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
               >
                 {reabrirMut.isPending ? (
                   <Loader2
@@ -184,38 +192,29 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
             </>
           ) : (
             <>
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 onClick={() => previewMut.mutate()}
-                disabled={busy}
-                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
+                disabled={busy || sinRecibos}
               >
                 {previewMut.isPending ? (
-                  <Loader2
-                    style={{ width: 15, height: 15 }}
-                    className="animate-spin"
-                  />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Eye style={{ width: 15, height: 15 }} />
+                  <Eye className="size-4" />
                 )}
                 Previsualizar asiento
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={() => setConfirmOpen(true)}
-                disabled={busy}
-                className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={busy || sinRecibos}
               >
                 {cerrarMut.isPending ? (
-                  <Loader2
-                    style={{ width: 15, height: 15 }}
-                    className="animate-spin"
-                  />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Lock style={{ width: 15, height: 15 }} />
+                  <Lock className="size-4" />
                 )}
                 Cerrar y generar asiento
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -254,7 +253,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
                   <th className="py-1.5 pl-3 font-medium text-right">Haber</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {preview.lines.map((l, i) => (
                   <tr key={i} className="border-t border-[var(--arca-border)]">
                     <td className="py-1.5 pr-3 text-[var(--arca-ink)]">

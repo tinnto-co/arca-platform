@@ -88,7 +88,7 @@ export function TaskCard({ tarea, seleccionada, onAbrir }: TaskCardProps) {
       <div className="flex flex-wrap items-center gap-1.5">
         <span
           className={cn(
-            'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium',
+            'inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium',
             TIPO_PILL[tarea.tipo] ?? TIPO_PILL.otro
           )}
         >
@@ -98,7 +98,7 @@ export function TaskCard({ tarea, seleccionada, onAbrir }: TaskCardProps) {
         {vence && !cerrada && (
           <span
             className={cn(
-              'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium tabular-nums',
+              'inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium tabular-nums',
               TONO_PILL[vence.tono]
             )}
           >

@@ -2,14 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Info,
-  ChevronLeft,
-  ChevronRight,
-  Search,
-  Pencil,
-  Loader2,
-} from 'lucide-react';
+import { Info, Search, Pencil, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -21,6 +14,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Ayuda } from '@/components/shared/ayuda';
+import { Paginador } from '@/components/shared/paginador';
 import { Label } from '@/components/ui/label';
 import {
   createConcepto,
@@ -382,49 +377,43 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4">
-      {/* Intro text */}
-      <p
-        className="text-[13.5px] max-w-[760px]"
-        style={{ color: 'var(--arca-ink-3)' }}
-      >
-        Catálogo completo de conceptos SOS (códigos 1–699). Todos los conceptos
-        están disponibles para usar en cualquier recibo.
-      </p>
-
-      {/* Search pill */}
-      <div
-        className="flex items-center gap-[9px] w-[380px] bg-white rounded-[10px] px-[13px] py-[8px]"
-        style={{ border: '1px solid var(--arca-border-strong)' }}
-      >
-        <Search
-          style={{
-            width: 15,
-            height: 15,
-            color: 'var(--arca-ink-4)',
-            flexShrink: 0,
-          }}
-        />
-        <input
-          type="text"
-          placeholder="Buscar por nombre o código ARCA…"
-          value={busqueda}
-          onChange={(e) => handleBusqueda(e.target.value)}
-          className="flex-1 bg-transparent outline-none text-[13.5px] placeholder:text-[var(--arca-ink-4)]"
-          style={{ color: 'var(--arca-ink)' }}
-        />
+      {/* La explicación del catálogo se lee una vez y después estorba arriba
+        de la tabla todos los días: va detrás del botón de ayuda, junto al
+        buscador del sistema. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative">
+          <Search className="absolute top-[8px] left-2 size-4 text-[var(--arca-ink-4)]" />
+          <Input
+            placeholder="Buscar por nombre o código ARCA…"
+            value={busqueda}
+            onChange={(e) => handleBusqueda(e.target.value)}
+            className="h-8 w-[300px] pl-8 text-[12.5px]"
+          />
+        </div>
+        <Ayuda titulo="Catálogo de conceptos SOS" etiqueta="Qué es esto">
+          <p>
+            Es el catálogo completo de conceptos SOS, códigos 1 a 699. Todos
+            están disponibles para usar en cualquier recibo.
+          </p>
+          <p>
+            Los marcados como <strong>Personalizado</strong> tienen una
+            configuración propia de este cliente.
+          </p>
+        </Ayuda>
       </div>
 
       {/* Table */}
       <div
-        className="w-full overflow-hidden rounded-[10px]"
+        className="w-full overflow-hidden rounded-xl bg-[var(--arca-surface)]"
         style={{ border: '1px solid var(--arca-border)' }}
       >
-        {/* Navy header */}
+        {/* Header claro con micro-label */}
         <div
           className="grid h-[44px] items-center px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase"
           style={{
-            background: 'var(--arca-accent)',
-            color: '#FFFFFF',
+            background: 'var(--arca-bg)',
+            color: 'var(--arca-ink-3)',
+            borderBottom: '1px solid var(--arca-border)',
             gridTemplateColumns: '120px 140px 1fr 96px',
           }}
         >
@@ -455,11 +444,8 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
           pagina_rows.map((row) => (
             <div
               key={row.id}
-              className="grid items-center px-5 py-[14px] transition-[background] duration-[120ms] hover:bg-[var(--arca-surface-2)]"
-              style={{
-                gridTemplateColumns: '120px 140px 1fr 96px',
-                borderBottom: '1px solid var(--arca-border)',
-              }}
+              className="grid items-center border-b border-[var(--arca-border-row)] px-5 py-[14px] transition-[background] duration-[120ms] last:border-b-0 hover:bg-[var(--arca-surface-2)]"
+              style={{ gridTemplateColumns: '120px 140px 1fr 96px' }}
             >
               {/* CÓD. SOS */}
               <span
@@ -507,44 +493,20 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
             </div>
           ))
         )}
-      </div>
 
-      {/* Pagination */}
-      {!isLoading && filtrados.length > 0 && (
-        <div className="flex items-center justify-between py-4 px-[2px]">
-          <span
-            className="text-[12.5px]"
-            style={{ color: 'var(--arca-ink-4)' }}
-          >
-            {filtrados.length === conceptos.length
-              ? `${conceptos.length} de ${conceptos.length} conceptos`
-              : `${filtrados.length} de ${conceptos.length} conceptos`}
-            {' · '}página {paginaActual} de {totalPaginas}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPagina((p) => Math.max(1, p - 1))}
-              disabled={paginaActual === 1}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
-              style={{ color: 'var(--arca-ink-2)' }}
-            >
-              <ChevronLeft style={{ width: 14, height: 14 }} />
-              Anterior
-            </button>
-            <button
-              type="button"
-              onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
-              disabled={paginaActual === totalPaginas}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
-              style={{ color: 'var(--arca-ink-2)' }}
-            >
-              Siguiente
-              <ChevronRight style={{ width: 14, height: 14 }} />
-            </button>
-          </div>
-        </div>
-      )}
+        {/* El paginado es parte de la tabla, no una barra suelta debajo. */}
+        {!isLoading && filtrados.length > 0 && (
+          <Paginador
+            className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
+            pagina={paginaActual}
+            totalPaginas={totalPaginas}
+            onPagina={setPagina}
+            total={filtrados.length}
+            unidad="concepto"
+            unidadPlural="conceptos"
+          />
+        )}
+      </div>
     </div>
   );
 }

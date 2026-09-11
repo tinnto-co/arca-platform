@@ -63,7 +63,7 @@ function RouteComponent() {
         />
       </div>
 
-      <div className="px-9 pt-6 pb-8">
+      <div className="px-9 pb-8">
         {/* La empresa global liquida sueldos: acceso directo a su detalle.
             Es un link y no una redirección automática a propósito — la
             redirección rompía el botón «atrás» (volver a la portada te
@@ -72,33 +72,29 @@ function RouteComponent() {
           <Link
             to="/sueldos/$clienteId"
             params={{ clienteId: globalConSueldos.id }}
-            className="mb-4 flex items-center justify-between rounded-[10px] border px-4 py-2.5 text-[13px] hover:bg-[var(--arca-surface-2)] transition-colors"
-            style={{
-              background: 'var(--arca-surface)',
-              borderColor: 'var(--arca-border-strong)',
-              color: 'var(--arca-ink)',
-            }}
+            className="mb-4 flex items-center gap-3 rounded-[10px] border border-[var(--arca-accent-ring)] bg-[var(--arca-accent-bg)] px-[14px] py-[10px] text-[13px] text-[var(--arca-accent-hover)] transition-colors hover:border-[var(--arca-accent)]"
           >
-            <span>
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full bg-[var(--arca-accent)]"
+            />
+            <span className="flex-1">
               Estás trabajando con{' '}
               <span className="font-semibold">{globalConSueldos.name}</span> —
               abrir sus sueldos
             </span>
-            <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+            <ArrowRight className="size-3.5 shrink-0" />
           </Link>
         )}
 
         {/* La empresa global existe pero no liquida sueldos: sin este aviso
             la selección del header parece no hacer nada. */}
         {nombreGlobalSinSueldos && (
-          <div
-            className="mb-4 flex items-center gap-2 rounded-[10px] border px-4 py-2.5 text-[13px]"
-            style={{
-              background: 'var(--arca-accent-warn-bg)',
-              borderColor: 'var(--arca-border)',
-              color: 'var(--arca-accent-warn-fg)',
-            }}
-          >
+          <div className="mb-4 flex items-center gap-3 rounded-[10px] border border-[oklch(0.88_0.08_75)] bg-[oklch(0.97_0.03_75)] px-[14px] py-[10px] text-[13px] text-[var(--arca-accent-warn-fg)]">
+            <span
+              aria-hidden
+              className="size-2 shrink-0 rounded-full bg-[var(--arca-accent-warn)]"
+            />
             <span className="font-semibold">{nombreGlobalSinSueldos}</span>
             <span>
               no liquida sueldos por ahora — agregala con «Agregar empresa» para

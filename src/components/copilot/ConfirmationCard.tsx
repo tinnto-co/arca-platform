@@ -1,18 +1,11 @@
 'use client';
 
 import * as React from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { ChatCard, ChatCardHead } from './chat-card';
 
-type Phase = 'pending' | 'submitting' | 'done' | 'failed' | 'cancelled';
+type Fase = 'pendiente' | 'ejecutando' | 'hecho' | 'fallo' | 'cancelado';
 
 interface ConfirmationCardProps {
   title?: string;
@@ -22,114 +15,136 @@ interface ConfirmationCardProps {
   submittingLabel?: string;
   successText?: string;
   /**
-   * CopilotKit's respond callback. Called with the mutation outcome (or {cancelled:true})
-   * after the user makes a choice and the mutation resolves.
+   * El `respond` de CopilotKit. Se llama con el resultado (o `{cancelled}`)
+   * una vez que el usuario eligió y la mutación terminó.
    */
   respond: (result: unknown) => void;
   /**
-   * Runs the actual mutation when the user clicks Confirmar.
-   * Should throw on failure. The resolved value is forwarded to `respond`.
+   * La mutación real. Tiene que tirar si falla; lo que devuelva se le pasa a
+   * `respond`.
    */
   onConfirm: () => Promise<unknown>;
 }
 
+/**
+ * La confirmación genérica de una acción que escribe.
+ *
+ * Es la card del chat, no un `Card` de página: dentro del panel una card con
+ * padding de escritorio empuja los botones fuera de la vista y hay que
+ * scrollear para confirmar algo que ya se leyó entero.
+ */
 export function ConfirmationCard({
   title = 'Confirmar acción',
   description,
   confirmLabel = 'Confirmar',
   cancelLabel = 'Cancelar',
   submittingLabel = 'Ejecutando…',
-  successText = 'Acción ejecutada correctamente.',
+  successText = 'Listo.',
   respond,
   onConfirm,
 }: ConfirmationCardProps) {
-  const [phase, setPhase] = React.useState<Phase>('pending');
-  const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
+  const [fase, setFase] = React.useState<Fase>('pendiente');
+  const [error, setError] = React.useState<string | null>(null);
 
-  const handleConfirm = async () => {
-    setPhase('submitting');
-    setErrorMsg(null);
+  const confirmar = async () => {
+    setFase('ejecutando');
+    setError(null);
     try {
       const result = await onConfirm();
-      setPhase('done');
+      setFase('hecho');
       respond({ confirmed: true, success: true, result });
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : 'Error al ejecutar la acción.';
-      setErrorMsg(msg);
-      setPhase('failed');
+      setError(msg);
+      setFase('fallo');
       respond({ confirmed: true, success: false, error: msg });
     }
   };
 
-  const handleCancel = () => {
-    setPhase('cancelled');
+  const cancelar = () => {
+    setFase('cancelado');
     respond({ cancelled: true });
   };
 
   return (
-    <Card className="my-2 max-w-lg">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
-          {title}
-        </CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-
-      <CardContent className="text-sm text-[var(--arca-ink-2)]">
-        {phase === 'pending' && (
-          <p className="text-[var(--arca-ink-3)]">¿Querés continuar?</p>
-        )}
-        {phase === 'submitting' && (
-          <div className="flex items-center gap-2 text-[var(--arca-ink-3)]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            {submittingLabel}
-          </div>
-        )}
-        {phase === 'done' && (
-          <div className="flex items-center gap-2 text-emerald-600">
-            <CheckCircle2 className="h-4 w-4" />
-            {successText}
-          </div>
-        )}
-        {phase === 'failed' && (
-          <div className="flex items-start gap-2 text-destructive">
-            <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{errorMsg ?? 'Error al ejecutar la acción.'}</span>
-          </div>
-        )}
-        {phase === 'cancelled' && (
-          <p className="text-[var(--arca-ink-3)]">Acción cancelada.</p>
-        )}
-      </CardContent>
-
-      {(phase === 'pending' || phase === 'submitting') && (
-        <CardFooter className="flex justify-end gap-2">
+    <ChatCard className="my-1.5">
+      <ChatCardHead title={title} sub={description} />
+      <div className="px-3 py-2.5 text-[12.5px]">
+        <EstadoFase
+          fase={fase}
+          submittingLabel={submittingLabel}
+          successText={successText}
+          error={error}
+        />
+      </div>
+      {(fase === 'pendiente' || fase === 'ejecutando') && (
+        <div className="flex justify-end gap-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2">
           <Button
             variant="secondary"
             size="sm"
-            onClick={handleCancel}
-            disabled={phase === 'submitting'}
+            onClick={cancelar}
+            disabled={fase === 'ejecutando'}
           >
             {cancelLabel}
           </Button>
           <Button
             size="sm"
-            onClick={handleConfirm}
-            disabled={phase === 'submitting'}
+            onClick={confirmar}
+            disabled={fase === 'ejecutando'}
           >
-            {phase === 'submitting' ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                {submittingLabel}
-              </>
-            ) : (
-              confirmLabel
-            )}
+            {fase === 'ejecutando' ? submittingLabel : confirmLabel}
           </Button>
-        </CardFooter>
+        </div>
       )}
-    </Card>
+    </ChatCard>
   );
 }
+
+/** El renglón que cambia según en qué punto está la acción. */
+export function EstadoFase({
+  fase,
+  pendingText = '¿Querés continuar?',
+  submittingLabel,
+  successText,
+  error,
+}: {
+  fase: Fase;
+  pendingText?: React.ReactNode;
+  submittingLabel: string;
+  successText: string;
+  error: string | null;
+}) {
+  if (fase === 'pendiente') {
+    return <p className="text-[var(--arca-ink-2)]">{pendingText}</p>;
+  }
+  if (fase === 'ejecutando') {
+    return (
+      <div className="flex items-center gap-2 text-[var(--arca-ink-3)]">
+        <Loader2 className="size-3.5 shrink-0 animate-spin text-[var(--arca-accent)]" />
+        {submittingLabel}
+      </div>
+    );
+  }
+  if (fase === 'hecho') {
+    return (
+      <div className="flex items-center gap-2 text-[var(--arca-accent-pos-fg)]">
+        <CheckCircle2 className="size-3.5 shrink-0" />
+        {successText}
+      </div>
+    );
+  }
+  if (fase === 'fallo') {
+    return (
+      <div className="flex items-start gap-2 text-[var(--arca-accent-neg-fg)]">
+        <XCircle className="mt-px size-3.5 shrink-0" />
+        <span>{error ?? 'Error al ejecutar la acción.'}</span>
+      </div>
+    );
+  }
+  return (
+    <p className="text-[var(--arca-ink-3)]">Cancelado. No se cambió nada.</p>
+  );
+}
+
+export type { Fase };

@@ -37,10 +37,19 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'Contable',
+        title: 'Ordo · Suite Contable',
       },
     ],
     links: [
+      {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: '/brand/favicon.svg',
+      },
+      {
+        rel: 'apple-touch-icon',
+        href: '/brand/apple-touch-icon.png',
+      },
       {
         rel: 'preconnect',
         href: 'https://fonts.googleapis.com',

@@ -25,6 +25,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ArcaCard } from '@/components/dashboard/shared';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { MesPicker } from '@/components/shared/mes-picker';
 import {
   Select,
   SelectContent,
@@ -273,7 +276,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
       <ArcaCard>
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-[var(--arca-border)]">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-[10px] bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-lg bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
               <TrendingUp
                 className="w-4.5 h-4.5 text-[var(--arca-ink-2)]"
                 strokeWidth={1.8}
@@ -293,7 +296,9 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
               value={source}
               onValueChange={(v) => setSource(v as IndexSource)}
             >
-              <SelectTrigger size="sm" className="max-w-[300px] text-[12.5px]">
+              {/* Al ancho del rótulo más largo: "FACPCE — Índice RT 6 (Res.
+                JG 539/18)" se cortaba a la mitad de una palabra. */}
+              <SelectTrigger size="sm" className="w-[310px] min-w-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -315,20 +320,26 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
                   className="hidden"
                   onChange={(e) => void onFilePicked(e.target.files?.[0])}
                 />
-                <button
+                {/* `shrink-0` y sin corte de línea: el select de la fuente
+                  los apretaba y el rótulo se partía en dos renglones dentro
+                  de una caja de 32px. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 gap-1.5 whitespace-nowrap"
                   onClick={() => fileRef.current?.click()}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)]"
                 >
-                  <Upload className="w-3.5 h-3.5" strokeWidth={2} />
+                  <Upload className="size-3.5" strokeWidth={2} />
                   Importar planilla
-                </button>
-                <button
+                </Button>
+                <Button
+                  size="sm"
+                  className="shrink-0 gap-1.5 whitespace-nowrap"
                   onClick={() => setEditing('new')}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
                 >
-                  <Plus className="w-3 h-3" strokeWidth={2.5} />
+                  <Plus className="size-3.5" strokeWidth={2.5} />
                   Cargar índice
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -423,48 +434,25 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
             <span className="text-[11.5px] font-medium text-[var(--arca-ink-3)]">
               Coeficientes contra el cierre de
             </span>
-            <Select
-              value={String(effectiveClosing?.month ?? '')}
-              onValueChange={(v) =>
-                setClosing({
-                  year: effectiveClosing?.year ?? effectiveYear,
-                  month: Number(v),
-                })
+            {/* Un solo control mm-aaaa, el mismo de IVA, IIBB, Sueldos y la
+              ficha del cliente, en vez del par mes + año. */}
+            <MesPicker
+              size="sm"
+              ano={String(effectiveClosing?.year ?? '')}
+              mes={
+                effectiveClosing
+                  ? String(effectiveClosing.month).padStart(2, '0')
+                  : ''
               }
-            >
-              <SelectTrigger size="sm" className="w-[120px] text-[12.5px]">
-                <SelectValue placeholder="Mes" />
-              </SelectTrigger>
-              <SelectContent>
-                {MONTHS.map((m, i) => (
-                  <SelectItem key={m} value={String(i + 1)}>
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={String(effectiveClosing?.year ?? '')}
-              onValueChange={(v) =>
-                setClosing({
-                  year: Number(v),
-                  month: effectiveClosing?.month ?? 12,
-                })
+              placeholder="Elegí el cierre"
+              minAno={years[years.length - 1]}
+              maxPeriodo={`${years[0]}-12`}
+              onChange={(a, m) =>
+                setClosing({ year: Number(a), month: Number(m) })
               }
-            >
-              <SelectTrigger size="sm" className="w-[100px] text-[12.5px]">
-                <SelectValue placeholder="Año" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[320px]">
-                {years.map((y) => (
-                  <SelectItem key={y} value={String(y)}>
-                    {y}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
             {effectiveClosing && closingIndex === null && (
-              <span className="flex items-center gap-1 text-[11.5px] text-amber-600">
+              <span className="flex items-center gap-1 text-[11.5px] text-[var(--arca-accent-warn-fg)]">
                 <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
                 Sin índice para ese mes
               </span>
@@ -502,9 +490,9 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
                 <div className="text-[var(--arca-ink)] font-medium flex items-center gap-1.5">
                   {MONTHS[r.month - 1]}
                   {isClosing && (
-                    <span className="text-[9px] px-1.5 py-px rounded-full bg-[var(--arca-accent)] text-white font-semibold">
-                      cierre
-                    </span>
+                    <Badge variant="secondary" size="xs">
+                      Cierre
+                    </Badge>
                   )}
                 </div>
                 <div className="text-right tabular-nums text-[var(--arca-ink)]">
@@ -532,7 +520,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
                       </button>
                       <button
                         onClick={() => setDeleting(r)}
-                        className="h-6 w-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:bg-red-50 hover:text-red-600"
+                        className="h-6 w-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-accent-neg-bg)] hover:text-[var(--arca-accent-neg-fg)]"
                         title="Eliminar índice"
                       >
                         <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />

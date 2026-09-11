@@ -72,15 +72,20 @@ function formatARS(value: string | number | null | undefined): string {
   }).format(n);
 }
 
+/**
+ * Tab de sección: subrayada, como el resto del sistema. Antes era una
+ * "pestaña de navegador" —card blanca con el borde inferior recortado—,
+ * una forma que el design system no tiene.
+ */
 const tabCls = () =>
   cn(
-    'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+    'relative h-auto flex-none whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 pb-2.5 text-[13px] gap-[7px] cursor-pointer',
+    'font-medium text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink-2)]',
+    'data-[state=active]:border-[var(--arca-accent)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-none'
   );
 
-// Sin color propio: el encabezado hereda el blanco de la fila navy.
-const thCls = 'px-3 py-2.5 font-semibold whitespace-nowrap';
+// Sin color ni tamaño propios: los hereda del micro-label del <tr>.
+const thCls = 'h-[38px] px-3 font-semibold whitespace-nowrap';
 const monoStyle = { fontFamily: 'var(--ff-mono)' } as const;
 
 /** Fila del resumen RI, tal cual la devuelve `getIvaResumenRI`. */
@@ -362,7 +367,9 @@ function EstadoBadge({ row }: { row: RiRow }) {
       </span>
     ) : (
       <span
-        className={cls('bg-sky-50 text-sky-700')}
+        className={cls(
+          'bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
+        )}
         title={`Calculado sobre ${row.comprobantes} comprobante${
           row.comprobantes === 1 ? '' : 's'
         }. Todavía no se trajo la declaración de ARCA.`}
@@ -380,14 +387,20 @@ function EstadoBadge({ row }: { row: RiRow }) {
 
   if (!difiere) {
     return (
-      <span className={cls('bg-emerald-50 text-emerald-700')}>
+      <span
+        className={cls(
+          'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
+        )}
+      >
         Coincide ARCA
       </span>
     );
   }
   return (
     <span
-      className={cls('bg-amber-50 text-amber-700')}
+      className={cls(
+        'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]'
+      )}
       title={[
         `Débito — calculado ${formatARS(row.calcDebitoFiscal)} · ARCA ${formatARS(row.debitoFiscal)}`,
         `Crédito — calculado ${formatARS(row.calcCreditoFiscal)} · ARCA ${formatARS(row.creditoFiscal)}`,
@@ -529,7 +542,8 @@ function IvaResumenRI({ search }: { search: string }) {
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -618,7 +632,7 @@ function IvaResumenRI({ search }: { search: string }) {
                 />
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {sortedRows.map((r, i) => (
                 <tr
                   key={r.clienteId}
@@ -874,7 +888,8 @@ function MonotributistasTab({ search }: { search: string }) {
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -924,7 +939,7 @@ function MonotributistasTab({ search }: { search: string }) {
                 />
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {sortedRows.map((r, i) => (
                 <tr
                   key={r.clienteId}
@@ -1070,9 +1085,9 @@ function TablaOtras({ rows }: { rows: FilaOtras[] }) {
     <div
       style={{
         border: '1px solid var(--arca-border)',
-        borderRadius: 8,
-        overflowX: 'auto',
+        borderRadius: 12,
         background: 'var(--arca-surface)',
+        overflowX: 'auto',
       }}
     >
       <table
@@ -1087,7 +1102,7 @@ function TablaOtras({ rows }: { rows: FilaOtras[] }) {
             <th className={cn(thCls, 'text-left')}>Condición</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="bg-[var(--arca-surface)]">
           {rows.map((r, i) => (
             <tr
               key={r.clienteId}
@@ -1160,8 +1175,8 @@ function RouteComponent() {
           })
         }
       >
-        <div style={{ borderBottom: '1px solid var(--arca-border)' }}>
-          <TabsList className="bg-transparent h-auto p-0 gap-1">
+        <div className="border-b border-[var(--arca-border)]">
+          <TabsList className="h-auto gap-1 rounded-none bg-transparent p-0">
             <TabsTrigger value="ri" className={tabCls()}>
               <Percent className="w-[13px] h-[13px]" />
               Responsable Inscripto
@@ -1174,7 +1189,7 @@ function RouteComponent() {
               <CircleHelp className="w-[13px] h-[13px]" />
               Otras empresas
               {sinClasificar > 0 && (
-                <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-px text-[10.5px] font-semibold text-amber-800 tabular-nums">
+                <span className="ml-1 rounded-full bg-[var(--arca-accent-warn-bg)] px-1.5 py-px text-[10.5px] font-semibold text-[var(--arca-accent-warn-fg)] tabular-nums">
                   {sinClasificar}
                 </span>
               )}
@@ -1182,15 +1197,15 @@ function RouteComponent() {
           </TabsList>
         </div>
 
-        <TabsContent value="ri" className="mt-6">
+        <TabsContent value="ri" className="mt-3">
           <IvaResumenRI search={search} />
         </TabsContent>
 
-        <TabsContent value="monotributo" className="mt-6">
+        <TabsContent value="monotributo" className="mt-3">
           <MonotributistasTab search={search} />
         </TabsContent>
 
-        <TabsContent value="otras" className="mt-6">
+        <TabsContent value="otras" className="mt-3">
           <OtrasEmpresasTab search={search} />
         </TabsContent>
       </Tabs>

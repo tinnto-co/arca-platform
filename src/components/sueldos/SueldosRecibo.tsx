@@ -585,7 +585,9 @@ export function SueldosRecibo({
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-2">
-              <FileText style={{ width: 15, height: 15, color: 'var(--arca-ink-2)' }} />
+              <FileText
+                style={{ width: 15, height: 15, color: 'var(--arca-ink-2)' }}
+              />
               <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[var(--arca-ink)]">
                 Recibos liquidados
               </span>
@@ -617,14 +619,17 @@ export function SueldosRecibo({
                 Generar Liq. Final
               </Button>
             )}
-            <button
-              type="button"
+            {/* Es la acción de la pantalla —a esto se viene—, así que va en
+              primario. Y era un <button> a mano de 36px al lado de dos
+              botones de 30: la fila tenía dos alturas. */}
+            <Button
+              size="sm"
+              className="shrink-0 gap-1.5"
               onClick={() => setShowImprimir(true)}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2 shrink-0"
             >
-              <Printer style={{ width: 15, height: 15 }} />
+              <Printer className="h-4 w-4" />
               Imprimir PDF
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -643,7 +648,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -670,7 +675,7 @@ export function SueldosRecibo({
               }}
               disabled={!ano}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -702,7 +707,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -725,7 +730,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -759,7 +764,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -813,8 +818,8 @@ export function SueldosRecibo({
           </div>
 
           {!loadingList && recibos.length > 0 && (
-            <div className="overflow-x-auto rounded-[10px]">
-              {/* Navy header */}
+            <div className="overflow-x-auto rounded-xl">
+              {/* Header claro con micro-label */}
               <div
                 className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
                 style={{
@@ -984,7 +989,7 @@ export function SueldosRecibo({
                             });
                             setRevertirBaja(true);
                           }}
-                          className="rounded p-1 text-[var(--arca-ink-4)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-accent-neg)] transition-colors"
+                          className="rounded p-1 text-[var(--arca-ink-4)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-accent-neg-fg)] transition-colors"
                           title="Eliminar recibo"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1291,7 +1296,7 @@ function GenerarSacDialog({
                   <th className="pb-2 text-right">SAC</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {preview.map((p) => {
                   const dias = diasMap[p.empleadoId] ?? 180;
                   const sacMonto =
@@ -1305,11 +1310,11 @@ function GenerarSacDialog({
                       <td className="py-2 pr-2">
                         {p.yaTieneSac ? (
                           <span title="Ya tiene SAC">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos-fg)]" />
                           </span>
                         ) : p.mejorMonto === 0 ? (
                           <span title="Sin recibos de sueldo en el semestre">
-                            <AlertCircle className="h-4 w-4 text-amber-500" />
+                            <AlertCircle className="h-4 w-4 text-[var(--arca-accent-warn-fg)]" />
                           </span>
                         ) : (
                           <input
@@ -1328,7 +1333,7 @@ function GenerarSacDialog({
                       <td className="py-2 pr-3 font-medium">
                         {p.nombre}
                         {p.yaTieneSac && (
-                          <span className="ml-2 text-green-600 text-[11px]">
+                          <span className="ml-2 text-[var(--arca-accent-pos-fg)] text-[11px]">
                             Ya tiene SAC
                           </span>
                         )}
@@ -1370,7 +1375,7 @@ function GenerarSacDialog({
                               className="w-14 text-center text-[12px] border rounded px-1 py-0.5 font-mono"
                             />
                             {esProporcional && (
-                              <span className="text-[10px] text-amber-600 font-medium">
+                              <span className="text-[10px] text-[var(--arca-accent-warn-fg)] font-medium">
                                 prop.
                               </span>
                             )}
@@ -1382,7 +1387,11 @@ function GenerarSacDialog({
                       <td className="py-2 text-right font-mono font-semibold">
                         {sacMonto > 0 ? (
                           <span
-                            className={esProporcional ? 'text-amber-700' : ''}
+                            className={
+                              esProporcional
+                                ? 'text-[var(--arca-accent-warn-fg)]'
+                                : ''
+                            }
                           >
                             {moneyFmtSac(sacMonto)}
                           </span>
@@ -1567,7 +1576,7 @@ export function GenerarLiqFinalDialog({
                   <th className="pb-2 text-center">Días trab.</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {preview.map((p) => {
                   const fecha = fechaBajaMap[p.empleadoId] ?? defaultFecha;
                   const dias = diasDesdefechaBaja(fecha);
@@ -1579,7 +1588,7 @@ export function GenerarLiqFinalDialog({
                       <td className="py-2 pr-2">
                         {p.yaTiene ? (
                           <span title="Ya tiene Liq. Final">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos-fg)]" />
                           </span>
                         ) : (
                           <input
@@ -1598,7 +1607,7 @@ export function GenerarLiqFinalDialog({
                       <td className="py-2 pr-3 font-medium">
                         {p.nombre}
                         {p.yaTiene && (
-                          <span className="ml-2 text-green-600 text-[11px]">
+                          <span className="ml-2 text-[var(--arca-accent-pos-fg)] text-[11px]">
                             Ya tiene
                           </span>
                         )}
@@ -1903,7 +1912,7 @@ function ReciboDocumento({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border/50">
+          <tbody className="divide-y divide-border/50 bg-[var(--arca-surface)]">
             {filas.length === 0 ? (
               <tr>
                 <td

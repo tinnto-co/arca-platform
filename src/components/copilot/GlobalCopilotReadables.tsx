@@ -1,60 +1,43 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
 import { useCopilotReadable } from '@copilotkit/react-core';
-import { getClientes, getClientesForSueldos } from '@/actions/client';
+import { useClientesCopilot } from './use-clientes-copilot';
 
 /**
- * Global CopilotKit readables — kept always mounted so the agent can resolve
- * a client by name (fuzzy / partial) → clienteId from any screen of the app.
- * Without this, tools like `abrirCliente` and `abrirSueldosCliente` would force
- * the user to provide UUIDs, which they don't typically know.
+ * La cartera de clientes, siempre montada, para que el asistente pueda hablar
+ * de una empresa desde cualquier pantalla.
  *
- * `cliente` es la entidad fiscal con CUIT propio (lo que el usuario llama
- * "cliente"); `credenciales` son los logins de AFIP por los que se lo scrapea y
- * sirven solo como contexto extra para el fuzzy match.
+ * Acá no viaja ningún UUID, a propósito. Antes sí: cada entrada llevaba su
+ * `clienteId` y las tools lo recibían como parámetro. Copiar 36 caracteres sin
+ * equivocarse en ninguno es justo lo que un modelo hace mal, y el resultado
+ * era navegar a la ficha de otra empresa —o a un id inventado— sin que nada
+ * avisara. Ahora el modelo pasa el NOMBRE y el id lo resuelve el código
+ * (`resolverCliente`), que no se equivoca y además puede decir "hay tres que
+ * coinciden" en vez de elegir mal en silencio.
  *
- * Each list is capped to 100 entries to keep the prompt context bounded.
- * If the org grows past that, switch to a server-side search action.
+ * La lista va entera, no recortada. Estaba capada en 100 y la organización
+ * tiene más: los que quedaban afuera "no existían" para el asistente, que
+ * respondía que no encontraba una empresa que sí está cargada.
  */
 export function GlobalCopilotReadables() {
-  const { data: allClients } = useQuery({
-    queryKey: ['clientes'],
-    queryFn: () => getClientes(),
-    staleTime: 60_000,
-  });
-
-  const { data: sueldosClients } = useQuery({
-    queryKey: ['clientes', 'sueldos'],
-    queryFn: () => getClientesForSueldos(),
-    staleTime: 60_000,
-  });
-
-  const clientesGlobal = (allClients ?? []).slice(0, 100).map((c) => ({
-    clienteId: c.id,
-    nombre: c.razonSocial,
-    cuit: c.cuit,
-    credenciales: c.credenciales.map((cr) => cr.nombre ?? cr.cuit),
-  }));
-
-  const sueldosGlobal = (sueldosClients ?? []).slice(0, 100).map((c) => ({
-    clienteId: c.clienteId,
-    nombre: c.name,
-    label: c.label,
-  }));
+  const clientes = useClientesCopilot();
 
   useCopilotReadable({
     description:
-      'Lista global de clientes de la organización (hasta 100). Cada entrada es un CLIENTE: la entidad fiscal con CUIT propio, identificada por `clienteId`. `credenciales` son los nombres de los logins de AFIP por los que se consultan sus datos (contexto extra para reconocerlo, NO son ids navegables). ' +
-      'REGLA DE RESOLUCIÓN para navegar con `abrirCliente`: buscá por `nombre` o `cuit` con fuzzy match (ignorá mayúsculas, puntos, guiones, espacios y sufijos como "S.A."/"SA"/"SRL") y llamá `abrirCliente` con el `clienteId` de la entrada que coincide. ' +
-      'Si varios clientes coinciden, ofrecé la lista para que elija. NUNCA inventes un UUID.',
-    value: clientesGlobal,
-  });
-
-  useCopilotReadable({
-    description:
-      'Lista global de clientes habilitados para liquidación de sueldos (hasta 100). Usá este contexto para resolver `clienteId` cuando el usuario pide abrir el módulo Sueldos de un cliente por nombre (ej: "andá a sueldos de e-presis" → buscá "e-presis" en esta lista, sacá el clienteId, y llamá `abrirSueldosCliente`). Hacé fuzzy match: ignorá mayúsculas, guiones y espacios extras. Si hay varias coincidencias, ofrecé al usuario que elija. NUNCA inventes un UUID.',
-    value: sueldosGlobal,
+      'Cartera completa de clientes del estudio. Cada entrada es una EMPRESA (entidad fiscal con CUIT propio). ' +
+      '`logins` son los nombres de los accesos de ARCA por los que se la consulta — sirven para reconocerla cuando el usuario la llama por el titular del login, no son un dato navegable. ' +
+      '`sueldos: true` significa que liquida sueldos. ' +
+      'CÓMO USARLA: las tools reciben el NOMBRE de la empresa (`clientName`), nunca un id. Pasá la razón social tal como figura en esta lista; el sistema resuelve el id internamente y, si hay varias parecidas, te devuelve la lista para que le preguntes al usuario cuál. ' +
+      'Si el usuario nombra una empresa que no está en esta lista, no existe en el estudio: decíselo, no inventes.',
+    value: {
+      totalClientes: clientes.length,
+      clientes: clientes.map((c) => ({
+        nombre: c.razonSocial,
+        cuit: c.cuit,
+        logins: c.credenciales,
+        sueldos: c.liquidaSueldos,
+      })),
+    },
   });
 
   return null;
