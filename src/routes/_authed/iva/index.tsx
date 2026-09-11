@@ -72,15 +72,20 @@ function formatARS(value: string | number | null | undefined): string {
   }).format(n);
 }
 
+/**
+ * Tab de sección: subrayada, como el resto del sistema. Antes era una
+ * "pestaña de navegador" —card blanca con el borde inferior recortado—,
+ * una forma que el design system no tiene.
+ */
 const tabCls = () =>
   cn(
-    'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+    'relative h-auto flex-none whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 pb-2.5 text-[13px] gap-[7px] cursor-pointer',
+    'font-medium text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink-2)]',
+    'data-[state=active]:border-[var(--arca-accent)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-none'
   );
 
-// Sin color propio: el encabezado hereda el blanco de la fila navy.
-const thCls = 'px-3 py-2.5 font-semibold whitespace-nowrap';
+// Sin color ni tamaño propios: los hereda del micro-label del <tr>.
+const thCls = 'h-[38px] px-3 font-semibold whitespace-nowrap';
 const monoStyle = { fontFamily: 'var(--ff-mono)' } as const;
 
 /** Fila del resumen RI, tal cual la devuelve `getIvaResumenRI`. */
@@ -1170,8 +1175,8 @@ function RouteComponent() {
           })
         }
       >
-        <div style={{ borderBottom: '1px solid var(--arca-border)' }}>
-          <TabsList className="bg-transparent h-auto p-0 gap-1">
+        <div className="border-b border-[var(--arca-border)]">
+          <TabsList className="h-auto gap-1 rounded-none bg-transparent p-0">
             <TabsTrigger value="ri" className={tabCls()}>
               <Percent className="w-[13px] h-[13px]" />
               Responsable Inscripto
