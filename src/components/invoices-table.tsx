@@ -719,340 +719,355 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     const totalPages = invoicesData?.totalPages || 1;
 
     return (
-      <div className="w-full min-w-0 flex flex-col h-full gap-4">
-        {/* Filters */}
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between flex-shrink-0">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center flex-wrap">
-            {!isFiltersControlled && isEmbedded && (
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
-                <Input
-                  placeholder="Buscar por contraparte (nombre o CUIT)..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8 w-full md:w-80"
-                />
-              </div>
-            )}
+      <div className="flex h-full w-full min-w-0 flex-col">
+        <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)]">
+          {/* Toolbar: los filtros viven en la card que filtran. Cuando los
+            filtros los maneja la pantalla de afuera (la ficha del cliente) no
+            queda nada acá adentro, y la barra vacía se veía como una franja
+            blanca sobre el header de la tabla. */}
+          {(!isFiltersControlled || toolbarExtra) && (
+            <div className="flex flex-shrink-0 flex-wrap items-center gap-2 border-b border-[var(--arca-border)] px-[18px] py-2.5">
+              <div className="flex flex-1 flex-wrap items-center gap-2">
+                {!isFiltersControlled && isEmbedded && (
+                  <div className="relative">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
+                    <Input
+                      placeholder="Buscar por contraparte (nombre o CUIT)..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="h-8 w-full pl-8 text-[12.5px] md:w-64"
+                    />
+                  </div>
+                )}
 
-            {!isFiltersControlled && (
-              <SearchableSelect
-                value={typeFilter}
-                onValueChange={setTypeFilter}
-                placeholder="Tipo"
-                searchPlaceholder="Buscar tipo..."
-                options={[
-                  { value: 'all', label: 'Todas las facturas' },
-                  ...Object.entries(INVOICE_TYPE_LABELS).map(
-                    ([code, label]) => ({
-                      value: code,
-                      label,
-                    })
-                  ),
-                ]}
-                width={256}
-              />
-            )}
+                {!isFiltersControlled && (
+                  <SearchableSelect
+                    value={typeFilter}
+                    onValueChange={setTypeFilter}
+                    placeholder="Tipo"
+                    searchPlaceholder="Buscar tipo..."
+                    options={[
+                      { value: 'all', label: 'Todas las facturas' },
+                      ...Object.entries(INVOICE_TYPE_LABELS).map(
+                        ([code, label]) => ({
+                          value: code,
+                          label,
+                        })
+                      ),
+                    ]}
+                    width={160}
+                  />
+                )}
 
-            {!isFiltersControlled && (
-              <SearchableSelect
-                value={directionFilter}
-                onValueChange={setDirectionFilter}
-                placeholder="Dirección"
-                searchPlaceholder="Buscar dirección..."
-                options={[
-                  { value: 'all', label: 'Todas las direcciones' },
-                  { value: 'emitido', label: 'Emitida' },
-                  { value: 'recibido', label: 'Recibida' },
-                ]}
-                width={224}
-              />
-            )}
+                {!isFiltersControlled && (
+                  <SearchableSelect
+                    value={directionFilter}
+                    onValueChange={setDirectionFilter}
+                    placeholder="Dirección"
+                    searchPlaceholder="Buscar dirección..."
+                    options={[
+                      { value: 'all', label: 'Todas las direcciones' },
+                      { value: 'emitido', label: 'Emitida' },
+                      { value: 'recibido', label: 'Recibida' },
+                    ]}
+                    width={150}
+                  />
+                )}
 
-            {!isFiltersControlled &&
-              !toolbarExtra &&
-              (isDateControlled ? (
-                <div
-                  className={cn(
-                    'flex items-center gap-2 h-9 px-3 py-2 rounded-md border bg-muted/50 text-sm',
-                    !dateFrom && !dateTo && 'text-[var(--arca-ink-3)]'
-                  )}
-                >
-                  <CalendarIcon className="h-4 w-4 shrink-0 text-[var(--arca-ink-3)]" />
-                  {dateFrom && dateTo ? (
-                    <>
-                      {formatDateOnlyString(dateFrom)} –{' '}
-                      {formatDateOnlyString(dateTo)}
-                    </>
-                  ) : (
-                    <span>Sin período seleccionado</span>
-                  )}
-                </div>
-              ) : (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="date"
-                      variant="outline"
+                {!isFiltersControlled &&
+                  !toolbarExtra &&
+                  (isDateControlled ? (
+                    <div
                       className={cn(
-                        'w-full md:w-[300px] justify-start text-left font-normal',
-                        !dateRange && 'text-[var(--arca-ink-3)]'
+                        'flex items-center gap-2 h-9 px-3 py-2 rounded-md border bg-muted/50 text-sm',
+                        !dateFrom && !dateTo && 'text-[var(--arca-ink-3)]'
                       )}
                     >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {dateRange?.from ? (
-                        dateRange.to ? (
-                          <>
-                            {format(dateRange.from, 'dd/MM/yyyy', {
-                              locale: es,
-                            })}{' '}
-                            -{' '}
-                            {format(dateRange.to, 'dd/MM/yyyy', { locale: es })}
-                          </>
-                        ) : (
-                          format(dateRange.from, 'dd/MM/yyyy', { locale: es })
-                        )
+                      <CalendarIcon className="h-4 w-4 shrink-0 text-[var(--arca-ink-3)]" />
+                      {dateFrom && dateTo ? (
+                        <>
+                          {formatDateOnlyString(dateFrom)} –{' '}
+                          {formatDateOnlyString(dateTo)}
+                        </>
                       ) : (
-                        <span>Seleccionar rango de fechas</span>
+                        <span>Sin período seleccionado</span>
                       )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      initialFocus
-                      mode="range"
-                      defaultMonth={dateRange?.from}
-                      selected={dateRange}
-                      onSelect={setDateRange}
-                      numberOfMonths={2}
-                      locale={es}
-                    />
-                  </PopoverContent>
-                </Popover>
-              ))}
-            {toolbarExtra && (
-              <div className="flex flex-wrap items-center gap-2">
-                {toolbarExtra}
-              </div>
-            )}
-            {!isFiltersControlled && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleExportExcel}
-                disabled={exportingExcel}
-                className="h-9 gap-1.5 w-full md:w-auto shrink-0 font-normal"
-              >
-                {exportingExcel ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
+                    </div>
+                  ) : (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="date"
+                          variant="outline"
+                          className={cn(
+                            'w-full md:w-[300px] justify-start text-left font-normal',
+                            !dateRange && 'text-[var(--arca-ink-3)]'
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {dateRange?.from ? (
+                            dateRange.to ? (
+                              <>
+                                {format(dateRange.from, 'dd/MM/yyyy', {
+                                  locale: es,
+                                })}{' '}
+                                -{' '}
+                                {format(dateRange.to, 'dd/MM/yyyy', {
+                                  locale: es,
+                                })}
+                              </>
+                            ) : (
+                              format(dateRange.from, 'dd/MM/yyyy', {
+                                locale: es,
+                              })
+                            )
+                          ) : (
+                            <span>Seleccionar rango de fechas</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          initialFocus
+                          mode="range"
+                          defaultMonth={dateRange?.from}
+                          selected={dateRange}
+                          onSelect={setDateRange}
+                          numberOfMonths={2}
+                          locale={es}
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  ))}
+                {toolbarExtra && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {toolbarExtra}
+                  </div>
                 )}
-                <span>
-                  {selectedIds.size > 0
-                    ? `Excel · ${selectedIds.size} seleccionada${selectedIds.size === 1 ? '' : 's'}`
-                    : 'Excel'}
-                </span>
-              </Button>
-            )}
-          </div>
-        </div>
+                {!isFiltersControlled && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExportExcel}
+                    disabled={exportingExcel}
+                    className="h-9 gap-1.5 w-full md:w-auto shrink-0 font-normal"
+                  >
+                    {exportingExcel ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                    <span>
+                      {selectedIds.size > 0
+                        ? `Excel · ${selectedIds.size} seleccionada${selectedIds.size === 1 ? '' : 's'}`
+                        : 'Excel'}
+                    </span>
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
 
-        {/* Que haya algo tildado tiene que ser visible aunque la fila quedó
+          {/* Que haya algo tildado tiene que ser visible aunque la fila quedó
             fuera de la página: si no, el botón exporta "3 seleccionadas" y no
             se ve cuáles. */}
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-3 py-2 text-[12.5px]">
-            <span className="text-[var(--arca-ink-2)]">
-              {selectedIds.size} factura{selectedIds.size === 1 ? '' : 's'}{' '}
-              seleccionada{selectedIds.size === 1 ? '' : 's'}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
-              className="font-medium text-[var(--arca-accent)] hover:underline"
-            >
-              Limpiar selección
-            </button>
-          </div>
-        )}
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-3 py-2 text-[12.5px]">
+              <span className="text-[var(--arca-ink-2)]">
+                {selectedIds.size} factura{selectedIds.size === 1 ? '' : 's'}{' '}
+                seleccionada{selectedIds.size === 1 ? '' : 's'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedIds(new Set())}
+                className="font-medium text-[var(--arca-accent)] hover:underline"
+              >
+                Limpiar selección
+              </button>
+            </div>
+          )}
 
-        {/* Table */}
-        <Table className="table-fixed text-xs">
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10 px-2">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
-                  checked={
-                    (invoicesData?.comprobantes ?? []).length > 0 &&
-                    (invoicesData?.comprobantes ?? []).every((inv) =>
-                      selectedIds.has(inv.id)
-                    )
-                  }
-                  ref={(el) => {
-                    if (el)
-                      el.indeterminate =
-                        (invoicesData?.comprobantes ?? []).some((inv) =>
-                          selectedIds.has(inv.id)
-                        ) &&
-                        !(invoicesData?.comprobantes ?? []).every((inv) =>
-                          selectedIds.has(inv.id)
-                        );
-                  }}
-                  onChange={() =>
-                    toggleAllInvoices(
-                      (invoicesData?.comprobantes ?? []).map((inv) => inv.id)
-                    )
-                  }
-                />
-              </TableHead>
-              <TableHead className="w-[10%] px-2 py-2 align-top">
-                Tipo
-              </TableHead>
-              <TableHead className="w-[16%] px-2 py-2 align-top">
-                Cliente
-              </TableHead>
-              <TableHead className="w-[20%] px-2 py-2 align-top">
-                Contraparte
-              </TableHead>
-              <TableHead className="w-[12%] px-2 py-2 align-top">
-                Comprobante
-              </TableHead>
-              <TableHead className="w-[9%] px-2 py-2 align-middle">
-                <button
-                  className="group flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase"
-                  onClick={handleSortByDate}
-                >
-                  Fecha
-                  {sortBy === 'fechaEmision' && sortOrder === 'asc' ? (
-                    <ArrowUp className="ml-1 h-3 w-3" />
-                  ) : sortBy === 'fechaEmision' && sortOrder === 'desc' ? (
-                    <ArrowDown className="ml-1 h-3 w-3" />
-                  ) : (
-                    <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                  )}
-                </button>
-              </TableHead>
-              <TableHead className="w-[14%] px-2 py-2 align-middle">
-                <button
-                  className="group flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase"
-                  onClick={handleSortByAmount}
-                >
-                  Monto
-                  {sortBy === 'total' && sortOrder === 'asc' ? (
-                    <ArrowUp className="ml-1 h-3 w-3" />
-                  ) : sortBy === 'total' && sortOrder === 'desc' ? (
-                    <ArrowDown className="ml-1 h-3 w-3" />
-                  ) : (
-                    <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
-                  )}
-                </button>
-              </TableHead>
-              <TableHead className="w-[12%] px-2 py-2 align-middle">
-                Dirección
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
-                  Cargando comprobantes...
-                </TableCell>
-              </TableRow>
-            ) : (invoicesData?.comprobantes.length ?? 0) === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
-                  No se encontraron comprobantes.
-                </TableCell>
-              </TableRow>
-            ) : (
-              invoicesData?.comprobantes.map((invoice) => (
-                <TableRow
-                  key={invoice.id}
-                  onClick={() => handleViewInvoice(invoice)}
-                  className="cursor-pointer"
-                  data-state={
-                    selectedIds.has(invoice.id) ? 'selected' : undefined
-                  }
-                >
-                  <TableCell
-                    className="w-10 px-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+          {/* Table. El contenedor propio del `Table` sobra: la card ya es el
+            marco, y dejarlo suma un segundo borde. */}
+          <div className="[&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
+            <Table className="table-fixed text-xs">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10 px-2">
                     <input
                       type="checkbox"
                       className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
-                      checked={selectedIds.has(invoice.id)}
-                      onChange={() => toggleInvoiceRow(invoice.id)}
+                      checked={
+                        (invoicesData?.comprobantes ?? []).length > 0 &&
+                        (invoicesData?.comprobantes ?? []).every((inv) =>
+                          selectedIds.has(inv.id)
+                        )
+                      }
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            (invoicesData?.comprobantes ?? []).some((inv) =>
+                              selectedIds.has(inv.id)
+                            ) &&
+                            !(invoicesData?.comprobantes ?? []).every((inv) =>
+                              selectedIds.has(inv.id)
+                            );
+                      }}
+                      onChange={() =>
+                        toggleAllInvoices(
+                          (invoicesData?.comprobantes ?? []).map(
+                            (inv) => inv.id
+                          )
+                        )
+                      }
                     />
-                  </TableCell>
-                  <TableCell className="w-[10%] px-2 py-2 align-top">
-                    <div className="truncate">
-                      {getTypeBadge(String(invoice.tipo))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="w-[16%] px-2 py-2 align-top">
-                    {invoice.clienteRazonSocial ? (
-                      <div
-                        className="font-medium truncate text-xs"
-                        title={invoice.clienteRazonSocial}
-                      >
-                        {invoice.clienteRazonSocial}
-                      </div>
-                    ) : (
-                      <span className="text-[var(--arca-ink-3)] text-xs">
-                        Sin cliente
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="w-[20%] px-2 py-2 align-top">
-                    <div className="space-y-0.5">
-                      <div
-                        className="font-medium truncate text-xs"
-                        title={invoice.contraparteNombre ?? ''}
-                      >
-                        {invoice.contraparteNombre ?? 'Sin identificar'}
-                      </div>
-                      <div
-                        className="text-xs text-[var(--arca-ink-3)] truncate"
-                        title={`${invoice.contraparteDocTipo}: ${invoice.contraparteDocNro}`}
-                      >
-                        {invoice.contraparteDocTipo}:{' '}
-                        {invoice.contraparteDocNro}
-                      </div>
-                    </div>
-                  </TableCell>
-                  <TableCell className="w-[12%] px-2 py-2 align-top whitespace-nowrap tabular-nums [font-family:var(--ff-mono)]">
-                    {formatNumero(invoice.puntoVenta, invoice.numero)}
-                  </TableCell>
-                  <TableCell className="w-[9%] px-2 py-2 align-middle whitespace-nowrap">
-                    {formatDateOnlyString(invoice.fechaEmision)}
-                  </TableCell>
-                  <TableCell className="w-[14%] px-2 py-2 align-middle whitespace-nowrap font-medium">
-                    {formatCurrency(invoice.total, invoice.moneda)}
-                  </TableCell>
-                  <TableCell className="w-[12%] px-2 py-2 align-middle whitespace-nowrap">
-                    {getDirectionBadge(invoice.direccion)}
-                  </TableCell>
+                  </TableHead>
+                  <TableHead className="w-[10%] px-2 align-middle">
+                    Tipo
+                  </TableHead>
+                  <TableHead className="w-[16%] px-2 align-middle">
+                    Cliente
+                  </TableHead>
+                  <TableHead className="w-[20%] px-2 align-middle">
+                    Contraparte
+                  </TableHead>
+                  <TableHead className="w-[12%] px-2 align-middle">
+                    Comprobante
+                  </TableHead>
+                  <TableHead className="w-[9%] px-2 align-middle">
+                    <button
+                      className="group flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase"
+                      onClick={handleSortByDate}
+                    >
+                      Fecha
+                      {sortBy === 'fechaEmision' && sortOrder === 'asc' ? (
+                        <ArrowUp className="ml-1 h-3 w-3" />
+                      ) : sortBy === 'fechaEmision' && sortOrder === 'desc' ? (
+                        <ArrowDown className="ml-1 h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                      )}
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[14%] px-2 align-middle">
+                    <button
+                      className="group flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase"
+                      onClick={handleSortByAmount}
+                    >
+                      Monto
+                      {sortBy === 'total' && sortOrder === 'asc' ? (
+                        <ArrowUp className="ml-1 h-3 w-3" />
+                      ) : sortBy === 'total' && sortOrder === 'desc' ? (
+                        <ArrowDown className="ml-1 h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="ml-1 h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                      )}
+                    </button>
+                  </TableHead>
+                  <TableHead className="w-[12%] px-2 align-middle">
+                    Dirección
+                  </TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="h-24 text-center">
+                      Cargando comprobantes...
+                    </TableCell>
+                  </TableRow>
+                ) : (invoicesData?.comprobantes.length ?? 0) === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="h-24 text-center">
+                      No se encontraron comprobantes.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  invoicesData?.comprobantes.map((invoice) => (
+                    <TableRow
+                      key={invoice.id}
+                      onClick={() => handleViewInvoice(invoice)}
+                      className="cursor-pointer"
+                      data-state={
+                        selectedIds.has(invoice.id) ? 'selected' : undefined
+                      }
+                    >
+                      <TableCell
+                        className="w-10 px-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
+                          checked={selectedIds.has(invoice.id)}
+                          onChange={() => toggleInvoiceRow(invoice.id)}
+                        />
+                      </TableCell>
+                      <TableCell className="w-[10%] px-2 align-middle">
+                        <div className="truncate">
+                          {getTypeBadge(String(invoice.tipo))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="w-[16%] px-2 align-middle">
+                        {invoice.clienteRazonSocial ? (
+                          <div
+                            className="font-medium truncate text-xs"
+                            title={invoice.clienteRazonSocial}
+                          >
+                            {invoice.clienteRazonSocial}
+                          </div>
+                        ) : (
+                          <span className="text-[var(--arca-ink-3)] text-xs">
+                            Sin cliente
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="w-[20%] px-2 align-middle">
+                        <div className="space-y-0.5">
+                          <div
+                            className="font-medium truncate text-xs"
+                            title={invoice.contraparteNombre ?? ''}
+                          >
+                            {invoice.contraparteNombre ?? 'Sin identificar'}
+                          </div>
+                          <div
+                            className="text-xs text-[var(--arca-ink-3)] truncate"
+                            title={`${invoice.contraparteDocTipo}: ${invoice.contraparteDocNro}`}
+                          >
+                            {invoice.contraparteDocTipo}:{' '}
+                            {invoice.contraparteDocNro}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="w-[12%] px-2 align-middle whitespace-nowrap tabular-nums [font-family:var(--ff-mono)]">
+                        {formatNumero(invoice.puntoVenta, invoice.numero)}
+                      </TableCell>
+                      <TableCell className="w-[9%] px-2 align-middle whitespace-nowrap">
+                        {formatDateOnlyString(invoice.fechaEmision)}
+                      </TableCell>
+                      <TableCell className="w-[14%] px-2 align-middle whitespace-nowrap font-medium">
+                        {formatCurrency(invoice.total, invoice.moneda)}
+                      </TableCell>
+                      <TableCell className="w-[12%] px-2 align-middle whitespace-nowrap">
+                        {getDirectionBadge(invoice.direccion)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="w-full min-w-0">
+          {/* Pagination, dentro de la card y pegada a la última fila. */}
+          {totalPages > 1 && (
             <Paginador
               pagina={currentPage}
               totalPaginas={totalPages}
               onPagina={setCurrentPage}
+              className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
             />
-          </div>
-        )}
+          )}
+        </div>
 
         {/* View Invoice Dialog */}
         <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>

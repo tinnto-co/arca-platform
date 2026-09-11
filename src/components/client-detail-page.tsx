@@ -3319,7 +3319,7 @@ export function RepresentativeDetailPage({
           </TabsContent>
 
           {/* Facturas Tab */}
-          <TabsContent value="facturas" className="space-y-6">
+          <TabsContent value="facturas" className="space-y-[14px]">
             {/* <div className="flex justify-end">
             <Button
               variant="default"
@@ -3356,307 +3356,6 @@ export function RepresentativeDetailPage({
               )}
             </Button>
           </div> */}
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              {/* Fila 1: solo botón Actualizar Facturas */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
-                    {lastComprobantesJob?.createdAt ? (
-                      <span
-                        className={
-                          lastComprobantesJob.success
-                            ? 'text-[var(--arca-accent-pos-fg)] font-medium'
-                            : 'text-destructive'
-                        }
-                        title={
-                          friendlyFailedReason(
-                            lastComprobantesJob.failedReason
-                          ) ?? undefined
-                        }
-                      >
-                        {formatLastUpdateAt(lastComprobantesJob.createdAt)}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </p>
-                  {lastComprobantesJob &&
-                    !lastComprobantesJob.success &&
-                    lastComprobantesJob.failedReason && (
-                      <p className="text-[11px] text-destructive max-w-md">
-                        {friendlyFailedReason(lastComprobantesJob.failedReason)}
-                      </p>
-                    )}
-                </div>
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={!!scrapingSection}
-                  onClick={async () => {
-                    setScrapingSection('facturas');
-                    try {
-                      await scrapSingleJob({
-                        data: {
-                          credencialId: representativeId,
-                          jobType: 'comprobantes',
-                        },
-                      });
-                      await Promise.all([
-                        queryClient.invalidateQueries({
-                          queryKey: ['clientAllInvoices', representativeId],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: ['invoices'],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: [
-                            'lastComprobantesFullJob',
-                            representativeId,
-                          ],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesJob', representativeId],
-                        }),
-                      ]);
-                      toast.success(
-                        'Facturas (comprobantes) actualizadas correctamente'
-                      );
-                    } catch (err) {
-                      toast.error(
-                        err instanceof Error
-                          ? err.message
-                          : 'Error al actualizar facturas'
-                      );
-                      queryClient.invalidateQueries({
-                        queryKey: ['lastComprobantesJob', representativeId],
-                      });
-                    } finally {
-                      setScrapingSection(null);
-                    }
-                  }}
-                >
-                  {scrapingSection === 'facturas' ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Actualizando…
-                    </>
-                  ) : (
-                    'Actualizar Facturas'
-                  )}
-                </Button>
-              </div>
-
-              {/* Fila 2: filtros */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground shrink-0">
-                  Período:
-                </span>
-                <Select
-                  value={facturasPeriodType}
-                  onValueChange={(v) => {
-                    setFacturasPeriodType(
-                      v as 'none' | 'year' | 'month' | 'range'
-                    );
-                    setFacturasPeriodPickerOpen(false);
-                  }}
-                >
-                  <SelectTrigger className="w-[160px] h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin período</SelectItem>
-                    <SelectItem value="year">Por año</SelectItem>
-                    <SelectItem value="month">Por mes</SelectItem>
-                    <SelectItem value="range">Rango de días</SelectItem>
-                  </SelectContent>
-                </Select>
-                {facturasPeriodType === 'year' && (
-                  <Select
-                    value={String(facturasYear)}
-                    onValueChange={(v) => setFacturasYear(Number(v))}
-                  >
-                    <SelectTrigger className="w-[100px] h-9">
-                      <SelectValue placeholder="Año" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from(
-                        { length: 8 },
-                        (_, i) => now.getFullYear() - i
-                      ).map((y) => (
-                        <SelectItem key={y} value={String(y)}>
-                          {y}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {facturasPeriodType === 'month' && (
-                  <Popover
-                    open={facturasPeriodPickerOpen}
-                    onOpenChange={setFacturasPeriodPickerOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="h-9 min-w-[160px] justify-start text-left font-normal px-3"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                        <span className="text-sm">{`${MONTH_NAMES[facturasMonth]} ${facturasYear}`}</span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-4" align="start">
-                      <div className="space-y-3">
-                        <Select
-                          value={String(facturasYear)}
-                          onValueChange={(v) => {
-                            const y = Number(v);
-                            const newMax =
-                              y === now.getFullYear() ? now.getMonth() : 11;
-                            setFacturasYear(y);
-                            setFacturasMonth((m) => Math.min(m, newMax));
-                          }}
-                        >
-                          <SelectTrigger className="w-full h-9">
-                            <SelectValue placeholder="Año" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from(
-                              { length: 8 },
-                              (_, i) => now.getFullYear() - i
-                            ).map((y) => (
-                              <SelectItem key={y} value={String(y)}>
-                                {y}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {Array.from(
-                            {
-                              length:
-                                facturasYear === now.getFullYear()
-                                  ? now.getMonth() + 1
-                                  : 12,
-                            },
-                            (_, i) => i
-                          ).map((i) => (
-                            <Button
-                              key={i}
-                              variant={
-                                facturasMonth === i ? 'default' : 'outline'
-                              }
-                              size="sm"
-                              className="text-xs h-8"
-                              onClick={() => {
-                                setFacturasMonth(i);
-                                setFacturasPeriodPickerOpen(false);
-                              }}
-                            >
-                              {MONTH_NAMES_SHORT[i]}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                )}
-                {facturasPeriodType === 'range' && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          'h-9 min-w-[200px] justify-start text-left font-normal',
-                          !facturasDateRange?.from && 'text-muted-foreground'
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                        {facturasDateRange?.from
-                          ? facturasDateRange?.to
-                            ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
-                            : format(facturasDateRange.from, 'dd/MM/yyyy', {
-                                locale: es,
-                              })
-                          : 'Elegir fechas'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <DateRangeCalendar
-                        mode="range"
-                        defaultMonth={facturasDateRange?.from}
-                        selected={facturasDateRange}
-                        onSelect={setFacturasDateRange}
-                        numberOfMonths={2}
-                        locale={es}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                )}
-
-                <span className="text-sm text-muted-foreground shrink-0">
-                  Tipo:
-                </span>
-                <Select
-                  value={facturasTypeFilter}
-                  onValueChange={setFacturasTypeFilter}
-                >
-                  <SelectTrigger className="w-[220px] h-9">
-                    <SelectValue placeholder="Tipo" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    <SelectItem value="all">Todas las facturas</SelectItem>
-                    {Object.entries(INVOICE_TYPE_LABELS)
-                      .sort(([a], [b]) => Number(a) - Number(b))
-                      .map(([code, label]) => (
-                        <SelectItem key={code} value={code}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-
-                <span className="text-sm text-muted-foreground shrink-0">
-                  Dirección:
-                </span>
-                <Select
-                  value={facturasDirectionFilter}
-                  onValueChange={setFacturasDirectionFilter}
-                >
-                  <SelectTrigger className="w-[130px] h-9">
-                    <SelectValue placeholder="Dirección" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="emitido">Emitida</SelectItem>
-                    <SelectItem value="recibido">Recibida</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Fila 3: búsqueda por emisor/receptor y exportar Excel */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar mediante emisor o receptor..."
-                    value={facturasSearchTerm}
-                    onChange={(e) => setFacturasSearchTerm(e.target.value)}
-                    className="pl-8 w-full md:w-80"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => invoicesTableRef.current?.exportExcel()}
-                  className="h-9 gap-1.5 shrink-0 font-normal"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Excel</span>
-                </Button>
-              </div>
-            </div>
-
             {/* Resumen Ventas/Compras (1/3) + Gráfico (2/3) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full max-w-full">
               <Card className="overflow-hidden min-h-[7.25rem]">
@@ -3864,6 +3563,304 @@ export function RepresentativeDetailPage({
               )}
             </div>
 
+            {/* Misma franja de actualización que el resto de las pestañas. */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-col gap-1">
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
+                    {lastComprobantesJob?.createdAt ? (
+                      <span
+                        className={
+                          lastComprobantesJob.success
+                            ? 'text-[var(--arca-accent-pos-fg)] font-medium'
+                            : 'text-destructive'
+                        }
+                        title={
+                          friendlyFailedReason(
+                            lastComprobantesJob.failedReason
+                          ) ?? undefined
+                        }
+                      >
+                        {formatLastUpdateAt(lastComprobantesJob.createdAt)}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </p>
+                  {lastComprobantesJob &&
+                    !lastComprobantesJob.success &&
+                    lastComprobantesJob.failedReason && (
+                      <p className="text-[11px] text-destructive max-w-md">
+                        {friendlyFailedReason(lastComprobantesJob.failedReason)}
+                      </p>
+                    )}
+                </div>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={!!scrapingSection}
+                  onClick={async () => {
+                    setScrapingSection('facturas');
+                    try {
+                      await scrapSingleJob({
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'comprobantes',
+                        },
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({
+                          queryKey: ['clientAllInvoices', representativeId],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['invoices'],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: [
+                            'lastComprobantesFullJob',
+                            representativeId,
+                          ],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['lastComprobantesJob', representativeId],
+                        }),
+                      ]);
+                      toast.success(
+                        'Facturas (comprobantes) actualizadas correctamente'
+                      );
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : 'Error al actualizar facturas'
+                      );
+                      queryClient.invalidateQueries({
+                        queryKey: ['lastComprobantesJob', representativeId],
+                      });
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                >
+                  {scrapingSection === 'facturas' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </>
+                  ) : (
+                    'Actualizar Facturas'
+                  )}
+                </Button>
+              </div>
+
+              {/* Filtros, buscador y exportar, todo en una línea. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
+                  Período:
+                </span>
+                <Select
+                  value={facturasPeriodType}
+                  onValueChange={(v) => {
+                    setFacturasPeriodType(
+                      v as 'none' | 'year' | 'month' | 'range'
+                    );
+                    setFacturasPeriodPickerOpen(false);
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin período</SelectItem>
+                    <SelectItem value="year">Por año</SelectItem>
+                    <SelectItem value="month">Por mes</SelectItem>
+                    <SelectItem value="range">Rango de días</SelectItem>
+                  </SelectContent>
+                </Select>
+                {facturasPeriodType === 'year' && (
+                  <Select
+                    value={String(facturasYear)}
+                    onValueChange={(v) => setFacturasYear(Number(v))}
+                  >
+                    <SelectTrigger size="sm" className="w-[100px]">
+                      <SelectValue placeholder="Año" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from(
+                        { length: 8 },
+                        (_, i) => now.getFullYear() - i
+                      ).map((y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {facturasPeriodType === 'month' && (
+                  <Popover
+                    open={facturasPeriodPickerOpen}
+                    onOpenChange={setFacturasPeriodPickerOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="h-9 min-w-[160px] justify-start text-left font-normal px-3"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="text-sm">{`${MONTH_NAMES[facturasMonth]} ${facturasYear}`}</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-4" align="start">
+                      <div className="space-y-3">
+                        <Select
+                          value={String(facturasYear)}
+                          onValueChange={(v) => {
+                            const y = Number(v);
+                            const newMax =
+                              y === now.getFullYear() ? now.getMonth() : 11;
+                            setFacturasYear(y);
+                            setFacturasMonth((m) => Math.min(m, newMax));
+                          }}
+                        >
+                          <SelectTrigger className="w-full h-9">
+                            <SelectValue placeholder="Año" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from(
+                              { length: 8 },
+                              (_, i) => now.getFullYear() - i
+                            ).map((y) => (
+                              <SelectItem key={y} value={String(y)}>
+                                {y}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {Array.from(
+                            {
+                              length:
+                                facturasYear === now.getFullYear()
+                                  ? now.getMonth() + 1
+                                  : 12,
+                            },
+                            (_, i) => i
+                          ).map((i) => (
+                            <Button
+                              key={i}
+                              variant={
+                                facturasMonth === i ? 'default' : 'outline'
+                              }
+                              size="sm"
+                              className="text-xs h-8"
+                              onClick={() => {
+                                setFacturasMonth(i);
+                                setFacturasPeriodPickerOpen(false);
+                              }}
+                            >
+                              {MONTH_NAMES_SHORT[i]}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
+                {facturasPeriodType === 'range' && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          'h-9 min-w-[200px] justify-start text-left font-normal',
+                          !facturasDateRange?.from && 'text-muted-foreground'
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        {facturasDateRange?.from
+                          ? facturasDateRange?.to
+                            ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
+                            : format(facturasDateRange.from, 'dd/MM/yyyy', {
+                                locale: es,
+                              })
+                          : 'Elegir fechas'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <DateRangeCalendar
+                        mode="range"
+                        defaultMonth={facturasDateRange?.from}
+                        selected={facturasDateRange}
+                        onSelect={setFacturasDateRange}
+                        numberOfMonths={2}
+                        locale={es}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )}
+
+                <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
+                  Tipo:
+                </span>
+                <Select
+                  value={facturasTypeFilter}
+                  onValueChange={setFacturasTypeFilter}
+                >
+                  <SelectTrigger size="sm" className="w-[170px]">
+                    <SelectValue placeholder="Tipo" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    <SelectItem value="all">Todas las facturas</SelectItem>
+                    {Object.entries(INVOICE_TYPE_LABELS)
+                      .sort(([a], [b]) => Number(a) - Number(b))
+                      .map(([code, label]) => (
+                        <SelectItem key={code} value={code}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+
+                <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
+                  Dirección:
+                </span>
+                <Select
+                  value={facturasDirectionFilter}
+                  onValueChange={setFacturasDirectionFilter}
+                >
+                  <SelectTrigger size="sm" className="w-[120px]">
+                    <SelectValue placeholder="Dirección" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="emitido">Emitida</SelectItem>
+                    <SelectItem value="recibido">Recibida</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="relative">
+                  <Search className="absolute top-[7px] left-2 size-4 text-[var(--arca-ink-4)]" />
+                  <Input
+                    placeholder="Buscar emisor o receptor..."
+                    value={facturasSearchTerm}
+                    onChange={(e) => setFacturasSearchTerm(e.target.value)}
+                    className="h-[30px] w-full pl-8 text-[12.5px] md:w-56"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => invoicesTableRef.current?.exportExcel()}
+                  className="shrink-0 gap-1.5"
+                >
+                  <Download className="size-3.5" />
+                  <span>Excel</span>
+                </Button>
+              </div>
+            </div>
+
             <InvoicesTable
               ref={invoicesTableRef}
               clientId={representativeId}
@@ -3889,7 +3886,7 @@ export function RepresentativeDetailPage({
               </div>
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground shrink-0">
+                  <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
                     Período:
                   </span>
                   <Popover>
