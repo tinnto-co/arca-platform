@@ -357,12 +357,12 @@ function ChipLibro({ estado }: { estado: string }) {
   const meta =
     estado === 'definitivo'
       ? {
-          texto: 'DDJJ presentada (AFIP)',
+          texto: 'DDJJ presentada (ARCA)',
           cls: 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]',
         }
       : estado === 'completo'
         ? {
-            texto: 'Libro de IVA (AFIP)',
+            texto: 'Libro de IVA (ARCA)',
             cls: 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]',
           }
         : estado === 'preliminar'
@@ -547,7 +547,7 @@ function AdjustControl({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)]"
+          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)]"
           onClick={() => {
             setIsEditing(false);
             setInputValue('');
@@ -568,7 +568,7 @@ function AdjustControl({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)]"
+          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)]"
           onClick={() => onChange(0)}
         >
           <X className="h-4 w-4" />

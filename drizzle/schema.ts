@@ -2157,6 +2157,32 @@ export const organizationModule = pgTable("organization_module", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 ]);
 
+/**
+ * Prioridad que el estudio le asigna a una categoría de notificación.
+ *
+ * Pisa a la severidad que puso el clasificador: dentro de una categoría, lo
+ * que vale es el criterio del estudio. Se guarda la regla, no el resultado —no
+ * se reescriben las notificaciones—, así que cambiarla o borrarla se refleja
+ * al instante sobre todo el historial y la clasificación original queda
+ * intacta debajo. Sin fila para una categoría, manda el clasificador.
+ */
+export const notificacionCategoriaPrioridad = pgTable("notificacion_categoria_prioridad", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	categoria: text().notNull(),
+	severidad: notificacionSeveridad().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "notificacion_categoria_prioridad_org_id_fkey"
+		}).onDelete("cascade"),
+	unique("notificacion_categoria_prioridad_org_id_categoria_key").on(table.orgId, table.categoria),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
 export const localidad = pgTable("localidad", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	codigo: text().notNull(),

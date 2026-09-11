@@ -8,23 +8,13 @@
  * plana), que había quedado de otra época visual.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, CheckCheck, Search } from 'lucide-react';
+import { CheckCheck, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import {
-  ChevronChip,
-  QuitarFiltro,
-  botonHeader,
-  chipFiltro,
-} from '@/components/shared/filtros';
+import { botonHeader } from '@/components/shared/filtros';
 import { SEVERIDAD_LABEL, categoriaLabel } from './utils';
 import { ListaNotificaciones } from './ListaNotificaciones';
 import { PanelLectura } from './PanelLectura';
@@ -42,7 +32,7 @@ const POR_PAGINA = 50;
 const TABS = [
   { valor: 'sin_leer', label: 'Sin leer' },
   { valor: 'todas', label: 'Todas' },
-  { valor: 'resueltas', label: 'Resueltas' },
+  { valor: 'leidas', label: 'Leídas' },
 ] as const;
 type Estado = (typeof TABS)[number]['valor'];
 
@@ -104,9 +94,9 @@ export function InboxEmbebido({
     categoria: categoria || undefined,
     severidad: severidad || undefined,
     search: q || undefined,
-    leida: estado === 'sin_leer' ? false : undefined,
+    leida:
+      estado === 'sin_leer' ? false : estado === 'leidas' ? true : undefined,
     onlyUnresolved: estado === 'sin_leer' ? true : undefined,
-    soloResueltas: estado === 'resueltas' ? true : undefined,
   };
 
   const { data, isLoading } = useQuery({
@@ -170,7 +160,7 @@ export function InboxEmbebido({
       <div className="flex flex-wrap items-center gap-2 pb-3">
         <div
           role="tablist"
-          className="flex items-center gap-0.5 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] p-[2px]"
+          className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
         >
           {TABS.map((t) => (
             <button
@@ -183,10 +173,10 @@ export function InboxEmbebido({
                 setPaginas(1);
               }}
               className={cn(
-                'rounded-[8px] px-2.5 py-1 text-[12px] transition-colors duration-[120ms]',
+                'flex h-[26px] items-center rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
                 estado === t.valor
-                  ? 'bg-[var(--arca-ink)] font-medium text-white'
-                  : 'text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)]'
+                  ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                  : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
               )}
             >
               {t.label}
@@ -194,60 +184,42 @@ export function InboxEmbebido({
           ))}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className={chipFiltro(categoria !== '')}>
-            Categoría: {categoria ? categoriaLabel(categoria) : 'todas'}
-            {categoria ? (
-              <QuitarFiltro onQuitar={() => setCategoria('')} />
-            ) : (
-              <ChevronChip />
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="max-h-[320px] min-w-[180px] overflow-y-auto"
-          >
-            {(resumen?.categorias ?? []).map((c) => (
-              <DropdownMenuItem
-                key={c}
-                className="text-[12.5px]"
-                onSelect={() => setCategoria(c)}
-              >
-                {categoriaLabel(c)}
-                {c === categoria && (
-                  <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Los mismos selects que la bandeja global: combobox con buscador
+            del sistema, no chips de dropdown. Es la misma decisión en las dos
+            pantallas, así que se opera igual. */}
+        <SearchableSelect
+          size="sm"
+          value={categoria || 'all'}
+          onValueChange={(v) => setCategoria(v === 'all' ? '' : v)}
+          placeholder="Categoría"
+          searchPlaceholder="Buscar categoría..."
+          width={210}
+          options={[
+            { value: 'all', label: 'Todas las categorías' },
+            ...(resumen?.categorias ?? []).map((c) => ({
+              value: c,
+              label: categoriaLabel(c),
+            })),
+          ]}
+        />
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className={chipFiltro(severidad !== '')}>
-            Importancia: {severidad ? SEVERIDAD_LABEL[severidad] : 'toda'}
-            {severidad ? (
-              <QuitarFiltro onQuitar={() => setSeveridad('')} />
-            ) : (
-              <ChevronChip />
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[180px]">
-            {['urgente', 'accion_requerida', 'informativa', 'sin_clasificar'].map(
-              (sv) => (
-                <DropdownMenuItem
-                  key={sv}
-                  className="text-[12.5px]"
-                  onSelect={() => setSeveridad(sv)}
-                >
-                  {SEVERIDAD_LABEL[sv]}
-                  {sv === severidad && (
-                    <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                  )}
-                </DropdownMenuItem>
-              )
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <SearchableSelect
+          size="sm"
+          value={severidad || 'all'}
+          onValueChange={(v) => setSeveridad(v === 'all' ? '' : v)}
+          placeholder="Importancia"
+          searchPlaceholder="Buscar importancia..."
+          width={200}
+          options={[
+            { value: 'all', label: 'Toda importancia' },
+            ...[
+              'urgente',
+              'accion_requerida',
+              'informativa',
+              'sin_clasificar',
+            ].map((sv) => ({ value: sv, label: SEVERIDAD_LABEL[sv] })),
+          ]}
+        />
 
         <div className="relative min-w-[200px] flex-1 max-w-[280px]">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--arca-ink-4)]" />
@@ -289,8 +261,8 @@ export function InboxEmbebido({
           vacio={
             estado === 'sin_leer'
               ? 'Estás al día'
-              : estado === 'resueltas'
-                ? 'Todavía no hay notificaciones resueltas'
+              : estado === 'leidas'
+                ? 'Todavía no hay notificaciones leídas'
                 : 'No hay notificaciones con estos filtros'
           }
           hayMas={hayMas}

@@ -39,7 +39,7 @@ import {
   listOrgMembers,
   TIPOS_TAREA,
 } from '@/actions/tareas';
-import { resolveNotification } from '@/actions/notification';
+import { markNotificationOpened } from '@/actions/notification';
 import { TIPO_LABELS } from '@/components/tareas/utils';
 import type { TipoTarea } from '@/components/tareas/utils';
 import { asuntoYPreview } from './utils';
@@ -75,7 +75,7 @@ function tipoDesdeCategoria(categoria: string | null): TipoTarea {
 }
 
 const CAMPO =
-  'w-full rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[9px] py-[5px] text-left text-[12.5px] text-[var(--arca-ink)] outline-none transition-colors duration-[120ms] hover:border-[var(--arca-border-strong)] focus:border-[var(--arca-navy-600)]';
+  'w-full rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[9px] py-[5px] text-left text-[12.5px] text-[var(--arca-ink)] outline-none transition-colors duration-[120ms] hover:border-[var(--arca-border-strong)] focus:border-[var(--arca-accent)]';
 const LABEL =
   'text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase';
 
@@ -121,7 +121,7 @@ function Formulario({
   const [descripcion, setDescripcion] = useState(
     `${(inicial.preview !== '' ? inicial.preview : notificacion.mensaje).slice(0, 300)}\n\nDesde la notificación ${notificacion.id.slice(0, 8)}`
   );
-  const [marcarResuelta, setMarcarResuelta] = useState(false);
+  const [marcarLeida, setMarcarLeida] = useState(false);
   const [calendario, setCalendario] = useState(false);
 
   const { data: columnas = [] } = useQuery({
@@ -154,8 +154,8 @@ function Formulario({
           clienteIds: notificacion.clienteId ? [notificacion.clienteId] : [],
         },
       });
-      if (marcarResuelta) {
-        await resolveNotification({ data: { id: notificacion.id } });
+      if (marcarLeida) {
+        await markNotificationOpened({ data: { id: notificacion.id } });
       }
       return tarea;
     },
@@ -343,11 +343,11 @@ function Formulario({
 
           <label className="flex cursor-pointer items-center gap-2">
             <Checkbox
-              checked={marcarResuelta}
-              onCheckedChange={(v) => setMarcarResuelta(v === true)}
+              checked={marcarLeida}
+              onCheckedChange={(v) => setMarcarLeida(v === true)}
             />
             <span className="text-[12.5px] text-[var(--arca-ink-2)]">
-              Marcar la notificación como resuelta
+              Marcar la notificación como leída
             </span>
           </label>
         </div>
@@ -357,7 +357,7 @@ function Formulario({
             type="button"
             disabled={!titulo.trim() || crear.isPending}
             onClick={() => crear.mutate()}
-            className="rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors duration-[120ms] hover:bg-black disabled:opacity-40"
+            className="rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors duration-[120ms] hover:bg-[var(--arca-accent-hover)] disabled:opacity-40"
           >
             Crear tarea
           </button>

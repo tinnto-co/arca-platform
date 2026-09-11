@@ -596,7 +596,7 @@ export const uploadDocumentoSolicitud = createServerFn({ method: 'POST' })
         .limit(1)
     );
     if (!rel)
-      throw new Error('El cliente no tiene una credencial de AFIP asociada');
+      throw new Error('El cliente no tiene una credencial de ARCA asociada');
 
     const buffer = Buffer.from(ctx.data.base64Data, 'base64');
     // El id se genera acá para poder armar la key de R2 antes de insertar.

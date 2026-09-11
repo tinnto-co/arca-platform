@@ -5,6 +5,7 @@ import {
   getPendingNotificationsCount,
 } from '@/actions/dashboard';
 import { ProgressBar } from './shared';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
 export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
@@ -55,12 +56,19 @@ interface MiniKpiCardsRowProps {
   from: Date;
   to: Date;
   stats?: DashboardStats;
+  /**
+   * Para reubicar la fila fuera del tablero: el asistente la muestra en el
+   * panel lateral, donde ni el margen inferior de la página ni las cuatro
+   * columnas del escritorio aplican.
+   */
+  className?: string;
 }
 
 export function MiniKpiCardsRow({
   from,
   to,
   stats: statsProp,
+  className,
 }: MiniKpiCardsRowProps) {
   const fromStr = from.toISOString();
   const toStr = to.toISOString();
@@ -149,7 +157,9 @@ export function MiniKpiCardsRow({
   ];
 
   return (
-    <section className="grid grid-cols-2 xl:grid-cols-4 gap-3.5 mb-5">
+    <section
+      className={cn('grid grid-cols-2 xl:grid-cols-4 gap-3.5 mb-5', className)}
+    >
       {miniKpis.map((kpi) => (
         <MiniKpiCard key={kpi.label} data={kpi} />
       ))}

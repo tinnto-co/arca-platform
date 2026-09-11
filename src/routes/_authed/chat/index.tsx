@@ -228,7 +228,7 @@ const markdownComponents: React.ComponentProps<
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="text-[var(--arca-navy-700)] underline underline-offset-2 hover:text-[var(--arca-navy-600)]"
+      className="text-[var(--arca-accent)] underline underline-offset-2 hover:text-[var(--arca-accent)]"
     >
       {children}
     </a>
@@ -499,16 +499,14 @@ function SidebarItem({
       className={cn(
         'group flex items-center gap-2.5 px-4 py-2.5 cursor-pointer transition-colors duration-[120ms]',
         isSelected
-          ? 'bg-[var(--arca-surface-2)] border-l-2 border-l-[var(--arca-navy-900)]'
+          ? 'bg-[var(--arca-accent-bg)] border-l-2 border-l-[var(--arca-accent)]'
           : 'hover:bg-[var(--arca-surface-2)] border-l-2 border-l-transparent'
       )}
     >
       <MessagesSquare
         className={cn(
           'w-3.5 h-3.5 shrink-0',
-          isSelected
-            ? 'text-[var(--arca-navy-700)]'
-            : 'text-[var(--arca-ink-4)]'
+          isSelected ? 'text-[var(--arca-accent)]' : 'text-[var(--arca-ink-4)]'
         )}
       />
       <div className="flex-1 min-w-0">
@@ -627,7 +625,7 @@ function ChatArea({
         <div className="absolute top-3 left-3 z-10">
           <button
             onClick={onToggleSidebar}
-            className="w-[34px] h-[34px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors cursor-pointer shadow-sm"
+            className="w-[34px] h-[34px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors cursor-pointer shadow-sm"
             title="Abrir panel de chats"
           >
             <PanelLeftOpen className="w-4 h-4" />
@@ -644,7 +642,7 @@ function ChatArea({
           {!hasMessages ? (
             <div className="flex flex-col items-center justify-center gap-4 text-center">
               <div className="inline-flex size-12 items-center justify-center rounded-full bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)] ring-1 ring-[var(--arca-border)]">
-                <Sparkles className="size-5 text-[var(--arca-navy-700)]" />
+                <Sparkles className="size-5 text-[var(--arca-accent)]" />
               </div>
               <div className="space-y-1">
                 <h3
@@ -760,7 +758,7 @@ function ChatArea({
           <PromptInputSubmit
             status={chat.status}
             disabled={!input.trim() || isChatLoading}
-            className="absolute bottom-2 right-2 bg-[var(--arca-ink)] text-white hover:bg-black"
+            className="absolute bottom-2 right-2 bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]"
           />
         </PromptInput>
       </div>

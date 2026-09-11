@@ -144,7 +144,6 @@ export function AgendaCard({
   // El chip «vencidos» despliega la lista acá mismo, no navega: los vencidos
   // son fechas pasadas y el calendario abre en el presente — no se veían.
   const [verVencidos, setVerVencidos] = useState(false);
-  const [verTodos, setVerTodos] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const queryClient = useQueryClient();
 
@@ -219,9 +218,14 @@ export function AgendaCard({
       ),
   });
 
-  const limite =
-    verTodos || filtro || verVencidos ? Infinity : VISIBLES_POR_DEFECTO;
+  const limite = filtro || verVencidos ? Infinity : VISIBLES_POR_DEFECTO;
   let mostrados = 0;
+  // Los renglones están compactados —"Suss · 14 empresas" son 14 vencimientos
+  // en una línea—, así que contar renglones y llamarlos "vencidos" contradice
+  // al chip de arriba, que cuenta vencimientos. El pie cuenta lo mismo que el
+  // chip.
+  let vencsMostrados = 0;
+  const vencsTotal = items.reduce((s, i) => s + i.filas.length, 0);
 
   return (
     <div
@@ -250,7 +254,7 @@ export function AgendaCard({
                   ? 'Volver a la agenda del período'
                   : 'Ver los vencimientos vencidos sin completar (desde el mes pasado)'
               }
-              className="text-[11px] font-medium rounded-[20px] cursor-pointer"
+              className="text-[11px] font-medium rounded-md cursor-pointer"
               style={{
                 background: verVencidos
                   ? 'var(--arca-accent-neg)'
@@ -265,7 +269,7 @@ export function AgendaCard({
           )}
           {datos.sinTarea.length > 0 && (
             <span
-              className="flex items-center gap-1.5 text-[11px] font-medium rounded-[20px]"
+              className="flex items-center gap-1.5 text-[11px] font-medium rounded-md"
               style={{
                 background: 'var(--arca-accent-warn-bg)',
                 color: 'var(--arca-accent-warn-fg)',
@@ -277,7 +281,7 @@ export function AgendaCard({
                 type="button"
                 onClick={() => setConfirmando(true)}
                 disabled={generar.isPending}
-                className="bg-white border rounded-[20px] text-[11px] font-semibold cursor-pointer transition-colors duration-150 hover:bg-[var(--arca-surface-2)] inline-flex items-center gap-1"
+                className="bg-white border rounded-md text-[11px] font-semibold cursor-pointer transition-colors duration-150 hover:bg-[var(--arca-surface-2)] inline-flex items-center gap-1"
                 style={{
                   borderColor: 'var(--arca-border-strong)',
                   color: 'var(--arca-ink)',
@@ -295,7 +299,7 @@ export function AgendaCard({
             type="button"
             onClick={() => setPorTipo((v) => !v)}
             aria-pressed={porTipo}
-            className="text-[11px] font-medium rounded-[20px] border cursor-pointer transition-colors duration-150"
+            className="text-[11px] font-medium rounded-md border cursor-pointer transition-colors duration-150"
             style={{
               background: porTipo ? 'var(--arca-ink)' : 'var(--arca-surface-2)',
               borderColor: porTipo ? 'var(--arca-ink)' : 'var(--arca-border)',
@@ -325,6 +329,7 @@ export function AgendaCard({
           if (mostrados >= limite) return null;
           const visibles = grupo.items.slice(0, limite - mostrados);
           mostrados += visibles.length;
+          vencsMostrados += visibles.reduce((s, i) => s + i.filas.length, 0);
           const totalVencs = grupo.items.reduce(
             (s, i) => s + i.filas.length,
             0
@@ -396,7 +401,7 @@ export function AgendaCard({
                       <Avatares nombres={item.asignados} />
                       {item.sinTarea && (
                         <span
-                          className="text-[10.5px] font-medium rounded-[20px]"
+                          className="text-[10.5px] font-medium rounded-md"
                           style={{
                             background: 'var(--arca-accent-warn-bg)',
                             color: 'var(--arca-accent-warn-fg)',
@@ -454,27 +459,26 @@ export function AgendaCard({
         }}
       >
         <span className="text-[11.5px]" style={{ color: 'var(--arca-ink-3)' }}>
-          Mostrando {Math.min(mostrados, items.length)} de {items.length}
-          {verVencidos ? ' vencidos (desde el mes pasado)' : ' del período'}
+          {/* Decir "70" mientras se ven 13 líneas confunde aunque el 70 sea
+              correcto: lo que falta explicar es que cada línea junta las
+              empresas de un mismo impuesto. El número sólo se acompaña de "de
+              N" cuando la lista está recortada de verdad. */}
+          {vencsMostrados < vencsTotal
+            ? `Mostrando ${vencsMostrados} de ${vencsTotal}`
+            : vencsTotal}
+          {verVencidos ? ' vencidos desde el mes pasado' : ' del período'}
+          {mostrados < vencsTotal ? ', agrupados por impuesto' : ''}
         </span>
-        {!verTodos && items.length > VISIBLES_POR_DEFECTO && !filtro ? (
-          <button
-            type="button"
-            onClick={() => setVerTodos(true)}
-            className="text-[12px] font-medium cursor-pointer hover:underline"
-            style={{ color: 'var(--arca-ink)' }}
-          >
-            Ver los {items.length} →
-          </button>
-        ) : (
-          <Link
-            to="/vencimientos"
-            className="text-[12px] font-medium hover:underline"
-            style={{ color: 'var(--arca-ink)' }}
-          >
-            Ver calendario completo →
-          </Link>
-        )}
+        {/* Un solo destino. Antes el pie ofrecía "Ver los 239", que sonaba a
+            navegar y sólo estiraba la lista unos renglones —los 239 ya estaban
+            compactados— y recién en el segundo click aparecía el calendario. */}
+        <Link
+          to="/vencimientos"
+          className="text-[12px] font-medium hover:underline"
+          style={{ color: 'var(--arca-ink)' }}
+        >
+          Ver calendario completo →
+        </Link>
       </div>
 
       {/* Confirmación de Autogenerar: qué se va a crear, antes de crearlo. */}

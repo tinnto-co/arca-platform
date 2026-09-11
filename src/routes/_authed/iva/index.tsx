@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,6 +8,7 @@ import {
   ArrowDown,
   ChevronsUpDown,
   Pencil,
+  CircleHelp,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -19,6 +20,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Ayuda } from '@/components/shared/ayuda';
+import {
+  SelectorPeriodo,
+  aPeriodo,
+  dePeriodo,
+} from '@/components/shared/selector-periodo';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
@@ -27,30 +34,31 @@ import { getClientes } from '@/actions/client';
 import {
   getIvaResumenRI,
   getMonotributistasFacturacion,
-  getClientesSinClasificar,
+  getClientesOtros,
   updateClienteCondicionIva,
   updateIvaDeclaracionManual,
 } from '@/actions/iva';
 import { cn } from '@/lib/utils';
 
+/**
+ * `tab` en la URL para que se pueda enlazar la solapa: el panel de Inicio
+ * manda acá desde la fila de un monotributista, y caer en Responsable
+ * Inscripto —donde esa empresa no está— se lee como que el link falló.
+ */
+interface Busqueda {
+  tab?: 'ri' | 'monotributo' | 'otras';
+}
+
+const TABS = ['ri', 'monotributo', 'otras'] as const;
+
 export const Route = createFileRoute('/_authed/iva/')({
+  validateSearch: (s: Record<string, unknown>): Busqueda => ({
+    tab: TABS.includes(s.tab as (typeof TABS)[number])
+      ? (s.tab as Busqueda['tab'])
+      : undefined,
+  }),
   component: RouteComponent,
 });
-
-const MONTH_NAMES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
 
 function formatARS(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—';
@@ -64,15 +72,20 @@ function formatARS(value: string | number | null | undefined): string {
   }).format(n);
 }
 
+/**
+ * Tab de sección: subrayada, como el resto del sistema. Antes era una
+ * "pestaña de navegador" —card blanca con el borde inferior recortado—,
+ * una forma que el design system no tiene.
+ */
 const tabCls = () =>
   cn(
-    'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+    'relative h-auto flex-none whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 pb-2.5 text-[13px] gap-[7px] cursor-pointer',
+    'font-medium text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink-2)]',
+    'data-[state=active]:border-[var(--arca-accent)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-none'
   );
 
-const thCls =
-  'px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap';
+// Sin color ni tamaño propios: los hereda del micro-label del <tr>.
+const thCls = 'h-[38px] px-3 font-semibold whitespace-nowrap';
 const monoStyle = { fontFamily: 'var(--ff-mono)' } as const;
 
 /** Fila del resumen RI, tal cual la devuelve `getIvaResumenRI`. */
@@ -163,7 +176,7 @@ function SortableTh({
       className={cn(
         thCls,
         align === 'right' ? 'text-right' : 'text-left',
-        'cursor-pointer select-none hover:text-[var(--arca-ink)]'
+        'cursor-pointer select-none hover:bg-white/10'
       )}
       onClick={() => onSort(colKey)}
     >
@@ -274,7 +287,7 @@ function CeldaImporteEditable({
         setBorrador(valor ?? '');
         setEditando(true);
       }}
-      title="Editar (dato de AFIP faltante o a corregir)"
+      title="Editar (dato de ARCA faltante o a corregir)"
       className="group/celda inline-flex w-full items-center justify-end gap-1.5 cursor-pointer"
     >
       <Pencil className="h-3 w-3 shrink-0 opacity-0 group-hover/celda:opacity-60" />
@@ -348,16 +361,18 @@ function EstadoBadge({ row }: { row: RiRow }) {
     return row.comprobantes === 0 ? (
       <span
         className={cls('bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]')}
-        title="No hay comprobantes cargados para este período ni declaración de AFIP."
+        title="No hay comprobantes cargados para este período ni declaración de ARCA."
       >
         Sin datos
       </span>
     ) : (
       <span
-        className={cls('bg-sky-50 text-sky-700')}
+        className={cls(
+          'bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
+        )}
         title={`Calculado sobre ${row.comprobantes} comprobante${
           row.comprobantes === 1 ? '' : 's'
-        }. Todavía no se scrapeó la declaración de AFIP.`}
+        }. Todavía no se trajo la declaración de ARCA.`}
       >
         Calculado
       </span>
@@ -372,20 +387,26 @@ function EstadoBadge({ row }: { row: RiRow }) {
 
   if (!difiere) {
     return (
-      <span className={cls('bg-emerald-50 text-emerald-700')}>
-        Coincide AFIP
+      <span
+        className={cls(
+          'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
+        )}
+      >
+        Coincide ARCA
       </span>
     );
   }
   return (
     <span
-      className={cls('bg-amber-50 text-amber-700')}
+      className={cls(
+        'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]'
+      )}
       title={[
-        `Débito — calculado ${formatARS(row.calcDebitoFiscal)} · AFIP ${formatARS(row.debitoFiscal)}`,
-        `Crédito — calculado ${formatARS(row.calcCreditoFiscal)} · AFIP ${formatARS(row.creditoFiscal)}`,
+        `Débito — calculado ${formatARS(row.calcDebitoFiscal)} · ARCA ${formatARS(row.debitoFiscal)}`,
+        `Crédito — calculado ${formatARS(row.calcCreditoFiscal)} · ARCA ${formatARS(row.creditoFiscal)}`,
       ].join('\n')}
     >
-      Difiere de AFIP
+      Difiere de ARCA
     </span>
   );
 }
@@ -455,9 +476,6 @@ function IvaResumenRI({ search }: { search: string }) {
     [rows, sort]
   );
 
-  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
-  const maxMonth = selectedYear === now.getFullYear() ? now.getMonth() : 11;
-
   // Los totales siguen a lo que está filtrado en pantalla: si se busca una
   // empresa, el pie muestra su posición y no la de toda la cartera.
   const totals = rows.reduce(
@@ -484,53 +502,31 @@ function IvaResumenRI({ search }: { search: string }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-6">
-        <Select
-          value={String(selectedMonth)}
-          onValueChange={(v) => setSelectedMonth(Number(v))}
-        >
-          <SelectTrigger className="w-[140px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Array.from({ length: maxMonth + 1 }, (_, i) => (
-              <SelectItem key={i} value={String(i)}>
-                {MONTH_NAMES[i]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={String(selectedYear)}
-          onValueChange={(v) => {
-            const y = Number(v);
-            setSelectedYear(y);
-            if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
-              setSelectedMonth(now.getMonth());
-            }
+        <SelectorPeriodo
+          periodo={aPeriodo(selectedYear, selectedMonth)}
+          onPeriodo={(p) => {
+            const { anio, mes } = dePeriodo(p);
+            setSelectedYear(anio);
+            setSelectedMonth(mes);
           }}
-        >
-          <SelectTrigger className="w-[100px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {years.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
+        <Ayuda titulo="De dónde sale cada número" etiqueta="Cómo se calcula">
+          <p>
+            <strong>Débito, crédito y saldo técnico</strong> se calculan sobre
+            los comprobantes cargados del período — los mismos números que la
+            ficha de cada empresa. El saldo técnico es débito menos crédito:
+            positivo es a pagar.
+          </p>
+          <p>
+            <strong>Saldo libre disponibilidad</strong> y{' '}
+            <strong>retenciones/percepciones</strong> vienen de la declaración
+            de ARCA y no se pueden derivar de comprobantes. Mientras no se
+            traigan, esas dos columnas muestran un guion y se pueden completar a
+            mano: hacé click sobre el guion y escribí el importe. Cuando llega
+            la declaración real, ese valor se reemplaza por el de ARCA.
+          </p>
+        </Ayuda>
       </div>
-
-      <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
-        Débito, crédito y saldo técnico se calculan sobre los comprobantes
-        cargados del período — los mismos números que la ficha de cada empresa.
-        Saldo libre disponibilidad y retenciones/percepciones vienen de la
-        declaración de AFIP: no se pueden derivar de comprobantes — si la
-        actualización todavía no los trajo, se pueden cargar a mano haciendo click en
-        la celda (la declaración real los pisa cuando llega). El saldo técnico
-        es débito menos crédito: positivo es a pagar.
-      </p>
 
       {isLoading ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
@@ -540,13 +536,14 @@ function IvaResumenRI({ search }: { search: string }) {
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           {allRows.length > 0
             ? 'La empresa elegida en el header no es Responsable Inscripto.'
-            : 'No hay empresas clasificadas como Responsable Inscripto. Asignales una condición fiscal desde el bloque “Sin clasificar”.'}
+            : 'No hay empresas clasificadas como Responsable Inscripto. Asignales una condición fiscal desde la tab “Otras empresas”.'}
         </div>
       ) : (
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -559,12 +556,7 @@ function IvaResumenRI({ search }: { search: string }) {
             }}
           >
             <thead>
-              <tr
-                style={{
-                  borderBottom: '1px solid var(--arca-border)',
-                  background: 'var(--arca-surface-2)',
-                }}
-              >
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                 <SortableTh
                   label="Cliente"
                   colKey="empresa"
@@ -640,7 +632,7 @@ function IvaResumenRI({ search }: { search: string }) {
                 />
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {sortedRows.map((r, i) => (
                 <tr
                   key={r.clienteId}
@@ -697,9 +689,9 @@ function IvaResumenRI({ search }: { search: string }) {
                       ...monoStyle,
                       color:
                         r.calcSaldoTecnico > 0
-                          ? 'var(--arca-accent-neg-fg, #b91c1c)'
+                          ? 'var(--arca-accent-neg-fg, var(--arca-accent-neg-fg))'
                           : r.calcSaldoTecnico < 0
-                            ? 'var(--arca-green, #16a34a)'
+                            ? 'var(--arca-green, var(--arca-accent-pos))'
                             : 'var(--arca-ink)',
                     }}
                     title={
@@ -734,9 +726,9 @@ function IvaResumenRI({ search }: { search: string }) {
                       ...monoStyle,
                       color:
                         saldoFinalDe(r) > 0
-                          ? 'var(--arca-accent-neg-fg, #b91c1c)'
+                          ? 'var(--arca-accent-neg-fg, var(--arca-accent-neg-fg))'
                           : saldoFinalDe(r) < 0
-                            ? 'var(--arca-green, #16a34a)'
+                            ? 'var(--arca-green, var(--arca-accent-pos))'
                             : 'var(--arca-ink)',
                     }}
                     title={
@@ -861,55 +853,26 @@ function MonotributistasTab({ search }: { search: string }) {
     [rows, sort]
   );
 
-  const yearsMono = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
-  const maxMonthMono = selectedYear === now.getFullYear() ? now.getMonth() : 11;
-
   return (
     <div>
       <div className="flex items-center gap-2 mb-4">
-        <Select
-          value={String(selectedMonth)}
-          onValueChange={(v) => setSelectedMonth(Number(v))}
-        >
-          <SelectTrigger className="w-[140px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Array.from({ length: maxMonthMono + 1 }, (_, i) => (
-              <SelectItem key={i} value={String(i)}>
-                {MONTH_NAMES[i]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={String(selectedYear)}
-          onValueChange={(v) => {
-            const y = Number(v);
-            setSelectedYear(y);
-            if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
-              setSelectedMonth(now.getMonth());
-            }
+        <SelectorPeriodo
+          periodo={aPeriodo(selectedYear, selectedMonth)}
+          onPeriodo={(p) => {
+            const { anio, mes } = dePeriodo(p);
+            setSelectedYear(anio);
+            setSelectedMonth(mes);
           }}
-        >
-          <SelectTrigger className="w-[100px] text-[13px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {yearsMono.map((y) => (
-              <SelectItem key={y} value={String(y)}>
-                {y}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        />
+        <Ayuda titulo="Qué mide esta facturación" etiqueta="Qué mide">
+          <p>
+            Facturación emitida de los doce meses que terminan en el período
+            elegido, tomada de los comprobantes cargados. Las notas de crédito
+            restan.
+          </p>
+          <p>Sirve para vigilar el tope de la categoría de monotributo.</p>
+        </Ayuda>
       </div>
-
-      <p className="text-[12px] text-[var(--arca-ink-3)] mb-4">
-        Facturación emitida de los 12 meses que terminan en el período elegido
-        (desde comprobantes cargados; las notas de crédito restan). Útil para
-        monitorear límites de categoría.
-      </p>
 
       {isLoading ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
@@ -925,7 +888,8 @@ function MonotributistasTab({ search }: { search: string }) {
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -934,12 +898,7 @@ function MonotributistasTab({ search }: { search: string }) {
             style={{ minWidth: 940, width: '100%', borderCollapse: 'collapse' }}
           >
             <thead>
-              <tr
-                style={{
-                  borderBottom: '1px solid var(--arca-border)',
-                  background: 'var(--arca-surface-2)',
-                }}
-              >
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                 <SortableTh
                   label="Cliente"
                   colKey="empresa"
@@ -953,7 +912,7 @@ function MonotributistasTab({ search }: { search: string }) {
                   onSort={onSort}
                 />
                 <SortableTh
-                  label="Login AFIP"
+                  label="Login ARCA"
                   colKey="representante"
                   sort={sort}
                   onSort={onSort}
@@ -980,7 +939,7 @@ function MonotributistasTab({ search }: { search: string }) {
                 />
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {sortedRows.map((r, i) => (
                 <tr
                   key={r.clienteId}
@@ -1038,81 +997,138 @@ function MonotributistasTab({ search }: { search: string }) {
   );
 }
 
-/** Bloque de empresas sin condición fiscal asignada. */
-function SinClasificarBlock({ search }: { search: string }) {
-  const { data: allRows = [] } = useQuery({
-    queryKey: ['iva', 'sin-clasificar'],
-    queryFn: () => getClientesSinClasificar(),
+/**
+ * Las empresas que no salen en ninguna de las dos tablas de liquidación.
+ *
+ * Son dos casos distintos y por eso van en dos bloques: las que nadie
+ * clasificó todavía —que podrían ser cualquier cosa, y hasta que no se diga
+ * qué son no se liquidan— y las exentas o no alcanzadas, que sí están
+ * clasificadas y simplemente no tienen posición mensual de IVA.
+ *
+ * Antes esto era un bloque ámbar colgado abajo de las dos tabs, que aparecía
+ * repetido en las dos y empujaba la tabla real fuera de la pantalla. Y las
+ * exentas no estaban en ningún lado: marcarlas era hacerlas desaparecer.
+ */
+function OtrasEmpresasTab({ search }: { search: string }) {
+  const { data: allRows = [], isLoading } = useQuery({
+    queryKey: ['iva', 'otras'],
+    queryFn: () => getClientesOtros(),
   });
   const rows = useMemo(
     () => filtrarPorTexto(allRows, search),
     [allRows, search]
   );
 
-  // Con la búsqueda activa el bloque desaparece si nada matchea, igual que
-  // cuando no hay empresas sin clasificar: no hay nada sobre lo que actuar.
-  if (rows.length === 0) return null;
+  const sinClasificar = rows.filter((r) => r.condicionIva == null);
+  const fueraDeIva = rows.filter((r) => r.condicionIva != null);
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+        Cargando...
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+        {allRows.length === 0
+          ? 'Todas las empresas están clasificadas y liquidan IVA.'
+          : 'Ninguna empresa acá coincide con la que elegiste arriba.'}
+      </div>
+    );
+  }
 
   return (
-    <div className="mt-8 rounded-lg border border-amber-300 bg-amber-50/40 p-4">
-      <div className="text-[13px] font-semibold text-[var(--arca-ink)] mb-3">
-        {rows.length} {rows.length === 1 ? 'empresa' : 'empresas'} sin condición
-        fiscal asignada
-        {search && allRows.length !== rows.length
-          ? ` (de ${allRows.length})`
-          : ''}
-      </div>
-      <div
-        style={{
-          border: '1px solid var(--arca-border)',
-          borderRadius: 8,
-          overflowX: 'auto',
-          background: 'var(--arca-surface)',
-        }}
+    <div className="space-y-8">
+      {sinClasificar.length > 0 && (
+        <section>
+          <h2 className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {sinClasificar.length}{' '}
+            {sinClasificar.length === 1
+              ? 'empresa sin condición asignada'
+              : 'empresas sin condición asignada'}
+          </h2>
+          <p className="mt-1 mb-3 text-[12px] text-[var(--arca-ink-3)]">
+            No aparecen en Responsable Inscripto ni en Monotributista hasta que
+            alguien diga qué son. Elegí la condición en la última columna.
+          </p>
+          <TablaOtras rows={sinClasificar} />
+        </section>
+      )}
+
+      {fueraDeIva.length > 0 && (
+        <section>
+          <h2 className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {fueraDeIva.length}{' '}
+            {fueraDeIva.length === 1
+              ? 'empresa exenta o no alcanzada'
+              : 'empresas exentas o no alcanzadas'}
+          </h2>
+          <p className="mt-1 mb-3 text-[12px] text-[var(--arca-ink-3)]">
+            No liquidan IVA, así que no tienen posición mensual. Están acá para
+            que no se pierdan de vista y para poder corregir la condición si
+            quedó mal puesta.
+          </p>
+          <TablaOtras rows={fueraDeIva} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+type FilaOtras = Awaited<ReturnType<typeof getClientesOtros>>[number];
+
+function TablaOtras({ rows }: { rows: FilaOtras[] }) {
+  return (
+    <div
+      style={{
+        border: '1px solid var(--arca-border)',
+        borderRadius: 12,
+        background: 'var(--arca-surface)',
+        overflowX: 'auto',
+      }}
+    >
+      <table
+        className="text-[12px]"
+        style={{ width: '100%', borderCollapse: 'collapse' }}
       >
-        <table
-          className="text-[12px]"
-          style={{ width: '100%', borderCollapse: 'collapse' }}
-        >
-          <thead>
+        <thead>
+          <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+            <th className={cn(thCls, 'text-left')}>Cliente</th>
+            <th className={cn(thCls, 'text-left')}>CUIT</th>
+            <th className={cn(thCls, 'text-left')}>Login ARCA</th>
+            <th className={cn(thCls, 'text-left')}>Condición</th>
+          </tr>
+        </thead>
+        <tbody className="bg-[var(--arca-surface)]">
+          {rows.map((r, i) => (
             <tr
+              key={r.clienteId}
               style={{
-                borderBottom: '1px solid var(--arca-border)',
-                background: 'var(--arca-surface-2)',
+                borderTop: i === 0 ? undefined : '1px solid var(--arca-border)',
               }}
             >
-              <th className={cn(thCls, 'text-left')}>Cliente</th>
-              <th className={cn(thCls, 'text-left')}>CUIT</th>
-              <th className={cn(thCls, 'text-left')}>Login AFIP</th>
-              <th className={cn(thCls, 'text-left')}>Condición</th>
+              <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
+                {r.razonSocial}
+              </td>
+              <td className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap">
+                {r.cuit}
+              </td>
+              <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
+                {r.credenciales ?? '—'}
+              </td>
+              <td className="px-3 py-2">
+                <FiscalConditionSelect
+                  clienteId={r.clienteId}
+                  value={r.condicionIva}
+                />
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr
-                key={r.clienteId}
-                style={{
-                  borderTop:
-                    i === 0 ? undefined : '1px solid var(--arca-border)',
-                }}
-              >
-                <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
-                  {r.razonSocial}
-                </td>
-                <td className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums whitespace-nowrap">
-                  {r.cuit}
-                </td>
-                <td className="px-3 py-2 text-[var(--arca-ink-3)] whitespace-nowrap">
-                  {r.credenciales ?? '—'}
-                </td>
-                <td className="px-3 py-2">
-                  <FiscalConditionSelect clienteId={r.clienteId} value={null} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1125,12 +1141,22 @@ function RouteComponent() {
   // empresa elegida no está en una tab (una RI en Monotributista), esa tab
   // muestra su estado vacío: limitación conocida y aceptada.
   const [seleccionado] = useClienteSeleccionado();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const { tab }: Busqueda = Route.useSearch();
   const { data: clientes = [] } = useQuery({
     queryKey: ['clientes'],
     queryFn: () => getClientes(),
     staleTime: 60_000,
   });
   const search = clientes.find((c) => c.id === seleccionado)?.cuit ?? '';
+
+  // Sin clasificar es lo único accionable de la tab "Otras": el badge lo
+  // cuenta para que se vea desde afuera que hay trabajo pendiente ahí.
+  const { data: otras = [] } = useQuery({
+    queryKey: ['iva', 'otras'],
+    queryFn: () => getClientesOtros(),
+  });
+  const sinClasificar = otras.filter((r) => r.condicionIva == null).length;
 
   return (
     <PageShell>
@@ -1140,9 +1166,17 @@ function RouteComponent() {
         actions={<SelectorClienteGlobal />}
       />
 
-      <Tabs defaultValue="ri">
-        <div style={{ borderBottom: '1px solid var(--arca-border)' }}>
-          <TabsList className="bg-transparent h-auto p-0 gap-1">
+      <Tabs
+        value={tab ?? 'ri'}
+        onValueChange={(v) =>
+          void navigate({
+            search: { tab: v === 'ri' ? undefined : (v as Busqueda['tab']) },
+            replace: true,
+          })
+        }
+      >
+        <div className="border-b border-[var(--arca-border)]">
+          <TabsList className="h-auto gap-1 rounded-none bg-transparent p-0">
             <TabsTrigger value="ri" className={tabCls()}>
               <Percent className="w-[13px] h-[13px]" />
               Responsable Inscripto
@@ -1151,19 +1185,30 @@ function RouteComponent() {
               <Wallet className="w-[13px] h-[13px]" />
               Monotributista
             </TabsTrigger>
+            <TabsTrigger value="otras" className={tabCls()}>
+              <CircleHelp className="w-[13px] h-[13px]" />
+              Otras empresas
+              {sinClasificar > 0 && (
+                <span className="ml-1 rounded-full bg-[var(--arca-accent-warn-bg)] px-1.5 py-px text-[10.5px] font-semibold text-[var(--arca-accent-warn-fg)] tabular-nums">
+                  {sinClasificar}
+                </span>
+              )}
+            </TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent value="ri" className="mt-6">
+        <TabsContent value="ri" className="mt-3">
           <IvaResumenRI search={search} />
         </TabsContent>
 
-        <TabsContent value="monotributo" className="mt-6">
+        <TabsContent value="monotributo" className="mt-3">
           <MonotributistasTab search={search} />
         </TabsContent>
-      </Tabs>
 
-      <SinClasificarBlock search={search} />
+        <TabsContent value="otras" className="mt-3">
+          <OtrasEmpresasTab search={search} />
+        </TabsContent>
+      </Tabs>
     </PageShell>
   );
 }

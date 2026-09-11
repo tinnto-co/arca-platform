@@ -7,6 +7,7 @@ import {
   Search,
   User,
 } from 'lucide-react';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { cn } from '@/lib/utils';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { puedeLiquidarPeriodo } from '@/lib/payroll-period-rules';
@@ -27,9 +28,9 @@ import {
 
 function chipCls(active: boolean): string {
   return cn(
-    'h-[30px] px-3 rounded-[10px] text-[12.5px] font-medium whitespace-nowrap border transition-colors duration-120 motion-reduce:transition-none cursor-pointer',
+    'h-[30px] px-3 rounded-lg text-[12.5px] font-medium whitespace-nowrap border transition-colors duration-120 motion-reduce:transition-none cursor-pointer',
     active
-      ? 'border-[var(--arca-ink)] bg-[var(--arca-ink)] text-white'
+      ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
       : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
   );
 }
@@ -126,7 +127,7 @@ export function EmpleadoPeriodoCard({
       <div className="px-5 pb-5 flex flex-col gap-4">
         {/* Buscador */}
         <div className="relative">
-          <div className="h-[42px] px-3 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2">
+          <div className="h-[42px] px-3 rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2">
             <Search className="h-[15px] w-[15px] text-[var(--arca-ink-4)] flex-none" />
             <input
               value={query}
@@ -180,7 +181,7 @@ export function EmpleadoPeriodoCard({
                     </span>
                   </span>
                   {!r.empleado.convenioId && (
-                    <span className="text-[11px] px-2.5 py-[3px] rounded-[20px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] whitespace-nowrap">
+                    <span className="text-[11px] px-2.5 py-[3px] rounded-md bg-[var(--arca-surface-2)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] whitespace-nowrap">
                       Sin convenio
                     </span>
                   )}
@@ -194,7 +195,7 @@ export function EmpleadoPeriodoCard({
         {emp && (
           <div className="border border-[var(--arca-border)] rounded-[12px] bg-[var(--arca-surface-2)] px-4 py-3.5">
             <div className="flex items-center flex-wrap gap-x-3 gap-y-2 border-b border-[var(--arca-border)] pb-3">
-              <span className="h-[38px] w-[38px] rounded-[10px] bg-[var(--arca-surface)] border border-[var(--arca-border)] flex items-center justify-center font-display text-[13px] font-semibold text-[var(--arca-navy-700)]">
+              <span className="h-[38px] w-[38px] rounded-lg bg-[var(--arca-surface)] border border-[var(--arca-border)] flex items-center justify-center font-display text-[13px] font-semibold text-[var(--arca-accent)]">
                 {iniciales(emp.nombre)}
               </span>
               <span className="min-w-0">
@@ -207,7 +208,7 @@ export function EmpleadoPeriodoCard({
                 </span>
               </span>
               <span
-                className="ml-auto text-[11px] px-2.5 py-[3px] rounded-[20px] whitespace-nowrap"
+                className="ml-auto text-[11px] px-2.5 py-[3px] rounded-md whitespace-nowrap"
                 style={
                   emp.convenioId
                     ? {
@@ -317,7 +318,7 @@ export function EmpleadoPeriodoCard({
                   className={cn(
                     'h-[30px] rounded-[9px] text-[12px] capitalize border transition-colors duration-120 motion-reduce:transition-none cursor-pointer',
                     activo
-                      ? 'border-[var(--arca-navy-700)] bg-[var(--arca-navy-700)] text-white font-semibold'
+                      ? 'border-[var(--arca-accent)] bg-[var(--arca-accent)] text-white font-semibold'
                       : liquidable
                         ? 'border-[var(--arca-border)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)]'
                         : 'border-[var(--arca-border)] bg-[var(--arca-surface)] text-[var(--arca-ink-4)] opacity-50'
@@ -358,7 +359,7 @@ export function EmpleadoPeriodoCard({
           </div>
           <div>
             {microLabel('Fecha de pago')}
-            <div className="h-[34px] px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2">
+            <div className="h-[34px] px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2">
               <span className="text-[12.5px] tabular-nums text-[var(--arca-ink)] flex-1">
                 {fmtFechaCorta(fechaPago)}
               </span>
@@ -367,7 +368,7 @@ export function EmpleadoPeriodoCard({
           </div>
           <div>
             {microLabel('Depósito cargas')}
-            <div className="h-[34px] px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2">
+            <div className="h-[34px] px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2">
               <span className="text-[12.5px] tabular-nums text-[var(--arca-ink)] flex-1">
                 {fmtFechaCorta(fechaDeposito)}
               </span>
@@ -377,11 +378,10 @@ export function EmpleadoPeriodoCard({
           {tipo === 'liquidacion_final' && (
             <div>
               {microLabel('Fecha de baja del empleado')}
-              <input
-                type="date"
+              <SelectorFecha
                 value={fechaBaja}
-                onChange={(e) => onFechaBajaChange(e.target.value)}
-                className="h-[34px] w-full px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-700)]"
+                onChange={onFechaBajaChange}
+                placeholder="Fecha de baja"
               />
             </div>
           )}

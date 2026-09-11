@@ -17,7 +17,17 @@ import {
   assertCanWrite,
 } from '@/actions/helpers';
 import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
-import { and, eq, asc, desc, isNull, isNotNull, sql } from 'drizzle-orm';
+import {
+  and,
+  or,
+  eq,
+  asc,
+  desc,
+  isNull,
+  isNotNull,
+  inArray,
+  sql,
+} from 'drizzle-orm';
 
 export const FISCAL_CONDITIONS = condicionIva.enumValues;
 
@@ -460,7 +470,15 @@ export const getLibroIvaPeriodo = createServerFn({ method: 'GET' })
     };
   });
 
-export const getClientesSinClasificar = createServerFn({
+/**
+ * Las empresas que no entran en ninguna de las dos tablas de liquidación:
+ * las que todavía nadie clasificó y las que sí están clasificadas pero no
+ * liquidan IVA (exentas, no alcanzadas).
+ *
+ * Van juntas porque el problema es el mismo —no aparecen en ningún lado— y
+ * porque se arreglan igual: cambiando la condición desde la misma columna.
+ */
+export const getClientesOtros = createServerFn({
   method: 'GET',
 }).handler(async () => {
   const { orgId } = await getSessionWithOrg();
@@ -477,7 +495,10 @@ export const getClientesSinClasificar = createServerFn({
     .where(
       and(
         eq(cliente.orgId, orgId),
-        isNull(cliente.condicionIva),
+        or(
+          isNull(cliente.condicionIva),
+          inArray(cliente.condicionIva, ['exento', 'no_alcanzado'])
+        ),
         eq(cliente.estado, 'activo')
       )
     )

@@ -236,31 +236,31 @@ export function VencimientosTab({
   const StatusPill = ({ status }: { status: ReturnType<typeof getStatus> }) => {
     if (status === 'vencido') {
       return (
-        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[#c0392b] bg-[#fce8e6] rounded-full px-[10px] py-[3px]">
-          <span className="inline-block w-[6px] h-[6px] rounded-full bg-[#c0392b]" />
+        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[var(--arca-accent-neg-fg)] bg-[#fce8e6] rounded-full px-[10px] py-[3px]">
+          <span className="inline-block w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-neg)]" />
           Vencido
         </span>
       );
     }
     if (status === 'proximo') {
       return (
-        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[#8a6d00] bg-[#fef3cd] rounded-full px-[10px] py-[3px]">
-          <span className="inline-block w-[6px] h-[6px] rounded-full bg-[#8a6d00]" />
+        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[var(--arca-accent-warn-fg)] bg-[var(--arca-accent-warn-bg)] rounded-full px-[10px] py-[3px]">
+          <span className="inline-block w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-warn-fg)]" />
           Próximo
         </span>
       );
     }
     if (status === 'completado') {
       return (
-        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[#2f7d55] bg-[#E6EFE8] rounded-full px-[10px] py-[3px]">
-          <span className="inline-block w-[6px] h-[6px] rounded-full bg-[#2f7d55]" />
+        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[var(--arca-accent-pos-fg)] bg-[#E6EFE8] rounded-full px-[10px] py-[3px]">
+          <span className="inline-block w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-pos-fg)]" />
           Completado
         </span>
       );
     }
     // futuro
     return (
-      <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[#5B6270] bg-[#F2F1EB] rounded-full px-[10px] py-[3px]">
+      <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[#5B6270] bg-[var(--arca-surface-2)] rounded-full px-[10px] py-[3px]">
         <span className="inline-block w-[6px] h-[6px] rounded-full bg-[#5B6270]" />
         Futuro
       </span>
@@ -275,30 +275,31 @@ export function VencimientosTab({
     dueDate.setHours(0, 0, 0, 0);
     const next7 = new Date(today);
     next7.setDate(today.getDate() + 7);
-    if (!dd.completadoAt && dueDate < today) return 'text-[#c0392b]';
-    if (!dd.completadoAt && dueDate <= next7) return 'text-[#12131A]';
-    return 'text-[#3E404A]';
+    if (!dd.completadoAt && dueDate < today)
+      return 'text-[var(--arca-accent-neg-fg)]';
+    if (!dd.completadoAt && dueDate <= next7) return 'text-[var(--arca-ink)]';
+    return 'text-[var(--arca-ink-2)]';
   };
 
   return (
     <div
-      className="bg-[#F7F6F2] border border-[#DFDCD3] rounded-2xl overflow-hidden"
+      className="bg-[var(--arca-bg)] border border-[var(--arca-border-strong)] rounded-2xl overflow-hidden"
       style={{
         boxShadow:
           '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)',
       }}
     >
       {/* ── Toolbar ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[#ECEAE3]">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--arca-border)]">
         <div className="flex items-center gap-2">
-          <p className="text-[12.5px] text-[#6E7079]">
+          <p className="text-[12.5px] text-[var(--arca-ink-3)]">
             Últ. actualización{' '}
             {lastVencimientosJob?.createdAt ? (
               <span
                 className={cn(
                   'font-bold',
                   lastVencimientosJob.success
-                    ? 'text-[#2f7d55]'
+                    ? 'text-[var(--arca-accent-pos-fg)]'
                     : 'text-destructive'
                 )}
               >
@@ -319,7 +320,7 @@ export function VencimientosTab({
                 }
               >
                 <Info className="h-4 w-4 text-destructive cursor-help" />
-                <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
+                <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[var(--arca-ink)] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
                   {friendlyFailedReason(lastVencimientosJob.failedReason)}
                 </span>
               </span>
@@ -327,7 +328,7 @@ export function VencimientosTab({
         </div>
 
         <button
-          className="inline-flex items-center gap-2 bg-[#12131A] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-black transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-lg px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
           disabled={!!scrapingSection}
           onClick={handleUpdateVencimientos}
         >
@@ -345,77 +346,77 @@ export function VencimientosTab({
       {/* ── KPI band ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 bg-white">
         {/* 1. Vencimientos futuros */}
-        <div className="px-[26px] py-[22px] lg:border-r border-[#ECEAE3]">
+        <div className="px-[26px] py-[22px] lg:border-r border-[var(--arca-border)]">
           <div className="flex items-center gap-[7px] mb-[14px]">
             <Calendar
               className="shrink-0"
               style={{
                 width: 15,
                 height: 15,
-                stroke: '#3E404A',
+                stroke: 'var(--arca-ink-2)',
                 strokeWidth: 1.8,
               }}
             />
-            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
+            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)]">
               Vencimientos Futuros
             </span>
           </div>
           <div
-            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[#12131A]"
+            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[var(--arca-ink)]"
             style={{ fontSize: 30 }}
           >
             {isLoading ? '—' : dueDateStats.futureCount}
           </div>
-          <div className="text-[12px] text-[#9B9CA3] mt-[6px]">
+          <div className="text-[12px] text-[var(--arca-ink-4)] mt-[6px]">
             Próximos vencimientos
           </div>
         </div>
 
         {/* 2. Vencimientos vencidos */}
-        <div className="px-[26px] py-[22px] sm:border-r lg:border-r border-[#ECEAE3]">
+        <div className="px-[26px] py-[22px] sm:border-r lg:border-r border-[var(--arca-border)]">
           <div className="flex items-center gap-[7px] mb-[14px]">
             <CalendarX2
               className="shrink-0"
               style={{
                 width: 15,
                 height: 15,
-                stroke: '#3E404A',
+                stroke: 'var(--arca-ink-2)',
                 strokeWidth: 1.8,
               }}
             />
-            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
+            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)]">
               Vencimientos Vencidos
             </span>
           </div>
           <div
-            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[#c0392b]"
+            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[var(--arca-accent-neg-fg)]"
             style={{ fontSize: 30 }}
           >
             {isLoading ? '—' : dueDateStats.overdueCount}
           </div>
-          <div className="text-[12px] text-[#c0392b] mt-[6px]">
+          <div className="text-[12px] text-[var(--arca-accent-neg-fg)] mt-[6px]">
             Requieren atención
           </div>
         </div>
 
         {/* 3. Próximo vencimiento */}
-        <div className="px-[26px] py-[22px] lg:border-r border-[#ECEAE3]">
+        <div className="px-[26px] py-[22px] lg:border-r border-[var(--arca-border)]">
           <div className="flex items-center gap-[7px] mb-[14px]">
             <Clock
               className="shrink-0"
               style={{
                 width: 15,
                 height: 15,
-                stroke: '#3E404A',
+                stroke: 'var(--arca-ink-2)',
                 strokeWidth: 1.8,
               }}
             />
-            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
+            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)]">
               Próximo Vencimiento
             </span>
           </div>
           <div
-            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[#12131A]"
+            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[var(--arca-ink)]"
             style={{ fontSize: 22 }}
           >
             {isLoading
@@ -424,7 +425,7 @@ export function VencimientosTab({
                 ? formatDueDate(dueDateStats.nextDueDateValue)
                 : '—'}
           </div>
-          <div className="text-[12px] text-[#9B9CA3] mt-[6px] truncate">
+          <div className="text-[12px] text-[var(--arca-ink-4)] mt-[6px] truncate">
             {dueDateStats.nextDueDateTax || 'Sin vencimientos futuros'}
           </div>
         </div>
@@ -437,42 +438,42 @@ export function VencimientosTab({
               style={{
                 width: 15,
                 height: 15,
-                stroke: '#3E404A',
+                stroke: 'var(--arca-ink-2)',
                 strokeWidth: 1.8,
               }}
             />
-            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3]">
+            <span className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)]">
               Próximos 30 Días
             </span>
           </div>
           <div
-            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[#12131A]"
+            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[var(--arca-ink)]"
             style={{ fontSize: 30 }}
           >
             {isLoading ? '—' : dueDateStats.next30Count}
           </div>
-          <div className="text-[12px] text-[#9B9CA3] mt-[6px]">
+          <div className="text-[12px] text-[var(--arca-ink-4)] mt-[6px]">
             Vencimientos del mes
           </div>
         </div>
       </div>
 
       {/* ── Filter toolbar ── */}
-      <div className="flex items-center gap-3 px-6 py-[14px] bg-[#FBFAF6] border-b border-[#ECEAE3] border-t border-t-[#ECEAE3]">
-        <span className="inline-flex items-center gap-[6px] text-[13.5px] text-[#6E7079] shrink-0">
-          <ListFilter className="h-[14px] w-[14px] stroke-[#6E7079]" />
+      <div className="flex items-center gap-3 px-6 py-[14px] bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)] border-t border-t-[var(--arca-border)]">
+        <span className="inline-flex items-center gap-[6px] text-[13.5px] text-[var(--arca-ink-3)] shrink-0">
+          <ListFilter className="h-[14px] w-[14px] stroke-[var(--arca-ink-3)]" />
           Filtrar
         </span>
 
         {/* Impuesto filter */}
         <Select value={filterImpuesto} onValueChange={setFilterImpuesto}>
-          <SelectTrigger className="bg-white border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[180px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[180px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
-              <span className="text-[#9B9CA3]">Impuesto</span>
-              <span className="font-bold text-[#12131A] truncate">
+              <span className="text-[var(--arca-ink-4)]">Impuesto</span>
+              <span className="font-bold text-[var(--arca-ink)] truncate">
                 {filterImpuesto === '__all__' ? 'Todos' : filterImpuesto}
               </span>
-              <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 stroke-[var(--arca-ink-4)] shrink-0" />
             </div>
           </SelectTrigger>
           <SelectContent className="max-h-[280px]">
@@ -487,10 +488,10 @@ export function VencimientosTab({
 
         {/* Estado filter */}
         <Select value={filterEstado} onValueChange={setFilterEstado}>
-          <SelectTrigger className="bg-white border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[150px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[150px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
-              <span className="text-[#9B9CA3]">Estado</span>
-              <span className="font-bold text-[#12131A]">
+              <span className="text-[var(--arca-ink-4)]">Estado</span>
+              <span className="font-bold text-[var(--arca-ink)]">
                 {filterEstado === '__all__'
                   ? 'Todos'
                   : filterEstado === 'vencido'
@@ -499,7 +500,7 @@ export function VencimientosTab({
                       ? 'Próximo'
                       : 'Futuro'}
               </span>
-              <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 stroke-[var(--arca-ink-4)] shrink-0" />
             </div>
           </SelectTrigger>
           <SelectContent>
@@ -512,21 +513,22 @@ export function VencimientosTab({
       </div>
 
       {/* ── Table heading ── */}
-      <div className="px-6 py-3 border-b border-[#ECEAE3]">
-        <span className="text-[13.5px] text-[#6E7079]">
+      <div className="px-6 py-3 border-b border-[var(--arca-border)]">
+        <span className="text-[13.5px] text-[var(--arca-ink-3)]">
           Vencimientos del cliente{' '}
-          <span className="text-[#3E404A] font-medium">·</span>{' '}
+          <span className="text-[var(--arca-ink-2)] font-medium">·</span>{' '}
           {filteredDueDates.length} mostrados{' '}
-          <span className="text-[#3E404A] font-medium">·</span>{' '}
+          <span className="text-[var(--arca-ink-2)] font-medium">·</span>{' '}
           {dueDates.length} totales
         </span>
       </div>
 
       {/* ── Table ── */}
-      <div>
-        {/* Navy header row */}
+      <div className="bg-[var(--arca-surface)]">
+        {/* Header: fondo claro y micro-label. Las filas van sobre blanco, que
+            es lo que hace que el gris del header se lea como header. */}
         <div
-          className="grid items-center px-6 h-12 bg-[#0B1730] text-[#E7EAF2] text-[12px] font-semibold tracking-[0.04em] uppercase"
+          className="grid items-center px-6 h-12 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[12px] font-semibold tracking-[0.04em] uppercase"
           style={{
             gridTemplateColumns:
               '150px 1.1fr 130px 96px 70px 118px 1.5fr 110px',
@@ -544,12 +546,12 @@ export function VencimientosTab({
 
         {/* Data rows */}
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 h-24 text-[13.5px] text-[#9B9CA3]">
+          <div className="flex items-center justify-center gap-2 h-24 text-[13.5px] text-[var(--arca-ink-4)]">
             <Loader2 className="h-4 w-4 animate-spin" />
             Cargando vencimientos…
           </div>
         ) : filteredDueDates.length === 0 ? (
-          <div className="flex items-center justify-center h-24 text-[13.5px] text-[#9B9CA3]">
+          <div className="flex items-center justify-center h-24 text-[13.5px] text-[var(--arca-ink-4)]">
             No se encontraron vencimientos.
           </div>
         ) : (
@@ -558,34 +560,34 @@ export function VencimientosTab({
             return (
               <div
                 key={dd.id}
-                className="grid items-center px-6 py-[13px] border-b border-[#ECEAE3] hover:bg-[#FBFAF6] transition-[background] duration-[120ms]"
+                className="grid items-center px-6 py-[13px] border-b border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)] transition-[background] duration-[120ms]"
                 style={{
                   gridTemplateColumns:
                     '150px 1.1fr 130px 96px 70px 118px 1.5fr 110px',
                 }}
               >
                 {/* Impuesto */}
-                <div className="text-[14px] font-semibold text-[#12131A] truncate pr-2">
+                <div className="text-[14px] font-semibold text-[var(--arca-ink)] truncate pr-2">
                   {dd.impuesto || '—'}
                 </div>
 
                 {/* Concepto */}
-                <div className="text-[14px] text-[#3E404A] truncate pr-2">
+                <div className="text-[14px] text-[var(--arca-ink-2)] truncate pr-2">
                   {dd.concepto || '—'}
                 </div>
 
                 {/* Subconcepto */}
-                <div className="font-[family-name:var(--ff-mono)] text-[13px] text-[#6E7079] truncate pr-2">
+                <div className="font-[family-name:var(--ff-mono)] text-[13px] text-[var(--arca-ink-3)] truncate pr-2">
                   {dd.subConcepto || '—'}
                 </div>
 
                 {/* Período */}
-                <div className="text-[13.5px] text-[#3E404A] tabular-nums truncate pr-2">
+                <div className="text-[13.5px] text-[var(--arca-ink-2)] tabular-nums truncate pr-2">
                   {periodoLegible(dd.periodo)}
                 </div>
 
                 {/* Cuota */}
-                <div className="text-[13.5px] text-[#3E404A] tabular-nums text-center">
+                <div className="text-[13.5px] text-[var(--arca-ink-2)] tabular-nums text-center">
                   {dd.cuota ?? '—'}
                 </div>
 
@@ -600,7 +602,7 @@ export function VencimientosTab({
                 </div>
 
                 {/* Detalle */}
-                <div className="text-[13px] text-[#6E7079] truncate pr-2">
+                <div className="text-[13px] text-[var(--arca-ink-3)] truncate pr-2">
                   {dd.detalle || '—'}
                 </div>
 
@@ -616,11 +618,11 @@ export function VencimientosTab({
 
       {/* ── Pagination ── */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-[6px] px-5 py-[22px] bg-[#FBFAF6]">
+        <div className="flex items-center justify-center gap-[6px] px-5 py-[22px] bg-[var(--arca-surface-2)]">
           {/* Anterior */}
           <button
             className={cn(
-              'inline-flex items-center gap-1 text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg transition-colors',
+              'inline-flex items-center gap-1 text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg transition-colors',
               currentPage === 1
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'
@@ -636,13 +638,15 @@ export function VencimientosTab({
           {startPage > 1 && (
             <>
               <button
-                className="text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
+                className="text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
                 onClick={() => setCurrentPage(1)}
               >
                 1
               </button>
               {startPage > 2 && (
-                <span className="text-[13.5px] text-[#9B9CA3] px-2">…</span>
+                <span className="text-[13.5px] text-[var(--arca-ink-4)] px-2">
+                  …
+                </span>
               )}
             </>
           )}
@@ -653,8 +657,8 @@ export function VencimientosTab({
               className={cn(
                 'text-[13.5px] px-[13px] py-[7px] rounded-lg transition-colors cursor-pointer',
                 currentPage === page
-                  ? 'font-semibold text-[#12131A] bg-white border border-[#DFDCD3]'
-                  : 'text-[#6E7079] hover:bg-white'
+                  ? 'font-semibold text-[var(--arca-ink)] bg-white border border-[var(--arca-border-strong)]'
+                  : 'text-[var(--arca-ink-3)] hover:bg-white'
               )}
               onClick={() => setCurrentPage(page)}
             >
@@ -665,10 +669,12 @@ export function VencimientosTab({
           {endPage < totalPages && (
             <>
               {endPage < totalPages - 1 && (
-                <span className="text-[13.5px] text-[#9B9CA3] px-2">…</span>
+                <span className="text-[13.5px] text-[var(--arca-ink-4)] px-2">
+                  …
+                </span>
               )}
               <button
-                className="text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
+                className="text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
                 onClick={() => setCurrentPage(totalPages)}
               >
                 {totalPages}
@@ -679,7 +685,7 @@ export function VencimientosTab({
           {/* Siguiente */}
           <button
             className={cn(
-              'inline-flex items-center gap-1 text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg transition-colors',
+              'inline-flex items-center gap-1 text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg transition-colors',
               currentPage === totalPages
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'

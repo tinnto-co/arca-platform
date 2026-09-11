@@ -6,6 +6,7 @@
  */
 import { Link } from '@tanstack/react-router';
 import type { getInicio } from '@/actions/inicio';
+import { guardarClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { usoDelTope } from '@/lib/monotributo-escala';
 import { fechaCorta, haceDias, pesos } from './compartido';
 
@@ -141,7 +142,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
         </h2>
         {criticos > 0 && (
           <span
-            className="text-[11px] font-medium rounded-[20px] tabular-nums"
+            className="text-[11px] font-medium rounded-md tabular-nums"
             style={{
               background: 'var(--arca-accent-neg-bg)',
               color: 'var(--arca-accent-neg-fg)',
@@ -163,15 +164,14 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
           borderColor: 'var(--arca-border)',
         }}
       >
-        Crítico: intimación del mes pasado en adelante (o sin leer) sin
-        responder hace +{DIAS_CRITICO} d, o monotributo sobre el{' '}
-        {UMBRAL_CRITICO * 100}% del tope
+        Crítico: sin responder hace más de {DIAS_CRITICO} días, o monotributo
+        sobre el {UMBRAL_CRITICO * 100}% del tope
       </p>
 
       {filas.length > 0 && (
         <>
           <EncabezadoSeccion
-            label="Intimaciones AFIP"
+            label="ARCA · sin resolver"
             derecha={`${sinLeer} sin leer${criticasNotif > 0 ? ` · ${criticasNotif} crítica${criticasNotif !== 1 ? 's' : ''}` : ''}`}
           />
           {filas.map((f) => {
@@ -179,7 +179,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
             const partes = [
               `${d.empresas} empresa${d.empresas !== 1 ? 's' : ''}`,
               d.proximoVenceAt
-                ? `vence ${fechaCorta(d.proximoVenceAt)}`
+                ? `la próxima vence ${fechaCorta(d.proximoVenceAt)}`
                 : d.masViejaAt
                   ? `la más vieja ${haceDias(d.masViejaAt, ahora)}`
                   : null,
@@ -189,6 +189,11 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
                 key={f.clave}
                 to="/notifications"
                 search={{ categoria: f.clave }}
+                // El recuento de la fila es de todo el estudio. La bandeja
+                // recuerda la última empresa elegida (localStorage) y la
+                // reaplica al entrar, así que sin esto el click sobre "53
+                // intimaciones" aterriza mostrando 2.
+                onClick={() => guardarClienteSeleccionado(null)}
                 className="flex items-center gap-[11px] border-b transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
                 style={{
                   padding: '13px 20px',
@@ -229,12 +234,16 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
         <>
           <EncabezadoSeccion
             label="Monotributo · cerca del tope"
-            derecha={`${monos.length} de ${datos.monotributo.length}`}
+            derecha={`${monos.length} de ${datos.monotributo.length} monotributistas`}
           />
           {monos.slice(0, 3).map((m) => (
             <Link
               key={m.clienteId}
               to="/iva"
+              search={{ tab: 'monotributo' }}
+              // Al revés que las intimaciones: esta fila ya es de una empresa,
+              // así que IVA tiene que abrir en ésa y no en la última mirada.
+              onClick={() => guardarClienteSeleccionado(m.clienteId)}
               className="flex flex-col gap-[7px] border-b transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
               style={{
                 padding: '13px 20px',
@@ -257,7 +266,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
               </div>
               <div
                 className="h-1.5 rounded-[3px] overflow-hidden"
-                style={{ background: '#F7F6F2' }}
+                style={{ background: 'var(--arca-bg)' }}
               >
                 <div
                   className="h-full rounded-[3px]"
@@ -272,8 +281,9 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
                 style={{ color: 'var(--arca-ink-3)' }}
               >
                 Cat. {m.categoria}
-                {m.esEstimada ? ' (estimada)' : ''} ·{' '}
-                {pesos(Number(m.facturacion12m))} de {pesos(m.tope!)} · 12 meses
+                {m.esEstimada ? ' (estimada)' : ''} · facturó{' '}
+                {pesos(Number(m.facturacion12m))} de {pesos(m.tope!)} en 12
+                meses
               </span>
             </Link>
           ))}
@@ -288,10 +298,12 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
               className="text-[11.5px]"
               style={{ color: 'var(--arca-ink-3)' }}
             >
-              Umbral de alerta: {UMBRAL_MONOTRIBUTO * 100}%
+              Se listan desde el {UMBRAL_MONOTRIBUTO * 100}% del tope
             </span>
             <Link
               to="/iva"
+              search={{ tab: 'monotributo' }}
+              onClick={() => guardarClienteSeleccionado(null)}
               className="text-[12px] font-medium hover:underline"
               style={{ color: 'var(--arca-ink)' }}
             >

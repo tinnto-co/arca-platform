@@ -43,7 +43,7 @@ function microLabel(text: string) {
 }
 
 const inputCls =
-  'h-[34px] w-full px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-600)] placeholder:text-[var(--arca-ink-4)]';
+  'h-[34px] w-full px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)] placeholder:text-[var(--arca-ink-4)]';
 
 export function RevistaNovedadesCard({
   abierta,
@@ -97,7 +97,7 @@ export function RevistaNovedadesCard({
             · {resumenPartes.join(' · ')}
           </span>
         )}
-        <span className="ml-auto text-[12px] font-medium text-[var(--arca-navy-700)] whitespace-nowrap">
+        <span className="ml-auto text-[12px] font-medium text-[var(--arca-accent)] whitespace-nowrap">
           {abierta ? 'Ocultar' : 'Ver y editar'}
         </span>
       </button>
@@ -124,7 +124,7 @@ export function RevistaNovedadesCard({
                         })
                       }
                     >
-                      <SelectTrigger className="h-[34px] rounded-[10px] border-[var(--arca-border-strong)] text-[12.5px]">
+                      <SelectTrigger className="h-[34px] rounded-lg border-[var(--arca-border-strong)] text-[12.5px]">
                         <SelectValue placeholder="—" />
                       </SelectTrigger>
                       <SelectContent>
@@ -159,7 +159,7 @@ export function RevistaNovedadesCard({
           <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3.5">
             <div>
               {microLabel('Días trabajados')}
-              <div className="h-[34px] px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 focus-within:border-[var(--arca-navy-600)]">
+              <div className="h-[34px] px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 focus-within:border-[var(--arca-accent)]">
                 <input
                   value={dias}
                   onChange={(e) => {
@@ -197,12 +197,12 @@ export function RevistaNovedadesCard({
             </div>
             <div>
               {microLabel('Maternidad art. 13')}
-              <label className="h-[34px] px-[11px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 cursor-pointer select-none">
+              <label className="h-[34px] px-[11px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={maternidad}
                   onChange={(e) => onMaternidadChange(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-[var(--arca-navy-700)]"
+                  className="h-3.5 w-3.5 accent-[var(--arca-accent)]"
                 />
                 <span className="text-[12.5px] text-[var(--arca-ink-2)]">
                   Corresponde
@@ -220,7 +220,7 @@ export function RevistaNovedadesCard({
                 onChange={(e) => onObsInternaChange(e.target.value)}
                 rows={2}
                 placeholder="No sale en el recibo…"
-                className="w-full px-[11px] py-2 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-600)] placeholder:text-[var(--arca-ink-4)] resize-y"
+                className="w-full px-[11px] py-2 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)] placeholder:text-[var(--arca-ink-4)] resize-y"
               />
             </div>
             <div>
@@ -230,7 +230,7 @@ export function RevistaNovedadesCard({
                 onChange={(e) => onObsReciboChange(e.target.value)}
                 rows={2}
                 placeholder="Se imprime en el recibo…"
-                className="w-full px-[11px] py-2 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-600)] placeholder:text-[var(--arca-ink-4)] resize-y"
+                className="w-full px-[11px] py-2 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)] placeholder:text-[var(--arca-ink-4)] resize-y"
               />
             </div>
           </div>

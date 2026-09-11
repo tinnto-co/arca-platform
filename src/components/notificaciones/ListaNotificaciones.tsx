@@ -16,8 +16,9 @@ import {
   asuntoYPreview,
   grupoDeFecha,
   horaOFecha,
-  categoriaLabel,
+  tipoNotificacion,
 } from './utils';
+import { Paginador } from '@/components/shared/paginador';
 import { cn } from '@/lib/utils';
 
 export interface NotificacionListada {
@@ -42,16 +43,25 @@ interface Props {
   onSeleccionar: (id: string) => void;
   cargando: boolean;
   total: number;
-  hayMas: boolean;
-  onCargarMas: () => void;
+  /** Paginado clásico (bandeja `/notifications`). */
+  pagina?: number;
+  totalPaginas?: number;
+  onPagina?: (p: number) => void;
+  /** Paginado incremental (inbox embebido de la ficha). Excluyente con el
+      anterior: si viene `onCargarMas`, el pie es "Cargar más". */
+  hayMas?: boolean;
+  onCargarMas?: () => void;
   /** Qué decir cuando no hay nada: depende del tab, no es siempre lo mismo. */
   vacio: string;
   /** Se muestra sobre la lista cuando algún login del scrapeo falló. */
   avisoLogins?: string | null;
+  /** Cómo viene ordenada la lista, para encabezar los grupos por lo mismo. */
+  orden?: 'fecha' | 'prioridad';
 }
 
+/** Mismo contorno que `<Badge size="sm">`: radio 6, 20px de alto, 11/500. */
 const PILL =
-  'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium';
+  'inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium';
 
 export function ListaNotificaciones({
   notificaciones,
@@ -59,16 +69,25 @@ export function ListaNotificaciones({
   onSeleccionar,
   cargando,
   total,
+  pagina,
+  totalPaginas,
+  onPagina,
   hayMas,
   onCargarMas,
   vacio,
   avisoLogins,
+  orden = 'fecha',
 }: Props) {
-  // Agrupa por día conservando el orden que ya trae el servidor (más nuevas
-  // primero): no reordena, sólo corta.
+  // Agrupa conservando el orden que ya trae el servidor: no reordena, sólo
+  // corta. El encabezado tiene que ser el mismo criterio con el que viene
+  // ordenada la lista — encabezar por mes una lista ordenada por importancia
+  // repite "Septiembre" una vez por cada nivel.
   const grupos: { label: string; items: NotificacionListada[] }[] = [];
   for (const n of notificaciones) {
-    const label = grupoDeFecha(n.publicadaAt ?? n.createdAt);
+    const label =
+      orden === 'prioridad'
+        ? (SEVERIDAD_LABEL[n.severidad] ?? 'Sin clasificar')
+        : grupoDeFecha(n.publicadaAt ?? n.createdAt);
     const ultimo = grupos[grupos.length - 1];
     if (ultimo?.label === label) ultimo.items.push(n);
     else grupos.push({ label, items: [n] });
@@ -118,12 +137,10 @@ export function ListaNotificaciones({
                     n.aiResumen
                   );
                   const activa = n.id === seleccionada;
-                  const resuelta = n.resueltaAt !== null;
                   const destacada =
                     n.severidad === 'urgente' ||
                     n.severidad === 'accion_requerida';
                   const hayPills =
-                    resuelta ||
                     destacada ||
                     n.categoria !== null ||
                     n.tareas > 0 ||
@@ -138,9 +155,9 @@ export function ListaNotificaciones({
                         className={cn(
                           'flex w-full gap-[11px] border-b border-[var(--arca-border)] px-[18px] py-3 text-left',
                           'transition-colors duration-[120ms] ease-[ease]',
-                          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--arca-navy-700)]',
+                          'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--arca-accent)]',
                           activa
-                            ? 'bg-[var(--arca-surface-2)] shadow-[inset_2px_0_0_var(--arca-navy-900)]'
+                            ? 'bg-[var(--arca-accent-bg)] shadow-[inset_3px_0_0_var(--arca-accent)]'
                             : 'hover:bg-[var(--arca-surface-2)]'
                         )}
                       >
@@ -161,7 +178,7 @@ export function ListaNotificaciones({
                             'mt-1.5 size-2 shrink-0 rounded-full',
                             n.leida
                               ? 'bg-transparent'
-                              : 'bg-[var(--arca-navy-700)]'
+                              : 'bg-[var(--arca-accent)]'
                           )}
                         />
 
@@ -203,27 +220,21 @@ export function ListaNotificaciones({
 
                           {hayPills && (
                             <div className="mt-0.5 flex items-center gap-1.5">
-                              {resuelta ? (
+                              {/* La importancia siempre; que esté leída lo
+                                  dicen el punto y el peso del título. */}
+                              {destacada && (
                                 <span
-                                  className={`${PILL} bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]`}
+                                  className={`${PILL} ${SEVERIDAD_PILL[n.severidad]}`}
                                 >
-                                  Resuelta
+                                  {SEVERIDAD_LABEL[n.severidad]}
                                 </span>
-                              ) : (
-                                destacada && (
-                                  <span
-                                    className={`${PILL} ${SEVERIDAD_PILL[n.severidad]}`}
-                                  >
-                                    {SEVERIDAD_LABEL[n.severidad]}
-                                  </span>
-                                )
                               )}
 
                               {n.categoria && (
                                 <span
                                   className={`${PILL} border border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]`}
                                 >
-                                  {categoriaLabel(n.categoria)}
+                                  {tipoNotificacion(n.categoria)}
                                 </span>
                               )}
 
@@ -254,21 +265,36 @@ export function ListaNotificaciones({
         )}
       </div>
 
-      {/* Pie fijo */}
-      <div className="flex shrink-0 items-center justify-between border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]">
-        <span className="text-[11.5px] text-[var(--arca-ink-3)] tabular-nums">
-          {notificaciones.length} de {total}
-        </span>
-        {hayMas && (
-          <button
-            type="button"
-            onClick={onCargarMas}
-            className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
-          >
-            Cargar más →
-          </button>
-        )}
-      </div>
+      {/* Pie fijo. La lista sirve a dos consumidores con paginados distintos:
+          `/notifications` usa el paginador de siempre y el inbox embebido de
+          la ficha usa "cargar más". En vez de duplicar el componente, el pie
+          es uno u otro según qué props recibe. */}
+      {onCargarMas ? (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]">
+          <span className="text-[12px] tabular-nums text-[var(--arca-ink-3)] [font-family:var(--ff-mono)]">
+            {notificaciones.length} de {total}
+          </span>
+          {hayMas && (
+            <button
+              type="button"
+              onClick={onCargarMas}
+              className="text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
+            >
+              Cargar más →
+            </button>
+          )}
+        </div>
+      ) : (
+        <Paginador
+          pagina={pagina ?? 1}
+          totalPaginas={totalPaginas ?? 1}
+          onPagina={onPagina ?? (() => undefined)}
+          total={total}
+          unidad="notificación"
+          unidadPlural="notificaciones"
+          className="shrink-0 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-[18px] py-[11px]"
+        />
+      )}
     </div>
   );
 }

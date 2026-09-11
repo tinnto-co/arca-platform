@@ -98,8 +98,8 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn)]',
-  member: 'bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]',
+  owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn-fg)]',
+  member: 'bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]',
   viewer: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
 };
 
@@ -259,7 +259,7 @@ function MembersTab() {
                       size="icon"
                       onClick={() => setRemoveMemberId(m.memberId)}
                     >
-                      <Trash2 className="size-4 text-[var(--arca-accent-neg)]" />
+                      <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
                     </Button>
                     <AlertDialog
                       open={removeMemberId === m.memberId}
@@ -391,7 +391,7 @@ function InvitationsTab() {
                         size="icon"
                         onClick={() => setCancelInviteId(inv.id)}
                       >
-                        <X className="size-4 text-[var(--arca-accent-neg)]" />
+                        <X className="size-4 text-[var(--arca-accent-neg-fg)]" />
                       </Button>
                       <AlertDialog
                         open={cancelInviteId === inv.id}

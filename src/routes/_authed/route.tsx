@@ -21,7 +21,8 @@ import { CopilotKit } from '@copilotkit/react-core';
 import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
-import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
+import { CopilotSidePanel } from '@/components/copilot/CopilotSidePanel';
+import { BuscadorGlobal } from '@/components/shared/buscador-global';
 import { FrontendTools } from '@/components/copilot/FrontendTools';
 import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
 import { VisiblePageReadable } from '@/components/copilot/VisiblePageReadable';
@@ -59,11 +60,21 @@ function RouteComponent() {
 
   /**
    * Pantallas que manejan su propio scroll y ocupan el alto completo: la
-   * bandeja de notificaciones y el tablero de tareas tienen columnas que
-   * scrollean por dentro, así que no pueden convivir con el padding que deja
-   * lugar al input del asistente ni con el input flotando encima.
+   * bandeja, el tablero de tareas y el calendario de vencimientos tienen
+   * columnas que scrollean por dentro, así que no pueden convivir con el
+   * padding que deja lugar al input del asistente.
    */
   const altoCompleto =
+    pathname.startsWith('/notifications') ||
+    pathname.startsWith('/tareas') ||
+    pathname.startsWith('/vencimientos');
+
+  /**
+   * De las de alto completo, las que además se comen el lugar del input del
+   * asistente. Vencimientos no: ahí el input sigue flotando abajo y la
+   * pantalla deja el hueco justo para que no lo tape.
+   */
+  const sinInputAgente =
     pathname.startsWith('/notifications') || pathname.startsWith('/tareas');
 
   const { data: orgModules = [] } = useQuery({
@@ -73,9 +84,12 @@ function RouteComponent() {
 
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
-  const hideAgentInput = isChatRoute || altoCompleto || !aiAgentEnabled;
+  const hideAgentInput = isChatRoute || sinInputAgente || !aiAgentEnabled;
 
-  const shell = (agentInputSlot: React.ReactNode) => (
+  const shell = (
+    agentInputSlot: React.ReactNode,
+    asistenteSlot: React.ReactNode
+  ) => (
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
@@ -93,29 +107,52 @@ function RouteComponent() {
           </div>
           {agentInputSlot}
         </SidebarInset>
+        {/* Hermano flex del contenido: al abrirse lo empuja, no lo tapa. Vive
+            dentro del provider porque necesita colapsar el menú lateral. */}
+        {asistenteSlot}
         <MobileNavbar />
       </SidebarProvider>
     </OrgSwitchProvider>
   );
 
-  if (aiAgentEnabled) {
-    return (
-      <CopilotKit
-        runtimeUrl="/api/copilotkit"
-        showDevConsole={false}
-        enableInspector={false}
-      >
-        <CopilotAttachmentProvider>
-          <CopilotActions />
-          <FrontendTools />
-          <GlobalCopilotReadables />
-          <VisiblePageReadable />
-          {shell(!hideAgentInput ? <AgentInput /> : null)}
-          {!isChatRoute && !altoCompleto && <CopilotBottomPanel />}
-        </CopilotAttachmentProvider>
-      </CopilotKit>
-    );
-  }
-
-  return shell(null);
+  /**
+   * El provider va siempre, y lo que se gatea es la funcionalidad.
+   *
+   * Antes el árbol entero dependía de `aiAgentEnabled`: mientras
+   * `listOrgModules` no resolvía, el layout devolvía el shell sin provider y
+   * las pantallas que montan un `CopilotReadableEntity` —la ficha del
+   * cliente, la tabla de clientes, sueldos por cliente— reventaban con
+   * "useCopilotKit must be used within CopilotKitProvider". Las dos partes
+   * leen la misma query, pero no re-renderizan en el mismo instante, y esa
+   * ventana alcanzaba para romper la página.
+   *
+   * Montar el provider no habla con el runtime: eso pasa cuando alguien usa
+   * el chat. Lo que sí se sigue gateando es lo que pesa —acciones, tools,
+   * readables globales, la barra y el panel—.
+   */
+  return (
+    <CopilotKit
+      runtimeUrl="/api/copilotkit"
+      showDevConsole={false}
+      enableInspector={false}
+    >
+      <CopilotAttachmentProvider>
+        {aiAgentEnabled && (
+          <>
+            <CopilotActions />
+            <FrontendTools />
+            <GlobalCopilotReadables />
+            <VisiblePageReadable />
+          </>
+        )}
+        {shell(
+          aiAgentEnabled && !hideAgentInput ? <AgentInput /> : null,
+          aiAgentEnabled && !isChatRoute && !altoCompleto ? (
+            <CopilotSidePanel />
+          ) : null
+        )}
+        <BuscadorGlobal />
+      </CopilotAttachmentProvider>
+    </CopilotKit>
+  );
 }

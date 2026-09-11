@@ -65,7 +65,7 @@ const SECCIONES_HABER = new Set<SeccionSos>([
 ] as SeccionSos[]);
 
 const inputCls =
-  'h-[30px] px-2 rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-right text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-600)] placeholder:text-[var(--arca-ink-4)] disabled:opacity-50';
+  'h-[30px] px-2 rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-right text-[12.5px] tabular-nums text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)] placeholder:text-[var(--arca-ink-4)] disabled:opacity-50';
 
 function microLabel(text: string) {
   return (
@@ -333,7 +333,7 @@ export function ConceptosDrawer({
                               className={cn(
                                 'flex-none self-center h-[20px] w-[20px] rounded-[6px] flex items-center justify-center transition-colors duration-120 motion-reduce:transition-none cursor-pointer',
                                 memoEditando || memoValor
-                                  ? 'text-[var(--arca-navy-700)] bg-[var(--arca-surface-2)]'
+                                  ? 'text-[var(--arca-accent)] bg-[var(--arca-surface-2)]'
                                   : 'text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
                               )}
                             >
@@ -522,7 +522,7 @@ export function ConceptosDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto h-[36px] px-4 rounded-[10px] text-[13px] font-semibold bg-[var(--arca-ink)] text-white hover:bg-[var(--arca-navy-800)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+            className="ml-auto h-[36px] px-4 rounded-lg text-[13px] font-semibold bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
           >
             Listo
           </button>
@@ -694,7 +694,7 @@ function AgregarConceptoPopover({
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           autoFocus
-          className="mb-2 h-[30px] w-full px-2 rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12px] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-600)] placeholder:text-[var(--arca-ink-4)]"
+          className="mb-2 h-[30px] w-full px-2 rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12px] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)] placeholder:text-[var(--arca-ink-4)]"
         />
         <div className="max-h-[220px] overflow-y-auto">
           {filtrados.length === 0 ? (
@@ -711,7 +711,7 @@ function AgregarConceptoPopover({
               >
                 <input
                   type="checkbox"
-                  className="mt-0.5 shrink-0 accent-[var(--arca-navy-700)]"
+                  className="mt-0.5 shrink-0 accent-[var(--arca-accent)]"
                   checked={seleccionados.has(c.codigo)}
                   onChange={() => toggle(c.codigo)}
                 />
@@ -736,7 +736,7 @@ function AgregarConceptoPopover({
               type="button"
               disabled={seleccionados.size === 0}
               onClick={confirmar}
-              className="h-[28px] px-3 rounded-[8px] text-[11.5px] font-semibold bg-[var(--arca-ink)] text-white hover:bg-[var(--arca-navy-800)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+              className="h-[28px] px-3 rounded-[8px] text-[11.5px] font-semibold bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
             >
               Agregar ({seleccionados.size})
             </button>

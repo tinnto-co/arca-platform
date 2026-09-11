@@ -1,7 +1,10 @@
 /**
  * Franja de infraestructura: lo que impide ver (credenciales caídas).
- * Se oculta por completo cuando no hay problemas. Full width, sin radio:
- * no es una card, es el techo de la pantalla.
+ * Se oculta por completo cuando no hay problemas.
+ *
+ * Es una card blanca con una barra roja de 4px a la izquierda, no un bloque
+ * rosa a sangre: el rojo sólido queda para el borde y el botón de la acción,
+ * que es donde tiene que llamar la atención.
  */
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -49,48 +52,33 @@ export function FranjaInfra() {
   if (alertas.length === 0) return null;
 
   return (
-    <div
-      className="flex items-center gap-3 border-b"
-      style={{
-        background: 'var(--arca-accent-neg-bg)',
-        borderColor: 'var(--arca-border-strong)',
-        padding: '10px 36px',
-      }}
-    >
-      <span
-        className="size-1.5 rounded-full shrink-0"
-        style={{ background: 'var(--arca-accent-neg)' }}
-      />
-      <p
-        className="flex-1 text-[12.5px] min-w-0 truncate"
-        style={{ color: 'var(--arca-accent-neg-fg)' }}
-      >
-        <span className="font-semibold">
-          {alertas.length} credencial{alertas.length !== 1 ? 'es' : ''} con
-          clave inválida
+    <div className="mx-9 mt-4 flex items-center gap-3 rounded-lg border border-l-4 border-[oklch(0.85_0.08_25)] border-l-[var(--arca-accent-neg)] bg-[var(--arca-surface)] px-[14px] py-[10px]">
+      <span className="size-2 shrink-0 rounded-full bg-[var(--arca-accent-neg)]" />
+      <p className="min-w-0 flex-1 truncate text-[13px] text-[var(--arca-ink-2)]">
+        <span className="font-semibold text-[var(--arca-ink)]">
+          ARCA rechaza {alertas.length} clave{alertas.length !== 1 ? 's' : ''}{' '}
+          fiscal{alertas.length !== 1 ? 'es' : ''}
         </span>
-        {' · sus datos no se actualizan hasta corregir la clave'}
+        {alertas.length !== 1
+          ? ' · no se traen datos nuevos de esas empresas hasta actualizarlas'
+          : ' · no se traen datos nuevos de esa empresa hasta actualizarla'}
       </p>
-      <Link
-        to="/clients"
-        search={{ filtro: 'claves_invalidas' }}
-        className="text-[12px] shrink-0 hover:underline"
-        style={{ color: 'var(--arca-accent-neg-fg)' }}
-      >
-        Ver empresas
-      </Link>
-      <button
-        type="button"
+      <Button variant="ghost" size="sm" asChild className="shrink-0">
+        {/* El search pre-filtra la lista a las claves inválidas: sin esto el
+            link deja al usuario buscando cuáles eran entre todos los
+            clientes. Viene de staging. */}
+        <Link to="/clients" search={{ filtro: 'claves_invalidas' }}>
+          Ver empresas
+        </Link>
+      </Button>
+      <Button
+        variant="destructive"
+        size="sm"
         onClick={() => setAbierta(true)}
-        className="shrink-0 text-[12px] font-medium bg-white border rounded-[10px] cursor-pointer transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
-        style={{
-          borderColor: 'var(--arca-border-strong)',
-          color: 'var(--arca-ink)',
-          padding: '4px 11px',
-        }}
+        className="shrink-0"
       >
         Actualizar claves
-      </button>
+      </Button>
 
       <Dialog
         open={abierta}
@@ -104,10 +92,10 @@ export function FranjaInfra() {
       >
         <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Credenciales con clave inválida</DialogTitle>
+            <DialogTitle>Claves fiscales rechazadas por ARCA</DialogTitle>
             <DialogDescription>
-              AFIP rechaza el login: los datos no se actualizan hasta cargar la
-              clave nueva.
+              ARCA no acepta la clave de estas empresas. Hasta cargar la clave
+              nueva no se traen datos nuevos de ellas.
             </DialogDescription>
           </DialogHeader>
           <div className="divide-y divide-[var(--arca-border)] max-h-[50vh] overflow-y-auto">

@@ -15,7 +15,7 @@ export function AutosaveChip({
   savedAt: Date | null;
 }) {
   const base =
-    'inline-flex items-center text-[11px] font-medium px-[9px] py-[2px] rounded-[20px] whitespace-nowrap';
+    'inline-flex items-center text-[11px] font-medium px-[9px] py-[2px] rounded-md whitespace-nowrap';
   if (estado === 'guardando') {
     return (
       <span

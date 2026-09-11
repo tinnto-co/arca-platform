@@ -13,6 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { guardarClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { relativeTime } from './shared';
 
 export const PERIOD_OPTIONS = ['Hoy', '7d', '30d', '90d', 'YTD'] as const;
@@ -117,7 +118,7 @@ export function DashboardTopbar({
                   ? 'border-r border-[var(--arca-border)]'
                   : '',
                 activePeriod === p
-                  ? 'bg-[var(--arca-ink)] text-white'
+                  ? 'bg-[var(--arca-accent-bg)] font-medium text-[var(--arca-accent-hover)]'
                   : 'text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)]',
               ].join(' ')}
             >
@@ -185,7 +186,13 @@ export function DashboardTopbar({
                   >
                     <Link
                       to="/notifications"
-                      search={{ notificationId: n.id }}
+                      // `notificationId` no existe en el schema de la ruta:
+                      // zod lo descartaba y la notificación no se abría.
+                      search={{ n: n.id }}
+                      // La bandeja recuerda la última empresa mirada. Sin
+                      // esto, una notificación de otra empresa no aparece
+                      // siquiera en la lista.
+                      onClick={() => guardarClienteSeleccionado(n.clienteId)}
                       className="flex-1 min-w-0"
                     >
                       <p
@@ -200,9 +207,7 @@ export function DashboardTopbar({
                           </span>
                         )}
                         <span className="text-[11px] text-[var(--arca-ink-4)] ml-auto shrink-0">
-                          {relativeTime(
-                            new Date(n.publicadaAt ?? n.createdAt)
-                          )}
+                          {relativeTime(new Date(n.publicadaAt ?? n.createdAt))}
                         </span>
                       </div>
                     </Link>
@@ -235,6 +240,7 @@ export function DashboardTopbar({
             <div className="border-t border-[var(--arca-border)] px-4 py-2.5">
               <Link
                 to="/notifications"
+                onClick={() => guardarClienteSeleccionado(null)}
                 className="flex items-center justify-center gap-1.5 w-full text-[12.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors duration-[120ms]"
               >
                 Ver todas las notificaciones

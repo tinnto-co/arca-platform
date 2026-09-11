@@ -20,6 +20,11 @@ import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import { PageShell } from '@/components/shared/page-shell';
 import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 import { dispatchAllJobs } from '@/actions/job';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export const Route = createFileRoute('/_authed/clients/')({
   validateSearch: (
@@ -58,16 +63,20 @@ function UpdateAllButton() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          size="icon"
-          aria-label="Actualizar todos"
-          title="Actualizar todos"
-        >
-          <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} />
-        </Button>
-      </DialogTrigger>
+      {/* Tooltip del sistema en vez de `title`: el nativo tarda un segundo
+        largo en aparecer y no se ve como el resto de la plataforma. */}
+      <Tooltip>
+        <DialogTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button variant="outline" size="icon" aria-label="Actualizar todos">
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} />
+            </Button>
+          </TooltipTrigger>
+        </DialogTrigger>
+        <TooltipContent>
+          Traer de ARCA los datos de todos los clientes
+        </TooltipContent>
+      </Tooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Actualizar todos los clientes</DialogTitle>
@@ -114,15 +123,16 @@ function RouteComponent() {
             <ActiveJobsIndicator />
             <SelectorClienteGlobal />
             <UpdateAllButton />
-            <CreateRepresentativeDialog>
-              <Button
-                size="icon"
-                aria-label="Nuevo cliente"
-                title="Nuevo cliente"
-              >
-                <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-              </Button>
-            </CreateRepresentativeDialog>
+            <Tooltip>
+              <CreateRepresentativeDialog>
+                <TooltipTrigger asChild>
+                  <Button size="icon" aria-label="Nuevo cliente">
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+                  </Button>
+                </TooltipTrigger>
+              </CreateRepresentativeDialog>
+              <TooltipContent>Nuevo cliente</TooltipContent>
+            </Tooltip>
           </>
         }
       />

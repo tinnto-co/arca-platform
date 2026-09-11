@@ -159,7 +159,7 @@ function ComentarioEnEdicion({
         value={borrador}
         onChange={(e) => setBorrador(e.target.value)}
         aria-label="Editar comentario"
-        className="w-full resize-none rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-[11px] py-2 text-[12.5px] leading-[1.55] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-navy-600)]"
+        className="w-full resize-none rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-[11px] py-2 text-[12.5px] leading-[1.55] text-[var(--arca-ink)] outline-none focus:border-[var(--arca-accent)]"
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -177,7 +177,7 @@ function ComentarioEnEdicion({
           type="button"
           disabled={!borrador.trim()}
           onClick={() => onGuardar(borrador.trim())}
-          className="rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-[5px] text-[12px] font-medium text-white transition-colors duration-[120ms] hover:bg-black disabled:opacity-40"
+          className="rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] px-3 py-[5px] text-[12px] font-medium text-white transition-colors duration-[120ms] hover:bg-[var(--arca-accent-hover)] disabled:opacity-40"
         >
           Guardar
         </button>
@@ -449,7 +449,7 @@ export function TaskDetailDialog({
                 <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <DropdownMenu>
                     <DropdownMenuTrigger
-                      className={`inline-flex items-center gap-1 rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium transition-colors duration-[120ms] ${TIPO_PILL[tarea.tipo] ?? TIPO_PILL.otro}`}
+                      className={`inline-flex h-5 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors duration-[120ms] ${TIPO_PILL[tarea.tipo] ?? TIPO_PILL.otro}`}
                       aria-label="Cambiar tipo de obligación"
                     >
                       {TIPO_LABELS[tarea.tipo] ?? tarea.tipo}
@@ -488,7 +488,7 @@ export function TaskDetailDialog({
                   <span className="ml-auto flex items-center gap-2">
                     {guardado.texto && (
                       <span className="flex items-center gap-1 text-[11px] text-[var(--arca-ink-3)]">
-                        <Check className="size-3 text-[var(--arca-accent-pos)]" />
+                        <Check className="size-3 text-[var(--arca-accent-pos-fg)]" />
                         {guardado.texto}
                       </span>
                     )}
@@ -1013,7 +1013,7 @@ export function TaskDetailDialog({
                     onChange={(e) => setComentario(e.target.value)}
                     placeholder="Escribí un comentario…"
                     aria-label="Nuevo comentario"
-                    className="min-h-[34px] flex-1 resize-none rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-[11px] py-2 text-[12.5px] text-[var(--arca-ink)] outline-none placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-navy-600)]"
+                    className="min-h-[34px] flex-1 resize-none rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-[11px] py-2 text-[12.5px] text-[var(--arca-ink)] outline-none placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-accent)]"
                     onKeyDown={(e) => {
                       if (
                         e.key === 'Enter' &&
@@ -1030,7 +1030,7 @@ export function TaskDetailDialog({
                     disabled={!comentario.trim() || commentMutation.isPending}
                     onClick={() => commentMutation.mutate(comentario)}
                     aria-label="Enviar comentario"
-                    className="grid size-[34px] shrink-0 place-items-center rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] text-white transition-colors duration-[120ms] hover:bg-black disabled:opacity-40"
+                    className="grid size-[34px] shrink-0 place-items-center rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] text-white transition-colors duration-[120ms] hover:bg-[var(--arca-accent-hover)] disabled:opacity-40"
                   >
                     <Send className="size-3.5" />
                   </button>

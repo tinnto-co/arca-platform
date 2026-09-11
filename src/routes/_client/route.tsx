@@ -59,7 +59,7 @@ function ClientPortalLayout() {
                 className="size-[26px] rounded-[7px] flex items-center justify-center text-[10px] font-semibold text-white"
                 style={{
                   background:
-                    'linear-gradient(140deg, var(--arca-navy-700), #C2A878)',
+                    'linear-gradient(140deg, var(--arca-accent), var(--arca-chart-3))',
                 }}
               >
                 {iniciales(estudio ?? 'Estudio')}
@@ -87,7 +87,7 @@ function ClientPortalLayout() {
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="h-8 px-3 flex items-center gap-2 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] font-medium text-[var(--arca-ink)]">
+            <div className="h-8 px-3 flex items-center gap-2 rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] font-medium text-[var(--arca-ink)]">
               <span className="truncate max-w-[220px]">
                 {cliente.razonSocial}
               </span>
@@ -97,7 +97,7 @@ function ClientPortalLayout() {
             </div>
             <button
               onClick={handleLogout}
-              className="h-8 px-3 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] font-medium text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)]"
+              className="h-8 px-3 rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[12.5px] font-medium text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)]"
             >
               Salir
             </button>

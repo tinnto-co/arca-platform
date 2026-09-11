@@ -158,7 +158,7 @@ export function ReciboAside({
           <button
             type="button"
             onClick={onDescargarPdf}
-            className="h-[36px] rounded-[10px] text-[13px] font-semibold bg-[var(--arca-ink)] text-white inline-flex items-center justify-center gap-2 hover:bg-[var(--arca-navy-800)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+            className="h-[36px] rounded-lg text-[13px] font-semibold bg-[var(--arca-accent)] text-white inline-flex items-center justify-center gap-2 hover:bg-[var(--arca-accent-hover)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
           >
             <Download className="h-3.5 w-3.5" />
             Descargar PDF
@@ -166,7 +166,7 @@ export function ReciboAside({
           <button
             type="button"
             onClick={onLiquidarOtro}
-            className="h-[34px] rounded-[10px] text-[12.5px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] inline-flex items-center justify-center gap-2 hover:bg-[var(--arca-surface-2)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+            className="h-[34px] rounded-lg text-[12.5px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] inline-flex items-center justify-center gap-2 hover:bg-[var(--arca-surface-2)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
           >
             <UserPlus className="h-3.5 w-3.5" />
             Liquidar otro empleado
@@ -180,7 +180,7 @@ export function ReciboAside({
           className={cn(
             'h-[42px] rounded-[12px] text-[13.5px] font-semibold inline-flex items-center justify-center gap-2 transition-colors duration-120 motion-reduce:transition-none',
             puedeEmitir && !emitiendo
-              ? 'bg-[var(--arca-navy-700)] text-white hover:bg-[var(--arca-navy-800)] cursor-pointer'
+              ? 'bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)] cursor-pointer'
               : 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-4)] cursor-not-allowed border border-[var(--arca-border)]'
           )}
         >

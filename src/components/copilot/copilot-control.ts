@@ -103,3 +103,70 @@ export function subscribePanelState(cb: () => void) {
 export function getPanelState(): PanelState {
   return panelState;
 }
+
+/**
+ * Si el agente está resolviendo. Lo publica el panel (que es quien tiene el
+ * hook de CopilotKit) y lo consume la barra flotante, que vive fuera de su
+ * árbol: así el orbe late en los dos lados a la vez.
+ */
+let pensando = false;
+const pensandoSubs = new Set<() => void>();
+
+export function setPensando(v: boolean) {
+  if (pensando === v) return;
+  pensando = v;
+  pensandoSubs.forEach((cb) => cb());
+}
+
+export function subscribePensando(cb: () => void) {
+  pensandoSubs.add(cb);
+  return () => {
+    pensandoSubs.delete(cb);
+  };
+}
+
+export function getPensando() {
+  return pensando;
+}
+
+/**
+ * Forma en que aparece el asistente cuando el panel está cerrado: la barra
+ * flotante o el orbe en la esquina. Es una preferencia de trabajo, no de
+ * sesión, así que se guarda.
+ *
+ * Vive acá y no en `AgentInput` porque el panel también la escribe: desde su
+ * cabecera se puede volver a la barra, que si no quedaría inalcanzable una vez
+ * que el asistente pasó al orbe.
+ */
+export type ModoAsistente = 'barra' | 'fab';
+
+const CLAVE_MODO = 'arca-asistente-modo';
+const oyentesModo = new Set<() => void>();
+
+export function suscribirModo(cb: () => void) {
+  oyentesModo.add(cb);
+  window.addEventListener('storage', cb);
+  return () => {
+    oyentesModo.delete(cb);
+    window.removeEventListener('storage', cb);
+  };
+}
+
+export function leerModo(): ModoAsistente {
+  try {
+    return (
+      (window.localStorage.getItem(CLAVE_MODO) as ModoAsistente) ?? 'barra'
+    );
+  } catch {
+    return 'barra';
+  }
+}
+
+export function guardarModo(modo: ModoAsistente) {
+  try {
+    window.localStorage.setItem(CLAVE_MODO, modo);
+  } catch {
+    /* modo privado: alterna igual, sólo no se recuerda */
+  }
+  oyentesModo.forEach((cb) => cb());
+}

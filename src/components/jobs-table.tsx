@@ -37,6 +37,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -46,14 +47,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -73,6 +66,7 @@ import {
   type JobsResponse,
   type JobLogRow,
 } from '@/actions/job';
+import { Paginador } from '@/components/shared/paginador';
 import { getCredenciales } from '@/actions/client';
 import { JobsErrorSummary } from '@/components/jobs-error-summary';
 
@@ -286,7 +280,7 @@ export function JobsTable() {
       case 'running':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]`}
           >
             <Loader2 className="h-3 w-3 animate-spin" />
             En progreso
@@ -333,7 +327,7 @@ export function JobsTable() {
       case 'iva':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]`}
           >
             <FileWarning className="h-3 w-3" />
             IVA
@@ -360,7 +354,7 @@ export function JobsTable() {
       case 'notificaciones':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent)]`}
           >
             <Bell className="h-3 w-3" />
             Notificaciones
@@ -478,10 +472,10 @@ export function JobsTable() {
             />
           </div>
 
-          <Input
-            type="date"
+          <SelectorFecha
             value={date === 'todo' ? '' : fechaEfectiva}
-            onChange={(e) => setFilter({ date: e.target.value })}
+            onChange={(v) => setFilter({ date: v })}
+            placeholder="Fecha"
             className="flex-1 min-w-[140px]"
           />
 
@@ -602,7 +596,9 @@ export function JobsTable() {
       )}
       {date === 'todo' && (
         <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-3)]">
-          <span>Mostrando el histórico completo (todas las actualizaciones)</span>
+          <span>
+            Mostrando el histórico completo (todas las actualizaciones)
+          </span>
           <button
             type="button"
             onClick={() => setFilter({ date: '' })}
@@ -627,7 +623,7 @@ export function JobsTable() {
               <TableHead className="w-10">
                 <input
                   type="checkbox"
-                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                   checked={
                     jobs.length > 0 &&
                     jobs.every((j: JobRow) => selectedIds.has(j.id))
@@ -672,7 +668,7 @@ export function JobsTable() {
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                       checked={selectedIds.has(job.id)}
                       onChange={() => toggleRow(job.id)}
                     />
@@ -759,72 +755,12 @@ export function JobsTable() {
       </div>
 
       {totalPages > 1 && (
-        <div className="flex justify-center">
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() =>
-                    setFilter({ page: Math.max(1, currentPage - 1) })
-                  }
-                  className={
-                    currentPage === 1
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-
-              {/* Mostrar solo primeras 3, últimas 1 y ventana alrededor de la actual */}
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter((page) => {
-                  if (page <= 3) return true;
-                  if (page === totalPages) return true;
-                  if (Math.abs(page - currentPage) <= 1) return true;
-                  return false;
-                })
-                .flatMap((page, index, visiblePages) => {
-                  const prevPage = visiblePages[index - 1];
-                  const showEllipsis = prevPage && page - prevPage > 1;
-
-                  const items = [];
-                  if (showEllipsis) {
-                    items.push(
-                      <PaginationItem key={`ellipsis-${page}`}>
-                        <span className="px-2 text-[var(--arca-ink-3)]">
-                          ...
-                        </span>
-                      </PaginationItem>
-                    );
-                  }
-                  items.push(
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        onClick={() => setFilter({ page })}
-                        isActive={currentPage === page}
-                        className="cursor-pointer"
-                      >
-                        {page}
-                      </PaginationLink>
-                    </PaginationItem>
-                  );
-                  return items;
-                })}
-
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() =>
-                    setFilter({ page: Math.min(totalPages, currentPage + 1) })
-                  }
-                  className={
-                    currentPage === totalPages
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+        <div className="w-full">
+          <Paginador
+            pagina={currentPage}
+            totalPaginas={totalPages}
+            onPagina={(page) => setFilter({ page })}
+          />
         </div>
       )}
 
@@ -1026,13 +962,13 @@ export function JobsTable() {
                       colorClasses =
                         'border-[var(--arca-accent-warn)]/30 bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]';
                       icon = (
-                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn)]" />
+                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn-fg)]" />
                       );
                     } else if (level === 'error') {
                       colorClasses =
                         'border-[var(--arca-accent-neg)]/30 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]';
                       icon = (
-                        <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg)]" />
+                        <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg-fg)]" />
                       );
                     } else if (level === 'debug') {
                       colorClasses =

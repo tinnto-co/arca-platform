@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -63,6 +64,11 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
   });
 
   const cerrado = estado?.cierre ?? null;
+  // Sin recibos confirmados no hay nada que cerrar ni que previsualizar. Se
+  // dice en el banner y se apagan los botones, en vez de dejar hacer click y
+  // contestar con un toast de error.
+  const recibosConfirmados = estado?.recibosConfirmados ?? 0;
+  const sinRecibos = !cerrado && !isLoading && recibosConfirmados === 0;
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -121,26 +127,34 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
   const totalHaber = preview?.lines.reduce((s, l) => s + l.credit, 0) ?? 0;
 
   return (
-    <div className="border border-[#ECEAE3] rounded-[12px] bg-white p-5 mb-[44px]">
+    <div className="border border-[var(--arca-border)] rounded-[12px] bg-white p-5 mb-[44px]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-1.5">
-            <BookOpen style={{ width: 15, height: 15, color: '#9B9CA3' }} />
+            <BookOpen
+              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
+            />
             <span
-              style={{ fontSize: '12.5px', color: '#6E7079', fontWeight: 500 }}
+              style={{
+                fontSize: '12.5px',
+                color: 'var(--arca-ink-3)',
+                fontWeight: 500,
+              }}
             >
               Cierre contable
             </span>
           </div>
-          <p className="mt-1 text-[13px] text-[#6E7079]">
+          <p className="mt-1 text-[13px] text-[var(--arca-ink-3)]">
             {isLoading
               ? 'Consultando estado…'
               : cerrado
                 ? `Liquidación de ${periodo} cerrada. Asiento N.º ${cerrado.entryNumber ?? '—'} sobre ${cerrado.recibos} recibo(s).`
-                : `Genera un único asiento con los recibos confirmados de ${periodo}.`}
+                : sinRecibos
+                  ? `No hay recibos confirmados en ${periodo}: confirmá al menos uno para poder cerrar el período.`
+                  : `Genera un único asiento con ${recibosConfirmados} recibo(s) confirmado(s) de ${periodo}.`}
           </p>
           {cerrado && cerrado.conceptosSinRegla > 0 && (
-            <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-[#B45309]">
+            <p className="mt-1 flex items-center gap-1.5 text-[12.5px] text-[var(--arca-accent-warn-fg)]">
               <AlertTriangle style={{ width: 13, height: 13 }} />
               {cerrado.conceptosSinRegla} concepto(s) sin regla fueron a
               Pendiente de revisión.
@@ -154,7 +168,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
               <Link
                 to="/accounting"
                 search={{ clientId, tab: 'asientos' }}
-                className="inline-flex items-center gap-2 border border-[#DFDCD3] bg-white text-[#12131A] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[#FBFAF6] transition-colors"
+                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-lg h-9 px-4 text-[13px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors"
               >
                 <BookOpen style={{ width: 15, height: 15 }} />
                 Ver en el diario
@@ -163,7 +177,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
                 type="button"
                 onClick={() => setReopenOpen(true)}
                 disabled={busy}
-                className="inline-flex items-center gap-2 border border-[#DFDCD3] bg-white text-[#12131A] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[#FBFAF6] transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-lg h-9 px-4 text-[13px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
               >
                 {reabrirMut.isPending ? (
                   <Loader2
@@ -178,47 +192,38 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
             </>
           ) : (
             <>
-              <button
-                type="button"
+              <Button
+                variant="outline"
                 onClick={() => previewMut.mutate()}
-                disabled={busy}
-                className="inline-flex items-center gap-2 border border-[#DFDCD3] bg-white text-[#12131A] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[#FBFAF6] transition-colors disabled:opacity-50"
+                disabled={busy || sinRecibos}
               >
                 {previewMut.isPending ? (
-                  <Loader2
-                    style={{ width: 15, height: 15 }}
-                    className="animate-spin"
-                  />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Eye style={{ width: 15, height: 15 }} />
+                  <Eye className="size-4" />
                 )}
                 Previsualizar asiento
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
                 onClick={() => setConfirmOpen(true)}
-                disabled={busy}
-                className="inline-flex items-center gap-2 bg-[#12131A] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={busy || sinRecibos}
               >
                 {cerrarMut.isPending ? (
-                  <Loader2
-                    style={{ width: 15, height: 15 }}
-                    className="animate-spin"
-                  />
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Lock style={{ width: 15, height: 15 }} />
+                  <Lock className="size-4" />
                 )}
                 Cerrar y generar asiento
-              </button>
+              </Button>
             </>
           )}
         </div>
       </div>
 
       {preview && !cerrado && (
-        <div className="mt-5 border-t border-[#ECEAE3] pt-4">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3 text-[12.5px] text-[#6E7079]">
-            <span className="font-medium text-[#12131A]">
+        <div className="mt-5 border-t border-[var(--arca-border)] pt-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3 text-[12.5px] text-[var(--arca-ink-3)]">
+            <span className="font-medium text-[var(--arca-ink)]">
               Previsualización — {preview.periodo}
             </span>
             <span>·</span>
@@ -226,7 +231,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
             <span>·</span>
             <span>{preview.conceptos} concepto(s)</span>
             {preview.pendingReview ? (
-              <span className="inline-flex items-center gap-1.5 text-[#B45309]">
+              <span className="inline-flex items-center gap-1.5 text-[var(--arca-accent-warn-fg)]">
                 <AlertTriangle style={{ width: 13, height: 13 }} />
                 {preview.reason}
               </span>
@@ -241,36 +246,36 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
           <div className="overflow-x-auto">
             <table className="w-full text-[13px] tabular-nums">
               <thead>
-                <tr className="text-left text-[11.5px] uppercase tracking-wide text-[#9B9CA3]">
+                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
                   <th className="py-1.5 pr-3 font-medium">Cuenta</th>
                   <th className="py-1.5 pr-3 font-medium">Detalle</th>
                   <th className="py-1.5 pl-3 font-medium text-right">Debe</th>
                   <th className="py-1.5 pl-3 font-medium text-right">Haber</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {preview.lines.map((l, i) => (
-                  <tr key={i} className="border-t border-[#ECEAE3]">
-                    <td className="py-1.5 pr-3 text-[#12131A]">
-                      <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[#6E7079]">
+                  <tr key={i} className="border-t border-[var(--arca-border)]">
+                    <td className="py-1.5 pr-3 text-[var(--arca-ink)]">
+                      <span className="font-[family-name:var(--ff-mono)] text-[12px] text-[var(--arca-ink-3)]">
                         {l.accountCode ?? '—'}
                       </span>{' '}
                       {l.accountName ?? 'Cuenta desconocida'}
                     </td>
-                    <td className="py-1.5 pr-3 text-[#6E7079]">
+                    <td className="py-1.5 pr-3 text-[var(--arca-ink-3)]">
                       {l.description ?? ''}
                     </td>
-                    <td className="py-1.5 pl-3 text-right text-[#12131A]">
+                    <td className="py-1.5 pl-3 text-right text-[var(--arca-ink)]">
                       {l.debit ? money(l.debit) : ''}
                     </td>
-                    <td className="py-1.5 pl-3 text-right text-[#12131A]">
+                    <td className="py-1.5 pl-3 text-right text-[var(--arca-ink)]">
                       {l.credit ? money(l.credit) : ''}
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-[#DFDCD3] font-semibold text-[#12131A]">
+                <tr className="border-t border-[var(--arca-border-strong)] font-semibold text-[var(--arca-ink)]">
                   <td className="py-1.5 pr-3" colSpan={2}>
                     Totales
                   </td>
@@ -284,7 +289,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
           </div>
 
           {preview.conceptosSinRegla > 0 && (
-            <p className="mt-3 text-[12.5px] text-[#B45309]">
+            <p className="mt-3 text-[12.5px] text-[var(--arca-accent-warn-fg)]">
               Conceptos sin regla:{' '}
               {preview.mappings
                 .filter((m) => m.sinRegla)

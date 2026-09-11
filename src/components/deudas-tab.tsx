@@ -70,15 +70,24 @@ function StatusPill({
 }) {
   if (isOverdue && status === 'abierta') {
     return (
-      <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[#c0392b] whitespace-nowrap">
+      <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[var(--arca-accent-neg-fg)] whitespace-nowrap">
         Vencida
       </span>
     );
   }
   const map: Record<DebtStatus, { label: string; cls: string }> = {
-    abierta: { label: 'Abierta', cls: 'bg-[#fef3cd] text-[#8a6d00]' },
-    plan_pago: { label: 'En plan', cls: 'bg-[#F2F1EB] text-[#3E404A]' },
-    pagada: { label: 'Pagada', cls: 'bg-[#E6EFE8] text-[#2f7d55]' },
+    abierta: {
+      label: 'Abierta',
+      cls: 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+    },
+    plan_pago: {
+      label: 'En plan',
+      cls: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]',
+    },
+    pagada: {
+      label: 'Pagada',
+      cls: 'bg-[#E6EFE8] text-[var(--arca-accent-pos-fg)]',
+    },
     prescripta: { label: 'Prescripta', cls: 'bg-[#E7E8F2] text-[#3B3F6B]' },
   };
   const { label, cls } = map[status] ?? map.abierta;
@@ -364,7 +373,7 @@ export function DeudasTab({
 
   return (
     <div
-      className="bg-[#F7F6F2] border border-[#DFDCD3] rounded-2xl overflow-hidden"
+      className="bg-[var(--arca-bg)] border border-[var(--arca-border-strong)] rounded-2xl overflow-hidden"
       style={{
         boxShadow:
           '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)',
@@ -373,30 +382,30 @@ export function DeudasTab({
       {/* ── KPI band ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 bg-white">
         {/* 1. Total deudas */}
-        <div className="px-[26px] py-[22px] border-r border-[#ECEAE3]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+        <div className="px-[26px] py-[22px] border-r border-[var(--arca-border)]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             TOTAL DEUDAS
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalBalance)}
           </div>
-          <div className="mt-[10px] text-[12.5px] text-[#6E7079]">
+          <div className="mt-[10px] text-[12.5px] text-[var(--arca-ink-3)]">
             {debtStats.totalDebts} deudas ·{' '}
-            <span className="text-[#c0392b] font-semibold">
+            <span className="text-[var(--arca-accent-neg-fg)] font-semibold">
               {debtStats.overdueCount} vencidas
             </span>
           </div>
         </div>
 
         {/* 2. Total con intereses */}
-        <div className="px-[26px] py-[22px] border-r border-[#ECEAE3]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+        <div className="px-[26px] py-[22px] border-r border-[var(--arca-border)]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             TOTAL CON INTERESES
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalDebt)}
           </div>
-          <div className="mt-[10px] text-[12.5px] text-[#6E7079]">
+          <div className="mt-[10px] text-[12.5px] text-[var(--arca-ink-3)]">
             +{' '}
             {formatARS(
               debtStats.totalCompensatoryInterest +
@@ -407,36 +416,38 @@ export function DeudasTab({
         </div>
 
         {/* 3. Int. compensatorio */}
-        <div className="px-[26px] py-[22px] border-r border-[#ECEAE3]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+        <div className="px-[26px] py-[22px] border-r border-[var(--arca-border)]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             INT. COMPENSATORIO
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalCompensatoryInterest)}
           </div>
         </div>
 
         {/* 4. Int. punitorio */}
         <div className="px-[26px] py-[22px]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             INT. PUNITORIO
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalPunitiveInterest)}
           </div>
         </div>
       </div>
 
       {/* ── Status / toolbar ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-t border-b border-[#ECEAE3]">
+      <div className="flex items-center justify-between px-6 py-4 border-t border-b border-[var(--arca-border)]">
         <div className="flex items-center gap-2">
-          <p className="text-[12.5px] text-[#6E7079]">
+          <p className="text-[12.5px] text-[var(--arca-ink-3)]">
             Últ. actualización{' '}
             {lastDeudaJob?.createdAt ? (
               <span
                 className={cn(
                   'font-bold',
-                  lastDeudaJob.success ? 'text-[#2f7d55]' : 'text-[#c0392b]'
+                  lastDeudaJob.success
+                    ? 'text-[var(--arca-accent-pos-fg)]'
+                    : 'text-[var(--arca-accent-neg-fg)]'
                 )}
               >
                 {formatLastUpdateAt(lastDeudaJob.createdAt)}
@@ -454,11 +465,11 @@ export function DeudasTab({
                   friendlyFailedReason(lastDeudaJob.failedReason) ?? undefined
                 }
               >
-                <AlertTriangle className="h-4 w-4 text-[#c0392b] cursor-help" />
-                <span className="text-[12px] text-[#c0392b] max-w-[280px] truncate hidden sm:block">
+                <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-neg-fg)] cursor-help" />
+                <span className="text-[12px] text-[var(--arca-accent-neg-fg)] max-w-[280px] truncate hidden sm:block">
                   {friendlyFailedReason(lastDeudaJob.failedReason)}
                 </span>
-                <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
+                <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[var(--arca-ink)] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
                   {friendlyFailedReason(lastDeudaJob.failedReason)}
                 </span>
               </span>
@@ -466,12 +477,12 @@ export function DeudasTab({
           {lastDeudaJob &&
             !lastDeudaJob.success &&
             !lastDeudaJob.failedReason && (
-              <Info className="h-4 w-4 text-[#c0392b]" />
+              <Info className="h-4 w-4 text-[var(--arca-accent-neg-fg)]" />
             )}
         </div>
 
         <button
-          className="inline-flex items-center gap-2 bg-[#12131A] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-black transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-lg px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
           disabled={!!scrapingSection}
           onClick={handleUpdateDeudas}
         >
@@ -487,8 +498,8 @@ export function DeudasTab({
       </div>
 
       {/* ── Filter row ── */}
-      <div className="flex items-center gap-3 px-6 py-[14px] bg-[#FBFAF6] border-b border-[#ECEAE3]">
-        <div className="flex items-center gap-1.5 text-[13.5px] text-[#6E7079] shrink-0">
+      <div className="flex items-center gap-3 px-6 py-[14px] bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
+        <div className="flex items-center gap-1.5 text-[13.5px] text-[var(--arca-ink-3)] shrink-0">
           <ListFilter className="h-3.5 w-3.5" />
           Filtrar
         </div>
@@ -498,13 +509,13 @@ export function DeudasTab({
           value={filterImpuesto || '__all__'}
           onValueChange={(v) => setFilterImpuesto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
-              <span className="text-[#9B9CA3]">Impuesto</span>
-              <span className="font-bold text-[#12131A] truncate">
+              <span className="text-[var(--arca-ink-4)]">Impuesto</span>
+              <span className="font-bold text-[var(--arca-ink)] truncate">
                 {filterImpuesto || 'Todos'}
               </span>
-              <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 stroke-[var(--arca-ink-4)] shrink-0" />
             </div>
           </SelectTrigger>
           <SelectContent className="max-h-[260px]">
@@ -522,13 +533,13 @@ export function DeudasTab({
           value={filterConcepto || '__all__'}
           onValueChange={(v) => setFilterConcepto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
-              <span className="text-[#9B9CA3]">Concepto</span>
-              <span className="font-bold text-[#12131A] truncate">
+              <span className="text-[var(--arca-ink-4)]">Concepto</span>
+              <span className="font-bold text-[var(--arca-ink)] truncate">
                 {filterConcepto || 'Todos'}
               </span>
-              <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 stroke-[var(--arca-ink-4)] shrink-0" />
             </div>
           </SelectTrigger>
           <SelectContent className="max-h-[260px]">
@@ -543,19 +554,19 @@ export function DeudasTab({
       </div>
 
       {/* ── Table heading ── */}
-      <div className="px-6 py-3 border-b border-[#ECEAE3] text-[13px] text-[#6E7079]">
+      <div className="px-6 py-3 border-b border-[var(--arca-border)] text-[13px] text-[var(--arca-ink-3)]">
         Deudas del cliente ·{' '}
-        <span className="font-semibold text-[#12131A]">
+        <span className="font-semibold text-[var(--arca-ink)]">
           {filteredDebts.length} mostradas
         </span>{' '}
         · {debts.length} totales
       </div>
 
       {/* ── Table ── */}
-      <div className="border-t border-[#ECEAE3]">
-        {/* Navy header */}
+      <div className="border-t border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        {/* Header claro con micro-label */}
         <div
-          className="grid items-center px-6 h-12 bg-[#0B1730] text-[#E7EAF2] text-[12px] font-semibold"
+          className="grid items-center px-6 h-12 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[12px] font-semibold"
           style={{ gridTemplateColumns: GRID_COLS }}
         >
           <ColHeader label="IMPUESTO" field="tax" />
@@ -572,12 +583,12 @@ export function DeudasTab({
 
         {/* Data rows */}
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 h-28 text-[13.5px] text-[#9B9CA3]">
+          <div className="flex items-center justify-center gap-2 h-28 text-[13.5px] text-[var(--arca-ink-4)]">
             <Loader2 className="h-4 w-4 animate-spin" />
             Cargando deudas…
           </div>
         ) : paginated.length === 0 ? (
-          <div className="flex items-center justify-center h-28 text-[13.5px] text-[#9B9CA3]">
+          <div className="flex items-center justify-center h-28 text-[13.5px] text-[var(--arca-ink-4)]">
             {debts.length === 0
               ? 'No hay deudas registradas para este cliente.'
               : 'No hay deudas que coincidan con los filtros aplicados.'}
@@ -592,38 +603,40 @@ export function DeudasTab({
               <div
                 key={debt.id}
                 className={cn(
-                  'grid items-center px-6 py-[13px] border-b border-[#ECEAE3] transition-colors duration-[120ms]',
-                  isOverdue ? 'bg-[#fdf5f4]' : 'hover:bg-[#FBFAF6]'
+                  'grid items-center px-6 py-[13px] border-b border-[var(--arca-border)] transition-colors duration-[120ms]',
+                  isOverdue
+                    ? 'bg-[#fdf5f4]'
+                    : 'hover:bg-[var(--arca-surface-2)]'
                 )}
                 style={{ gridTemplateColumns: GRID_COLS }}
               >
                 {/* IMPUESTO */}
-                <div className="text-[13.5px] font-semibold text-[#12131A] truncate pr-2">
+                <div className="text-[13.5px] font-semibold text-[var(--arca-ink)] truncate pr-2">
                   {debt.impuesto || '—'}
                 </div>
 
                 {/* CONCEPTO */}
-                <div className="text-[13.5px] text-[#3E404A] truncate pr-2">
+                <div className="text-[13.5px] text-[var(--arca-ink-2)] truncate pr-2">
                   {debt.concepto || '—'}
                 </div>
 
                 {/* PERÍODO */}
-                <div className="text-[13px] text-[#3E404A] tabular-nums">
+                <div className="text-[13px] text-[var(--arca-ink-2)] tabular-nums">
                   {periodoLegible(debt.periodo)}
                 </div>
 
                 {/* VENCIMIENTO */}
-                <div className="text-[13px] text-[#3E404A] tabular-nums">
+                <div className="text-[13px] text-[var(--arca-ink-2)] tabular-nums">
                   {debt.venceAt ? formatDate(debt.venceAt) : '—'}
                 </div>
 
                 {/* ACTUALIZ. */}
-                <div className="text-[13px] text-[#9B9CA3] tabular-nums">
+                <div className="text-[13px] text-[var(--arca-ink-4)] tabular-nums">
                   {debt.detectadaAt ? formatDate(debt.detectadaAt) : '—'}
                 </div>
 
                 {/* SALDO */}
-                <div className="text-right text-[13.5px] font-bold text-[#12131A] tabular-nums">
+                <div className="text-right text-[13.5px] font-bold text-[var(--arca-ink)] tabular-nums">
                   {formatARS(debt.saldo)}
                 </div>
 
@@ -631,7 +644,7 @@ export function DeudasTab({
                 <div
                   className={cn(
                     'text-right text-[13px] tabular-nums',
-                    compInt === 0 ? 'text-[#B4B3AC]' : 'text-[#12131A]'
+                    compInt === 0 ? 'text-[#B4B3AC]' : 'text-[var(--arca-ink)]'
                   )}
                 >
                   {formatARS(compInt)}
@@ -641,7 +654,7 @@ export function DeudasTab({
                 <div
                   className={cn(
                     'text-right text-[13px] tabular-nums',
-                    punitInt === 0 ? 'text-[#B4B3AC]' : 'text-[#12131A]'
+                    punitInt === 0 ? 'text-[#B4B3AC]' : 'text-[var(--arca-ink)]'
                   )}
                 >
                   {formatARS(punitInt)}
@@ -681,8 +694,8 @@ export function DeudasTab({
                     className={cn(
                       'text-[11.5px] font-semibold text-left underline underline-offset-2 transition-colors',
                       debt.intimada
-                        ? 'text-[#c0392b] hover:text-[#a93226]'
-                        : 'text-[#9B9CA3] hover:text-[#6E7079]'
+                        ? 'text-[var(--arca-accent-neg-fg)] hover:text-[#a93226]'
+                        : 'text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-3)]'
                     )}
                     onClick={() =>
                       updateMutation.mutate({
@@ -703,11 +716,11 @@ export function DeudasTab({
 
       {/* ── Pagination footer ── */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-[6px] px-5 py-[22px] bg-[#FBFAF6]">
+        <div className="flex items-center justify-center gap-[6px] px-5 py-[22px] bg-[var(--arca-surface-2)]">
           {/* Anterior */}
           <button
             className={cn(
-              'inline-flex items-center gap-1 text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg transition-colors',
+              'inline-flex items-center gap-1 text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg transition-colors',
               currentPage === 1
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'
@@ -722,13 +735,15 @@ export function DeudasTab({
           {startPage > 1 && (
             <>
               <button
-                className="text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
+                className="text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
                 onClick={() => setCurrentPage(1)}
               >
                 1
               </button>
               {startPage > 2 && (
-                <span className="text-[13.5px] text-[#9B9CA3] px-2">…</span>
+                <span className="text-[13.5px] text-[var(--arca-ink-4)] px-2">
+                  …
+                </span>
               )}
             </>
           )}
@@ -739,8 +754,8 @@ export function DeudasTab({
               className={cn(
                 'text-[13.5px] px-[13px] py-[7px] rounded-lg transition-colors cursor-pointer',
                 currentPage === page
-                  ? 'font-semibold text-[#12131A] bg-white border border-[#DFDCD3]'
-                  : 'text-[#6E7079] hover:bg-white'
+                  ? 'font-semibold text-[var(--arca-ink)] bg-white border border-[var(--arca-border-strong)]'
+                  : 'text-[var(--arca-ink-3)] hover:bg-white'
               )}
               onClick={() => setCurrentPage(page)}
             >
@@ -751,10 +766,12 @@ export function DeudasTab({
           {endPage < totalPages && (
             <>
               {endPage < totalPages - 1 && (
-                <span className="text-[13.5px] text-[#9B9CA3] px-2">…</span>
+                <span className="text-[13.5px] text-[var(--arca-ink-4)] px-2">
+                  …
+                </span>
               )}
               <button
-                className="text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
+                className="text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
                 onClick={() => setCurrentPage(totalPages)}
               >
                 {totalPages}
@@ -765,7 +782,7 @@ export function DeudasTab({
           {/* Siguiente */}
           <button
             className={cn(
-              'inline-flex items-center gap-1 text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg transition-colors',
+              'inline-flex items-center gap-1 text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg transition-colors',
               currentPage === totalPages
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'

@@ -8,7 +8,7 @@
  * del trabajo.
  */
 
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -20,12 +20,20 @@ import {
   Eye,
   FileText,
   Image as ImageIcon,
+  Landmark,
   Mail,
+  MailOpen,
   MoreHorizontal,
   Plus,
   Users,
   Zap,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,8 +45,7 @@ import {
   listTareasDeNotificacion,
   listOrgMembersForAssignment,
   assignNotification,
-  resolveNotification,
-  unresolveNotification,
+  markNotificationOpened,
   markNotificationUnread,
 } from '@/actions/notification';
 import {
@@ -47,7 +54,7 @@ import {
   asuntoYPreview,
   fechaHoraLarga,
   iniciales,
-  categoriaLabel,
+  tipoNotificacion,
 } from './utils';
 
 interface Props {
@@ -58,6 +65,51 @@ interface Props {
   onSiguiente: () => void;
   hayAnterior: boolean;
   haySiguiente: boolean;
+}
+
+/**
+ * Acción de la barra: sólo ícono, con su nombre en un tooltip.
+ *
+ * Es una barra de aplicación —lo que se le hace a la notificación— y va arriba
+ * de todo, antes del asunto. Sin texto no se puede adivinar qué hace cada uno,
+ * así que el tooltip no es decorativo: es el nombre de la acción, y va también
+ * en `aria-label` para quien navega con lector.
+ */
+function AccionIcono({
+  etiqueta,
+  onClick,
+  disabled,
+  destacada,
+  children,
+}: {
+  etiqueta: string;
+  onClick?: () => void;
+  disabled?: boolean;
+  /** La acción principal, en tinta plena. */
+  destacada?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          aria-label={etiqueta}
+          className={cn(
+            'grid size-7 place-items-center rounded-[var(--arca-r-md)] transition-colors duration-[120ms] disabled:opacity-40',
+            destacada
+              ? 'bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)]'
+              : 'text-[var(--arca-ink-2)] hover:bg-[var(--arca-border)]'
+          )}
+        >
+          {children}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{etiqueta}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 const BOTON =
@@ -137,7 +189,7 @@ function Adjunto({
           <button
             type="button"
             onClick={() => setAbierto((v) => !v)}
-            className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+            className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
           >
             {abierto ? (
               <>
@@ -155,7 +207,7 @@ function Adjunto({
 
         <a
           href={`${url}?download=1`}
-          className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+          className="inline-flex shrink-0 items-center gap-1 text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
         >
           <Download className="size-3" />
           Descargar
@@ -180,7 +232,7 @@ function Adjunto({
             href={url}
             target="_blank"
             rel="noreferrer"
-            className="block border-t border-[var(--arca-border)] px-3 py-2 text-[11.5px] text-[var(--arca-navy-700)] hover:underline"
+            className="block border-t border-[var(--arca-border)] px-3 py-2 text-[11.5px] text-[var(--arca-accent)] hover:underline"
           >
             Abrir en una pestaña nueva
           </a>
@@ -200,6 +252,15 @@ export function PanelLectura({
   haySiguiente,
 }: Props) {
   const queryClient = useQueryClient();
+
+  // Un asunto de ARCA puede ocupar varios renglones y empujar todo hacia
+  // abajo: se recorta a dos líneas con opción de abrirlo. El botón aparece
+  // sólo si de verdad se corta —se mide el desborde en vez de suponer un
+  // largo, porque depende del ancho del panel—, y estos hooks van acá arriba
+  // porque más abajo hay returns tempranos.
+  const asuntoRef = useRef<HTMLHeadingElement>(null);
+  const [asuntoExpandido, setAsuntoExpandido] = useState(false);
+  const [asuntoLargo, setAsuntoLargo] = useState(false);
 
   const { data: n, isLoading } = useQuery({
     queryKey: ['notificacion', notificacionId],
@@ -231,14 +292,40 @@ export function PanelLectura({
     void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
   };
 
-  const resolver = useMutation({
-    mutationFn: (resuelta: boolean) =>
-      resuelta
-        ? resolveNotification({ data: { id: notificacionId! } })
-        : unresolveNotification({ data: { id: notificacionId! } }),
-    onSuccess: refrescar,
+  const marcarLeida = useMutation<{ leida: boolean }, Error, boolean>({
+    mutationFn: (leida: boolean) =>
+      leida
+        ? markNotificationOpened({ data: { id: notificacionId! } })
+        : markNotificationUnread({ data: { id: notificacionId! } }),
+    onSuccess: () => {
+      refrescar();
+      void queryClient.invalidateQueries({ queryKey: ['inbox-resumen'] });
+      void queryClient.invalidateQueries({
+        queryKey: ['pendingNotificationsCount'],
+      });
+    },
     onError: () => toast.error('No se pudo cambiar el estado'),
   });
+
+  /**
+   * Se marca leída tras 1,5 s de tenerla abierta: pasar por encima navegando
+   * con el teclado no debería contar como leída.
+   *
+   * Vive acá y no en la bandeja porque la bandeja sólo conoce lo que entra en
+   * la página visible de la lista: abrir por link directo, o con un filtro que
+   * deja la notificación afuera, no marcaba nada.
+   *
+   * Depende sólo del id. Con `leida` en las dependencias el efecto se
+   * re-disparaba con el propio cambio del usuario y deshacía su "marcar como
+   * no leída" 1,5 s después.
+   */
+  useEffect(() => {
+    if (!n || n.leida) return;
+    const t = setTimeout(() => marcarLeida.mutate(true), 1500);
+    return () => clearTimeout(t);
+    // `n.leida` a propósito fuera: ver arriba.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [n?.id]);
 
   const asignar = useMutation({
     mutationFn: (userId: string | null) =>
@@ -247,11 +334,17 @@ export function PanelLectura({
     onError: () => toast.error('No se pudo asignar'),
   });
 
-  const noLeida = useMutation({
-    mutationFn: () => markNotificationUnread({ data: { id: notificacionId! } }),
-    onSuccess: refrescar,
-    onError: () => toast.error('No se pudo marcar como no leída'),
-  });
+  useLayoutEffect(() => {
+    // Se mide sólo con el recorte puesto: expandido no desborda, y volver a
+    // medir ahí apagaba el botón y dejaba el asunto abierto sin forma de
+    // cerrarlo.
+    const el = asuntoRef.current;
+    if (!el || asuntoExpandido) return;
+    setAsuntoLargo(el.scrollHeight > el.clientHeight + 1);
+  }, [n?.mensaje, asuntoExpandido]);
+
+  // Cambiar de notificación arranca de nuevo con el asunto recortado.
+  useLayoutEffect(() => setAsuntoExpandido(false), [notificacionId]);
 
   if (!notificacionId) {
     return (
@@ -279,117 +372,66 @@ export function PanelLectura({
   }
 
   const { asunto, preview } = asuntoYPreview(n.mensaje, n.aiResumen);
-
   // Muchas notificaciones de AFIP son una sola línea: ahí el asunto ES el
   // mensaje entero y la card del cuerpo repetiría el título. En ese caso sólo
   // queda el resumen de la IA, si lo hay.
   const cuerpo = n.mensaje.split('\n').slice(1).join('\n').trim();
   const hayCuerpo = cuerpo !== '';
-  const resuelta = n.resueltaAt !== null;
+  const leida = n.leida;
   const empresa = n.clienteRazonSocial ?? n.credencialNombre ?? 'Sin empresa';
   const asignado = miembros.find((m) => m.userId === n.asignadaA);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--arca-bg)]">
-      {/* Encabezado */}
-      <div className="shrink-0 border-b border-[var(--arca-border)] px-7 pt-5 pb-4">
-        <div className="flex items-start gap-3">
-          <span
-            className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--arca-chart-1)] text-[12px] font-semibold text-white"
-            aria-hidden="true"
-          >
-            {iniciales(empresa)}
-          </span>
+      {/* Barra de la aplicación: lo que se le hace a la notificación. Va
+          arriba de todo —antes del asunto— y sólo con íconos, con el nombre de
+          cada acción en su tooltip. */}
+      <div className="flex shrink-0 items-center gap-0.5 border-b border-[var(--arca-border)] px-6 py-1">
+        <AccionIcono etiqueta="Crear tarea" onClick={onCrearTarea} destacada>
+          <Plus className="size-4" />
+        </AccionIcono>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-                {empresa}
-              </span>
-              {n.clienteCuit && (
-                <span className="text-[11px] text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)]">
-                  {n.clienteCuit}
-                </span>
-              )}
-              <span
-                className={`rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium ${
-                  resuelta
-                    ? 'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
-                    : SEVERIDAD_PILL[n.severidad]
-                }`}
-              >
-                {resuelta ? 'Resuelta' : SEVERIDAD_LABEL[n.severidad]}
-              </span>
-            </div>
-
-            <h2 className="mt-1 text-[21px] leading-[1.25] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] [font-family:var(--ff-display)]">
-              {asunto}
-            </h2>
-
-            <p className="mt-1 text-[11.5px] text-[var(--arca-ink-3)]">
-              {n.categoria ? categoriaLabel(n.categoria) : 'AFIP'} · Domicilio
-              fiscal electrónico · login{' '}
-              <span className="[font-family:var(--ff-mono)]">
-                {n.credencialNombre}
-              </span>{' '}
-              ·{' '}
-              <span className="tabular-nums [font-family:var(--ff-mono)]">
-                {fechaHoraLarga(n.publicadaAt ?? n.createdAt)}
-              </span>
-            </p>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={onAnterior}
-              disabled={!hayAnterior}
-              aria-label="Notificación anterior"
-              title="Anterior (K)"
-              className="grid size-[30px] place-items-center rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-40"
-            >
-              <ChevronUp className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={onSiguiente}
-              disabled={!haySiguiente}
-              aria-label="Notificación siguiente"
-              title="Siguiente (J)"
-              className="grid size-[30px] place-items-center rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] text-[var(--arca-ink-3)] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-40"
-            >
-              <ChevronDown className="size-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Acciones */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--arca-border)] px-7 py-3">
-        <button
-          type="button"
-          onClick={onCrearTarea}
-          className="inline-flex items-center gap-1.5 rounded-[var(--arca-r-md)] bg-[var(--arca-ink)] px-3 py-1.5 text-[12.5px] font-medium text-white transition-colors duration-[120ms] hover:bg-black"
+        <AccionIcono
+          etiqueta={leida ? 'Marcar como no leída' : 'Marcar como leída'}
+          onClick={() => marcarLeida.mutate(!leida)}
+          disabled={marcarLeida.isPending}
         >
-          <Plus className="size-3.5" />
-          Crear tarea
-        </button>
-
-        <button
-          type="button"
-          onClick={() => resolver.mutate(!resuelta)}
-          disabled={resolver.isPending}
-          className={BOTON}
-        >
-          <Check className="size-3.5" />
-          {resuelta ? 'Reabrir' : 'Marcar resuelta'}
-        </button>
+          {leida ? (
+            <Mail className="size-4" />
+          ) : (
+            <MailOpen className="size-4" />
+          )}
+        </AccionIcono>
 
         <DropdownMenu>
-          <DropdownMenuTrigger className={BOTON}>
-            <Users className="size-3.5" />
-            {asignado ? asignado.name : 'Asignar'}
-          </DropdownMenuTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger
+                aria-label={
+                  asignado
+                    ? `Asignada a ${asignado.name}`
+                    : 'Asignar responsable'
+                }
+                className="grid size-7 place-items-center rounded-[var(--arca-r-md)] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-border)]"
+              >
+                {/* Con responsable, sus iniciales en lugar del ícono: se ve de
+                    un vistazo quién la tiene. */}
+                {asignado ? (
+                  <span
+                    className="grid size-[22px] place-items-center rounded-full text-[9px] font-semibold text-white"
+                    style={{ background: 'var(--arca-chart-1)' }}
+                  >
+                    {iniciales(asignado.name)}
+                  </span>
+                ) : (
+                  <Users className="size-4" />
+                )}
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>
+              {asignado ? `Asignada a ${asignado.name}` : 'Asignar responsable'}
+            </TooltipContent>
+          </Tooltip>
           <DropdownMenuContent align="start" className="min-w-[190px]">
             <DropdownMenuItem
               className="text-[12.5px]"
@@ -412,17 +454,24 @@ export function PanelLectura({
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <span
+          className="mx-1 h-5 w-px bg-[var(--arca-border)]"
+          aria-hidden="true"
+        />
+
         <DropdownMenu>
-          <DropdownMenuTrigger aria-label="Más acciones" className={BOTON}>
-            <MoreHorizontal className="size-3.5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-[12.5px]"
-              onSelect={() => noLeida.mutate()}
-            >
-              Marcar como no leída
-            </DropdownMenuItem>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger
+                aria-label="Más acciones"
+                className="grid size-8 place-items-center rounded-[var(--arca-r-md)] text-[var(--arca-ink-2)] transition-colors duration-[120ms] hover:bg-[var(--arca-border)]"
+              >
+                <MoreHorizontal className="size-4" />
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>Más acciones</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="start">
             <DropdownMenuItem
               className="text-[12.5px]"
               onSelect={() => {
@@ -434,40 +483,164 @@ export function PanelLectura({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Navegación a la derecha, como el "1 de 933" de Gmail. */}
+        <div className="ml-auto flex items-center gap-0.5">
+          <AccionIcono
+            etiqueta="Anterior (K)"
+            onClick={onAnterior}
+            disabled={!hayAnterior}
+          >
+            <ChevronUp className="size-4" />
+          </AccionIcono>
+          <AccionIcono
+            etiqueta="Siguiente (J)"
+            onClick={onSiguiente}
+            disabled={!haySiguiente}
+          >
+            <ChevronDown className="size-4" />
+          </AccionIcono>
+        </div>
       </div>
 
-      {/* Cuerpo */}
-      <div className="flex flex-col gap-3.5 px-7 py-5">
-        {/* Tareas ya creadas desde esta notificación */}
-        {tareas.map((t) => (
-          <div
-            key={t.id}
-            className="flex items-center gap-2 rounded-[var(--arca-r-md)] bg-[var(--arca-accent-pos-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-pos-fg)]"
+      {/* Encabezado */}
+      <div className="shrink-0 px-6 pt-3 pb-2">
+        <div className="flex items-start gap-3">
+          <span
+            className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-[var(--arca-chart-1)] text-[12px] font-semibold text-white"
+            aria-hidden="true"
           >
-            {t.fuente !== 'manual' && (
-              <span className="inline-flex items-center gap-1 rounded-[var(--arca-r-pill)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 py-[2px] text-[10.5px] text-[var(--arca-ink-2)]">
-                <Zap className="size-3" />
-                Automática · regla «{t.fuente}»
+            {iniciales(empresa)}
+          </span>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                {empresa}
               </span>
-            )}
-            <span className="min-w-0 flex-1 truncate">
-              Tarea creada · {t.titulo}
-            </span>
-            <button
-              type="button"
-              onClick={() => onIrATarea(t.id)}
-              className="shrink-0 font-medium text-[var(--arca-navy-700)] hover:underline"
+              {n.clienteCuit && (
+                <span className="text-[11px] text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)]">
+                  {n.clienteCuit}
+                </span>
+              )}
+              <span
+                className={`inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium ${SEVERIDAD_PILL[n.severidad]}`}
+              >
+                {SEVERIDAD_LABEL[n.severidad]}
+              </span>
+            </div>
+
+            <h2
+              ref={asuntoRef}
+              className={`mt-0.5 text-[19px] leading-[1.22] font-semibold tracking-[-0.02em] text-[var(--arca-ink)] [font-family:var(--ff-display)] ${
+                asuntoExpandido ? '' : 'line-clamp-2'
+              }`}
+              title={asunto}
             >
-              Ver tarea
-            </button>
+              {asunto}
+            </h2>
+            {asuntoLargo && (
+              <button
+                type="button"
+                onClick={() => setAsuntoExpandido((v) => !v)}
+                className="mt-0.5 text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
+              >
+                {asuntoExpandido ? 'Ver menos' : 'Ver asunto completo'}
+              </button>
+            )}
+
+            <p className="mt-1 text-[11.5px] text-[var(--arca-ink-3)]">
+              <span className="font-semibold text-[var(--arca-ink-2)]">
+                {n.categoria ? tipoNotificacion(n.categoria) : 'Notificación'}
+              </span>{' '}
+              · Domicilio fiscal electrónico · login{' '}
+              <span className="[font-family:var(--ff-mono)]">
+                {n.credencialNombre}
+              </span>{' '}
+              ·{' '}
+              <span className="tabular-nums [font-family:var(--ff-mono)]">
+                {fechaHoraLarga(n.publicadaAt ?? n.createdAt)}
+              </span>
+            </p>
           </div>
-        ))}
+        </div>
+      </div>
+
+      {/* Lo que puso la plataforma: tareas creadas y la fecha que detectó el
+          scrapeo. Queda sobre el fondo de la pantalla, sin tarjeta. */}
+      {(tareas.length > 0 || n.venceAt) && (
+        <div className="flex shrink-0 flex-col gap-2 px-6 pt-2.5">
+          {tareas.map((t) => (
+            <div
+              key={t.id}
+              className="flex items-center gap-2 rounded-[var(--arca-r-md)] bg-[var(--arca-accent-pos-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-pos-fg)]"
+            >
+              {t.fuente !== 'manual' && (
+                <span className="inline-flex items-center gap-1 rounded-[var(--arca-r-pill)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 py-[2px] text-[10.5px] text-[var(--arca-ink-2)]">
+                  <Zap className="size-3" />
+                  Automática · regla «{t.fuente}»
+                </span>
+              )}
+              <span className="min-w-0 flex-1 truncate">
+                Tarea creada · {t.titulo}
+              </span>
+              <button
+                type="button"
+                onClick={() => onIrATarea(t.id)}
+                className="shrink-0 font-medium text-[var(--arca-accent)] hover:underline"
+              >
+                Ver tarea
+              </button>
+            </div>
+          ))}
+
+          {/* La fecha la completa el scrapeo cuando la encuentra en el cuerpo.
+              Con una tarea ya creada la tira sobra: ofrecía crear una segunda
+              para el mismo vencimiento. */}
+          {n.venceAt && tareas.length === 0 && (
+            <div className="flex items-center gap-3 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-4 py-2.5">
+              <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                <Calendar className="size-3.5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12.5px] font-semibold text-[var(--arca-ink)]">
+                  Vencimiento detectado:{' '}
+                  <span className="tabular-nums">
+                    {fechaHoraLarga(n.venceAt).split(',')[0]}
+                  </span>
+                </p>
+                <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+                  Se usa como fecha de la tarea si la creás desde acá.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onCrearTarea}
+                className={`${BOTON} shrink-0`}
+              >
+                Crear tarea con esta fecha
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lo que llegó de ARCA: una tarjeta con su propia cabecera, como un
+          mensaje. Es blanca contra el beige de la pantalla, así se ve de una
+          dónde termina lo que hace la plataforma y empieza lo recibido. */}
+      <div className="mx-6 mt-2.5 mb-5 shrink-0 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-sm)]">
+        <div className="flex items-center gap-2 bg-[var(--arca-surface-2)] px-5 py-1.5">
+          <Landmark className="size-3.5 text-[var(--arca-ink-4)]" />
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-3)]">
+            Recibido de ARCA
+          </span>
+        </div>
 
         {(hayCuerpo || n.aiResumen) && (
-          <article className="max-w-[105ch] rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-6 py-[22px]">
+          <div className="px-5 py-3">
             {n.aiResumen && (
               <p
-                className={`text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
+                className={`max-w-[72ch] text-[12.5px] leading-[1.6] text-[var(--arca-ink-3)] ${
                   hayCuerpo
                     ? 'mb-3 border-b border-[var(--arca-border)] pb-3'
                     : ''
@@ -477,44 +650,15 @@ export function PanelLectura({
               </p>
             )}
             {hayCuerpo && (
-              <p className="text-[13px] leading-[1.65] whitespace-pre-wrap text-[var(--arca-ink-2)]">
+              <p className="max-w-[72ch] text-[13px] leading-[1.65] whitespace-pre-wrap text-[var(--arca-ink-2)]">
                 {cuerpo}
               </p>
             )}
-          </article>
-        )}
-
-        {/* Vencimiento detectado. `vence_at` lo completa el scrapeo cuando
-            encuentra una fecha en el cuerpo; si no hay, la tira no aparece. */}
-        {n.venceAt && (
-          <div className="flex max-w-[105ch] items-center gap-3 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
-            <span className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
-              <Calendar className="size-3.5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-[12.5px] font-semibold text-[var(--arca-ink)]">
-                Vencimiento detectado:{' '}
-                <span className="tabular-nums">
-                  {fechaHoraLarga(n.venceAt).split(',')[0]}
-                </span>
-              </p>
-              <p className="text-[11.5px] text-[var(--arca-ink-3)]">
-                Se usa como fecha de la tarea si la creás desde acá.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onCrearTarea}
-              className={`${BOTON} shrink-0`}
-            >
-              Crear tarea con esta fecha
-            </button>
           </div>
         )}
 
-        {/* Adjuntos */}
         {n.adjuntos.length > 0 && (
-          <div className="flex max-w-[105ch] flex-col">
+          <div className="flex flex-col border-t border-[var(--arca-border)] px-5 py-2.5">
             {n.adjuntos.map((a) => (
               <Adjunto
                 key={a.id}

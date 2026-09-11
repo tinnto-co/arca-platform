@@ -176,10 +176,10 @@ export function JobsErrorSummary({
                       {severity.label}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="text-right tabular-nums [font-family:var(--ff-mono)]">
                     {group.count}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className="text-right tabular-nums [font-family:var(--ff-mono)]">
                     {group.credenciales.length}
                   </TableCell>
                   <TableCell className="text-right">

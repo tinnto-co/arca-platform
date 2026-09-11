@@ -131,7 +131,7 @@ export function InformeAuditor({
             <button
               onClick={() => guardar.mutate()}
               disabled={!dirty || guardar.isPending || body.trim() === ''}
-              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white disabled:opacity-40 inline-flex items-center gap-1.5"
+              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white disabled:opacity-40 inline-flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" strokeWidth={2} />
               {guardar.isPending ? 'Guardando…' : 'Guardar'}
@@ -195,7 +195,7 @@ export function InformeAuditor({
       )}
 
       {faltantes.length > 0 && (
-        <div className="flex items-start gap-2 px-5 py-2.5 border-b border-[var(--arca-border)] bg-amber-50 text-[12px] text-amber-800">
+        <div className="flex items-start gap-2 px-5 py-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] text-[12px] text-[var(--arca-accent-warn-fg)]">
           <AlertTriangle className="w-4 h-4 mt-px shrink-0" strokeWidth={1.9} />
           <div>
             Quedaron variables sin completar:{' '}

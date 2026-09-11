@@ -77,10 +77,10 @@ export function TaskCard({ tarea, seleccionada, onAbrir }: TaskCardProps) {
       className={cn(
         'flex w-full flex-col gap-2 rounded-[var(--arca-r-md)] border p-[11px] text-left',
         'bg-[var(--arca-surface)] transition-colors duration-[120ms] ease-[ease]',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-navy-700)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--arca-accent)]',
         cerrada ? 'shadow-none' : 'shadow-[var(--arca-shadow-sm)]',
         seleccionada
-          ? 'border-[var(--arca-navy-700)] shadow-[var(--arca-shadow-md)]'
+          ? 'border-[var(--arca-accent)] shadow-[var(--arca-shadow-md)]'
           : 'border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)]'
       )}
     >
@@ -88,7 +88,7 @@ export function TaskCard({ tarea, seleccionada, onAbrir }: TaskCardProps) {
       <div className="flex flex-wrap items-center gap-1.5">
         <span
           className={cn(
-            'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium',
+            'inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium',
             TIPO_PILL[tarea.tipo] ?? TIPO_PILL.otro
           )}
         >
@@ -98,7 +98,7 @@ export function TaskCard({ tarea, seleccionada, onAbrir }: TaskCardProps) {
         {vence && !cerrada && (
           <span
             className={cn(
-              'rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium tabular-nums',
+              'inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium tabular-nums',
               TONO_PILL[vence.tono]
             )}
           >

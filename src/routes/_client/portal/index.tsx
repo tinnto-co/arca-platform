@@ -192,7 +192,7 @@ function PortalDashboard() {
           )}
           {datosAfipAt && (
             <>
-              {' · datos de AFIP al '}
+              {' · datos de ARCA al '}
               <span className="font-[family-name:var(--ff-mono)] tabular-nums">
                 {fechaCorta(datosAfipAt.slice(0, 10))}
               </span>
@@ -231,7 +231,7 @@ function PortalDashboard() {
                     <Pildora tono="neg">{deudasVencidas} vencidas</Pildora>
                   )}
                   <span className="text-xs text-[var(--arca-ink-3)]">
-                    saldo consolidado AFIP
+                    saldo consolidado ARCA
                   </span>
                 </>
               ) : (
@@ -259,7 +259,7 @@ function PortalDashboard() {
               }
               nota={
                 notificacionesSinLeer > 0
-                  ? 'notificaciones de AFIP'
+                  ? 'notificaciones de ARCA'
                   : 'leídas hasta hoy'
               }
             />
@@ -343,7 +343,7 @@ function PortalDashboard() {
           )}
         </section>
 
-        <section className="rounded-[14px] bg-[var(--arca-navy-900)] px-[22px] pt-5 pb-[18px] text-[var(--arca-bg)]">
+        <section className="rounded-[14px] bg-[var(--arca-sidebar)] px-[22px] pt-5 pb-[18px] text-[var(--arca-bg)]">
           <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[rgba(247,246,242,0.45)]">
             Tu contador
           </p>
@@ -351,7 +351,8 @@ function PortalDashboard() {
             <span
               className="size-[38px] shrink-0 rounded-full"
               style={{
-                background: 'linear-gradient(140deg, #1E3460, #C2A878)',
+                background:
+                  'linear-gradient(140deg, var(--arca-chart-1), var(--arca-chart-3))',
               }}
             />
             <div className="min-w-0">
@@ -374,13 +375,13 @@ function PortalDashboard() {
                   ? `mailto:${contador.email}?subject=${encodeURIComponent(`Consulta — ${cliente.razonSocial} (${cliente.cuit})`)}`
                   : '#'
               }
-              className="flex h-9 items-center justify-center rounded-[10px] bg-[var(--arca-bg)] text-[13px] font-semibold text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-white"
+              className="flex h-9 items-center justify-center rounded-lg bg-[var(--arca-bg)] text-[13px] font-semibold text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-white"
             >
               Enviar consulta
             </a>
             <Link
               to="/portal/solicitudes"
-              className="flex h-[34px] items-center justify-center rounded-[10px] border border-white/[0.14] text-[12.5px] font-medium text-[var(--arca-bg)] transition-colors duration-[120ms] hover:bg-white/[0.06]"
+              className="flex h-[34px] items-center justify-center rounded-lg border border-white/[0.14] text-[12.5px] font-medium text-[var(--arca-bg)] transition-colors duration-[120ms] hover:bg-white/[0.06]"
             >
               Ver lo que te pide el estudio
               {solicitudesAbiertas.length > 0 &&
@@ -421,7 +422,7 @@ function Pildora({
 }) {
   return (
     <span
-      className="rounded-[20px] px-[9px] py-0.5 text-[11px] font-medium"
+      className="rounded-md px-[9px] py-0.5 text-[11px] font-medium"
       style={{
         color: `var(--arca-accent-${tono}-fg)`,
         background: `var(--arca-accent-${tono}-bg)`,
@@ -482,7 +483,7 @@ function FilaDeuda({ deuda }: { deuda: DeudaFila }) {
           </span>
           {etiqueta && (
             <span
-              className="rounded-[20px] px-2 py-px text-[10.5px] font-medium"
+              className="rounded-md px-2 py-px text-[10.5px] font-medium"
               style={{
                 color: `var(--arca-accent-${etiqueta.tono}-fg)`,
                 background: `var(--arca-accent-${etiqueta.tono}-bg)`,
@@ -493,7 +494,7 @@ function FilaDeuda({ deuda }: { deuda: DeudaFila }) {
           )}
           {deuda.intimada && (
             <span
-              className="rounded-[20px] px-2 py-px text-[10.5px] font-medium"
+              className="rounded-md px-2 py-px text-[10.5px] font-medium"
               style={{
                 color: 'var(--arca-accent-info-fg)',
                 background: 'var(--arca-accent-info-bg)',
@@ -531,10 +532,10 @@ function FilaActividad({ item, ultima }: { item: Actividad; ultima: boolean }) {
       : item.tipo === 'comprobantes'
         ? {
             titulo: `Cargamos ${item.cantidad} comprobantes nuevos`,
-            sub: 'sincronizados con AFIP',
+            sub: 'sincronizados con ARCA',
           }
         : {
-            titulo: 'Te llegó una notificación de AFIP',
+            titulo: 'Te llegó una notificación de ARCA',
             sub: item.detalle ?? '',
           };
 
@@ -576,7 +577,7 @@ function Esqueleto() {
       <div className="mb-3.5 h-[340px] rounded-[14px] border border-[var(--arca-border)] bg-[var(--arca-surface)]" />
       <div className="grid gap-3.5 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
         <div className="h-[220px] rounded-[14px] border border-[var(--arca-border)] bg-[var(--arca-surface)]" />
-        <div className="h-[220px] rounded-[14px] bg-[var(--arca-navy-900)]" />
+        <div className="h-[220px] rounded-[14px] bg-[var(--arca-sidebar)]" />
       </div>
     </div>
   );
