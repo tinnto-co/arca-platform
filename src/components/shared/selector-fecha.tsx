@@ -45,6 +45,8 @@ export function SelectorFecha({
   max,
   className,
   id,
+  /** `sm` (32px) para barras de filtro; el default es 36px. */
+  size = 'default',
   'aria-label': ariaLabel,
 }: {
   /** `YYYY-MM-DD`, o vacío. */
@@ -57,6 +59,7 @@ export function SelectorFecha({
   max?: string;
   className?: string;
   id?: string;
+  size?: 'default' | 'sm';
   'aria-label'?: string;
 }) {
   const [abierto, setAbierto] = useState(false);
@@ -70,7 +73,8 @@ export function SelectorFecha({
           disabled={disabled}
           aria-label={ariaLabel ?? placeholder}
           className={cn(
-            'flex h-9 w-full items-center gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 text-[12.5px] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-50',
+            'flex w-full items-center gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 text-[12.5px] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-50',
+            size === 'sm' ? 'h-8' : 'h-9',
             // Sitio para la X, así el texto no queda debajo.
             limpiable && fecha ? 'pr-8' : '',
             fecha ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-4)]'

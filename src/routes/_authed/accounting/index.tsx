@@ -40,7 +40,6 @@ import {
   History,
   Copy,
   Ban,
-  ChevronLeft,
   Download,
   FileSpreadsheet,
   Workflow,
@@ -113,6 +112,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Paginador } from '@/components/shared/paginador';
+import { chipFiltro, LimpiarFiltros } from '@/components/shared/filtros';
 import {
   Popover,
   PopoverContent,
@@ -2848,9 +2849,13 @@ function EditableEntryTable({
         <tr className="font-semibold border-t border-[var(--arca-ink-3)]">
           <td className="py-1.5 text-right">
             {balanced ? (
-              <span className="text-[var(--arca-accent-pos-fg)]">✓ Balanceado</span>
+              <span className="text-[var(--arca-accent-pos-fg)]">
+                ✓ Balanceado
+              </span>
             ) : (
-              <span className="text-[var(--arca-accent-neg-fg)]">Descuadrado</span>
+              <span className="text-[var(--arca-accent-neg-fg)]">
+                Descuadrado
+              </span>
             )}
           </td>
           <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
@@ -3877,6 +3882,14 @@ function Asientos({
       .catch((e: Error) => toast.error(e.message));
   };
 
+  /** Cuántos filtros están puestos: si hay alguno, se ofrece limpiarlos. */
+  const filtrosPuestos =
+    (from ? 1 : 0) +
+    (to ? 1 : 0) +
+    (accountId ? 1 : 0) +
+    (origin ? 1 : 0) +
+    (includeVoided ? 1 : 0);
+
   function openEditorFromDetail(
     action: 'edit' | 'duplicate',
     d: EditorInitial
@@ -3886,177 +3899,190 @@ function Asientos({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Desde
-            </label>
-            <SelectorFecha
-              value={from}
-              onChange={(v) => {
-                setFrom(v);
-                setPage(1);
-              }}
-              className="w-32"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Hasta
-            </label>
-            <SelectorFecha
-              value={to}
-              onChange={(v) => {
-                setTo(v);
-                setPage(1);
-              }}
-              className="w-32"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Cuenta
-            </label>
-            <Select
-              value={accountId === '' ? 'all' : accountId}
-              onValueChange={(v) => {
-                setAccountId(v === 'all' ? '' : v);
-                setPage(1);
-              }}
-            >
-              <SelectTrigger size="sm" className="w-40 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las cuentas</SelectItem>
-                {postable.map((a) => (
-                  <SelectItem key={a.id} value={a.id}>
-                    {a.code} · {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Origen
-            </label>
-            <Select
-              value={origin === '' ? 'all' : origin}
-              onValueChange={(v) => {
-                setOrigin(v === 'all' ? '' : (v as JournalOrigin));
-                setPage(1);
-              }}
-            >
-              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none h-8">
-            <input
-              type="checkbox"
-              checked={includeVoided}
-              onChange={(e) => {
-                setIncludeVoided(e.target.checked);
-                setPage(1);
-              }}
-              className="accent-[var(--arca-accent)]"
-            />
-            Incluir anulados
-          </label>
+      {/* Los filtros van afuera de la card de la tabla, en una sola línea de
+        32px: antes vivían adentro, cada control con su micro-rótulo encima y
+        tres alturas distintas conviviendo. */}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        <SelectorFecha
+          size="sm"
+          value={from}
+          onChange={(v) => {
+            setFrom(v);
+            setPage(1);
+          }}
+          placeholder="Desde"
+          aria-label="Asientos desde"
+          className="w-[132px]"
+        />
+        <SelectorFecha
+          size="sm"
+          value={to}
+          onChange={(v) => {
+            setTo(v);
+            setPage(1);
+          }}
+          placeholder="Hasta"
+          aria-label="Asientos hasta"
+          className="w-[132px]"
+        />
 
-          {/* El orden es un filtro más, así que va con los filtros y con
-              rótulo: suelto en la fila de acciones y sin nombre, «N° (desc)»
-              no decía de qué era. */}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Orden
-            </label>
-            <Select
-              value={`${sortBy}:${sortDir}`}
-              onValueChange={(v) => {
-                const [b, d2] = v.split(':');
-                setSortBy(b as 'number' | 'date');
-                setSortDir(d2 as 'asc' | 'desc');
-              }}
-            >
-              <SelectTrigger size="sm" className="w-32 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="number:desc">N° desc</SelectItem>
-                <SelectItem value="number:asc">N° asc</SelectItem>
-                <SelectItem value="date:desc">Fecha desc</SelectItem>
-                <SelectItem value="date:asc">Fecha asc</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        {/* El plan de cuentas es largo: el select con buscador es el único que
+          sirve acá. */}
+        <SearchableSelect
+          size="sm"
+          width={200}
+          value={accountId === '' ? 'all' : accountId}
+          onValueChange={(v) => {
+            setAccountId(v === 'all' ? '' : v);
+            setPage(1);
+          }}
+          placeholder="Cuenta"
+          searchPlaceholder="Buscar cuenta…"
+          label="Cuenta"
+          options={[
+            { value: 'all', label: 'Todas las cuentas' },
+            ...postable.map((a) => ({
+              value: a.id,
+              label: `${a.code} · ${a.name}`,
+            })),
+          ]}
+        />
 
-          {/* A la derecha, lo que se hace: abrir/cerrar el detalle, y después
-              exportar y crear. */}
-          <div className={`${TOOLBAR_ACCIONES} self-end`}>
-            <span aria-hidden className={TOOLBAR_SEP} />
-            <button
-              onClick={toggleExpandAll}
-              disabled={rows.length === 0}
-              title={
-                allExpanded
-                  ? 'Colapsar el detalle de todos los asientos'
-                  : 'Expandir el detalle de todos los asientos'
-              }
-              aria-label={
-                allExpanded
-                  ? 'Colapsar el detalle de todos los asientos'
-                  : 'Expandir el detalle de todos los asientos'
-              }
-              className={`${TOOLBAR_ICON_BTN} disabled:opacity-40`}
-            >
-              {allExpanded ? (
-                <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
-              ) : (
-                <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
-              )}
-            </button>
-            {(isOwner || canWrite) && (
-              <span aria-hidden className={TOOLBAR_SEP} />
-            )}
-            {/* Solo icono: con cinco filtros más el orden, la barra no da para
-                dos botones rotulados. El nombre va en el `title`. */}
-            {isOwner && (
+        {/* Origen y Orden son listas cortas: el select simple alcanza, el
+          buscador sobra. */}
+        <Select
+          value={origin === '' ? 'all' : origin}
+          onValueChange={(v) => {
+            setOrigin(v === 'all' ? '' : (v as JournalOrigin));
+            setPage(1);
+          }}
+        >
+          {/* `data-[size=sm]:h-8` y no `h-8` a secas: el selector por
+            atributo de la variante le gana en especificidad. */}
+          <SelectTrigger size="sm" className="w-[150px] data-[size=sm]:h-8">
+            <SelectValue placeholder="Origen" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los orígenes</SelectItem>
+            {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Un interruptor de filtro es un chip, no un checkbox. */}
+        <button
+          type="button"
+          aria-pressed={includeVoided}
+          onClick={() => {
+            setIncludeVoided(!includeVoided);
+            setPage(1);
+          }}
+          className={chipFiltro(includeVoided)}
+        >
+          Incluir anulados
+        </button>
+
+        <Select
+          value={`${sortBy}:${sortDir}`}
+          onValueChange={(v) => {
+            const [b, d2] = v.split(':');
+            setSortBy(b as 'number' | 'date');
+            setSortDir(d2 as 'asc' | 'desc');
+          }}
+        >
+          <SelectTrigger size="sm" className="w-[140px] data-[size=sm]:h-8">
+            <SelectValue placeholder="Orden" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="number:desc">N° desc</SelectItem>
+            <SelectItem value="number:asc">N° asc</SelectItem>
+            <SelectItem value="date:desc">Fecha desc</SelectItem>
+            <SelectItem value="date:asc">Fecha asc</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {filtrosPuestos > 0 && (
+          <LimpiarFiltros
+            onLimpiar={() => {
+              setFrom('');
+              setTo('');
+              setAccountId('');
+              setOrigin('');
+              setIncludeVoided(false);
+              setPage(1);
+            }}
+          />
+        )}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
               <button
-                onClick={exportLibroDiario}
-                title="Descargar el Libro Diario en PDF, para rubricar"
-                aria-label="Descargar el Libro Diario en PDF, para rubricar"
-                className={TOOLBAR_ICON_BTN}
+                onClick={toggleExpandAll}
+                disabled={rows.length === 0}
+                aria-label={
+                  allExpanded
+                    ? 'Colapsar el detalle de todos los asientos'
+                    : 'Expandir el detalle de todos los asientos'
+                }
+                className={cn(TOOLBAR_ICON_BTN, 'size-8 disabled:opacity-40')}
               >
-                <Download className="w-3.5 h-3.5" strokeWidth={2} />
+                {allExpanded ? (
+                  <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
+                ) : (
+                  <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
+                )}
               </button>
-            )}
-            {canWrite && (
-              <button
-                onClick={() => setEditor({ mode: 'create' })}
-                className={TOOLBAR_BTN_PRIMARIO}
-              >
-                <Plus className="w-3 h-3" strokeWidth={2.5} />
-                Nuevo asiento
-              </button>
-            )}
-          </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {allExpanded
+                ? 'Colapsar el detalle de todos los asientos'
+                : 'Expandir el detalle de todos los asientos'}
+            </TooltipContent>
+          </Tooltip>
+
+          {isOwner && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={exportLibroDiario}
+                  aria-label="Descargar el Libro Diario en PDF"
+                  className={cn(TOOLBAR_ICON_BTN, 'size-8')}
+                >
+                  <Download className="w-3.5 h-3.5" strokeWidth={2} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Descargar el Libro Diario en PDF, para rubricar
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {canWrite && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setEditor({ mode: 'create' })}
+                  aria-label="Nuevo asiento"
+                  className="flex size-8 items-center justify-center rounded-[8px] bg-[var(--arca-accent)] text-white transition-opacity hover:opacity-90"
+                >
+                  <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Nuevo asiento</TooltipContent>
+            </Tooltip>
+          )}
         </div>
+      </div>
 
-        {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+      <ArcaCard>
+        {/* Los rótulos llevaban `text-white` al final de la lista de clases
+          —resto de una versión con header navy—, así que se dibujaban blancos
+          sobre fondo claro: invisibles. */}
+        <div className="flex items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <div className="w-4 shrink-0" />
           <div className="w-12 shrink-0">N°</div>
           <div className="w-24 shrink-0">Fecha</div>
@@ -4088,32 +4114,17 @@ function Asientos({
           ))
         )}
 
-        {/* Pagination */}
+        {/* El paginado de la plataforma, dentro de la card. */}
         {total > 0 && (
-          <div className="flex items-center justify-between px-4 py-2.5 text-[12px] text-[var(--arca-ink-3)]">
-            <span>
-              {total} asiento{total === 1 ? '' : 's'}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="h-7 w-7 flex items-center justify-center rounded-[8px] border border-[var(--arca-border)] disabled:opacity-40"
-              >
-                <ChevronLeft className="w-4 h-4" strokeWidth={1.8} />
-              </button>
-              <span>
-                Página {page} de {totalPages}
-              </span>
-              <button
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
-                className="h-7 w-7 flex items-center justify-center rounded-[8px] border border-[var(--arca-border)] disabled:opacity-40"
-              >
-                <ChevronRight className="w-4 h-4" strokeWidth={1.8} />
-              </button>
-            </div>
-          </div>
+          <Paginador
+            className="w-full min-w-0 border-t border-[var(--arca-border)] px-4 py-[11px]"
+            pagina={page}
+            totalPaginas={totalPages}
+            onPagina={setPage}
+            total={total}
+            unidad="asiento"
+            unidadPlural="asientos"
+          />
         )}
       </ArcaCard>
 
@@ -5460,8 +5471,7 @@ function Mayor({
                 onClick={() => setMode(m)}
                 className="px-3 text-[12px] font-medium transition-colors"
                 style={{
-                  background:
-                    mode === m ? 'var(--arca-accent)' : 'transparent',
+                  background: mode === m ? 'var(--arca-accent)' : 'transparent',
                   color: mode === m ? 'white' : 'var(--arca-ink-2)',
                 }}
               >
@@ -7941,7 +7951,9 @@ function PendingRow({
   const closed = entry.periodStatus === 'cerrado';
   return (
     <tr className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]">
-      <td className="py-2 pl-4 tabular-nums [font-family:var(--ff-mono)]">{entry.number}</td>
+      <td className="py-2 pl-4 tabular-nums [font-family:var(--ff-mono)]">
+        {entry.number}
+      </td>
       <td className="py-2 whitespace-nowrap">{fmtFecha(entry.entryDate)}</td>
       <td className="py-2 whitespace-nowrap">
         {MONTH_NAMES[entry.periodMonth]} {entry.periodYear}
