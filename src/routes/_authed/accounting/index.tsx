@@ -382,16 +382,12 @@ const INPUT_CLASS =
  * la acción principal sin nada que los distinguiera, y el hueco de la
  * izquierda la hacía leer como una tira suelta.
  */
-const TOOLBAR_ACCIONES = 'ml-auto flex items-center gap-1.5';
-const TOOLBAR_SEP = 'w-px h-5 mx-1 shrink-0 bg-[var(--arca-border)]';
 const TOOLBAR_BTN =
   'flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors';
 /** Solo icono: los controles de vista se repiten en cada pantalla y el rótulo
  *  costaba el ancho que necesitaban los filtros. El nombre va en el `title`. */
 const TOOLBAR_ICON_BTN =
   'flex items-center justify-center h-7 w-7 rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors';
-const TOOLBAR_BTN_PRIMARIO =
-  'flex items-center gap-1.5 h-7 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity';
 
 /* ─── Badges ─── */
 function TypeBadge({ type }: { type: 'imputable' | 'grupo' }) {
@@ -1094,8 +1090,18 @@ function PlanDeCuentas({
       return next;
     });
 
-  const expandAll = () => setExpanded(new Set(accounts.map((a) => a.id)));
-  const collapseAll = () => setExpanded(new Set());
+  /** Con todo abierto el botón colapsa; si no, expande. Eran dos botones
+   *  seguidos donde uno siempre sobraba. */
+  const todoExpandido = accounts.length > 0 && expanded.size >= accounts.length;
+  const alternarArbol = () =>
+    setExpanded(todoExpandido ? new Set() : new Set(accounts.map((a) => a.id)));
+
+  /** Cuántos filtros están puestos, para ofrecer limpiarlos. */
+  const filtrosPuestos =
+    (search ? 1 : 0) +
+    (rubro ? 1 : 0) +
+    (origin !== 'all' ? 1 : 0) +
+    (onlyActive ? 1 : 0);
 
   function onToggleActive(account: ChartAccount) {
     if (account.isActive) {
@@ -1278,172 +1284,183 @@ function PlanDeCuentas({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          {/* Elástico a propósito: es el único control que puede ceder ancho.
-              Con ancho fijo, la barra entraba por un pelo y cualquier
-              diferencia de renderizado la mandaba a un segundo renglón. */}
-          <div className="relative flex-1 min-w-[150px] max-w-[260px]">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--arca-ink-3)]" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar código o nombre…"
-              className={`${INPUT_CLASS} pl-7 w-full`}
-            />
-          </div>
-
-          <Select
-            value={rubro === '' ? 'all' : rubro}
-            onValueChange={(v) => setRubro(v === 'all' ? '' : v)}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los rubros</SelectItem>
-              {ACCOUNT_GROUP_SECTIONS.map((sec) => (
-                <SelectGroup key={sec.section}>
-                  <SelectLabel>{sec.section}</SelectLabel>
-                  {sec.groups.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {ACCOUNT_GROUP_LABELS[g]}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={origin}
-            onValueChange={(v) => setOrigin(v as 'all' | 'base' | 'propia')}
-          >
-            <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Base y propias</SelectItem>
-              <SelectItem value="base">Solo base</SelectItem>
-              <SelectItem value="propia">Solo propias</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <label className="flex items-center gap-1.5 text-[12px] text-[var(--arca-ink-2)] cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={onlyActive}
-              onChange={(e) => setOnlyActive(e.target.checked)}
-              className="accent-[var(--arca-accent)]"
-            />
-            Solo activas
-          </label>
-
-          {/* A la derecha, lo que se hace: primero abrir/cerrar el árbol, y
-              después las acciones. Las de armado inicial —plantillas, importar,
-              plan base— van juntas en un menú: se usan al dar de alta la
-              empresa y casi nunca más, pero ocupaban media barra. */}
-          <div className={TOOLBAR_ACCIONES}>
-            {/* Delimita las zonas aunque no sobre ancho: sin esto, cuando la
-                barra se llena los filtros y las acciones quedan pegados. */}
-            <span aria-hidden className={TOOLBAR_SEP} />
-            <button
-              onClick={expandAll}
-              title="Expandir todo el árbol"
-              aria-label="Expandir todo el árbol"
-              className={TOOLBAR_ICON_BTN}
-            >
-              <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
-            </button>
-            <button
-              onClick={collapseAll}
-              title="Colapsar todo el árbol"
-              aria-label="Colapsar todo el árbol"
-              className={TOOLBAR_ICON_BTN}
-            >
-              <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
-            </button>
-            {isOwner && (
-              <>
-                <span aria-hidden className={TOOLBAR_SEP} />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className={TOOLBAR_BTN}>
-                      <FileSpreadsheet className="w-3 h-3" strokeWidth={2} />
-                      Importar / Exportar
-                      <ChevronDown className="w-3 h-3" strokeWidth={2} />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64">
-                    <DropdownMenuItem
-                      onClick={() =>
-                        void downloadChartTemplate({
-                          mode: 'blank',
-                          label: 'estudio',
-                        })
-                      }
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Plantilla vacía</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          Esqueleto de rubros para armar desde cero
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={accounts.length === 0}
-                      onClick={() =>
-                        void downloadChartTemplate({
-                          mode: 'current',
-                          accounts: accountsToTemplate(accounts),
-                        })
-                      }
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Plan actual</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          El plan de hoy, para editar y reimportar
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => setImportOpen(true)}>
-                      <Upload className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Importar desde Excel</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          Cargar el plan desde una planilla
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => setFormMode({ kind: 'base-create' })}
-                    >
-                      <Layers className="w-3.5 h-3.5" />
-                      <div className="flex flex-col">
-                        <span>Nueva cuenta del plan base</span>
-                        <span className="text-[11px] text-[var(--arca-ink-3)]">
-                          Se agrega al plan que comparten las empresas
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <button
-                  onClick={() => setFormMode({ kind: 'custom' })}
-                  className={TOOLBAR_BTN_PRIMARIO}
-                >
-                  <Plus className="w-3 h-3" strokeWidth={2.5} />
-                  Nueva cuenta
-                </button>
-              </>
-            )}
-          </div>
+      {/* Filtros afuera de la card, todos de 32px y en una línea. */}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        <div className="relative w-[240px]">
+          <Search className="absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-[var(--arca-ink-4)]" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar código o nombre…"
+            className={cn(INPUT_CLASS, 'h-8 w-full pl-7')}
+          />
         </div>
 
+        <Select
+          value={rubro === '' ? 'all' : rubro}
+          onValueChange={(v) => setRubro(v === 'all' ? '' : v)}
+        >
+          <SelectTrigger size="sm" className="w-[180px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los rubros</SelectItem>
+            {ACCOUNT_GROUP_SECTIONS.map((sec) => (
+              <SelectGroup key={sec.section}>
+                <SelectLabel>{sec.section}</SelectLabel>
+                {sec.groups.map((g) => (
+                  <SelectItem key={g} value={g}>
+                    {ACCOUNT_GROUP_LABELS[g]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={origin}
+          onValueChange={(v) => setOrigin(v as 'all' | 'base' | 'propia')}
+        >
+          <SelectTrigger size="sm" className="w-[150px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Base y propias</SelectItem>
+            <SelectItem value="base">Solo base</SelectItem>
+            <SelectItem value="propia">Solo propias</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Chip, como "Incluir anulados" en Asientos. */}
+        <button
+          type="button"
+          aria-pressed={onlyActive}
+          onClick={() => setOnlyActive(!onlyActive)}
+          className={chipFiltro(onlyActive)}
+        >
+          Solo activas
+        </button>
+
+        {filtrosPuestos > 0 && (
+          <LimpiarFiltros
+            onLimpiar={() => {
+              setSearch('');
+              setRubro('');
+              setOrigin('all');
+              setOnlyActive(false);
+            }}
+          />
+        )}
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={alternarArbol}
+                aria-label={
+                  todoExpandido ? 'Colapsar el árbol' : 'Expandir el árbol'
+                }
+                className={cn(TOOLBAR_ICON_BTN, 'size-8')}
+              >
+                {todoExpandido ? (
+                  <ChevronsDownUp className="w-3.5 h-3.5" strokeWidth={2} />
+                ) : (
+                  <ChevronsUpDown className="w-3.5 h-3.5" strokeWidth={2} />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {todoExpandido
+                ? 'Colapsar todo el árbol'
+                : 'Expandir todo el árbol'}
+            </TooltipContent>
+          </Tooltip>
+          {isOwner && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className={cn(TOOLBAR_BTN, 'h-8')}>
+                    <FileSpreadsheet className="w-3 h-3" strokeWidth={2} />
+                    Importar / Exportar
+                    <ChevronDown className="w-3 h-3" strokeWidth={2} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuItem
+                    onClick={() =>
+                      void downloadChartTemplate({
+                        mode: 'blank',
+                        label: 'estudio',
+                      })
+                    }
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Plantilla vacía</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        Esqueleto de rubros para armar desde cero
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={accounts.length === 0}
+                    onClick={() =>
+                      void downloadChartTemplate({
+                        mode: 'current',
+                        accounts: accountsToTemplate(accounts),
+                      })
+                    }
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Plan actual</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        El plan de hoy, para editar y reimportar
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setImportOpen(true)}>
+                    <Upload className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Importar desde Excel</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        Cargar el plan desde una planilla
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => setFormMode({ kind: 'base-create' })}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <div className="flex flex-col">
+                      <span>Nueva cuenta del plan base</span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        Se agrega al plan que comparten las empresas
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => setFormMode({ kind: 'custom' })}
+                    aria-label="Nueva cuenta"
+                    className="flex size-8 items-center justify-center rounded-[8px] bg-[var(--arca-accent)] text-white transition-opacity hover:opacity-90"
+                  >
+                    <Plus className="size-3.5" strokeWidth={2.5} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Nueva cuenta</TooltipContent>
+              </Tooltip>
+            </>
+          )}
+        </div>
+      </div>
+
+      <ArcaCard>
         {/* Body */}
         {isLoading ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
