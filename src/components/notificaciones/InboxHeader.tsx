@@ -7,6 +7,7 @@
  */
 
 import { useState } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   ArrowDownWideNarrow,
   CheckCheck,
@@ -23,7 +24,6 @@ import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
   ConteoResultados,
   LimpiarFiltros,
-  botonHeader,
   chipFiltro,
   chipMasFiltros,
 } from '@/components/shared/filtros';
@@ -112,14 +112,10 @@ export function InboxHeader({
               vistas. */}
           <SelectorClienteGlobal />
 
-          <button
-            type="button"
-            onClick={onMarcarTodasLeidas}
-            className={botonHeader}
-          >
+          <Button size="sm" onClick={onMarcarTodasLeidas}>
             <CheckCheck className="size-3.5" />
             Marcar todas leídas
-          </button>
+          </Button>
         </>
       }
       filters={
@@ -164,6 +160,7 @@ export function InboxHeader({
               sacaba: Radix abre en pointerdown, así que el menú se desplegaba
               antes de que el click llegara a cortarse. */}
           <SearchableSelect
+            size="sm"
             value={filtros.categoria || 'all'}
             onValueChange={(v) => onFiltro({ categoria: v === 'all' ? '' : v })}
             placeholder="Categoría"
@@ -179,6 +176,7 @@ export function InboxHeader({
           />
 
           <SearchableSelect
+            size="sm"
             value={filtros.severidad || 'all'}
             onValueChange={(v) => onFiltro({ severidad: v === 'all' ? '' : v })}
             placeholder="Importancia"

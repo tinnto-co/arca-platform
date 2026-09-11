@@ -254,7 +254,7 @@ export function AgendaCard({
                   ? 'Volver a la agenda del período'
                   : 'Ver los vencimientos vencidos sin completar (desde el mes pasado)'
               }
-              className="text-[11px] font-medium rounded-[20px] cursor-pointer"
+              className="text-[11px] font-medium rounded-md cursor-pointer"
               style={{
                 background: verVencidos
                   ? 'var(--arca-accent-neg)'
@@ -269,7 +269,7 @@ export function AgendaCard({
           )}
           {datos.sinTarea.length > 0 && (
             <span
-              className="flex items-center gap-1.5 text-[11px] font-medium rounded-[20px]"
+              className="flex items-center gap-1.5 text-[11px] font-medium rounded-md"
               style={{
                 background: 'var(--arca-accent-warn-bg)',
                 color: 'var(--arca-accent-warn-fg)',
@@ -281,7 +281,7 @@ export function AgendaCard({
                 type="button"
                 onClick={() => setConfirmando(true)}
                 disabled={generar.isPending}
-                className="bg-white border rounded-[20px] text-[11px] font-semibold cursor-pointer transition-colors duration-150 hover:bg-[var(--arca-surface-2)] inline-flex items-center gap-1"
+                className="bg-white border rounded-md text-[11px] font-semibold cursor-pointer transition-colors duration-150 hover:bg-[var(--arca-surface-2)] inline-flex items-center gap-1"
                 style={{
                   borderColor: 'var(--arca-border-strong)',
                   color: 'var(--arca-ink)',
@@ -299,7 +299,7 @@ export function AgendaCard({
             type="button"
             onClick={() => setPorTipo((v) => !v)}
             aria-pressed={porTipo}
-            className="text-[11px] font-medium rounded-[20px] border cursor-pointer transition-colors duration-150"
+            className="text-[11px] font-medium rounded-md border cursor-pointer transition-colors duration-150"
             style={{
               background: porTipo ? 'var(--arca-ink)' : 'var(--arca-surface-2)',
               borderColor: porTipo ? 'var(--arca-ink)' : 'var(--arca-border)',
@@ -401,7 +401,7 @@ export function AgendaCard({
                       <Avatares nombres={item.asignados} />
                       {item.sinTarea && (
                         <span
-                          className="text-[10.5px] font-medium rounded-[20px]"
+                          className="text-[10.5px] font-medium rounded-md"
                           style={{
                             background: 'var(--arca-accent-warn-bg)',
                             color: 'var(--arca-accent-warn-fg)',

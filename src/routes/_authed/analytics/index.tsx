@@ -173,7 +173,7 @@ function RiskBadge({ level }: { level: RiesgoNivel }) {
   const cfg = RISK_CONFIG[level];
   return (
     <span
-      className="inline-flex items-center gap-[5px] px-2 py-[2px] rounded-[20px] text-[11px] font-medium"
+      className="inline-flex items-center gap-[5px] px-2 py-[2px] rounded-md text-[11px] font-medium"
       style={{ background: cfg.bg, color: cfg.fg }}
     >
       <span

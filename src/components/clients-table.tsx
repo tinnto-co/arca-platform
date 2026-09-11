@@ -260,7 +260,7 @@ export function RepresentativesTable({
                 Actualizando ({activeJobs.length})
               </span>
             )}
-            <Badge variant={meta.variant} size="sm">
+            <Badge variant={meta.variant}>
               <BadgeDot />
               {meta.label}
             </Badge>

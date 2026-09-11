@@ -124,7 +124,7 @@ export function PrioridadesCategoria() {
                       })
                     }
                   >
-                    <SelectTrigger className="w-[190px] h-8 text-[12.5px]">
+                    <SelectTrigger className="w-[190px]">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -135,7 +135,7 @@ export function PrioridadesCategoria() {
                         <SelectItem key={sv} value={sv}>
                           <span
                             className={cn(
-                              'inline-flex items-center rounded-[20px] px-2 py-0.5 text-[11px] font-medium',
+                              'inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium',
                               SEVERIDAD_PILL[sv]
                             )}
                           >

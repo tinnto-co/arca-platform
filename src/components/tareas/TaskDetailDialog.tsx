@@ -449,7 +449,7 @@ export function TaskDetailDialog({
                 <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
                   <DropdownMenu>
                     <DropdownMenuTrigger
-                      className={`inline-flex items-center gap-1 rounded-[var(--arca-r-pill)] px-2 py-[2px] text-[10.5px] font-medium transition-colors duration-[120ms] ${TIPO_PILL[tarea.tipo] ?? TIPO_PILL.otro}`}
+                      className={`inline-flex h-5 items-center gap-1 rounded-md px-2 text-[11px] font-medium transition-colors duration-[120ms] ${TIPO_PILL[tarea.tipo] ?? TIPO_PILL.otro}`}
                       aria-label="Cambiar tipo de obligación"
                     >
                       {TIPO_LABELS[tarea.tipo] ?? tarea.tipo}

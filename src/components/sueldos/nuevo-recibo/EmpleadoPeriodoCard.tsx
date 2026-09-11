@@ -181,7 +181,7 @@ export function EmpleadoPeriodoCard({
                     </span>
                   </span>
                   {!r.empleado.convenioId && (
-                    <span className="text-[11px] px-2.5 py-[3px] rounded-[20px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] whitespace-nowrap">
+                    <span className="text-[11px] px-2.5 py-[3px] rounded-md bg-[var(--arca-surface-2)] border border-[var(--arca-border)] text-[var(--arca-ink-3)] whitespace-nowrap">
                       Sin convenio
                     </span>
                   )}
@@ -208,7 +208,7 @@ export function EmpleadoPeriodoCard({
                 </span>
               </span>
               <span
-                className="ml-auto text-[11px] px-2.5 py-[3px] rounded-[20px] whitespace-nowrap"
+                className="ml-auto text-[11px] px-2.5 py-[3px] rounded-md whitespace-nowrap"
                 style={
                   emp.convenioId
                     ? {

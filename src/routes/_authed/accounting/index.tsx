@@ -633,14 +633,19 @@ function TabBar({
     ? desbordan.filter((t) => t.id !== active)
     : desbordan;
 
+  /**
+   * Tab de sección: subrayada, no un bloque de tinta.
+   *
+   * El subrayado se apoya en el borde de 1px de la barra —de ahí el
+   * `-mb-1.5`, que lo baja a esa línea— y por eso antes "colgaba": le
+   * faltaba el borde del contenedor, que hoy sí está.
+   */
   const claseSolapa =
-    'flex items-center gap-1.5 px-2 h-7 rounded-[7px] text-[12.5px] font-medium transition-colors duration-[120ms] shrink-0 whitespace-nowrap';
-  const estiloSolapa = (id: Tab) => ({
-    // El activo se marca con fondo y no con subrayado: el subrayado colgaba
-    // del borde de la barra y dejó de tener dónde apoyarse.
-    background: active === id ? 'var(--arca-ink)' : 'transparent',
-    color: active === id ? 'var(--arca-surface)' : 'var(--arca-ink-3)',
-  });
+    'flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 pb-2 -mb-1.5 text-[13px] transition-colors duration-[120ms]';
+  const claseActiva = (id: Tab) =>
+    active === id
+      ? 'border-[var(--arca-accent)] font-semibold text-[var(--arca-ink)]'
+      : 'font-medium text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)]';
 
   const contenido = (tab: (typeof solapas)[number]) => (
     <>
@@ -685,8 +690,7 @@ function TabBar({
             onClick={() => onChange(tab.id)}
             aria-current={active === tab.id ? 'page' : undefined}
             title={`${tab.grupo} · ${tab.label}`}
-            className={claseSolapa}
-            style={estiloSolapa(tab.id)}
+            className={cn(claseSolapa, claseActiva(tab.id))}
           >
             {contenido(tab)}
           </button>
@@ -717,7 +721,7 @@ function TabBar({
                   />
                   {tab.label}
                   {tab.id === 'pendientes' && pendingCount > 0 && (
-                    <span className="ml-auto text-[9px] font-semibold px-1.5 py-px rounded-full bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                    <span className="ml-auto rounded-full bg-[var(--arca-accent-neg-bg)] px-1.5 py-px text-[10.5px] font-semibold tabular-nums text-[var(--arca-accent-neg-fg)] [font-family:var(--ff-mono)]">
                       {pendingCount}
                     </span>
                   )}

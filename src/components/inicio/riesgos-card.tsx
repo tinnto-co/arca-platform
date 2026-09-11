@@ -142,7 +142,7 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
         </h2>
         {criticos > 0 && (
           <span
-            className="text-[11px] font-medium rounded-[20px] tabular-nums"
+            className="text-[11px] font-medium rounded-md tabular-nums"
             style={{
               background: 'var(--arca-accent-neg-bg)',
               color: 'var(--arca-accent-neg-fg)',

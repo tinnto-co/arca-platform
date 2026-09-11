@@ -422,7 +422,7 @@ function Pildora({
 }) {
   return (
     <span
-      className="rounded-[20px] px-[9px] py-0.5 text-[11px] font-medium"
+      className="rounded-md px-[9px] py-0.5 text-[11px] font-medium"
       style={{
         color: `var(--arca-accent-${tono}-fg)`,
         background: `var(--arca-accent-${tono}-bg)`,
@@ -483,7 +483,7 @@ function FilaDeuda({ deuda }: { deuda: DeudaFila }) {
           </span>
           {etiqueta && (
             <span
-              className="rounded-[20px] px-2 py-px text-[10.5px] font-medium"
+              className="rounded-md px-2 py-px text-[10.5px] font-medium"
               style={{
                 color: `var(--arca-accent-${etiqueta.tono}-fg)`,
                 background: `var(--arca-accent-${etiqueta.tono}-bg)`,
@@ -494,7 +494,7 @@ function FilaDeuda({ deuda }: { deuda: DeudaFila }) {
           )}
           {deuda.intimada && (
             <span
-              className="rounded-[20px] px-2 py-px text-[10.5px] font-medium"
+              className="rounded-md px-2 py-px text-[10.5px] font-medium"
               style={{
                 color: 'var(--arca-accent-info-fg)',
                 background: 'var(--arca-accent-info-bg)',
