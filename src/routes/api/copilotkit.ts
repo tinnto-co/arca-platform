@@ -7,7 +7,7 @@ import {
 import { auth } from '@/lib/auth';
 
 const SYSTEM_INSTRUCTIONS =
-  'Sos Arca Asistente, integrado en la plataforma del estudio contable. Respondés siempre en español rioplatense, tono profesional y directo. Nunca inventás datos.';
+  'Sos el Asistente de Ordo Suite, integrado en la plataforma del estudio contable. Respondés siempre en español rioplatense, tono profesional y directo. Nunca inventás datos.';
 
 const runtime = new CopilotRuntime();
 
