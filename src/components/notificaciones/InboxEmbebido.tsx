@@ -8,23 +8,13 @@
  * plana), que había quedado de otra época visual.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { useNavigate } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, CheckCheck, Search } from 'lucide-react';
+import { CheckCheck, Search } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import {
-  ChevronChip,
-  QuitarFiltro,
-  botonHeader,
-  chipFiltro,
-} from '@/components/shared/filtros';
+import { botonHeader } from '@/components/shared/filtros';
 import { SEVERIDAD_LABEL, categoriaLabel } from './utils';
 import { ListaNotificaciones } from './ListaNotificaciones';
 import { PanelLectura } from './PanelLectura';
@@ -194,63 +184,42 @@ export function InboxEmbebido({
           ))}
         </div>
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className={chipFiltro(categoria !== '')}>
-            Categoría: {categoria ? categoriaLabel(categoria) : 'todas'}
-            {categoria ? (
-              <QuitarFiltro onQuitar={() => setCategoria('')} />
-            ) : (
-              <ChevronChip />
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="max-h-[320px] min-w-[180px] overflow-y-auto"
-          >
-            {(resumen?.categorias ?? []).map((c) => (
-              <DropdownMenuItem
-                key={c}
-                className="text-[12.5px]"
-                onSelect={() => setCategoria(c)}
-              >
-                {categoriaLabel(c)}
-                {c === categoria && (
-                  <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        {/* Los mismos selects que la bandeja global: combobox con buscador
+            del sistema, no chips de dropdown. Es la misma decisión en las dos
+            pantallas, así que se opera igual. */}
+        <SearchableSelect
+          size="sm"
+          value={categoria || 'all'}
+          onValueChange={(v) => setCategoria(v === 'all' ? '' : v)}
+          placeholder="Categoría"
+          searchPlaceholder="Buscar categoría..."
+          width={210}
+          options={[
+            { value: 'all', label: 'Todas las categorías' },
+            ...(resumen?.categorias ?? []).map((c) => ({
+              value: c,
+              label: categoriaLabel(c),
+            })),
+          ]}
+        />
 
-        <DropdownMenu>
-          <DropdownMenuTrigger className={chipFiltro(severidad !== '')}>
-            Importancia: {severidad ? SEVERIDAD_LABEL[severidad] : 'toda'}
-            {severidad ? (
-              <QuitarFiltro onQuitar={() => setSeveridad('')} />
-            ) : (
-              <ChevronChip />
-            )}
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[180px]">
-            {[
+        <SearchableSelect
+          size="sm"
+          value={severidad || 'all'}
+          onValueChange={(v) => setSeveridad(v === 'all' ? '' : v)}
+          placeholder="Importancia"
+          searchPlaceholder="Buscar importancia..."
+          width={200}
+          options={[
+            { value: 'all', label: 'Toda importancia' },
+            ...[
               'urgente',
               'accion_requerida',
               'informativa',
               'sin_clasificar',
-            ].map((sv) => (
-              <DropdownMenuItem
-                key={sv}
-                className="text-[12.5px]"
-                onSelect={() => setSeveridad(sv)}
-              >
-                {SEVERIDAD_LABEL[sv]}
-                {sv === severidad && (
-                  <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                )}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            ].map((sv) => ({ value: sv, label: SEVERIDAD_LABEL[sv] })),
+          ]}
+        />
 
         <div className="relative min-w-[200px] flex-1 max-w-[280px]">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--arca-ink-4)]" />
