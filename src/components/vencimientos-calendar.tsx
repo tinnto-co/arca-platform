@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
 import { Badge, BadgeDot } from '@/components/ui/badge';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -210,6 +211,15 @@ export function VencimientosCalendar() {
     setSelectedDate(null);
   }
 
+  /**
+   * "Hoy" es navegación, no una acción sobre los datos: va en secundario,
+   * junto a las flechas de mes, y no en el acento —que queda para la acción
+   * principal de cada pantalla—.
+   *
+   * Queda siempre habilitado a propósito: deshabilitarlo en el mes actual
+   * lo dejaba gris apenas entrabas, que se lee como roto, y encima no es un
+   * no-op: estando en el mes actual con otro día elegido, vuelve a hoy.
+   */
   function goToday() {
     setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
     setSelectedDate(today);
@@ -436,26 +446,27 @@ export function VencimientosCalendar() {
                 {currentMonth.getFullYear()}
               </h2>
               <div className="flex items-center gap-0.5">
-                <button
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={prevMonth}
-                  className="w-7 h-7 rounded-[var(--arca-r-sm)] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink)] transition-colors cursor-pointer"
+                  aria-label="Mes anterior"
                 >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <button
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={nextMonth}
-                  className="w-7 h-7 rounded-[var(--arca-r-sm)] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink)] transition-colors cursor-pointer"
+                  aria-label="Mes siguiente"
                 >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+                  <ChevronRight className="size-4" />
+                </Button>
               </div>
             </div>
-            <button
-              onClick={goToday}
-              className="px-3 py-1.5 rounded-[var(--arca-r-md)] text-[12.5px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors cursor-pointer"
-            >
+            <Button variant="outline" size="sm" onClick={goToday}>
               Hoy
-            </button>
+            </Button>
           </div>
 
           {/* Weekday headers */}
