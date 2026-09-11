@@ -112,6 +112,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Ayuda } from '@/components/shared/ayuda';
 import { Paginador } from '@/components/shared/paginador';
 import { chipFiltro, LimpiarFiltros } from '@/components/shared/filtros';
 import {
@@ -361,8 +364,10 @@ export const Route = createFileRoute('/_authed/accounting/')({
 });
 
 /* ─── Shared styles ─── */
+/** El `focus:outline-none` pelado dejaba los inputs sin ninguna marca de
+ *  foco: ahora toman el borde y el anillo de acento del sistema. */
 const INPUT_CLASS =
-  'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none';
+  'h-8 px-2.5 text-[12.5px] border border-[var(--arca-border-strong)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] outline-none transition-[color,box-shadow] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)]';
 
 /* ─── Barra de filtros y acciones ─── */
 
@@ -4700,7 +4705,7 @@ function AsientoEditor({
 
             {/* Líneas */}
             <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-40">Detalle</div>
                 <div className="w-24 text-right">Debe</div>
@@ -5018,7 +5023,7 @@ function EntryDetailBody({
 
       {/* Líneas */}
       <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden bg-[var(--arca-surface)]">
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
           <div className="flex-1">Cuenta</div>
           <div className="w-28 text-right">Debe</div>
           <div className="w-28 text-right">Haber</div>
@@ -5631,7 +5636,7 @@ function Mayor({
           <div>
             {/* Sin encabezado, las tres columnas de plata no decían cuál era
                 el Debe, cuál el Haber y cuál el saldo. */}
-            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10.5px] font-semibold uppercase tracking-wide text-white">
+            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10.5px] font-semibold">
               <span className="w-4 shrink-0" aria-hidden />
               <span className={MAYOR_COL_CODE}>Código</span>
               <span className="flex-1 min-w-0">Cuenta</span>
@@ -5697,7 +5702,7 @@ function LedgerTable({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
         <div className="w-24 shrink-0">Fecha</div>
         <div className="w-12 shrink-0">N°</div>
         <div className="flex-1 min-w-0">Descripción</div>
@@ -6001,7 +6006,7 @@ function Balance({
         )}
 
         {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
           <div className="w-24 shrink-0">Código</div>
           <div className="flex-1 min-w-0">Cuenta</div>
           <div className={BALANCE_COL_MONEY}>Suma Debe</div>
@@ -6315,9 +6320,11 @@ function FilaRegla({
         {r.name}
       </div>
       <div className="w-24 shrink-0">
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+        {/* Píldora de 10px en gris sobre gris: era ilegible. El badge del
+          sistema, neutro, con el tamaño de celda. */}
+        <Badge variant="default" size="sm">
           {MAPPING_SOURCE_LABELS[r.sourceModule as ModuloRegla]}
-        </span>
+        </Badge>
       </div>
       <div className="w-28 shrink-0 text-[11.5px] text-[var(--arca-ink-3)]">
         {MAPPING_RULE_TYPE_LABELS[r.ruleType as 'default' | 'condicional']}
@@ -6327,23 +6334,29 @@ function FilaRegla({
       </div>
       <div className="w-24 shrink-0 flex justify-center">
         {isOwner ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle();
-            }}
-            title={r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] font-medium hover:opacity-80"
-            style={{
-              background: r.isActive
-                ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 88%)'
-                : 'var(--arca-surface-2)',
-              color: r.isActive ? 'oklch(0.40 0.14 145)' : 'var(--arca-ink-3)',
-            }}
-          >
-            <Power className="w-2.5 h-2.5" strokeWidth={2} />
-            {r.isActive ? 'Activa' : 'Inactiva'}
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                asChild
+                variant={r.isActive ? 'success' : 'default'}
+                size="sm"
+                className="cursor-pointer hover:opacity-80"
+              >
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggle();
+                  }}
+                >
+                  <Power className="size-2.5" strokeWidth={2} />
+                  {r.isActive ? 'Activa' : 'Inactiva'}
+                </button>
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {r.isActive ? 'Clic para desactivar' : 'Clic para activar'}
+            </TooltipContent>
+          </Tooltip>
         ) : (
           <span className="text-[10.5px] text-[var(--arca-ink-3)]">
             {r.isActive ? 'Activa' : 'Inactiva'}
@@ -6458,52 +6471,62 @@ function Reglas({
 
   return (
     <>
-      <ArcaCard>
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Módulo origen
-            </label>
-            <Select
-              value={moduleFilter === '' ? 'all' : moduleFilter}
-              onValueChange={(v) =>
-                setModuleFilter(
-                  v === 'all'
-                    ? ''
-                    : (v as 'comprobante' | 'recibo' | 'movimiento_bancario')
-                )
-              }
-            >
-              <SelectTrigger size="sm" className="w-40 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="comprobante">Facturas</SelectItem>
-                <SelectItem value="recibo">Sueldos</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {isOwner && (
-            <div className="ml-auto flex items-center gap-2 self-end">
-              <button
-                onClick={() => setImportOpen(true)}
-                className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-              >
-                <Upload className="w-3.5 h-3.5" strokeWidth={1.8} /> Importar de
-                otra empresa
-              </button>
-              <button
-                onClick={() => setEditor({ mode: 'create' })}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90"
-              >
-                <Plus className="w-3 h-3" strokeWidth={2.5} /> Nueva regla
-              </button>
-            </div>
-          )}
-        </div>
+      {/* Los filtros, afuera de la card: a la izquierda el módulo con su
+        rótulo al lado —no encima, que obligaba a la barra a tener dos
+        renglones— y a la derecha lo que se hace. */}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        <span className="text-[12.5px] text-[var(--arca-ink-3)]">Módulo</span>
+        <Select
+          value={moduleFilter === '' ? 'all' : moduleFilter}
+          onValueChange={(v) =>
+            setModuleFilter(
+              v === 'all'
+                ? ''
+                : (v as 'comprobante' | 'recibo' | 'movimiento_bancario')
+            )
+          }
+        >
+          {/* 30px, la altura de los botones `sm` que lo acompañan en la fila. */}
+          <SelectTrigger size="sm" className="w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="comprobante">Facturas</SelectItem>
+            <SelectItem value="recibo">Sueldos</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+        {isOwner && (
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload className="size-3.5" strokeWidth={1.8} />
+              Importar de otra empresa
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setEditor({ mode: 'create' })}
+            >
+              <Plus className="size-3.5" strokeWidth={2.5} />
+              Nueva regla
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <ArcaCard>
+        {/* Mismo `text-white` colgado que en Asientos: los rótulos se
+          dibujaban blancos sobre fondo claro. Abajo, la fila gris con el
+          nombre del módulo no es un segundo header: separa los grupos
+          —arrastrar reordena dentro de un módulo, no entre módulos— y por eso
+          va más chica, sin mayúsculas anchas y sobre otro fondo. */}
+        <div className="flex items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <div className="w-8 shrink-0" aria-hidden />
           <div className="flex-1 min-w-0">Nombre</div>
           <div className="w-24 shrink-0">Módulo</div>
@@ -6546,7 +6569,7 @@ function Reglas({
                   que deja claro que arrastrar mueve dentro del módulo y no
                   contra las reglas de otro. */}
                 {!moduleFilter && (
-                  <div className="px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[10.5px] font-semibold uppercase tracking-wide text-[var(--arca-ink-3)]">
+                  <div className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
                     {MAPPING_SOURCE_LABELS[modulo]}
                   </div>
                 )}
@@ -6768,34 +6791,23 @@ function RuleEditorDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Recuadro de ayuda en criollo */}
-        <div
-          className="flex gap-2 text-[12px] rounded-[10px] px-3 py-2.5 leading-relaxed"
-          style={{
-            background:
-              'color-mix(in oklch, var(--arca-accent), transparent 94%)',
-            color: 'var(--arca-ink-2)',
-          }}
-        >
-          <Lightbulb
-            className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent)]"
-            strokeWidth={1.8}
-          />
-          <div>
-            <strong>¿Cómo funciona?</strong> Cuando entra un comprobante del
-            módulo elegido (una factura o una liquidación de sueldos), el
-            sistema arma un asiento usando estas líneas. Cada línea define{' '}
-            <strong>qué cuenta</strong> tocar, si va al{' '}
-            <strong>Debe o Haber</strong>, y de{' '}
+        {/* La explicación va detrás del botón de ayuda, como en el resto de
+          la plataforma: ocupaba cinco renglones arriba del formulario y se
+          lee una sola vez. */}
+        <Ayuda titulo="Cómo funciona una regla" etiqueta="Cómo funciona">
+          <p>
+            Cuando entra un comprobante del módulo elegido (una factura o una
+            liquidación de sueldos), el sistema arma un asiento usando estas
+            líneas. Cada línea define <strong>qué cuenta</strong> tocar, si va
+            al <strong>Debe o Haber</strong>, y de{' '}
             <strong>qué monto del comprobante</strong> sale (el total, el neto,
             el IVA…).
-            <br />
-            <span className="text-[var(--arca-ink-3)]">
-              Ejemplo (factura de venta): Deudores por ventas → Debe → Total ·
-              Ventas → Haber → Neto · IVA débito → Haber → IVA.
-            </span>
-          </div>
-        </div>
+          </p>
+          <p className="text-[var(--arca-ink-3)]">
+            Ejemplo (factura de venta): Deudores por ventas → Debe → Total ·
+            Ventas → Haber → Neto · IVA débito → Haber → IVA.
+          </p>
+        </Ayuda>
 
         {isEdit && existing && existing.generatedOpenCount > 0 && (
           <div
@@ -7031,7 +7043,7 @@ function RuleEditorDialog({
 
         {/* Líneas-plantilla */}
         <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
             <div className="flex-1">Cuenta</div>
             <div className="w-20 flex items-center gap-1">
               Lado
@@ -7227,7 +7239,7 @@ function RuleDetailDialog({
             )}
 
             <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-16">Lado</div>
                 <div className="w-48">Base del monto</div>
@@ -10291,7 +10303,7 @@ function Nota3View({
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+          <div className="grid grid-cols-[52px_1fr_170px_170px] gap-3 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
             <div>Nota</div>
             <div>Concepto</div>
             <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
@@ -10497,7 +10509,7 @@ function EfeView({
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold uppercase tracking-wide text-white">
+      <div className="grid grid-cols-[1fr_170px_170px] gap-4 px-5 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
         <div>Concepto</div>
         <div className="text-right">Ej. N°{data.fiscalYearNumber}</div>
         <div className="text-right">
