@@ -57,7 +57,7 @@ export function SearchableSelect({
         <button
           disabled={disabled}
           style={{ width: widthClass }}
-          className="inline-flex items-center justify-between gap-2 px-3 py-[7px] rounded-[var(--arca-r-md)] text-[13px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] disabled:opacity-50 disabled:pointer-events-none"
+          className="inline-flex h-8 items-center justify-between gap-2 px-3 rounded-lg text-[12.5px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] disabled:opacity-50 disabled:pointer-events-none"
         >
           <span
             className={cn('truncate', !selected && 'text-[var(--arca-ink-3)]')}

@@ -13,19 +13,19 @@ import type { ReactNode } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-/** El tono del chip activo. El tablero usa el rojo del sistema; la bandeja, el azul. */
+/** El tono del chip activo: el acento por defecto, el rojo para lo urgente. */
 export type TonoFiltro = 'info' | 'negativo';
 
 const BASE =
-  'inline-flex items-center gap-1.5 rounded-[var(--arca-r-pill)] border px-[10px] py-1 text-[11.5px] transition-colors duration-[120ms] ease-[ease]';
+  'inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12.5px] font-medium transition-colors duration-[120ms] ease-[ease]';
 
 const INACTIVO =
-  'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]';
+  'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-bg)]';
 
 const ACTIVO: Record<TonoFiltro, string> = {
-  info: 'border-[var(--arca-accent-info)] bg-[var(--arca-accent-info-bg)] font-medium text-[var(--arca-accent-info-fg)]',
+  info: 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]',
   negativo:
-    'border-[var(--arca-accent-neg)] bg-[var(--arca-accent-neg-bg)] font-medium text-[var(--arca-accent-neg-fg)]',
+    'border-[var(--arca-accent-neg)] bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
 };
 
 /** Clases del chip, para los triggers de Radix que necesitan `className`. */
@@ -46,7 +46,7 @@ export function chipMasFiltros(cantidad: number, tono: TonoFiltro = 'info') {
 
 /** Botón del encabezado: buscar, marcar todas, el `···`. */
 export const botonHeader =
-  'inline-flex items-center gap-1.5 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-[11px] py-1.5 text-[12.5px] text-[var(--arca-ink-2)] transition-colors duration-[120ms] ease-[ease] hover:bg-[var(--arca-surface-2)] disabled:opacity-50';
+  'inline-flex h-8 items-center gap-1.5 rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 text-[12.5px] font-medium text-[var(--arca-ink-2)] transition-colors duration-[120ms] ease-[ease] hover:bg-[var(--arca-surface-2)] disabled:opacity-50';
 
 /** Chevron del chip cuando no hay filtro puesto. */
 export function ChevronChip() {
@@ -90,7 +90,7 @@ export function QuitarFiltro({
         }
       }}
     >
-      <X className="size-3" />
+      <X className="size-3" strokeWidth={2.5} />
     </span>
   );
 }
@@ -101,7 +101,7 @@ export function LimpiarFiltros({ onLimpiar }: { onLimpiar: () => void }) {
     <button
       type="button"
       onClick={onLimpiar}
-      className="text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
+      className="text-[12.5px] font-medium text-[var(--arca-accent)] hover:underline"
     >
       Limpiar
     </button>
@@ -111,7 +111,7 @@ export function LimpiarFiltros({ onLimpiar }: { onLimpiar: () => void }) {
 /** Conteo del resultado, alineado a la derecha de la barra. */
 export function ConteoResultados({ children }: { children: ReactNode }) {
   return (
-    <span className="ml-auto text-[11.5px] text-[var(--arca-ink-3)] tabular-nums">
+    <span className="ml-auto text-[12px] tabular-nums text-[var(--arca-ink-3)] [font-family:var(--ff-mono)]">
       {children}
     </span>
   );

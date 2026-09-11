@@ -137,7 +137,7 @@ export function InboxHeader({
                 aria-selected={filtros.estado === t.valor}
                 onClick={() => onFiltro({ estado: t.valor })}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-md px-3 py-[5px] text-[12.5px] font-medium transition-colors duration-[120ms]',
+                  'flex h-[26px] items-center gap-1.5 rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
                   filtros.estado === t.valor
                     ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
                     : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
