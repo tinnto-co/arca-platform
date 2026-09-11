@@ -55,6 +55,7 @@ import {
   Boxes,
   CheckCircle2,
   XCircle,
+  X,
   Check,
   Bookmark,
   BookmarkPlus,
@@ -2276,27 +2277,32 @@ function Ejercicios({
             <button
               key={y.id}
               onClick={() => setSelectedFyId(y.id)}
-              className="flex items-center gap-2 h-9 px-3 rounded-lg border transition-colors text-[12.5px]"
-              style={{
-                borderColor: active ? 'var(--arca-ink)' : 'var(--arca-border)',
-                background: active
-                  ? 'var(--arca-surface-2)'
-                  : 'var(--arca-surface)',
-                color: active ? 'var(--arca-ink)' : 'var(--arca-ink-2)',
-              }}
+              className={cn(
+                'flex h-9 items-center gap-2 rounded-lg border px-3 text-[12.5px] transition-colors duration-[120ms]',
+                // Seleccionado = acento tonal, como cualquier chip activo de
+                // la plataforma. Antes era borde de tinta sobre gris, que no
+                // es un estado activo de este sistema.
+                active
+                  ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
+                  : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-bg)]'
+              )}
             >
               <span className="font-semibold">Ejercicio N°{y.numero}</span>
               <span className="text-[var(--arca-ink-3)]">
                 {fmtFecha(y.fechaDesde)} – {fmtFecha(y.fechaHasta)}
               </span>
               {y.soloReferencia ? (
-                <span
-                  className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-                  style={{ background: '#eef2ff', color: '#4338ca' }}
-                  title="Cargado solo para la columna comparativa. No se cierra ni se ajusta."
-                >
-                  Referencia
-                </span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="info" size="xs">
+                      Referencia
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Cargado solo para la columna comparativa. No se cierra ni se
+                    ajusta.
+                  </TooltipContent>
+                </Tooltip>
               ) : (
                 <>
                   <FyStatusBadge status={y.estado} />
@@ -2493,22 +2499,20 @@ function FyStatusBadge({
 }: {
   status: 'abierto' | 'en_cierre' | 'cerrado';
 }) {
-  const color =
-    status === 'abierto'
-      ? 'oklch(0.45 0.14 145)'
-      : status === 'en_cierre'
-        ? 'oklch(0.55 0.15 50)'
-        : 'oklch(0.50 0.02 260)';
   return (
-    <span
-      className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shrink-0"
-      style={{
-        background: `color-mix(in oklch, ${color}, transparent 86%)`,
-        color,
-      }}
+    <Badge
+      variant={
+        status === 'abierto'
+          ? 'success'
+          : status === 'en_cierre'
+            ? 'warning'
+            : 'default'
+      }
+      size="xs"
+      className="shrink-0"
     >
       {FISCAL_YEAR_STATUS_LABELS[status]}
-    </span>
+    </Badge>
   );
 }
 
@@ -2527,45 +2531,46 @@ function PeriodCard({
 }) {
   const closed = period.status === 'cerrado';
   const hasPending = period.pendingCount > 0;
+  // El período en curso se marca con el acento de la plataforma, no con un
+  // verde crudo en oklch: el verde acá es el estado "cerrado/al día" y se
+  // estaba usando para decir "es este".
   const estado = closed
-    ? { label: 'Cerrado', color: 'oklch(0.50 0.02 260)' }
+    ? { label: 'Cerrado', variante: 'default' as const }
     : period.isCurrent
-      ? { label: 'Abierto · actual', color: 'oklch(0.45 0.14 145)' }
-      : { label: 'Por abrir', color: 'oklch(0.55 0.02 260)' };
+      ? { label: 'Abierto · actual', variante: 'secondary' as const }
+      : { label: 'Por abrir', variante: 'default' as const };
 
   return (
     <div
-      className="rounded-[10px] border p-3 flex flex-col gap-2"
-      style={{
-        borderColor: period.isCurrent
-          ? 'oklch(0.45 0.14 145)'
-          : 'var(--arca-border)',
-        background: period.isCurrent
-          ? 'color-mix(in oklch, oklch(0.45 0.14 145), transparent 95%)'
-          : 'var(--arca-surface)',
-        boxShadow: period.isCurrent
-          ? '0 0 0 1px color-mix(in oklch, oklch(0.45 0.14 145), transparent 70%)'
-          : 'none',
-      }}
+      className={cn(
+        'flex flex-col gap-2 rounded-[var(--arca-r-md)] border p-3',
+        period.isCurrent
+          ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)]'
+          : 'border-[var(--arca-border)] bg-[var(--arca-surface)]'
+      )}
     >
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
           {MONTH_NAMES[period.month]} {period.year}
         </span>
-        <span
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
-          style={{
-            background: `color-mix(in oklch, ${estado.color}, transparent 86%)`,
-            color: estado.color,
-          }}
+        {/* Sobre la card tonal del período en curso, un badge tonal del mismo
+          acento se pierde: ahí va sobre la superficie blanca. */}
+        <Badge
+          variant={estado.variante}
+          size="xs"
+          className={
+            period.isCurrent
+              ? 'border-[var(--arca-accent)]/30 bg-[var(--arca-surface)]'
+              : undefined
+          }
         >
           {closed ? (
-            <Lock className="w-2.5 h-2.5" strokeWidth={2} />
+            <Lock className="size-2.5" strokeWidth={2} />
           ) : (
-            <LockOpen className="w-2.5 h-2.5" strokeWidth={2} />
+            <LockOpen className="size-2.5" strokeWidth={2} />
           )}
           {estado.label}
-        </span>
+        </Badge>
       </div>
 
       <div className="text-[11.5px] text-[var(--arca-ink-3)]">
@@ -9957,16 +9962,16 @@ function EspView({
             {/* Validación A = P + PN */}
             <div className="px-3 mt-3">
               {data.balancedCurrent ? (
-                <div className="text-[12px] text-[var(--arca-accent-pos-fg)]">
-                  ✓ Activo = Pasivo + Patrimonio Neto (${' '}
+                <NotaCuadre cuadra>
+                  Activo = Pasivo + Patrimonio Neto ($
                   {fmtMoney(data.totals.activo.current)})
-                </div>
+                </NotaCuadre>
               ) : (
-                <div className="text-[12px] text-[var(--arca-accent-neg-fg)] font-medium">
-                  ✗ No cuadra: Activo $ {fmtMoney(data.totals.activo.current)} ≠
+                <NotaCuadre cuadra={false}>
+                  No cuadra: Activo $ {fmtMoney(data.totals.activo.current)} ≠
                   Pasivo + PN $ {fmtMoney(data.totals.pasivoMasPn.current)}. La
                   emisión está bloqueada hasta corregir.
-                </div>
+                </NotaCuadre>
               )}
               <div className="mt-1">
                 <PriorNotAdjustedNote
@@ -10453,6 +10458,40 @@ function Nota3View({
  * cifras están en moneda heterogénea y multiplicarlas por un coeficiente no las
  * homogeneiza. El comparativo sirve de referencia, pero no es exacto.
  */
+/**
+ * La línea de cuadre al pie de un estado: "✓ cuadra" / "✗ no cuadra".
+ *
+ * Existía cuatro veces con tres formas distintas: dos usaban los tokens
+ * `-fg` —los que llegan a contraste sobre blanco— y las otras dos el color
+ * del punto (`--arca-accent-pos` / `--arca-accent-neg`), que es el del
+ * indicador y no el del texto.
+ */
+function NotaCuadre({
+  cuadra,
+  children,
+}: {
+  cuadra: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-1.5 text-[12px]',
+        cuadra
+          ? 'text-[var(--arca-accent-pos-fg)]'
+          : 'font-medium text-[var(--arca-accent-neg-fg)]'
+      )}
+    >
+      {cuadra ? (
+        <Check className="mt-px size-3.5 shrink-0" strokeWidth={2.4} />
+      ) : (
+        <X className="mt-px size-3.5 shrink-0" strokeWidth={2.4} />
+      )}
+      <span>{children}</span>
+    </div>
+  );
+}
+
 function PriorNotAdjustedNote({
   hasPrior,
   priorInflationApplied,
@@ -10648,18 +10687,11 @@ function EfeView({
       />
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
-        <div
-          className="text-[12px]"
-          style={{
-            color: data.cuadra
-              ? 'var(--arca-accent-pos)'
-              : 'var(--arca-accent-neg)',
-          }}
-        >
+        <NotaCuadre cuadra={data.cuadra}>
           {data.cuadra
-            ? '✓ Las causas explican la variación del efectivo.'
-            : `✗ Las causas ($ ${money(data.totalCausas.current)}) no explican la variación ($ ${money(data.variacion.current)}).`}
-        </div>
+            ? 'Las causas explican la variación del efectivo.'
+            : `Las causas ($ ${money(data.totalCausas.current)}) no explican la variación ($ ${money(data.variacion.current)}).`}
+        </NotaCuadre>
         {valuation === 'ajustado' && data.coeficienteInicio !== null && (
           <div className="text-[11.5px] text-[var(--arca-ink-3)]">
             El efectivo al inicio se reexpresó con coeficiente{' '}
@@ -10886,18 +10918,11 @@ function EepnView({
       </div>
 
       <div className="px-5 py-3 border-t border-[var(--arca-border)] space-y-1">
-        <div
-          className="text-[12px]"
-          style={{
-            color: data.matchesEsp
-              ? 'var(--arca-accent-pos)'
-              : 'var(--arca-accent-neg)',
-          }}
-        >
+        <NotaCuadre cuadra={data.matchesEsp}>
           {data.matchesEsp
-            ? `✓ El saldo al cierre coincide con el Patrimonio Neto del ESP ($ ${money(data.espTotal)}).`
-            : `✗ El saldo al cierre no coincide con el ESP ($ ${money(data.espTotal)}). Revisá el ejercicio.`}
-        </div>
+            ? `El saldo al cierre coincide con el Patrimonio Neto del ESP ($ ${money(data.espTotal)}).`
+            : `El saldo al cierre no coincide con el ESP ($ ${money(data.espTotal)}). Revisá el ejercicio.`}
+        </NotaCuadre>
         {valuation === 'ajustado' && !data.inflationApplied && (
           <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
             El ajuste por inflación del ejercicio todavía no está generado, así
@@ -11118,17 +11143,17 @@ function ErView({
             {/* US 6.2.2 — validación de consistencia ER ↔ ESP */}
             <div className="px-3 mt-3">
               {data.matchesEspCurrent ? (
-                <div className="text-[12px] text-[var(--arca-accent-pos-fg)]">
-                  ✓ El Resultado del ejercicio del ER coincide con el del ESP ($
+                <NotaCuadre cuadra>
+                  El Resultado del ejercicio del ER coincide con el del ESP ($
                   {fmtMoney(data.resultadoCurrent)}).
-                </div>
+                </NotaCuadre>
               ) : (
-                <div className="text-[12px] text-[var(--arca-accent-neg-fg)] font-medium">
-                  ✗ Discrepancia: Resultado del ER $
+                <NotaCuadre cuadra={false}>
+                  Discrepancia: Resultado del ER $
                   {fmtMoney(data.resultadoCurrent)} ≠ Resultado del ESP $
                   {fmtMoney(data.espResultadoCurrent)}. La emisión está
                   bloqueada hasta corregir.
-                </div>
+                </NotaCuadre>
               )}
               <div className="mt-1">
                 <PriorNotAdjustedNote
