@@ -2908,3 +2908,18 @@ export const baseCalculoConcepto = pgTable("base_calculo_concepto", {
 	primaryKey({ columns: [table.baseCalculoId, table.conceptoId], name: "base_calculo_concepto_pkey"}),
 ]);
 
+
+/**
+ * Bitácora de accesos del superadmin a estudios que no son suyos.
+ *
+ * El acceso vive como una fila en `member` con rol 'superadmin', que se borra
+ * al salir; esta tabla es la que sobrevive y responde quién entró a qué
+ * estudio y cuándo, esté el acceso abierto o cerrado.
+ */
+export const superadminAcceso = pgTable("superadmin_acceso", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: text("user_id").notNull(),
+	organizationId: text("organization_id").notNull(),
+	entroAt: timestamp("entro_at", { withTimezone: true }).defaultNow().notNull(),
+	salioAt: timestamp("salio_at", { withTimezone: true }),
+});

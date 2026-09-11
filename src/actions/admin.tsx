@@ -4,8 +4,9 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
+import { ROL_SOPORTE } from '@/lib/permissions';
 import { organizationModule, orgModule } from '@/drizzle/schema';
-import { eq, and } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 
@@ -24,7 +25,9 @@ async function requireOwner() {
     )
     .limit(1);
 
-  if (m?.role !== 'owner') {
+  // El acceso de soporte del superadmin vale lo mismo que un owner: entra
+  // justamente a configurar el estudio o a destrabar algo.
+  if (m?.role !== 'owner' && m?.role !== ROL_SOPORTE) {
     throw new Error('Solo el administrador puede realizar esta acción');
   }
 
@@ -48,7 +51,10 @@ export const getOrgMembers = createServerFn({
     })
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
-    .where(eq(member.organizationId, orgId));
+    // El acceso de soporte del superadmin no es un miembro del estudio y no
+    // tiene por qué aparecer en su lista: es alguien de la plataforma entrando
+    // a ayudar, y queda registrado en `superadmin_acceso`.
+    .where(and(eq(member.organizationId, orgId), ne(member.role, ROL_SOPORTE)));
 
   return members;
 });

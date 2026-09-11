@@ -27,6 +27,9 @@ import { FrontendTools } from '@/components/copilot/FrontendTools';
 import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
 import { VisiblePageReadable } from '@/components/copilot/VisiblePageReadable';
 import { cn } from '@/lib/utils';
+import { userQuery } from '@/lib/user-query';
+import { ROL_SOPORTE } from '@/lib/permissions';
+import { ShieldAlert } from 'lucide-react';
 
 export const Route = createFileRoute('/_authed')({
   component: RouteComponent,
@@ -67,6 +70,43 @@ export const Route = createFileRoute('/_authed')({
     return session;
   },
 });
+
+/**
+ * Franja de aviso mientras el superadmin trabaja dentro de un estudio ajeno.
+ *
+ * El acceso de soporte es invisible para el estudio —no aparece entre sus
+ * miembros— así que tiene que ser bien visible para quien lo está usando: sin
+ * esto es fácil olvidarse de que lo que se está tocando son los datos fiscales
+ * de otro, y dejar el acceso abierto por semanas.
+ */
+function AvisoSoporte() {
+  const { data: user } = useQuery(userQuery);
+  const enSoporte =
+    (user as { organizationRole?: string | null } | undefined)
+      ?.organizationRole === ROL_SOPORTE;
+  if (!enSoporte) return null;
+
+  const estudio =
+    (user as { organizationName?: string | null } | undefined)
+      ?.organizationName ?? 'este estudio';
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] px-4 py-1.5 text-[12px] text-[var(--arca-accent-warn-fg)]">
+      <ShieldAlert className="size-3.5 shrink-0" strokeWidth={1.75} />
+      <span className="min-w-0 flex-1">
+        Estás dentro de <strong className="font-semibold">{estudio}</strong> con
+        un acceso de soporte. No sos miembro del estudio y todo lo que hagas
+        queda registrado.
+      </span>
+      <a
+        href="/organizaciones"
+        className="shrink-0 font-semibold underline underline-offset-2"
+      >
+        Salir
+      </a>
+    </div>
+  );
+}
 
 function RouteComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -109,6 +149,7 @@ function RouteComponent() {
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
         <SidebarInset className="relative flex min-h-0 min-w-0 flex-col">
+          <AvisoSoporte />
           <div
             data-arca-content
             className={cn(
