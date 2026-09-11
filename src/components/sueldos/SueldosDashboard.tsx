@@ -13,6 +13,7 @@ import {
   Upload,
   FileCheck,
 } from 'lucide-react';
+import { CardsResumen } from '@/components/shared/cards-resumen';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -414,93 +415,44 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
         </div>
       </div>
 
-      {/* KPI band */}
-      <div className="mb-7 grid grid-cols-4 gap-8 border-b border-[var(--arca-border)] pb-5">
-        {/* Col 1 */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5">
-            <Users
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Empleados activos
-            </span>
-          </div>
-          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
-            {importEmpleados.filter((e) => e.empleado.activo).length}
-          </div>
-        </div>
-        {/* Col 2 */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5">
-            <FileText
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Liquidaciones (período)
-            </span>
-          </div>
-          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
-            {loadingLiq ? '—' : liquidaciones.length}
-          </div>
-        </div>
-        {/* Col 3 */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5">
-            <Calculator
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Total bruto
-            </span>
-          </div>
-          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
-            {loadingLiq
+      {/* La misma banda de resumen que Deudas, Vencimientos y Convenio: los
+        números viven en cards, no sueltos sobre el fondo. La barra de acento
+        va en turquesa porque acá ningún número es una mala noticia. */}
+      <CardsResumen
+        className="mb-5"
+        cards={[
+          {
+            label: 'Empleados activos',
+            valor: String(
+              importEmpleados.filter((e) => e.empleado.activo).length
+            ),
+            icono: Users,
+            tono: 'acento',
+          },
+          {
+            label: 'Liquidaciones (período)',
+            valor: loadingLiq ? '—' : String(liquidaciones.length),
+            icono: FileText,
+            tono: 'acento',
+          },
+          {
+            label: 'Total bruto',
+            valor: loadingLiq
               ? '—'
-              : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`}
-          </div>
-        </div>
-        {/* Col 4 */}
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-1.5">
-            <LayoutDashboard
-              style={{ width: 15, height: 15, color: 'var(--arca-ink-4)' }}
-            />
-            <span
-              style={{
-                fontSize: '12.5px',
-                color: 'var(--arca-ink-3)',
-                fontWeight: 500,
-              }}
-            >
-              Total neto
-            </span>
-          </div>
-          <div className="mt-0.5 text-[22px] leading-[1.1] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
-            {loadingLiq
+              : `$${Math.ceil(totalBruto).toLocaleString('es-AR')}`,
+            icono: Calculator,
+            tono: 'acento',
+          },
+          {
+            label: 'Total neto',
+            valor: loadingLiq
               ? '—'
-              : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`}
-          </div>
-        </div>
-      </div>
+              : `$${Math.ceil(totalNeto).toLocaleString('es-AR')}`,
+            icono: LayoutDashboard,
+            tono: 'acento',
+          },
+        ]}
+      />
 
       {/* Cierre contable del período (US 3.3.1) */}
       <SueldosCierreContable clientId={clientId} periodo={periodo} />

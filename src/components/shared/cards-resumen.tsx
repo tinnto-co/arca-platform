@@ -1,3 +1,5 @@
+import type { LucideIcon } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**
@@ -45,6 +47,8 @@ export interface CardResumen {
   sub?: string | null;
   /** Tono de esa línea: gris por defecto, verde o rojo si compara. */
   subTono?: TonoSub;
+  /** Ícono del rótulo, cuando la pantalla los usa para leer la banda de un vistazo. */
+  icono?: LucideIcon;
   tono?: TonoResumen;
 }
 
@@ -69,7 +73,8 @@ export function CardsResumen({
             className="absolute top-[14px] bottom-[14px] left-0 w-[2px] rounded-[0_2px_2px_0]"
             style={{ background: BARRA[c.tono ?? 'neutro'] }}
           />
-          <span className="block pl-[6px] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-4)] uppercase">
+          <span className="flex items-center gap-1.5 pl-[6px] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-4)] uppercase">
+            {c.icono && <c.icono className="size-3.5 shrink-0" />}
             {c.label}
           </span>
           <div className="pl-[6px] text-[22px] leading-none font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
