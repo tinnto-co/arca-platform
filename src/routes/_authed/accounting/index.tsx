@@ -595,12 +595,8 @@ function TabBar({
       const anchoSolapa = anchos.slice(0, solapas.length);
       const disponible = bar.getBoundingClientRect().width;
       const GAP = 4;
-      const SEPARADOR = 1 + 8 * 2; // línea + su margen (mx-2)
 
-      const extra = (i: number) =>
-        anchoSolapa[i] +
-        (i === 0 ? 0 : GAP) +
-        (i > 0 && solapas[i].grupo !== solapas[i - 1].grupo ? SEPARADOR : 0);
+      const extra = (i: number) => anchoSolapa[i] + (i === 0 ? 0 : GAP);
 
       const todas = anchoSolapa.reduce((s, _, i) => s + extra(i), 0);
       if (todas <= disponible) {
@@ -684,14 +680,8 @@ function TabBar({
       ref={barRef}
       className="relative flex items-center gap-1 mb-5 pb-1.5 border-b border-[var(--arca-border)]"
     >
-      {mostradas.map((tab, i) => (
+      {mostradas.map((tab) => (
         <Fragment key={tab.id}>
-          {i > 0 && tab.grupo !== mostradas[i - 1].grupo && (
-            <span
-              aria-hidden
-              className="w-px h-4 mx-2 shrink-0 bg-[var(--arca-border)]"
-            />
-          )}
           <button
             onClick={() => onChange(tab.id)}
             aria-current={active === tab.id ? 'page' : undefined}
@@ -5321,7 +5311,6 @@ function Mayor({
   const [origin, setOrigin] = useState<'' | JournalOrigin>('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [sheetPerAccount, setSheetPerAccount] = useState(false);
 
   const { data: fiscalYears = [] } = useQuery({
     queryKey: ['accounting', 'fiscal-years', clientId],
@@ -5426,7 +5415,11 @@ function Mayor({
     };
   }
 
-  const exportXlsx = () => {
+  /** Cuántos filtros propios están puestos (el ejercicio y el modo no son
+   *  filtros: son en qué se está parado). */
+  const filtrosPuestos = (from ? 1 : 0) + (to ? 1 : 0) + (origin ? 1 : 0);
+
+  const exportXlsx = (sheetPerAccount: boolean) => {
     const data = buildExportData();
     if (!data || data.sections.length === 0) {
       toast.error('No hay datos para exportar');
@@ -5466,140 +5459,158 @@ function Mayor({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          <div className="flex rounded-[8px] border border-[var(--arca-border)] overflow-hidden h-8 self-end">
-            {(['cuenta', 'consolidado'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className="px-3 text-[12px] font-medium transition-colors"
-                style={{
-                  background: mode === m ? 'var(--arca-accent)' : 'transparent',
-                  color: mode === m ? 'white' : 'var(--arca-ink-2)',
-                }}
-              >
-                {m === 'cuenta' ? 'Por cuenta' : 'Consolidado'}
-              </button>
-            ))}
-          </div>
-
-          {fiscalYears.length > 1 && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">
-                Ejercicio
-              </label>
-              <Select
-                value={effectiveFyId}
-                onValueChange={(v) => setFiscalYearId(v)}
-              >
-                <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {fiscalYears.map((y) => (
-                    <SelectItem key={y.id} value={y.id}>
-                      N°{y.numero}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {mode === 'cuenta' && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">
-                Cuenta
-              </label>
-              <Select value={accountId} onValueChange={(v) => setAccountId(v)}>
-                <SelectTrigger size="sm" className="w-72 text-[12.5px]">
-                  <SelectValue placeholder="— Elegí una cuenta —" />
-                </SelectTrigger>
-                <SelectContent>
-                  {imputables.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.code} · {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Desde
-            </label>
-            <SelectorFecha
-              value={from}
-              onChange={(v) => setFrom(v)}
-              className="w-36"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Hasta
-            </label>
-            <SelectorFecha
-              value={to}
-              onChange={(v) => setTo(v)}
-              className="w-36"
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Origen
-            </label>
-            <Select
-              value={origin === '' ? 'all' : origin}
-              onValueChange={(v) =>
-                setOrigin(v === 'all' ? '' : (v as JournalOrigin))
-              }
-            >
-              <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
-                  <SelectItem key={k} value={k}>
-                    {v}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="ml-auto flex items-center gap-2 self-end">
-            {mode === 'consolidado' && (
-              <label className="flex items-center gap-1.5 text-[11px] text-[var(--arca-ink-2)] cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={sheetPerAccount}
-                  onChange={(e) => setSheetPerAccount(e.target.checked)}
-                  className="accent-[var(--arca-accent)]"
-                />
-                Excel: hoja por cuenta
-              </label>
-            )}
-            <button
-              onClick={exportXlsx}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
+      {/* Los filtros, afuera de la card. Arriba las descargas —así nunca se
+        caen de renglón cuando aparece "Limpiar"— y debajo los filtros, todos
+        de la misma altura. */}
+      <div className="mb-[10px] flex flex-wrap items-center justify-end gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <Download className="size-3.5" strokeWidth={1.8} />
               Excel
-            </button>
-            <button
-              onClick={exportPdf}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            </Button>
+          </DropdownMenuTrigger>
+          {/* "Excel: hoja por cuenta" era un checkbox al lado del botón, y no
+            se entendía qué cambiaba. Ahora la pregunta aparece al tocar
+            Excel, que es cuando importa. */}
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-[12.5px]"
+              onSelect={() => exportXlsx(false)}
             >
-              <Download className="w-3.5 h-3.5" strokeWidth={1.8} /> PDF
+              Una sola hoja
+            </DropdownMenuItem>
+            {mode === 'consolidado' && (
+              <DropdownMenuItem
+                className="text-[12.5px]"
+                onSelect={() => exportXlsx(true)}
+              >
+                Una hoja por cuenta
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={exportPdf}
+        >
+          <Download className="size-3.5" strokeWidth={1.8} />
+          PDF
+        </Button>
+      </div>
+
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        {/* Segmentado del sistema, el mismo de "14 días · Mes · Trimestre". */}
+        <div
+          role="tablist"
+          className="flex items-center gap-0.5 rounded-lg bg-[var(--arca-surface-2)] p-[3px]"
+        >
+          {(['cuenta', 'consolidado'] as const).map((m) => (
+            <button
+              key={m}
+              role="tab"
+              type="button"
+              aria-selected={mode === m}
+              onClick={() => setMode(m)}
+              className={cn(
+                'flex h-[26px] items-center rounded-md px-3 text-[12.5px] font-medium transition-colors duration-[120ms]',
+                mode === m
+                  ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                  : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+              )}
+            >
+              {m === 'cuenta' ? 'Por cuenta' : 'Consolidado'}
             </button>
-          </div>
+          ))}
         </div>
 
+        {fiscalYears.length > 1 && (
+          <Select
+            value={effectiveFyId}
+            onValueChange={(v) => setFiscalYearId(v)}
+          >
+            {/* Al ancho del rótulo más largo: "Ejercicio N°12" entraba justo
+              y se truncaba. */}
+            <SelectTrigger size="sm" className="w-[160px] data-[size=sm]:h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fiscalYears.map((y) => (
+                <SelectItem key={y.id} value={y.id}>
+                  Ejercicio N°{y.numero}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {mode === 'cuenta' && (
+          <SearchableSelect
+            size="sm"
+            width={230}
+            value={accountId}
+            onValueChange={(v) => setAccountId(v)}
+            placeholder="— Elegí una cuenta —"
+            searchPlaceholder="Buscar cuenta…"
+            label="Cuenta"
+            options={imputables.map((a) => ({
+              value: a.id,
+              label: `${a.code} · ${a.name}`,
+            }))}
+          />
+        )}
+
+        <SelectorFecha
+          size="sm"
+          value={from}
+          onChange={(v) => setFrom(v)}
+          placeholder="Desde"
+          aria-label="Mayor desde"
+          className="w-[132px]"
+        />
+        <SelectorFecha
+          size="sm"
+          value={to}
+          onChange={(v) => setTo(v)}
+          placeholder="Hasta"
+          aria-label="Mayor hasta"
+          className="w-[132px]"
+        />
+
+        <Select
+          value={origin === '' ? 'all' : origin}
+          onValueChange={(v) =>
+            setOrigin(v === 'all' ? '' : (v as JournalOrigin))
+          }
+        >
+          <SelectTrigger size="sm" className="w-[180px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos los orígenes</SelectItem>
+            {Object.entries(JOURNAL_ORIGIN_LABELS).map(([k, v]) => (
+              <SelectItem key={k} value={k}>
+                {v}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {filtrosPuestos > 0 && (
+          <LimpiarFiltros
+            onLimpiar={() => {
+              setFrom('');
+              setTo('');
+              setOrigin('');
+            }}
+          />
+        )}
+      </div>
+
+      <ArcaCard>
         {/* Body */}
         {mode === 'cuenta' ? (
           !accountId ? (
@@ -5636,7 +5647,9 @@ function Mayor({
           <div>
             {/* Sin encabezado, las tres columnas de plata no decían cuál era
                 el Debe, cuál el Haber y cuál el saldo. */}
-            <div className="flex items-center gap-3 px-4 py-1.5 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10.5px] font-semibold">
+            {/* Misma altura que el header de la tabla del sistema (38px): a
+              py-1.5 el rótulo quedaba aplastado contra las filas. */}
+            <div className="flex h-[38px] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
               <span className="w-4 shrink-0" aria-hidden />
               <span className={MAYOR_COL_CODE}>Código</span>
               <span className="flex-1 min-w-0">Cuenta</span>
@@ -5702,7 +5715,7 @@ function LedgerTable({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
+      <div className="flex h-[38px] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
         <div className="w-24 shrink-0">Fecha</div>
         <div className="w-12 shrink-0">N°</div>
         <div className="flex-1 min-w-0">Descripción</div>
@@ -5929,84 +5942,109 @@ function Balance({
 
   return (
     <>
-      <ArcaCard>
-        {/* Toolbar */}
-        <div className="flex flex-wrap items-end gap-2 px-4 py-3 border-b border-[var(--arca-border)]">
-          {fiscalYears.length > 1 && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-[var(--arca-ink-3)]">
-                Ejercicio
-              </label>
-              <Select
-                value={effectiveFyId}
-                onValueChange={(v) => setFiscalYearId(v)}
-              >
-                <SelectTrigger size="sm" className="w-36 text-[12.5px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {fiscalYears.map((y) => (
-                    <SelectItem key={y.id} value={y.id}>
-                      N°{y.numero}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] text-[var(--arca-ink-3)]">
-              Fecha de corte
-            </label>
-            <SelectorFecha
-              value={asOf}
-              onChange={(v) => setAsOf(v)}
-              className="w-40"
-            />
-          </div>
-          {data && (
-            <span className="text-[12px] text-[var(--arca-ink-3)] self-end pb-1.5">
-              al {fmtFecha(data.asOf)}
-            </span>
-          )}
+      {/* Descargas arriba a la derecha y filtros debajo, como en Mayor. */}
+      <div className="mb-[10px] flex flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => doExport('xlsx')}
+        >
+          <Download className="size-3.5" strokeWidth={1.8} />
+          Excel
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => doExport('pdf')}
+        >
+          <Download className="size-3.5" strokeWidth={1.8} />
+          PDF
+        </Button>
+      </div>
 
-          <div className="ml-auto flex items-center gap-2 self-end">
-            <button
-              onClick={() => doExport('xlsx')}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={1.8} />{' '}
-              Excel
-            </button>
-            <button
-              onClick={() => doExport('pdf')}
-              className="flex items-center gap-1.5 h-8 px-2.5 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
-            >
-              <Download className="w-3.5 h-3.5" strokeWidth={1.8} /> PDF
-            </button>
-          </div>
-        </div>
-
-        {/* Alerta de descuadre */}
-        {data && !data.balanced && (
-          <div
-            className="px-4 py-2.5 text-[12.5px] font-medium border-b border-[var(--arca-border)]"
-            style={{
-              background:
-                'color-mix(in oklch, oklch(0.55 0.18 25), transparent 92%)',
-              color: 'oklch(0.45 0.18 25)',
-            }}
+      <div className="mb-[10px] flex flex-wrap items-center gap-2">
+        {fiscalYears.length > 1 && (
+          <Select
+            value={effectiveFyId}
+            onValueChange={(v) => setFiscalYearId(v)}
           >
-            ⚠ El balance NO cuadra. Débitos $ {fmtMoney(data.totals.sumaDebe)}{' '}
-            vs Créditos $ {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
-            {fmtMoney(Math.abs(data.totals.sumaDebe - data.totals.sumaHaber))})
-            · Saldos deudores $ {fmtMoney(data.totals.saldoDeudor)} vs
-            acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
-          </div>
+            <SelectTrigger size="sm" className="w-[150px] data-[size=sm]:h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fiscalYears.map((y) => (
+                <SelectItem key={y.id} value={y.id}>
+                  Ejercicio N°{y.numero}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
+        <SelectorFecha
+          size="sm"
+          value={asOf}
+          onChange={(v) => setAsOf(v)}
+          placeholder="Fecha de corte"
+          aria-label="Fecha de corte"
+          className="w-[150px]"
+        />
+        {data && (
+          <span className="text-[12.5px] text-[var(--arca-ink-3)]">
+            al {fmtFecha(data.asOf)}
+          </span>
+        )}
+      </div>
 
+      {/* Que cuadre o no es el resultado de la pantalla, no una nota al pie de
+        la tabla: va como banner tonal arriba, verde cuando cuadra y rojo
+        cuando no. Antes el "no cuadra" era una franja dentro de la card con
+        colores propios en oklch, y el "cuadra" una línea suelta abajo de
+        todo. */}
+      {data && (
+        <div
+          role="status"
+          className={cn(
+            'mb-[10px] flex items-start gap-2 rounded-[var(--arca-r-md)] border px-3 py-2 text-[12.5px]',
+            data.balanced
+              ? 'border-[var(--arca-accent-pos)]/25 bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
+              : 'border-[var(--arca-accent-neg)]/25 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
+          )}
+        >
+          {data.balanced ? (
+            <Check className="mt-px size-3.5 shrink-0" strokeWidth={2.4} />
+          ) : (
+            <AlertTriangle
+              className="mt-px size-3.5 shrink-0"
+              strokeWidth={2}
+            />
+          )}
+          <span>
+            {data.balanced ? (
+              <>
+                El balance cuadra: débitos = créditos y saldos deudores =
+                acreedores.
+              </>
+            ) : (
+              <>
+                El balance <strong>no cuadra</strong>. Débitos ${' '}
+                {fmtMoney(data.totals.sumaDebe)} vs créditos ${' '}
+                {fmtMoney(data.totals.sumaHaber)} (dif. ${' '}
+                {fmtMoney(
+                  Math.abs(data.totals.sumaDebe - data.totals.sumaHaber)
+                )}
+                ) · saldos deudores $ {fmtMoney(data.totals.saldoDeudor)} vs
+                acreedores $ {fmtMoney(data.totals.saldoAcreedor)}.
+              </>
+            )}
+          </span>
+        </div>
+      )}
+
+      <ArcaCard>
         {/* Column headers */}
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[11px] font-semibold">
+        <div className="flex h-[38px] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <div className="w-24 shrink-0">Código</div>
           <div className="flex-1 min-w-0">Cuenta</div>
           <div className={BALANCE_COL_MONEY}>Suma Debe</div>
@@ -6055,10 +6093,8 @@ function Balance({
                 </div>
               </button>
             ))}
-            <div
-              className="flex items-center gap-3 px-4 py-2.5 border-t-2 text-[12.5px] font-semibold"
-              style={{ borderColor: 'var(--arca-border)' }}
-            >
+            {/* Gris, como los "Totales generales" del Mayor. */}
+            <div className="flex items-center gap-3 border-t-2 border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3 text-[13px] font-semibold">
               <div className="w-24 shrink-0" />
               <div className="flex-1 min-w-0">Totales</div>
               {/* Sin el «$» que traía de más: el cuerpo de la tabla va sin
@@ -6076,12 +6112,6 @@ function Balance({
                 {fmtMoney(data.totals.saldoAcreedor)}
               </div>
             </div>
-            {data.balanced && (
-              <div className="px-4 py-2 text-[11.5px] text-[oklch(0.40_0.14_145)] flex items-center gap-1.5">
-                ✓ El balance cuadra (débitos = créditos y saldos deudores =
-                acreedores).
-              </div>
-            )}
           </>
         )}
       </ArcaCard>
