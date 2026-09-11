@@ -23,8 +23,14 @@ import {
   getPayrollEmployerConfig,
   updateEmpleado,
 } from '@/actions/sueldos';
-import { puedeLiquidarPeriodo, calcularDiasSemestre } from '@/lib/payroll-period-rules';
-import { ReciboFormulario, type ReciboFormValues } from '@/components/sueldos/ReciboFormulario';
+import {
+  puedeLiquidarPeriodo,
+  calcularDiasSemestre,
+} from '@/lib/payroll-period-rules';
+import {
+  ReciboFormulario,
+  type ReciboFormValues,
+} from '@/components/sueldos/ReciboFormulario';
 import {
   TablaReciboSos,
   type ConceptoImportado,
@@ -194,11 +200,16 @@ export function SueldosSimulador({
   const [basicoOverrideInput, setBasicoOverrideInput] = useState('');
 
   const periodo = flowHeader?.periodo ?? '';
-  const permiteLiquidar =
-    periodo.length === 7 && puedeLiquidarPeriodo(periodo);
+  const permiteLiquidar = periodo.length === 7 && puedeLiquidarPeriodo(periodo);
 
   const { data: ultimoRecibo, isLoading: loadingUltimo } = useQuery({
-    queryKey: ['ultimo-recibo-importado', clientId, sosEmpleadoId, reciboIdToLoad, flowHeader?.periodo],
+    queryKey: [
+      'ultimo-recibo-importado',
+      clientId,
+      sosEmpleadoId,
+      reciboIdToLoad,
+      flowHeader?.periodo,
+    ],
     queryFn: () =>
       getUltimoReciboImportado({
         data: {
@@ -207,7 +218,9 @@ export function SueldosSimulador({
           ...(reciboIdToLoad ? { liquidacionId: reciboIdToLoad } : {}),
           // En modo nuevo recibo (sin reciboIdToLoad), pasar el período destino para el
           // cálculo correcto del mejor sueldo del semestre (ej: Jan–Jun para SAC de junio).
-          ...(!reciboIdToLoad && flowHeader?.periodo ? { periodoSemestre: flowHeader.periodo } : {}),
+          ...(!reciboIdToLoad && flowHeader?.periodo
+            ? { periodoSemestre: flowHeader.periodo }
+            : {}),
         },
       }),
     enabled: !!sosEmpleadoId,
@@ -215,17 +228,15 @@ export function SueldosSimulador({
 
   // Plantilla con todos los conceptos SOS; se carga solo cuando flowHeader está seteado
   // (es decir, después de que el usuario presionó "Agregar").
-  const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery(
-    {
-      queryKey: ['plantilla-manual-sos', clientId],
-      queryFn: () =>
-        listConceptosPlantillaManualSos({
-          data: { clientId },
-        }),
-      enabled: !!clientId && !!flowHeader,
-      staleTime: 10 * 60 * 1000,
-    }
-  );
+  const { data: plantillaManual = [], isLoading: loadingPlantilla } = useQuery({
+    queryKey: ['plantilla-manual-sos', clientId],
+    queryFn: () =>
+      listConceptosPlantillaManualSos({
+        data: { clientId },
+      }),
+    enabled: !!clientId && !!flowHeader,
+    staleTime: 10 * 60 * 1000,
+  });
 
   const { data: basicoData, isLoading: loadingBasico } = useQuery({
     queryKey: [
@@ -261,8 +272,10 @@ export function SueldosSimulador({
   const fallbackPeriodoLabel = basicoData?.fallbackPeriodoLabel ?? null;
   const periodoEscalaLabel = basicoData?.periodoEscalaLabel ?? null;
   // Fechas del empleado: primero desde el form (flujo nuevo recibo), luego desde basicoData (flujo editar)
-  const fechaAltaDisplay = flowHeader?.fechaAlta ?? basicoData?.fechaAlta ?? null;
-  const fechaIngresoDisplay = flowHeader?.fechaIngreso ?? basicoData?.fechaIngreso ?? null;
+  const fechaAltaDisplay =
+    flowHeader?.fechaAlta ?? basicoData?.fechaAlta ?? null;
+  const fechaIngresoDisplay =
+    flowHeader?.fechaIngreso ?? basicoData?.fechaIngreso ?? null;
 
   // Bruto del período anterior (haberes + no remunerativo del último recibo cargado).
   // En modo "nuevo recibo" ultimoRecibo es el último recibo existente (= mes anterior).
@@ -312,8 +325,7 @@ export function SueldosSimulador({
   }, [flowHeader]);
 
   const isCopyMode = !!flowHeader?.copiarUltimoRecibo;
-  const isLoadingTable =
-    loadingPlantilla || (isCopyMode && loadingUltimo);
+  const isLoadingTable = loadingPlantilla || (isCopyMode && loadingUltimo);
   const showBase =
     !!flowHeader && !isLoadingTable && plantillaManual.length > 0;
   /** Tabla con datos del último recibo importado (solo si hay último recibo). */
@@ -385,11 +397,11 @@ export function SueldosSimulador({
             antiguedadAnios !== null ? String(antiguedadAnios) : c.cantidad,
         };
       }
-      if (num === 19) return { ...c, porcentaje: '8.33', cantidad: '1' };  // SAC proporcional
-      if (num === 201) return { ...c, porcentaje: '11' };  // Jubilación
-      if (num === 202) return { ...c, porcentaje: '3' };   // Ley 19032
-      if (num === 203) return { ...c, porcentaje: '3' };   // Obra social
-      if (num === 206) return { ...c, porcentaje: c.porcentaje ?? '2' };   // Cuota sindical (empresa-específico)
+      if (num === 19) return { ...c, porcentaje: '8.33', cantidad: '1' }; // SAC proporcional
+      if (num === 201) return { ...c, porcentaje: '11' }; // Jubilación
+      if (num === 202) return { ...c, porcentaje: '3' }; // Ley 19032
+      if (num === 203) return { ...c, porcentaje: '3' }; // Obra social
+      if (num === 206) return { ...c, porcentaje: c.porcentaje ?? '2' }; // Cuota sindical (empresa-específico)
       if (num === 209) return { ...c, monto: c.monto ?? '100' }; // Aporte solidario Osecac: $100 fijos (TIN-1302)
       if (num === 413) {
         // Antigüedad no remunerativa: % sobre el monto del concepto 411 (TIN-1302).
@@ -398,8 +410,8 @@ export function SueldosSimulador({
           importeConceptoNumero: c.importeConceptoNumero ?? '411',
         };
       }
-      if (num === 501) return { ...c, porcentaje: '2' };   // Ret. obra social
-      if (num === 502) return { ...c, porcentaje: '3' };   // Ret. jubilación
+      if (num === 501) return { ...c, porcentaje: '2' }; // Ret. obra social
+      if (num === 502) return { ...c, porcentaje: '3' }; // Ret. jubilación
       if (num === 503) return { ...c, porcentaje: '0.5' }; // Ret. ley 19032
       return c;
     });
@@ -442,19 +454,25 @@ export function SueldosSimulador({
       return;
     }
     const plantillaBaseCodes = plantillaManual
-      .filter((c) => (c as typeof c & { isPlantillaBase?: boolean }).isPlantillaBase)
+      .filter(
+        (c) => (c as typeof c & { isPlantillaBase?: boolean }).isPlantillaBase
+      )
       .map((c) => c.codigo);
     const defaultCodes = esValorHoraCat
       ? new Set(['2', '3', '201', '202', '203'])
       : new Set(['1', '3', '201', '202', '203']);
-    const initial = plantillaBaseCodes.length > 0
-      ? (() => {
-          const s = new Set(plantillaBaseCodes);
-          // Para empleados con valor por hora: excluir concepto 1 e incluir concepto 2
-          if (esValorHoraCat) { s.delete('1'); s.add('2'); }
-          return s;
-        })()
-      : defaultCodes;
+    const initial =
+      plantillaBaseCodes.length > 0
+        ? (() => {
+            const s = new Set(plantillaBaseCodes);
+            // Para empleados con valor por hora: excluir concepto 1 e incluir concepto 2
+            if (esValorHoraCat) {
+              s.delete('1');
+              s.add('2');
+            }
+            return s;
+          })()
+        : defaultCodes;
     setActiveCodigos(initial);
   }, [
     flowHeader?.importEmpleadoId,
@@ -489,12 +507,13 @@ export function SueldosSimulador({
           .map((c) => c.codigo)
       )
     );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCopyMode, ultimoRecibo, initialData]);
 
   const guardarRecibo = useMutation({
     mutationFn: async () => {
-      if (!flowHeader) throw new Error('Completá el formulario y presioná Agregar');
+      if (!flowHeader)
+        throw new Error('Completá el formulario y presioná Agregar');
       const conceptos = buildConceptosParaGuardar(conceptosActivos, tablaEdits);
       if (conceptos.length === 0) {
         throw new Error('No hay conceptos para guardar');
@@ -550,7 +569,8 @@ export function SueldosSimulador({
     mutationFn: async () => {
       if (!flowHeader) throw new Error('Sin empleado seleccionado');
       const valor = parseFloat(basicoOverrideInput.replace(',', '.'));
-      if (isNaN(valor) || valor <= 0) throw new Error('Ingresá un monto válido mayor a 0');
+      if (isNaN(valor) || valor <= 0)
+        throw new Error('Ingresá un monto válido mayor a 0');
       return updateEmpleado({
         data: {
           id: flowHeader.importEmpleadoId,
@@ -571,7 +591,8 @@ export function SueldosSimulador({
         ],
       });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : 'Error al guardar'),
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'Error al guardar'),
   });
 
   const handleTablaChange = useCallback((edits: EditsMap) => {
@@ -607,7 +628,7 @@ export function SueldosSimulador({
       next.delete(otroSac);
       return next;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowHeader?.periodo, ultimoRecibo?.mejorSueldoSemestre, diasSemestre]);
 
   // Cuando llega initialData (desde "Editar" en la solapa Recibo), pre-carga el simulador.
@@ -765,18 +786,28 @@ export function SueldosSimulador({
       observacionRecibo: flowHeader.observacionRecibo ?? '',
       copiarUltimoRecibo: flowHeader.copiarUltimoRecibo ? 'si' : 'no',
       situacionRevista1Id: flowHeader.situacionRevista1Id ?? '',
-      situacionRevista1DiaInicio: flowHeader.situacionRevista1DiaInicio != null
-        ? String(flowHeader.situacionRevista1DiaInicio) : '1',
+      situacionRevista1DiaInicio:
+        flowHeader.situacionRevista1DiaInicio != null
+          ? String(flowHeader.situacionRevista1DiaInicio)
+          : '1',
       situacionRevista2Id: flowHeader.situacionRevista2Id ?? '',
-      situacionRevista2DiaInicio: flowHeader.situacionRevista2DiaInicio != null
-        ? String(flowHeader.situacionRevista2DiaInicio) : '',
+      situacionRevista2DiaInicio:
+        flowHeader.situacionRevista2DiaInicio != null
+          ? String(flowHeader.situacionRevista2DiaInicio)
+          : '',
       situacionRevista3Id: flowHeader.situacionRevista3Id ?? '',
-      situacionRevista3DiaInicio: flowHeader.situacionRevista3DiaInicio != null
-        ? String(flowHeader.situacionRevista3DiaInicio) : '',
-      diasTrabajados: flowHeader.diasTrabajados != null
-        ? String(flowHeader.diasTrabajados) : '',
-      horasTrabajadas: flowHeader.horasTrabajadas != null
-        ? String(flowHeader.horasTrabajadas) : '',
+      situacionRevista3DiaInicio:
+        flowHeader.situacionRevista3DiaInicio != null
+          ? String(flowHeader.situacionRevista3DiaInicio)
+          : '',
+      diasTrabajados:
+        flowHeader.diasTrabajados != null
+          ? String(flowHeader.diasTrabajados)
+          : '',
+      horasTrabajadas:
+        flowHeader.horasTrabajadas != null
+          ? String(flowHeader.horasTrabajadas)
+          : '',
       importeMaternidadArt13: flowHeader.importeMaternidadArt13 ?? '',
       fechaBaja: flowHeader.fechaBaja ?? '',
     });
@@ -807,7 +838,9 @@ export function SueldosSimulador({
             <div className="text-sm">
               <span className="font-medium">{flowHeader.empleadoNombre}</span>
               <span className="mx-2 text-muted-foreground">·</span>
-              <span className="text-muted-foreground">Período {flowHeader.periodo}</span>
+              <span className="text-muted-foreground">
+                Período {flowHeader.periodo}
+              </span>
             </div>
             <Select
               value={flowHeader.copiarUltimoRecibo ? 'si' : 'no'}
@@ -840,10 +873,22 @@ export function SueldosSimulador({
             )}
           </div>
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={editarDatos} className="gap-1.5 text-muted-foreground">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={editarDatos}
+              className="gap-1.5 text-muted-foreground"
+            >
               Editar datos
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={resetFlow} className="gap-1.5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={resetFlow}
+              className="gap-1.5"
+            >
               <FilePlus2 className="h-4 w-4" />
               Nuevo recibo
             </Button>
@@ -854,31 +899,38 @@ export function SueldosSimulador({
       {!!flowHeader && isLoadingTable && (
         <p className="text-sm text-muted-foreground flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" />
-          {loadingPlantilla ? 'Cargando conceptos SOS…' : 'Cargando último recibo…'}
+          {loadingPlantilla
+            ? 'Cargando conceptos SOS…'
+            : 'Cargando último recibo…'}
         </p>
       )}
 
       {isCopyMode && !loadingUltimo && !ultimoRecibo && !loadingPlantilla && (
-        <p className="text-sm text-amber-700">
-          No hay recibo previo para este empleado — se muestra el catálogo completo
-          con valores vacíos para carga manual.
+        <p className="text-sm text-[var(--arca-accent-warn-fg)]">
+          No hay recibo previo para este empleado — se muestra el catálogo
+          completo con valores vacíos para carga manual.
         </p>
       )}
 
       {showBase && (fechaAltaDisplay || fechaIngresoDisplay) && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-md border border-border/50 bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
           <span>
-            <span className="font-medium text-foreground">Fecha de alta (antigüedad):</span>{' '}
+            <span className="font-medium text-foreground">
+              Fecha de alta (antigüedad):
+            </span>{' '}
             {fmtDate(fechaAltaDisplay)}
           </span>
           <span>
-            <span className="font-medium text-foreground">Fecha de ingreso:</span>{' '}
+            <span className="font-medium text-foreground">
+              Fecha de ingreso:
+            </span>{' '}
             {fmtDate(fechaIngresoDisplay)}
           </span>
           {flowHeader?.antiguedadAnios != null && (
             <span>
               <span className="font-medium text-foreground">Antigüedad:</span>{' '}
-              {flowHeader.antiguedadAnios} {flowHeader.antiguedadAnios === 1 ? 'año' : 'años'}
+              {flowHeader.antiguedadAnios}{' '}
+              {flowHeader.antiguedadAnios === 1 ? 'año' : 'años'}
             </span>
           )}
         </div>
@@ -891,25 +943,30 @@ export function SueldosSimulador({
               Conceptos — copia del último recibo
             </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Conceptos del último recibo pre-cargados. Podés editar cualquier fila o agregar
-              conceptos extra con el botón + de cada sección.
+              Conceptos del último recibo pre-cargados. Podés editar cualquier
+              fila o agregar conceptos extra con el botón + de cada sección.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
             {!loadingBasico && basicoEscala >= 0 && (
-              <div className={`rounded-md border px-3 py-2 text-xs ${sinEscalaParaPeriodo ? 'border-amber-300/60 bg-amber-50/50 text-amber-900' : 'border-emerald-300/60 bg-emerald-50/50 text-emerald-950'}`}>
+              <div
+                className={`rounded-md border px-3 py-2 text-xs ${sinEscalaParaPeriodo ? 'border-[var(--arca-accent-warn)]/60 bg-[var(--arca-accent-warn-bg)]/50 text-[var(--arca-accent-warn-fg)]' : 'border-[var(--arca-accent-pos)]/60 bg-[var(--arca-accent-pos-bg)]/50 text-[var(--arca-accent-pos-fg)]'}`}
+              >
                 {sinEscalaParaPeriodo ? (
                   <>
                     Sin escala cargada para{' '}
-                    <span className="font-semibold">{flowHeader!.periodo}</span>.{' '}
-                    Usando la más reciente
-                    {fallbackPeriodoLabel && <> ({fallbackPeriodoLabel})</>}
-                    :{' '}
+                    <span className="font-semibold">{flowHeader!.periodo}</span>
+                    . Usando la más reciente
+                    {fallbackPeriodoLabel && <> ({fallbackPeriodoLabel})</>}:{' '}
                     <span className="font-mono font-semibold">
                       ${moneyFmt(basicoEscala)}
                     </span>
                     {categoriaEscala && (
-                      <> · Categoría: <span className="font-semibold">{categoriaEscala}</span></>
+                      <>
+                        {' '}
+                        · Categoría:{' '}
+                        <span className="font-semibold">{categoriaEscala}</span>
+                      </>
                     )}
                     . Cargá la escala del período en Convenios.
                   </>
@@ -918,38 +975,49 @@ export function SueldosSimulador({
                     Escala vigente para período{' '}
                     <span className="font-semibold">{flowHeader!.periodo}</span>
                     {periodoEscalaLabel && (
-                      <> (<span className="font-semibold">{periodoEscalaLabel}</span>)</>
+                      <>
+                        {' '}
+                        (
+                        <span className="font-semibold">
+                          {periodoEscalaLabel}
+                        </span>
+                        )
+                      </>
                     )}
                     :{' '}
                     <span className="font-mono font-semibold">
                       ${moneyFmt(basicoEscala)}
                     </span>
                     {categoriaEscala && (
-                      <> · Categoría: <span className="font-semibold">{categoriaEscala}</span></>
+                      <>
+                        {' '}
+                        · Categoría:{' '}
+                        <span className="font-semibold">{categoriaEscala}</span>
+                      </>
                     )}
                   </>
                 )}
               </div>
             )}
             <div className="rounded-lg border bg-background p-3">
-            <TablaReciboSos
-              key={`${plantillaKey}|${ultimoRecibo.recibo.id}`}
-              variant="importado"
-              recibo={ultimoRecibo.recibo}
-              conceptos={conceptosFilas}
-              basico={basicoEscala}
-              basicoJornadaCompleta={basicoJornadaCompleta}
-              mejorSueldoSemestre={ultimoRecibo.mejorSueldoSemestre ?? 0}
-              diasSemestre={diasSemestre}
-              brutoMesAnterior={brutoMesAnterior}
-              activeCodigos={activeCodigos}
-              catalogoCompleto={conceptosFilas}
-              onAddConcepto={handleAddConcepto}
-              onRemoveConcepto={handleRemoveConcepto}
-              recalculateWithBasico={recalcularConEscalaVigente}
-              onChange={handleTablaChange}
-              firmaEmpleadorUrl={firmaEmpleadorUrl}
-            />
+              <TablaReciboSos
+                key={`${plantillaKey}|${ultimoRecibo.recibo.id}`}
+                variant="importado"
+                recibo={ultimoRecibo.recibo}
+                conceptos={conceptosFilas}
+                basico={basicoEscala}
+                basicoJornadaCompleta={basicoJornadaCompleta}
+                mejorSueldoSemestre={ultimoRecibo.mejorSueldoSemestre ?? 0}
+                diasSemestre={diasSemestre}
+                brutoMesAnterior={brutoMesAnterior}
+                activeCodigos={activeCodigos}
+                catalogoCompleto={conceptosFilas}
+                onAddConcepto={handleAddConcepto}
+                onRemoveConcepto={handleRemoveConcepto}
+                recalculateWithBasico={recalcularConEscalaVigente}
+                onChange={handleTablaChange}
+                firmaEmpleadorUrl={firmaEmpleadorUrl}
+              />
             </div>
             <div className="flex flex-col items-end gap-2">
               {!permiteLiquidar && (
@@ -976,10 +1044,13 @@ export function SueldosSimulador({
       {showManualTable && (
         <Card className="border border-border/70 shadow-sm">
           <CardHeader>
-            <CardTitle className="text-base">Conceptos — carga manual</CardTitle>
+            <CardTitle className="text-base">
+              Conceptos — carga manual
+            </CardTitle>
             <p className="text-sm text-muted-foreground">
-              Los montos se pre-calculan con el básico de escala vigente del empleado
-              en el período a liquidar. Podés ajustar cualquier valor antes de guardar.
+              Los montos se pre-calculan con el básico de escala vigente del
+              empleado en el período a liquidar. Podés ajustar cualquier valor
+              antes de guardar.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -990,23 +1061,27 @@ export function SueldosSimulador({
               </p>
             ) : (
               <>
-                <div className={`rounded-md border px-3 py-2 text-xs ${sinEscalaParaPeriodo ? 'border-amber-300/60 bg-amber-50/50 text-amber-900' : 'border-emerald-300/60 bg-emerald-50/50 text-emerald-950'}`}>
+                <div
+                  className={`rounded-md border px-3 py-2 text-xs ${sinEscalaParaPeriodo ? 'border-[var(--arca-accent-warn)]/60 bg-[var(--arca-accent-warn-bg)]/50 text-[var(--arca-accent-warn-fg)]' : 'border-[var(--arca-accent-pos)]/60 bg-[var(--arca-accent-pos-bg)]/50 text-[var(--arca-accent-pos-fg)]'}`}
+                >
                   {sinEscalaParaPeriodo ? (
                     <>
                       Sin escala cargada para{' '}
-                      <span className="font-semibold">{flowHeader!.periodo}</span>.{' '}
-                      Usando la más reciente
-                      {fallbackPeriodoLabel && (
-                        <> ({fallbackPeriodoLabel})</>
-                      )}
-                      :{' '}
+                      <span className="font-semibold">
+                        {flowHeader!.periodo}
+                      </span>
+                      . Usando la más reciente
+                      {fallbackPeriodoLabel && <> ({fallbackPeriodoLabel})</>}:{' '}
                       <span className="font-mono font-semibold">
                         ${moneyFmt(basicoEscala)}
                       </span>
                       {categoriaEscala && (
                         <>
                           {' '}
-                          · Categoría: <span className="font-semibold">{categoriaEscala}</span>
+                          · Categoría:{' '}
+                          <span className="font-semibold">
+                            {categoriaEscala}
+                          </span>
                         </>
                       )}
                       . Cargá la escala del período en Convenios.
@@ -1014,11 +1089,17 @@ export function SueldosSimulador({
                   ) : (
                     <>
                       Escala vigente para período{' '}
-                      <span className="font-semibold">{flowHeader!.periodo}</span>
+                      <span className="font-semibold">
+                        {flowHeader!.periodo}
+                      </span>
                       {periodoEscalaLabel && (
                         <>
                           {' '}
-                          (<span className="font-semibold">{periodoEscalaLabel}</span>)
+                          (
+                          <span className="font-semibold">
+                            {periodoEscalaLabel}
+                          </span>
+                          )
                         </>
                       )}
                       :{' '}
@@ -1028,18 +1109,22 @@ export function SueldosSimulador({
                       {categoriaEscala && (
                         <>
                           {' '}
-                          · Categoría: <span className="font-semibold">{categoriaEscala}</span>
+                          · Categoría:{' '}
+                          <span className="font-semibold">
+                            {categoriaEscala}
+                          </span>
                         </>
                       )}
                     </>
                   )}
                 </div>
                 {basicoEscala === 0 && (
-                  <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+                  <div className="flex flex-wrap items-center gap-3 rounded-md border border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] px-4 py-3 text-sm text-[var(--arca-accent-warn-fg)]">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--arca-accent-warn)]" />
                     <span className="flex-1">
-                      El sueldo básico de este empleado es <strong>$0</strong>. Los cálculos no se realizarán correctamente.
-                      Ingresá el monto manualmente:
+                      El sueldo básico de este empleado es <strong>$0</strong>.
+                      Los cálculos no se realizarán correctamente. Ingresá el
+                      monto manualmente:
                     </span>
                     <div className="flex items-center gap-2">
                       <Input
@@ -1054,7 +1139,10 @@ export function SueldosSimulador({
                       <Button
                         size="sm"
                         onClick={() => guardarBasicoOverride.mutate()}
-                        disabled={guardarBasicoOverride.isPending || !basicoOverrideInput}
+                        disabled={
+                          guardarBasicoOverride.isPending ||
+                          !basicoOverrideInput
+                        }
                       >
                         {guardarBasicoOverride.isPending ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -1067,26 +1155,26 @@ export function SueldosSimulador({
                   </div>
                 )}
                 <div className="rounded-lg border bg-background p-3">
-                <TablaReciboSos
-                  key={plantillaKey}
-                  variant="manual"
-                  recibo={reciboHeaderSimulado}
-                  conceptos={conceptosFilas}
-                  basico={basicoEscala}
-                  basicoJornadaCompleta={basicoJornadaCompleta}
-                  mejorSueldoSemestre={ultimoRecibo?.mejorSueldoSemestre ?? 0}
-                  diasSemestre={diasSemestre}
-                  brutoMesAnterior={brutoMesAnterior}
-                  activeCodigos={activeCodigos}
-                  catalogoCompleto={conceptosFilas}
-                  onAddConcepto={handleAddConcepto}
-                  onRemoveConcepto={handleRemoveConcepto}
-                  recalculateWithBasico={
-                    isCopyMode && recalcularConEscalaVigente && !ultimoRecibo
-                  }
-                  onChange={handleTablaChange}
-                  firmaEmpleadorUrl={firmaEmpleadorUrl}
-                />
+                  <TablaReciboSos
+                    key={plantillaKey}
+                    variant="manual"
+                    recibo={reciboHeaderSimulado}
+                    conceptos={conceptosFilas}
+                    basico={basicoEscala}
+                    basicoJornadaCompleta={basicoJornadaCompleta}
+                    mejorSueldoSemestre={ultimoRecibo?.mejorSueldoSemestre ?? 0}
+                    diasSemestre={diasSemestre}
+                    brutoMesAnterior={brutoMesAnterior}
+                    activeCodigos={activeCodigos}
+                    catalogoCompleto={conceptosFilas}
+                    onAddConcepto={handleAddConcepto}
+                    onRemoveConcepto={handleRemoveConcepto}
+                    recalculateWithBasico={
+                      isCopyMode && recalcularConEscalaVigente && !ultimoRecibo
+                    }
+                    onChange={handleTablaChange}
+                    firmaEmpleadorUrl={firmaEmpleadorUrl}
+                  />
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {!permiteLiquidar && (

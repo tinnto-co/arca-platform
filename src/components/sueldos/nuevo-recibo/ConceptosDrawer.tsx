@@ -522,7 +522,7 @@ export function ConceptosDrawer({
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto h-[36px] px-4 rounded-[10px] text-[13px] font-semibold bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
+            className="ml-auto h-[36px] px-4 rounded-lg text-[13px] font-semibold bg-[var(--arca-accent)] text-white hover:bg-[var(--arca-accent-hover)] transition-colors duration-120 motion-reduce:transition-none cursor-pointer"
           >
             Listo
           </button>

@@ -482,7 +482,7 @@ export function DeudasTab({
         </div>
 
         <button
-          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-lg px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
           disabled={!!scrapingSection}
           onClick={handleUpdateDeudas}
         >
@@ -509,7 +509,7 @@ export function DeudasTab({
           value={filterImpuesto || '__all__'}
           onValueChange={(v) => setFilterImpuesto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
               <span className="text-[var(--arca-ink-4)]">Impuesto</span>
               <span className="font-bold text-[var(--arca-ink)] truncate">
@@ -533,7 +533,7 @@ export function DeudasTab({
           value={filterConcepto || '__all__'}
           onValueChange={(v) => setFilterConcepto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
               <span className="text-[var(--arca-ink-4)]">Concepto</span>
               <span className="font-bold text-[var(--arca-ink)] truncate">

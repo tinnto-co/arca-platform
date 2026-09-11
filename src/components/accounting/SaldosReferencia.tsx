@@ -261,7 +261,10 @@ function Planilla({
         <div className="flex items-center gap-2 text-[12px]">
           {cuadra ? (
             <>
-              <Check className="w-4 h-4 text-emerald-600" strokeWidth={2} />
+              <Check
+                className="w-4 h-4 text-[var(--arca-accent-pos-fg)]"
+                strokeWidth={2}
+              />
               <span className="text-[var(--arca-ink-3)]">
                 Las dos columnas cuadran.
               </span>
@@ -269,7 +272,7 @@ function Planilla({
           ) : (
             <>
               <AlertTriangle
-                className="w-4 h-4 text-amber-600"
+                className="w-4 h-4 text-[var(--arca-accent-warn-fg)]"
                 strokeWidth={2}
               />
               <span style={{ color: 'oklch(0.58 0.13 75)' }}>

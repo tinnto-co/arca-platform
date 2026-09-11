@@ -259,10 +259,10 @@ export function ScanPdfConfirmation({
 
   if (phase === 'no-attachment') {
     return (
-      <Card className="my-2 max-w-lg border-amber-300/60">
+      <Card className="my-2 max-w-lg border-[var(--arca-accent-warn)]/60">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <FileWarning className="h-4 w-4 text-amber-500" />
+            <FileWarning className="h-4 w-4 text-[var(--arca-accent-warn)]" />
             Falta el PDF
           </CardTitle>
           <CardDescription>
@@ -321,7 +321,7 @@ export function ScanPdfConfirmation({
     <Card className="my-2 max-w-2xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-warn)]" />
           Escanear extracto bancario
         </CardTitle>
         <CardDescription>
@@ -376,7 +376,7 @@ export function ScanPdfConfirmation({
         )}
 
         {phase === 'done' && persistResult && (
-          <div className="flex items-start gap-2 text-emerald-600">
+          <div className="flex items-start gap-2 text-[var(--arca-accent-pos-fg)]">
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               {persistResult.inserted} movimiento

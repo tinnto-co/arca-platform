@@ -2298,7 +2298,10 @@ export function RepresentativeDetailPage({
                           fontSize: 10,
                           marginBottom: 4,
                         }}
-                        itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
+                        itemStyle={{
+                          color: 'var(--arca-sidebar-fg)',
+                          fontSize: 11,
+                        }}
                         formatter={(value) =>
                           new Intl.NumberFormat('es-AR', {
                             style: 'currency',
@@ -2440,7 +2443,10 @@ export function RepresentativeDetailPage({
                   onCrearTarea={() => setCreandoTareaDesdeNotif(true)}
                   onIrATarea={(tareaId) => {
                     setNotifAbierta(null);
-                    void navigate({ to: '/tareas', search: { tarea: tareaId } });
+                    void navigate({
+                      to: '/tareas',
+                      search: { tarea: tareaId },
+                    });
                   }}
                   onAnterior={() => {
                     const lista = unreadNotifications?.notifications ?? [];
@@ -2952,7 +2958,7 @@ export function RepresentativeDetailPage({
                                   className={cn(
                                     'text-[11px] font-semibold px-2 py-1 rounded-[var(--arca-r-md)] border transition-colors',
                                     isIntimated
-                                      ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200'
+                                      ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)] hover:bg-[var(--arca-accent-warn)]'
                                       : 'bg-[var(--arca-surface)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)] hover:bg-[var(--arca-surface-2)]'
                                   )}
                                   title={
@@ -3862,7 +3868,10 @@ export function RepresentativeDetailPage({
                             fontSize: 10,
                             marginBottom: 4,
                           }}
-                          itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
+                          itemStyle={{
+                            color: 'var(--arca-sidebar-fg)',
+                            fontSize: 11,
+                          }}
                           formatter={(value) =>
                             new Intl.NumberFormat('es-AR', {
                               style: 'currency',
@@ -4111,12 +4120,18 @@ export function RepresentativeDetailPage({
                                 dataKey="metrica"
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: 'var(--arca-ink-3)', fontSize: 10 }}
+                                tick={{
+                                  fill: 'var(--arca-ink-3)',
+                                  fontSize: 10,
+                                }}
                               />
                               <YAxis
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
+                                tick={{
+                                  fill: 'var(--arca-ink-4)',
+                                  fontSize: 9,
+                                }}
                               />
                               <Tooltip
                                 cursor={{ fill: 'rgba(30,52,96,0.06)' }}
@@ -4131,7 +4146,10 @@ export function RepresentativeDetailPage({
                                   fontSize: 10,
                                   marginBottom: 4,
                                 }}
-                                itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
+                                itemStyle={{
+                                  color: 'var(--arca-sidebar-fg)',
+                                  fontSize: 11,
+                                }}
                                 formatter={(value) => String(value)}
                               />
                               <Legend wrapperStyle={{ fontSize: 10 }} />
@@ -4183,12 +4201,18 @@ export function RepresentativeDetailPage({
                                 dataKey="metrica"
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: 'var(--arca-ink-3)', fontSize: 10 }}
+                                tick={{
+                                  fill: 'var(--arca-ink-3)',
+                                  fontSize: 10,
+                                }}
                               />
                               <YAxis
                                 tickLine={false}
                                 axisLine={false}
-                                tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
+                                tick={{
+                                  fill: 'var(--arca-ink-4)',
+                                  fontSize: 9,
+                                }}
                                 tickFormatter={(v) =>
                                   v >= 1e6
                                     ? `${(v / 1e6).toFixed(1)}M`
@@ -4210,7 +4234,10 @@ export function RepresentativeDetailPage({
                                   fontSize: 10,
                                   marginBottom: 4,
                                 }}
-                                itemStyle={{ color: 'var(--arca-sidebar-fg)', fontSize: 11 }}
+                                itemStyle={{
+                                  color: 'var(--arca-sidebar-fg)',
+                                  fontSize: 11,
+                                }}
                                 formatter={(value) =>
                                   new Intl.NumberFormat('es-AR', {
                                     style: 'currency',

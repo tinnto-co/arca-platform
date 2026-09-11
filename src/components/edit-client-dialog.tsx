@@ -268,7 +268,7 @@ export function EditRepresentativeDialog({
             <button
               type="button"
               aria-label="Cerrar"
-              className="flex-none w-[34px] h-[34px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] inline-flex items-center justify-center text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] cursor-pointer"
+              className="flex-none w-[34px] h-[34px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] inline-flex items-center justify-center text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>

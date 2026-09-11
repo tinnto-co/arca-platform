@@ -160,7 +160,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
               <Link
                 to="/accounting"
                 search={{ clientId, tab: 'asientos' }}
-                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors"
+                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-lg px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors"
               >
                 <BookOpen style={{ width: 15, height: 15 }} />
                 Ver en el diario
@@ -169,7 +169,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
                 type="button"
                 onClick={() => setReopenOpen(true)}
                 disabled={busy}
-                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-lg px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
               >
                 {reabrirMut.isPending ? (
                   <Loader2
@@ -188,7 +188,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
                 type="button"
                 onClick={() => previewMut.mutate()}
                 disabled={busy}
-                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-[10px] px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
+                className="inline-flex items-center gap-2 border border-[var(--arca-border-strong)] bg-white text-[var(--arca-ink)] rounded-lg px-[15px] py-[9px] text-[13.5px] font-medium hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-50"
               >
                 {previewMut.isPending ? (
                   <Loader2
@@ -204,7 +204,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
                 type="button"
                 onClick={() => setConfirmOpen(true)}
                 disabled={busy}
-                className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {cerrarMut.isPending ? (
                   <Loader2

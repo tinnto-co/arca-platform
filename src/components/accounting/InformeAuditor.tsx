@@ -195,7 +195,7 @@ export function InformeAuditor({
       )}
 
       {faltantes.length > 0 && (
-        <div className="flex items-start gap-2 px-5 py-2.5 border-b border-[var(--arca-border)] bg-amber-50 text-[12px] text-amber-800">
+        <div className="flex items-start gap-2 px-5 py-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] text-[12px] text-[var(--arca-accent-warn-fg)]">
           <AlertTriangle className="w-4 h-4 mt-px shrink-0" strokeWidth={1.9} />
           <div>
             Quedaron variables sin completar:{' '}

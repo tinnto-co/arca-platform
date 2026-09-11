@@ -375,13 +375,13 @@ function PortalDashboard() {
                   ? `mailto:${contador.email}?subject=${encodeURIComponent(`Consulta — ${cliente.razonSocial} (${cliente.cuit})`)}`
                   : '#'
               }
-              className="flex h-9 items-center justify-center rounded-[10px] bg-[var(--arca-bg)] text-[13px] font-semibold text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-white"
+              className="flex h-9 items-center justify-center rounded-lg bg-[var(--arca-bg)] text-[13px] font-semibold text-[var(--arca-ink)] transition-colors duration-[120ms] hover:bg-white"
             >
               Enviar consulta
             </a>
             <Link
               to="/portal/solicitudes"
-              className="flex h-[34px] items-center justify-center rounded-[10px] border border-white/[0.14] text-[12.5px] font-medium text-[var(--arca-bg)] transition-colors duration-[120ms] hover:bg-white/[0.06]"
+              className="flex h-[34px] items-center justify-center rounded-lg border border-white/[0.14] text-[12.5px] font-medium text-[var(--arca-bg)] transition-colors duration-[120ms] hover:bg-white/[0.06]"
             >
               Ver lo que te pide el estudio
               {solicitudesAbiertas.length > 0 &&

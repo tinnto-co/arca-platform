@@ -399,7 +399,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               empleados.length === 0 ||
               !permiteLiquidar
             }
-            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white rounded-lg px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {liquidacionMasiva.isPending ? (
               <Loader2
@@ -567,7 +567,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               type="button"
               onClick={() => setDeleteLiquidacionesOpen(true)}
               disabled={loadingLiq || liquidacionesGeneradas.length === 0}
-              className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               style={{ color: 'var(--arca-accent-neg)' }}
             >
               <Trash2 style={{ width: 14, height: 14 }} />
@@ -772,7 +772,7 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
               </p>
               <button
                 type="button"
-                className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
+                className="inline-flex items-center gap-2 bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] transition-colors"
                 style={{ color: 'var(--arca-ink-2)' }}
               >
                 <Upload style={{ width: 14, height: 14 }} />

@@ -232,20 +232,23 @@ export function InboxEmbebido({
             )}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-[180px]">
-            {['urgente', 'accion_requerida', 'informativa', 'sin_clasificar'].map(
-              (sv) => (
-                <DropdownMenuItem
-                  key={sv}
-                  className="text-[12.5px]"
-                  onSelect={() => setSeveridad(sv)}
-                >
-                  {SEVERIDAD_LABEL[sv]}
-                  {sv === severidad && (
-                    <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
-                  )}
-                </DropdownMenuItem>
-              )
-            )}
+            {[
+              'urgente',
+              'accion_requerida',
+              'informativa',
+              'sin_clasificar',
+            ].map((sv) => (
+              <DropdownMenuItem
+                key={sv}
+                className="text-[12.5px]"
+                onSelect={() => setSeveridad(sv)}
+              >
+                {SEVERIDAD_LABEL[sv]}
+                {sv === severidad && (
+                  <Check className="ml-auto size-3.5 text-[var(--arca-ink-3)]" />
+                )}
+              </DropdownMenuItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
 

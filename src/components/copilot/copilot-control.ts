@@ -103,3 +103,28 @@ export function subscribePanelState(cb: () => void) {
 export function getPanelState(): PanelState {
   return panelState;
 }
+
+/**
+ * Si el agente está resolviendo. Lo publica el panel (que es quien tiene el
+ * hook de CopilotKit) y lo consume la barra flotante, que vive fuera de su
+ * árbol: así el orbe late en los dos lados a la vez.
+ */
+let pensando = false;
+const pensandoSubs = new Set<() => void>();
+
+export function setPensando(v: boolean) {
+  if (pensando === v) return;
+  pensando = v;
+  pensandoSubs.forEach((cb) => cb());
+}
+
+export function subscribePensando(cb: () => void) {
+  pensandoSubs.add(cb);
+  return () => {
+    pensandoSubs.delete(cb);
+  };
+}
+
+export function getPensando() {
+  return pensando;
+}

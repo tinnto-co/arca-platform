@@ -393,7 +393,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
 
       {/* Search pill */}
       <div
-        className="flex items-center gap-[9px] w-[380px] bg-white rounded-[10px] px-[13px] py-[8px]"
+        className="flex items-center gap-[9px] w-[380px] bg-white rounded-lg px-[13px] py-[8px]"
         style={{ border: '1px solid var(--arca-border-strong)' }}
       >
         <Search
@@ -416,7 +416,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
 
       {/* Table */}
       <div
-        className="w-full overflow-hidden rounded-[10px]"
+        className="w-full overflow-hidden rounded-xl"
         style={{ border: '1px solid var(--arca-border)' }}
       >
         {/* Navy header */}
@@ -526,7 +526,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
               type="button"
               onClick={() => setPagina((p) => Math.max(1, p - 1))}
               disabled={paginaActual === 1}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
               style={{ color: 'var(--arca-ink-2)' }}
             >
               <ChevronLeft style={{ width: 14, height: 14 }} />
@@ -536,7 +536,7 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
               type="button"
               onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
               disabled={paginaActual === totalPaginas}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[13.5px] font-semibold px-[17px] py-[10px] hover:bg-[var(--arca-surface-2)] disabled:opacity-40 transition-colors flex items-center gap-1"
               style={{ color: 'var(--arca-ink-2)' }}
             >
               Siguiente

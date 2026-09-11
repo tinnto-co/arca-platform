@@ -13,16 +13,24 @@ import { cn } from '@/lib/utils';
  */
 export function OrbeAsistente({
   size = 16,
+  pensando = false,
   className,
 }: {
   /** Diámetro en px. 16 en la barra, 18 en el FAB, 14 en el nav. */
   size?: number;
+  /** Late mientras el agente está resolviendo. El orbe ES el spinner: no
+      hace falta meterle un ícono de carga al lado. */
+  pensando?: boolean;
   className?: string;
 }) {
   return (
     <span
       aria-hidden
-      className={cn('block shrink-0 rounded-full', className)}
+      className={cn(
+        'block shrink-0 rounded-full',
+        pensando && 'motion-safe:animate-pulse',
+        className
+      )}
       style={{ width: size, height: size, background: 'var(--arca-orb)' }}
     />
   );

@@ -70,7 +70,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
   };
 
   const inputClasses =
-    'h-[46px] w-full rounded-[10px] border border-[var(--arca-border-strong)] bg-white pr-3.5 pl-10 font-sans text-sm text-[var(--arca-ink)] outline-none transition-[border-color,box-shadow] duration-150 ease-linear placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-accent)] focus:shadow-[0_0_0_3px_rgba(42,70,128,0.14)]';
+    'h-[46px] w-full rounded-lg border border-[var(--arca-border-strong)] bg-white pr-3.5 pl-10 font-sans text-sm text-[var(--arca-ink)] outline-none transition-[border-color,box-shadow] duration-150 ease-linear placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-accent)] focus:shadow-[0_0_0_3px_rgba(42,70,128,0.14)]';
 
   return (
     <div className={cn('w-full max-w-[380px]', className)}>
@@ -195,7 +195,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="flex h-[46px] w-full items-center justify-center gap-[9px] rounded-[10px] bg-[var(--arca-accent)] text-sm font-semibold text-white transition-[background,opacity] duration-150 hover:bg-[var(--arca-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[var(--arca-accent)]"
+          className="flex h-[46px] w-full items-center justify-center gap-[9px] rounded-lg bg-[var(--arca-accent)] text-sm font-semibold text-white transition-[background,opacity] duration-150 hover:bg-[var(--arca-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[var(--arca-accent)]"
         >
           {loading && (
             <span

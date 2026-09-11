@@ -362,7 +362,9 @@ function EstadoBadge({ row }: { row: RiRow }) {
       </span>
     ) : (
       <span
-        className={cls('bg-sky-50 text-sky-700')}
+        className={cls(
+          'bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
+        )}
         title={`Calculado sobre ${row.comprobantes} comprobante${
           row.comprobantes === 1 ? '' : 's'
         }. Todavía no se trajo la declaración de ARCA.`}
@@ -380,14 +382,20 @@ function EstadoBadge({ row }: { row: RiRow }) {
 
   if (!difiere) {
     return (
-      <span className={cls('bg-emerald-50 text-emerald-700')}>
+      <span
+        className={cls(
+          'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]'
+        )}
+      >
         Coincide ARCA
       </span>
     );
   }
   return (
     <span
-      className={cls('bg-amber-50 text-amber-700')}
+      className={cls(
+        'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]'
+      )}
       title={[
         `Débito — calculado ${formatARS(row.calcDebitoFiscal)} · ARCA ${formatARS(row.debitoFiscal)}`,
         `Crédito — calculado ${formatARS(row.calcCreditoFiscal)} · ARCA ${formatARS(row.creditoFiscal)}`,
@@ -1174,7 +1182,7 @@ function RouteComponent() {
               <CircleHelp className="w-[13px] h-[13px]" />
               Otras empresas
               {sinClasificar > 0 && (
-                <span className="ml-1 rounded-full bg-amber-100 px-1.5 py-px text-[10.5px] font-semibold text-amber-800 tabular-nums">
+                <span className="ml-1 rounded-full bg-[var(--arca-accent-warn-bg)] px-1.5 py-px text-[10.5px] font-semibold text-[var(--arca-accent-warn-fg)] tabular-nums">
                   {sinClasificar}
                 </span>
               )}

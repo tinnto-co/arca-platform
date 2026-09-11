@@ -130,7 +130,7 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
         <button
           type="button"
           onClick={() => setSeleccionarConvenioOpen(true)}
-          className="bg-[var(--arca-accent)] text-white rounded-[10px] px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] flex items-center gap-2"
+          className="bg-[var(--arca-accent)] text-white rounded-lg px-[17px] py-[10px] text-[13.5px] font-semibold hover:bg-[var(--arca-accent-hover)] flex items-center gap-2"
         >
           <CheckCircle2 className="h-[15px] w-[15px]" />
           Seleccionar convenio
@@ -138,7 +138,7 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
         <button
           type="button"
           onClick={() => setNewConvenioOpen(true)}
-          className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
+          className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
         >
           <Plus className="h-[15px] w-[15px]" />
           Nuevo convenio
@@ -398,7 +398,7 @@ function ConvenioCard({
               </button>
               <button
                 type="button"
-                className="h-8 w-8 flex items-center justify-center rounded hover:bg-red-50 transition-colors"
+                className="h-8 w-8 flex items-center justify-center rounded hover:bg-[var(--arca-accent-neg-bg)] transition-colors"
                 onClick={(e) => {
                   e.preventDefault();
                   setDeleteOpen(true);
@@ -484,7 +484,7 @@ function ConvenioCard({
               <button
                 type="button"
                 onClick={() => setAddCategoria(true)}
-                className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
+                className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2"
               >
                 <Plus className="h-[15px] w-[15px]" />
                 Nueva categoría
@@ -726,7 +726,7 @@ function CategoriaRow({
                 )}
                 <button
                   type="button"
-                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-red-50 transition-colors shrink-0"
+                  className="h-7 w-7 flex items-center justify-center rounded hover:bg-[var(--arca-accent-neg-bg)] transition-colors shrink-0"
                   onClick={() =>
                     setEscalaToDelete({
                       id: e.id,

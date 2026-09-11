@@ -273,7 +273,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
       <ArcaCard>
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-[var(--arca-border)]">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-[10px] bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-lg bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
               <TrendingUp
                 className="w-4.5 h-4.5 text-[var(--arca-ink-2)]"
                 strokeWidth={1.8}
@@ -464,7 +464,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
               </SelectContent>
             </Select>
             {effectiveClosing && closingIndex === null && (
-              <span className="flex items-center gap-1 text-[11.5px] text-amber-600">
+              <span className="flex items-center gap-1 text-[11.5px] text-[var(--arca-accent-warn-fg)]">
                 <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
                 Sin índice para ese mes
               </span>
@@ -532,7 +532,7 @@ export function IndicesInflacion({ isOwner }: { isOwner: boolean }) {
                       </button>
                       <button
                         onClick={() => setDeleting(r)}
-                        className="h-6 w-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:bg-red-50 hover:text-red-600"
+                        className="h-6 w-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:bg-[var(--arca-accent-neg-bg)] hover:text-[var(--arca-accent-neg-fg)]"
                         title="Eliminar índice"
                       >
                         <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />

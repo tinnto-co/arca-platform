@@ -52,7 +52,7 @@ export function FranjaInfra() {
   if (alertas.length === 0) return null;
 
   return (
-    <div className="mx-9 mt-4 flex items-center gap-3 rounded-[10px] border border-l-4 border-[oklch(0.85_0.08_25)] border-l-[var(--arca-accent-neg)] bg-[var(--arca-surface)] px-[14px] py-[10px]">
+    <div className="mx-9 mt-4 flex items-center gap-3 rounded-lg border border-l-4 border-[oklch(0.85_0.08_25)] border-l-[var(--arca-accent-neg)] bg-[var(--arca-surface)] px-[14px] py-[10px]">
       <span className="size-2 shrink-0 rounded-full bg-[var(--arca-accent-neg)]" />
       <p className="min-w-0 flex-1 truncate text-[13px] text-[var(--arca-ink-2)]">
         <span className="font-semibold text-[var(--arca-ink)]">

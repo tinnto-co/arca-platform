@@ -967,7 +967,7 @@ function TableSection({
                         onChange={(ev) =>
                           setField(c.codigo, 'memo', ev.target.value)
                         }
-                        className="w-full rounded border border-[var(--arca-border)] bg-white px-1.5 py-0.5 text-[11px] font-normal text-[var(--arca-ink-2)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-sky-400"
+                        className="w-full rounded border border-[var(--arca-border)] bg-white px-1.5 py-0.5 text-[11px] font-normal text-[var(--arca-ink-2)] placeholder:text-[var(--arca-ink-4)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-accent)]"
                       />
                     )}
                     {(c.codigo === '51' || c.codigo === '401') &&
@@ -1031,7 +1031,7 @@ function TableSection({
                     const resolved = parseDecimalSos(edits[impNroStr]?.monto);
                     return (
                       <span
-                        className="block w-full px-1 py-0.5 text-right tabular-nums text-[10px] text-sky-600 italic select-none"
+                        className="block w-full px-1 py-0.5 text-right tabular-nums text-[10px] text-[var(--arca-accent-hover)] italic select-none"
                         title={`Total del concepto ${impNroStr}`}
                       >
                         {resolved !== null && resolved !== 0

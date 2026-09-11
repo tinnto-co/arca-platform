@@ -647,7 +647,7 @@ function TabBar({
       <tab.icon className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
       {tab.label}
       {tab.id === 'pendientes' && pendingCount > 0 && (
-        <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+        <span className="text-[9px] font-semibold px-1.5 py-px rounded-full bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
           {pendingCount}
         </span>
       )}
@@ -717,7 +717,7 @@ function TabBar({
                   />
                   {tab.label}
                   {tab.id === 'pendientes' && pendingCount > 0 && (
-                    <span className="ml-auto text-[9px] font-semibold px-1.5 py-px rounded-full bg-amber-100 text-amber-700">
+                    <span className="ml-auto text-[9px] font-semibold px-1.5 py-px rounded-full bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                       {pendingCount}
                     </span>
                   )}
@@ -2276,7 +2276,7 @@ function Ejercicios({
             <button
               key={y.id}
               onClick={() => setSelectedFyId(y.id)}
-              className="flex items-center gap-2 h-9 px-3 rounded-[10px] border transition-colors text-[12.5px]"
+              className="flex items-center gap-2 h-9 px-3 rounded-lg border transition-colors text-[12.5px]"
               style={{
                 borderColor: active ? 'var(--arca-ink)' : 'var(--arca-border)',
                 background: active
@@ -2311,7 +2311,7 @@ function Ejercicios({
         {isOwner && (
           <button
             onClick={() => setShowCreate(true)}
-            className="flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-medium rounded-[10px] border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+            className="flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-medium rounded-lg border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
           >
             <CalendarPlus className="w-3.5 h-3.5" strokeWidth={2} />
             Nuevo ejercicio
@@ -2576,7 +2576,7 @@ function PeriodCard({
       {!closed && hasPending && (
         <button
           onClick={onGoToPending}
-          className="flex items-center gap-1 text-[11px] text-amber-700 hover:underline text-left"
+          className="flex items-center gap-1 text-[11px] text-[var(--arca-accent-warn-fg)] hover:underline text-left"
         >
           <AlertTriangle className="w-3 h-3 shrink-0" strokeWidth={2} />
           {period.pendingCount} pendiente{period.pendingCount === 1 ? '' : 's'}{' '}
@@ -2675,17 +2675,17 @@ function CierreChecklist({
           <div key={c.key} className="flex items-start gap-3 px-5 py-2.5">
             {c.status === 'pass' ? (
               <CheckCircle2
-                className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600"
+                className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-pos-fg)]"
                 strokeWidth={2}
               />
             ) : c.status === 'warn' ? (
               <AlertTriangle
-                className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+                className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-warn-fg)]"
                 strokeWidth={2}
               />
             ) : (
               <XCircle
-                className="w-4 h-4 shrink-0 mt-0.5 text-red-600"
+                className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-neg-fg)]"
                 strokeWidth={2}
               />
             )}
@@ -2844,9 +2844,9 @@ function EditableEntryTable({
         <tr className="font-semibold border-t border-[var(--arca-ink-3)]">
           <td className="py-1.5 text-right">
             {balanced ? (
-              <span className="text-emerald-600">✓ Balanceado</span>
+              <span className="text-[var(--arca-accent-pos-fg)]">✓ Balanceado</span>
             ) : (
-              <span className="text-red-600">Descuadrado</span>
+              <span className="text-[var(--arca-accent-neg-fg)]">Descuadrado</span>
             )}
           </td>
           <td className="py-1.5 text-right tabular-nums [font-family:var(--ff-mono)]">
@@ -3016,7 +3016,7 @@ function ClosingWizard({
               >
                 {st === 'completada' ? (
                   <CheckCircle2
-                    className="w-3.5 h-3.5 text-emerald-600"
+                    className="w-3.5 h-3.5 text-[var(--arca-accent-pos-fg)]"
                     strokeWidth={2}
                   />
                 ) : st === 'en curso' ? (
@@ -3038,22 +3038,22 @@ function ClosingWizard({
               <p className="text-[12.5px] text-[var(--arca-ink-3)]">
                 Precondiciones para cerrar el ejercicio.
               </p>
-              <div className="divide-y divide-[var(--arca-border)] border border-[var(--arca-border)] rounded-[10px]">
+              <div className="divide-y divide-[var(--arca-border)] border border-[var(--arca-border)] rounded-xl">
                 {checklist.checks.map((c: YearEndCheck) => (
                   <div key={c.key} className="flex items-start gap-2 px-3 py-2">
                     {c.status === 'pass' ? (
                       <CheckCircle2
-                        className="w-4 h-4 mt-0.5 text-emerald-600 shrink-0"
+                        className="w-4 h-4 mt-0.5 text-[var(--arca-accent-pos-fg)] shrink-0"
                         strokeWidth={2}
                       />
                     ) : c.status === 'warn' ? (
                       <AlertTriangle
-                        className="w-4 h-4 mt-0.5 text-amber-600 shrink-0"
+                        className="w-4 h-4 mt-0.5 text-[var(--arca-accent-warn-fg)] shrink-0"
                         strokeWidth={2}
                       />
                     ) : (
                       <XCircle
-                        className="w-4 h-4 mt-0.5 text-red-600 shrink-0"
+                        className="w-4 h-4 mt-0.5 text-[var(--arca-accent-neg-fg)] shrink-0"
                         strokeWidth={2}
                       />
                     )}
@@ -3347,7 +3347,7 @@ function StageEntry({
 
       {done ? (
         <>
-          <div className="rounded-[8px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[12px] text-emerald-700">
+          <div className="rounded-[8px] bg-[var(--arca-accent-pos-bg)] border border-[var(--arca-accent-pos)] px-3 py-2 text-[12px] text-[var(--arca-accent-pos-fg)]">
             ✓ {doneLabel ?? 'Registrado'}
           </div>
           <EditableEntryTable preview={preview} readOnly />
@@ -4475,7 +4475,7 @@ function AsientoEditor({
           </DialogHeader>
 
           {outOfRangeFy && (
-            <div className="flex items-start gap-2 rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+            <div className="flex items-start gap-2 rounded-[8px] border border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-warn-fg)]">
               <AlertTriangle
                 className="w-3.5 h-3.5 mt-0.5 shrink-0"
                 strokeWidth={2}
@@ -4684,7 +4684,7 @@ function AsientoEditor({
             )}
 
             {/* Líneas */}
-            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+            <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-40">Detalle</div>
@@ -5002,7 +5002,7 @@ function EntryDetailBody({
       )}
 
       {/* Líneas */}
-      <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden bg-[var(--arca-surface)]">
+      <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden bg-[var(--arca-surface)]">
         <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
           <div className="flex-1">Cuenta</div>
           <div className="w-28 text-right">Debe</div>
@@ -6126,7 +6126,7 @@ function LedgerDialog({
               Click en un movimiento abre el asiento.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto border border-[var(--arca-border)] rounded-[10px]">
+          <div className="max-h-[60vh] overflow-y-auto border border-[var(--arca-border)] rounded-lg">
             {isLoading || !data ? (
               <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
                 Cargando…
@@ -7016,7 +7016,7 @@ function RuleEditorDialog({
         </div>
 
         {/* Líneas-plantilla */}
-        <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+        <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
             <div className="flex-1">Cuenta</div>
             <div className="w-20 flex items-center gap-1">
@@ -7212,7 +7212,7 @@ function RuleDetailDialog({
               </div>
             )}
 
-            <div className="border border-[var(--arca-border)] rounded-[10px] overflow-hidden">
+            <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold uppercase tracking-wide text-white">
                 <div className="flex-1">Cuenta</div>
                 <div className="w-16">Lado</div>
@@ -7758,11 +7758,11 @@ function PostingRow({
       <td className="py-2 pl-4">
         {inv.posted ? (
           <span className="inline-flex items-center gap-1.5">
-            <span className="px-1.5 py-px rounded-full text-[11px] bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] border border-[var(--arca-accent-pos)]">
               Asiento N°{inv.entryNumber}
             </span>
             {inv.entryEdited && (
-              <span className="px-1.5 py-px rounded-full text-[11px] bg-blue-50 text-blue-700 border border-blue-200">
+              <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)] border border-[var(--arca-accent)]">
                 editado
               </span>
             )}
@@ -7774,7 +7774,7 @@ function PostingRow({
             <span>{inv.ruleName}</span>
             {inv.willUsePendingReview && (
               <span
-                className="px-1.5 py-px rounded-full text-[11px] bg-amber-50 text-amber-700 border border-amber-200"
+                className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border border-[var(--arca-accent-warn)]"
                 title="Tiene otros impuestos/percepciones sin mapear: la diferencia irá a Pendiente de revisión"
               >
                 + pendiente
@@ -7782,7 +7782,7 @@ function PostingRow({
             )}
           </span>
         ) : (
-          <span className="px-1.5 py-px rounded-full text-[11px] bg-amber-50 text-amber-700 border border-amber-200">
+          <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border border-[var(--arca-accent-warn)]">
             Sin regla → Pendiente de revisión
           </span>
         )}
@@ -7843,9 +7843,9 @@ function Pendientes({
   return (
     <div className="space-y-4">
       {/* Explicación */}
-      <div className="flex gap-2 rounded-[10px] border border-amber-200 bg-amber-50/60 px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
+      <div className="flex gap-2 rounded-[10px] border border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)]/60 px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
         <AlertTriangle
-          className="w-4 h-4 shrink-0 mt-0.5 text-amber-600"
+          className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-warn-fg)]"
           strokeWidth={1.8}
         />
         <div>
@@ -7953,7 +7953,7 @@ function PendingRow({
       <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap">
         $ {fmtMoney(entry.total)}
       </td>
-      <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap text-amber-700 font-medium">
+      <td className="py-2 text-right tabular-nums [font-family:var(--ff-mono)] whitespace-nowrap text-[var(--arca-accent-warn-fg)] font-medium">
         $ {fmtMoney(entry.pendingAmount)}
       </td>
       <td className="py-2 pl-4 max-w-[280px]">
@@ -8151,7 +8151,7 @@ function BienesDeUso({
                       {canWrite && a.status === 'activo' && (
                         <button
                           onClick={() => setDisposeTarget(a)}
-                          className="text-[12px] text-[var(--arca-ink-2)] hover:text-red-600"
+                          className="text-[12px] text-[var(--arca-ink-2)] hover:text-[var(--arca-accent-neg-fg)]"
                         >
                           Dar de baja
                         </button>
@@ -8458,7 +8458,7 @@ function FixedAssetEditor({
           </span>
         </div>
         {rv >= ov && ov > 0 && (
-          <p className="text-[11px] text-red-600">
+          <p className="text-[11px] text-[var(--arca-accent-neg-fg)]">
             El valor residual debe ser menor al valor de origen.
           </p>
         )}
@@ -8559,7 +8559,7 @@ function DisposeAssetDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!disposalDate || mut.isPending}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-red-600 text-white disabled:opacity-50"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent-neg-fg)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Procesando…' : 'Confirmar baja'}
           </button>
@@ -9403,7 +9403,7 @@ function EstadosContables({
           <div className="flex-1" />
           {approved ? (
             <>
-              <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+              <span className="text-[11px] px-2 py-1 rounded-full bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] font-medium">
                 ✓ Aprobado
                 {fs?.approvedByName ? ` · ${fs.approvedByName}` : ''}
                 {fs?.approvedAt
@@ -9858,12 +9858,12 @@ function EspView({
             {/* Validación A = P + PN */}
             <div className="px-3 mt-3">
               {data.balancedCurrent ? (
-                <div className="text-[12px] text-emerald-700">
+                <div className="text-[12px] text-[var(--arca-accent-pos-fg)]">
                   ✓ Activo = Pasivo + Patrimonio Neto (${' '}
                   {fmtMoney(data.totals.activo.current)})
                 </div>
               ) : (
-                <div className="text-[12px] text-red-600 font-medium">
+                <div className="text-[12px] text-[var(--arca-accent-neg-fg)] font-medium">
                   ✗ No cuadra: Activo $ {fmtMoney(data.totals.activo.current)} ≠
                   Pasivo + PN $ {fmtMoney(data.totals.pasivoMasPn.current)}. La
                   emisión está bloqueada hasta corregir.
@@ -10367,7 +10367,7 @@ function PriorNotAdjustedNote({
     return null;
   }
   return (
-    <div className="text-[11.5px] text-amber-600">
+    <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
       El ejercicio anterior no tiene su ajuste por inflación generado, así que
       la columna comparativa parte de valores históricos. Generá el ajuste de
       ese ejercicio para que el comparativo sea exacto.
@@ -10573,7 +10573,7 @@ function EfeView({
           </div>
         )}
         {valuation === 'ajustado' && !data.inflationApplied && (
-          <div className="text-[11.5px] text-amber-600">
+          <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
             El ajuste por inflación del ejercicio todavía no está generado, así
             que los flujos son históricos.
           </div>
@@ -10584,7 +10584,7 @@ function EfeView({
           valuation={valuation}
         />
         {data.sinActividad.length > 0 && (
-          <div className="text-[11.5px] text-amber-600">
+          <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
             {data.sinActividad.length} cuenta(s) sin actividad asignada; se usó
             la clasificación por defecto del rubro:{' '}
             {data.sinActividad
@@ -10800,7 +10800,7 @@ function EepnView({
             : `✗ El saldo al cierre no coincide con el ESP ($ ${money(data.espTotal)}). Revisá el ejercicio.`}
         </div>
         {valuation === 'ajustado' && !data.inflationApplied && (
-          <div className="text-[11.5px] text-amber-600">
+          <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
             El ajuste por inflación del ejercicio todavía no está generado, así
             que los importes son históricos. Generalo en la solapa «Ajuste por
             inflación».
@@ -10824,7 +10824,7 @@ function EepnView({
               .
             </div>
           ) : (
-            <div className="text-[11.5px] text-amber-600">
+            <div className="text-[11.5px] text-[var(--arca-accent-warn-fg)]">
               No hay índice para reexpresar el ejercicio anterior: la columna
               comparativa quedó en valores históricos.
             </div>
@@ -11019,12 +11019,12 @@ function ErView({
             {/* US 6.2.2 — validación de consistencia ER ↔ ESP */}
             <div className="px-3 mt-3">
               {data.matchesEspCurrent ? (
-                <div className="text-[12px] text-emerald-700">
+                <div className="text-[12px] text-[var(--arca-accent-pos-fg)]">
                   ✓ El Resultado del ejercicio del ER coincide con el del ESP ($
                   {fmtMoney(data.resultadoCurrent)}).
                 </div>
               ) : (
-                <div className="text-[12px] text-red-600 font-medium">
+                <div className="text-[12px] text-[var(--arca-accent-neg-fg)] font-medium">
                   ✗ Discrepancia: Resultado del ER $
                   {fmtMoney(data.resultadoCurrent)} ≠ Resultado del ESP $
                   {fmtMoney(data.espResultadoCurrent)}. La emisión está
@@ -11802,7 +11802,7 @@ function NotesEditor({
       </AlertDialog>
 
       {approved && (
-        <div className="px-5 py-2 text-[11.5px] text-emerald-700 bg-emerald-50 border-b border-[var(--arca-border)]">
+        <div className="px-5 py-2 text-[11.5px] text-[var(--arca-accent-pos-fg)] bg-[var(--arca-accent-pos-bg)] border-b border-[var(--arca-border)]">
           Los EECC están aprobados — las notas son de solo lectura. Reabrí a
           borrador para editarlas.
         </div>
@@ -11911,7 +11911,7 @@ function NotesEditor({
                     </button>
                     <button
                       onClick={() => remove(note.id)}
-                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-red-500 hover:bg-red-50"
+                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-accent-neg)] hover:bg-[var(--arca-accent-neg-bg)]"
                       title="Eliminar"
                     >
                       ✕
@@ -11920,7 +11920,7 @@ function NotesEditor({
                 )}
               </div>
               {isPreview ? (
-                <div className="px-4 py-3 text-[13px] text-[var(--arca-ink-2)] [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-[var(--arca-ink)] [&_em]:italic [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:my-2 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:my-2 [&_h3]:font-semibold [&_a]:text-blue-600 [&_a]:underline [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-[var(--arca-surface-2)] [&_code]:px-1 [&_code]:rounded [&_table]:w-full [&_th]:text-left [&_th]:border-b [&_th]:border-[var(--arca-border)] [&_td]:py-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--arca-border)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--arca-ink-3)]">
+                <div className="px-4 py-3 text-[13px] text-[var(--arca-ink-2)] [&_p]:my-1.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-1.5 [&_li]:my-0.5 [&_strong]:font-semibold [&_strong]:text-[var(--arca-ink)] [&_em]:italic [&_h1]:text-[15px] [&_h1]:font-semibold [&_h1]:my-2 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h2]:my-2 [&_h3]:font-semibold [&_a]:text-[var(--arca-accent-hover)] [&_a]:underline [&_code]:font-mono [&_code]:text-[12px] [&_code]:bg-[var(--arca-surface-2)] [&_code]:px-1 [&_code]:rounded [&_table]:w-full [&_th]:text-left [&_th]:border-b [&_th]:border-[var(--arca-border)] [&_td]:py-0.5 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--arca-border)] [&_blockquote]:pl-3 [&_blockquote]:text-[var(--arca-ink-3)]">
                   {note.content.trim() ? (
                     <Markdown remarkPlugins={[remarkGfm]}>
                       {fillAuditReport(note.content, vars)}

@@ -14,8 +14,10 @@ import {
   getMessageCount,
   getPanelState,
   openPanel,
+  getPensando,
   subscribeMessageCount,
   subscribePanelState,
+  subscribePensando,
   submitMessageToSidebar,
 } from '@/components/copilot/copilot-control';
 import { useCopilotAttachment } from '@/components/copilot/AttachmentContext';
@@ -104,11 +106,14 @@ export function AgentInput() {
   const { file, setFile, clear } = useCopilotAttachment();
   const inputRef = useRef<HTMLInputElement>(null);
   const atajo = useAtajo('J');
-  const modo = useSyncExternalStore(
-    suscribirModo,
-    leerModo,
-    () => 'barra'
-  ) as 'barra' | 'fab';
+  const pensando = useSyncExternalStore(
+    subscribePensando,
+    getPensando,
+    () => false
+  );
+  const modo = useSyncExternalStore(suscribirModo, leerModo, () => 'barra') as
+    | 'barra'
+    | 'fab';
 
   // ⌘J trae el asistente esté como esté: si está en FAB lo despliega, y en
   // los dos casos deja el cursor donde se escribe.
@@ -205,7 +210,7 @@ export function AgentInput() {
               aria-label="Abrir el asistente"
               className="pointer-events-auto relative grid size-[52px] place-items-center rounded-full bg-[var(--arca-sidebar)] shadow-[var(--arca-shadow-float)] transition-transform duration-150 hover:scale-105 focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-ring)] focus-visible:outline-none"
             >
-              <OrbeAsistente size={18} />
+              <OrbeAsistente size={18} pensando={pensando} />
               {hasConversation && (
                 <span
                   aria-hidden
@@ -254,7 +259,7 @@ export function AgentInput() {
           onSubmit={handleSubmit}
           className="flex h-12 items-center gap-2.5 rounded-3xl border border-[var(--arca-border)] bg-[var(--arca-surface)] px-4 shadow-[var(--arca-shadow-float)]"
         >
-          <OrbeAsistente size={16} />
+          <OrbeAsistente size={16} pensando={pensando} />
           <input
             ref={inputRef}
             value={value}

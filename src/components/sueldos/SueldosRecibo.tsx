@@ -585,7 +585,9 @@ export function SueldosRecibo({
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-2">
-              <FileText style={{ width: 15, height: 15, color: 'var(--arca-ink-2)' }} />
+              <FileText
+                style={{ width: 15, height: 15, color: 'var(--arca-ink-2)' }}
+              />
               <span className="font-[family-name:var(--ff-display)] font-semibold text-[16px] text-[var(--arca-ink)]">
                 Recibos liquidados
               </span>
@@ -620,7 +622,7 @@ export function SueldosRecibo({
             <button
               type="button"
               onClick={() => setShowImprimir(true)}
-              className="bg-white border border-[var(--arca-border-strong)] rounded-[10px] text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2 shrink-0"
+              className="bg-white border border-[var(--arca-border-strong)] rounded-lg text-[var(--arca-ink-2)] text-[13.5px] font-semibold hover:bg-[var(--arca-surface-2)] px-[17px] py-[10px] flex items-center gap-2 shrink-0"
             >
               <Printer style={{ width: 15, height: 15 }} />
               Imprimir PDF
@@ -643,7 +645,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -670,7 +672,7 @@ export function SueldosRecibo({
               }}
               disabled={!ano}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -702,7 +704,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -725,7 +727,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -759,7 +761,7 @@ export function SueldosRecibo({
                 setReciboId('');
               }}
             >
-              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full bg-white border border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] h-auto shadow-none focus:ring-0 focus:ring-offset-0">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -813,7 +815,7 @@ export function SueldosRecibo({
           </div>
 
           {!loadingList && recibos.length > 0 && (
-            <div className="overflow-x-auto rounded-[10px]">
+            <div className="overflow-x-auto rounded-xl">
               {/* Navy header */}
               <div
                 className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
@@ -1305,11 +1307,11 @@ function GenerarSacDialog({
                       <td className="py-2 pr-2">
                         {p.yaTieneSac ? (
                           <span title="Ya tiene SAC">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos)]" />
                           </span>
                         ) : p.mejorMonto === 0 ? (
                           <span title="Sin recibos de sueldo en el semestre">
-                            <AlertCircle className="h-4 w-4 text-amber-500" />
+                            <AlertCircle className="h-4 w-4 text-[var(--arca-accent-warn)]" />
                           </span>
                         ) : (
                           <input
@@ -1328,7 +1330,7 @@ function GenerarSacDialog({
                       <td className="py-2 pr-3 font-medium">
                         {p.nombre}
                         {p.yaTieneSac && (
-                          <span className="ml-2 text-green-600 text-[11px]">
+                          <span className="ml-2 text-[var(--arca-accent-pos-fg)] text-[11px]">
                             Ya tiene SAC
                           </span>
                         )}
@@ -1370,7 +1372,7 @@ function GenerarSacDialog({
                               className="w-14 text-center text-[12px] border rounded px-1 py-0.5 font-mono"
                             />
                             {esProporcional && (
-                              <span className="text-[10px] text-amber-600 font-medium">
+                              <span className="text-[10px] text-[var(--arca-accent-warn-fg)] font-medium">
                                 prop.
                               </span>
                             )}
@@ -1382,7 +1384,11 @@ function GenerarSacDialog({
                       <td className="py-2 text-right font-mono font-semibold">
                         {sacMonto > 0 ? (
                           <span
-                            className={esProporcional ? 'text-amber-700' : ''}
+                            className={
+                              esProporcional
+                                ? 'text-[var(--arca-accent-warn-fg)]'
+                                : ''
+                            }
                           >
                             {moneyFmtSac(sacMonto)}
                           </span>
@@ -1579,7 +1585,7 @@ export function GenerarLiqFinalDialog({
                       <td className="py-2 pr-2">
                         {p.yaTiene ? (
                           <span title="Ya tiene Liq. Final">
-                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos)]" />
                           </span>
                         ) : (
                           <input
@@ -1598,7 +1604,7 @@ export function GenerarLiqFinalDialog({
                       <td className="py-2 pr-3 font-medium">
                         {p.nombre}
                         {p.yaTiene && (
-                          <span className="ml-2 text-green-600 text-[11px]">
+                          <span className="ml-2 text-[var(--arca-accent-pos-fg)] text-[11px]">
                             Ya tiene
                           </span>
                         )}

@@ -625,7 +625,7 @@ function ChatArea({
         <div className="absolute top-3 left-3 z-10">
           <button
             onClick={onToggleSidebar}
-            className="w-[34px] h-[34px] rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors cursor-pointer shadow-sm"
+            className="w-[34px] h-[34px] rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors cursor-pointer shadow-sm"
             title="Abrir panel de chats"
           >
             <PanelLeftOpen className="w-4 h-4" />

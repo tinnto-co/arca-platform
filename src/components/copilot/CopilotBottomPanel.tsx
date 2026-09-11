@@ -11,6 +11,7 @@ import {
   registerCopilotControl,
   setMessageCount,
   setPanelState,
+  setPensando,
   unregisterCopilotControl,
 } from './copilot-control';
 import { AttachmentBar } from './AttachmentBar';
@@ -38,7 +39,7 @@ export function CopilotBottomPanel() {
   const [sidebarOffset, setSidebarOffset] = useState(0);
   const [panelHeightPx, setPanelHeightPx] = useState<number | null>(null);
   const heightRef = useRef<number>(0);
-  const { appendMessage } = useCopilotChat();
+  const { appendMessage, isLoading } = useCopilotChat();
 
   // Initialize panel height: read localStorage if present, otherwise default
   // to PANEL_DEFAULT_HEIGHT_VH of viewport. Clamp on every read so a stale
@@ -112,6 +113,10 @@ export function CopilotBottomPanel() {
   }, []);
 
   useEffect(() => {
+    setPensando(isLoading);
+  }, [isLoading]);
+
+  useEffect(() => {
     registerCopilotControl(
       (text: string) => {
         setOpen(true);
@@ -120,9 +125,7 @@ export function CopilotBottomPanel() {
         // doesn't expose visibleMessages reliably outside the CopilotChat
         // subtree, so we publish a coarse count here as a signal.
         setMessageCount(1);
-        void appendMessage(
-          new TextMessage({ content: text, role: Role.User })
-        );
+        void appendMessage(new TextMessage({ content: text, role: Role.User }));
       },
       () => setOpen(true)
     );
@@ -187,8 +190,10 @@ export function CopilotBottomPanel() {
       </div>
       <header className="flex items-center justify-between border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <OrbeAsistente size={16} />
-          <h2 className="text-sm font-semibold">Asistente Arca</h2>
+          <OrbeAsistente size={16} pensando={isLoading} />
+          <h2 className="text-sm font-semibold">
+            {isLoading ? 'Pensando…' : 'Asistente Arca'}
+          </h2>
         </div>
         <button
           type="button"

@@ -302,7 +302,7 @@ export function AjustePorInflacion({
       <ArcaCard>
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-[var(--arca-border)]">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-[10px] bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-lg bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
               <Sparkles
                 className="w-4.5 h-4.5 text-[var(--arca-ink-2)]"
                 strokeWidth={1.8}
@@ -375,7 +375,7 @@ export function AjustePorInflacion({
               (applied ? (
                 <button
                   onClick={() => setConfirmVoid(true)}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-red-600 hover:bg-red-50"
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-accent-neg-fg)] hover:bg-[var(--arca-accent-neg-bg)]"
                 >
                   <RotateCcw className="w-3.5 h-3.5" strokeWidth={2} />
                   Anular ajuste

@@ -328,7 +328,7 @@ export function VencimientosTab({
         </div>
 
         <button
-          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-lg px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
           disabled={!!scrapingSection}
           onClick={handleUpdateVencimientos}
         >
@@ -467,7 +467,7 @@ export function VencimientosTab({
 
         {/* Impuesto filter */}
         <Select value={filterImpuesto} onValueChange={setFilterImpuesto}>
-          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[180px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[180px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
               <span className="text-[var(--arca-ink-4)]">Impuesto</span>
               <span className="font-bold text-[var(--arca-ink)] truncate">
@@ -488,7 +488,7 @@ export function VencimientosTab({
 
         {/* Estado filter */}
         <Select value={filterEstado} onValueChange={setFilterEstado}>
-          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[150px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[150px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
               <span className="text-[var(--arca-ink-4)]">Estado</span>
               <span className="font-bold text-[var(--arca-ink)]">

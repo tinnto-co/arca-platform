@@ -116,7 +116,7 @@ export function ScrapeConfirmation({
     <Card className="my-2 max-w-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-amber-500" />
+          <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-warn)]" />
           Confirmar scrape: {jobLabel}
         </CardTitle>
         <CardDescription>
@@ -132,7 +132,9 @@ export function ScrapeConfirmation({
           ) : (
             <>
               Cliente ID:{' '}
-              <span className="font-mono text-xs">{clienteId.slice(0, 8)}…</span>
+              <span className="font-mono text-xs">
+                {clienteId.slice(0, 8)}…
+              </span>
             </>
           )}
         </CardDescription>
@@ -153,7 +155,7 @@ export function ScrapeConfirmation({
           </div>
         )}
         {phase === 'done' && (
-          <div className="flex items-center gap-2 text-emerald-600">
+          <div className="flex items-center gap-2 text-[var(--arca-accent-pos-fg)]">
             <CheckCircle2 className="h-4 w-4" />
             Job ejecutado correctamente.
           </div>
