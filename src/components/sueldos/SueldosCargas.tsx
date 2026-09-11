@@ -187,9 +187,9 @@ function IssueRow({
   return (
     <div className="flex items-start gap-3 px-4 py-2.5">
       {isError ? (
-        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--arca-accent-neg)]" />
+        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--arca-accent-neg-fg)]" />
       ) : (
-        <TriangleAlert className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--arca-accent-warn)]" />
+        <TriangleAlert className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--arca-accent-warn-fg)]" />
       )}
       <div className="flex-1 min-w-0">
         {issue.empleadoNombre && (
@@ -605,7 +605,7 @@ function GenerarPresentacionDialog({
                   border: '1px solid var(--arca-border)',
                 }}
               >
-                <AlertCircle className="h-4 w-4 mt-0.5 text-[var(--arca-accent-neg)] shrink-0" />
+                <AlertCircle className="h-4 w-4 mt-0.5 text-[var(--arca-accent-neg-fg)] shrink-0" />
                 <p className="text-[var(--arca-ink-2)]">
                   {(error as Error).message}
                 </p>
@@ -649,7 +649,7 @@ function GenerarPresentacionDialog({
                     {preview.employer.codigoLsd ?? '—'}
                   </p>
                   <p
-                    className={`text-[11px] truncate ${!preview.employer.tipoEmpresaNombre ? 'text-[var(--arca-accent-warn)]' : 'text-[var(--arca-ink-3)]'}`}
+                    className={`text-[11px] truncate ${!preview.employer.tipoEmpresaNombre ? 'text-[var(--arca-accent-warn-fg)]' : 'text-[var(--arca-ink-3)]'}`}
                   >
                     {preview.employer.tipoEmpresaNombre ?? 'Sin configurar'}
                   </p>

@@ -295,7 +295,7 @@ function FuentesDatosItem() {
                   </div>
                   {f.ultimoErrorAt &&
                     (!f.ultimoOkAt || f.ultimoErrorAt > f.ultimoOkAt) && (
-                      <div className="text-[11px] leading-snug text-[var(--arca-accent-neg)]">
+                      <div className="text-[11px] leading-snug text-[var(--arca-accent-neg-fg)]">
                         Último intento falló {relativeTime(f.ultimoErrorAt)}
                       </div>
                     )}

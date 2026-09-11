@@ -2015,7 +2015,7 @@ export function SueldosEmpleados({
       </div>
 
       {/* Navy-header grid table */}
-      <div className="w-full min-w-0 max-w-full overflow-x-auto">
+      <div className="w-full min-w-0 max-w-full overflow-x-auto bg-[var(--arca-surface)]">
         {/* Header */}
         <div
           className="grid items-center bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] rounded-t-[10px] px-5"

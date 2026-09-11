@@ -816,7 +816,7 @@ export function SueldosRecibo({
 
           {!loadingList && recibos.length > 0 && (
             <div className="overflow-x-auto rounded-xl">
-              {/* Navy header */}
+              {/* Header claro con micro-label */}
               <div
                 className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
                 style={{
@@ -986,7 +986,7 @@ export function SueldosRecibo({
                             });
                             setRevertirBaja(true);
                           }}
-                          className="rounded p-1 text-[var(--arca-ink-4)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-accent-neg)] transition-colors"
+                          className="rounded p-1 text-[var(--arca-ink-4)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-accent-neg-fg)] transition-colors"
                           title="Eliminar recibo"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1293,7 +1293,7 @@ function GenerarSacDialog({
                   <th className="pb-2 text-right">SAC</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {preview.map((p) => {
                   const dias = diasMap[p.empleadoId] ?? 180;
                   const sacMonto =
@@ -1307,11 +1307,11 @@ function GenerarSacDialog({
                       <td className="py-2 pr-2">
                         {p.yaTieneSac ? (
                           <span title="Ya tiene SAC">
-                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos)]" />
+                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos-fg)]" />
                           </span>
                         ) : p.mejorMonto === 0 ? (
                           <span title="Sin recibos de sueldo en el semestre">
-                            <AlertCircle className="h-4 w-4 text-[var(--arca-accent-warn)]" />
+                            <AlertCircle className="h-4 w-4 text-[var(--arca-accent-warn-fg)]" />
                           </span>
                         ) : (
                           <input
@@ -1573,7 +1573,7 @@ export function GenerarLiqFinalDialog({
                   <th className="pb-2 text-center">Días trab.</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {preview.map((p) => {
                   const fecha = fechaBajaMap[p.empleadoId] ?? defaultFecha;
                   const dias = diasDesdefechaBaja(fecha);
@@ -1585,7 +1585,7 @@ export function GenerarLiqFinalDialog({
                       <td className="py-2 pr-2">
                         {p.yaTiene ? (
                           <span title="Ya tiene Liq. Final">
-                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos)]" />
+                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos-fg)]" />
                           </span>
                         ) : (
                           <input
@@ -1909,7 +1909,7 @@ function ReciboDocumento({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border/50">
+          <tbody className="divide-y divide-border/50 bg-[var(--arca-surface)]">
             {filas.length === 0 ? (
               <tr>
                 <td

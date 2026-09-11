@@ -537,7 +537,8 @@ function IvaResumenRI({ search }: { search: string }) {
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -626,7 +627,7 @@ function IvaResumenRI({ search }: { search: string }) {
                 />
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {sortedRows.map((r, i) => (
                 <tr
                   key={r.clienteId}
@@ -882,7 +883,8 @@ function MonotributistasTab({ search }: { search: string }) {
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -932,7 +934,7 @@ function MonotributistasTab({ search }: { search: string }) {
                 />
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {sortedRows.map((r, i) => (
                 <tr
                   key={r.clienteId}
@@ -1078,9 +1080,9 @@ function TablaOtras({ rows }: { rows: FilaOtras[] }) {
     <div
       style={{
         border: '1px solid var(--arca-border)',
-        borderRadius: 8,
-        overflowX: 'auto',
+        borderRadius: 12,
         background: 'var(--arca-surface)',
+        overflowX: 'auto',
       }}
     >
       <table
@@ -1095,7 +1097,7 @@ function TablaOtras({ rows }: { rows: FilaOtras[] }) {
             <th className={cn(thCls, 'text-left')}>Condición</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="bg-[var(--arca-surface)]">
           {rows.map((r, i) => (
             <tr
               key={r.clienteId}

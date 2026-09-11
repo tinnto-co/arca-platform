@@ -962,13 +962,13 @@ export function JobsTable() {
                       colorClasses =
                         'border-[var(--arca-accent-warn)]/30 bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]';
                       icon = (
-                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn)]" />
+                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn-fg)]" />
                       );
                     } else if (level === 'error') {
                       colorClasses =
                         'border-[var(--arca-accent-neg)]/30 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]';
                       icon = (
-                        <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg)]" />
+                        <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg-fg)]" />
                       );
                     } else if (level === 'debug') {
                       colorClasses =

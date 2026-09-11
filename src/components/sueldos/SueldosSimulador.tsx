@@ -1120,7 +1120,7 @@ export function SueldosSimulador({
                 </div>
                 {basicoEscala === 0 && (
                   <div className="flex flex-wrap items-center gap-3 rounded-md border border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] px-4 py-3 text-sm text-[var(--arca-accent-warn-fg)]">
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--arca-accent-warn)]" />
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--arca-accent-warn-fg)]" />
                     <span className="flex-1">
                       El sueldo básico de este empleado es <strong>$0</strong>.
                       Los cálculos no se realizarán correctamente. Ingresá el

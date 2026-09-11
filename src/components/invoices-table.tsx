@@ -1171,7 +1171,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                               </th>
                             </tr>
                           </thead>
-                          <tbody>
+                          <tbody className="bg-[var(--arca-surface)]">
                             {d.alicuotas.map((a, i) => (
                               <tr
                                 key={i}

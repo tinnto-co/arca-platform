@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Badge, BadgeDot } from '@/components/ui/badge';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -91,22 +92,13 @@ function getEstado(row: ClientRow): EstadoValue {
   return row.estado === 'activo' ? 'active' : 'inactive';
 }
 
-const ESTADO_META: Record<EstadoValue, { label: string; className: string }> = {
-  error: {
-    label: 'Credenciales inválidas',
-    className:
-      'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg)] border-[var(--arca-accent-neg)]',
-  },
-  active: {
-    label: 'Activo',
-    className:
-      'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos)] border-[var(--arca-accent-pos)]',
-  },
-  inactive: {
-    label: 'Inactivo',
-    className:
-      'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)]',
-  },
+const ESTADO_META: Record<
+  EstadoValue,
+  { label: string; variant: 'error' | 'success' | 'default' }
+> = {
+  error: { label: 'Credenciales inválidas', variant: 'error' },
+  active: { label: 'Activo', variant: 'success' },
+  inactive: { label: 'Inactivo', variant: 'default' },
 };
 
 export function RepresentativesTable({
@@ -261,18 +253,17 @@ export function RepresentativesTable({
           <span className="inline-flex items-center gap-1.5">
             {activeJobs && activeJobs.length > 0 && (
               <span
-                className="inline-flex items-center gap-1 rounded-full border border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--arca-ink-2)]"
+                className="inline-flex items-center gap-1 rounded-md bg-[var(--arca-surface-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--arca-ink-2)]"
                 title={`Actualizando: ${activeJobs.map((j) => j.type).join(', ')}`}
               >
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Actualizando ({activeJobs.length})
               </span>
             )}
-            <span
-              className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10.5px] font-medium ${meta.className}`}
-            >
+            <Badge variant={meta.variant} size="sm">
+              <BadgeDot />
               {meta.label}
-            </span>
+            </Badge>
           </span>
         );
       },

@@ -93,7 +93,7 @@ export function FrecuenciaClavesCard() {
             <th className="px-5 py-2 text-right font-semibold">Frecuencia</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody className="bg-[var(--arca-surface)]">
           {claves.map((c) => (
             <tr
               key={c.id}

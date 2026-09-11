@@ -71,7 +71,7 @@ export function ConfirmationCard({
     <Card className="my-2 max-w-lg">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-warn)]" />
+          <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-warn-fg)]" />
           {title}
         </CardTitle>
         <CardDescription>{description}</CardDescription>

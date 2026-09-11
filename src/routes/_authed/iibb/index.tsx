@@ -444,7 +444,8 @@ function IIBBDesglose({
             <div
               style={{
                 border: '1px solid var(--arca-border)',
-                borderRadius: 8,
+                borderRadius: 12,
+                background: 'var(--arca-surface)',
                 overflowX: 'auto',
               }}
             >
@@ -474,7 +475,7 @@ function IIBBDesglose({
                     </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="bg-[var(--arca-surface)]">
                   {resumenEmpresas.map((r, i) => (
                     <tr
                       key={r.clienteId}
@@ -525,7 +526,8 @@ function IIBBDesglose({
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
@@ -574,7 +576,7 @@ function IIBBDesglose({
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {filasDisplay.map((fila, i) => {
                 const prov = fila.key;
                 const liq = getLiq(prov);

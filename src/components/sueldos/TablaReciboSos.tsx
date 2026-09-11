@@ -718,7 +718,7 @@ function ResultOverrideCell({
           <button
             type="button"
             onClick={() => onOverride('')}
-            className="text-[var(--arca-accent-warn)] hover:text-[var(--arca-accent-neg)] shrink-0"
+            className="text-[var(--arca-accent-warn-fg)] hover:text-[var(--arca-accent-neg-fg)] shrink-0"
             title="Quitar override"
           >
             <X className="h-2.5 w-2.5" />
@@ -983,7 +983,7 @@ function TableSection({
                       type="button"
                       tabIndex={-1}
                       onClick={() => onRemoveConcepto(c.codigo)}
-                      className="ml-1 shrink-0 opacity-0 group-hover/row:opacity-100 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)] transition-opacity"
+                      className="ml-1 shrink-0 opacity-0 group-hover/row:opacity-100 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)] transition-opacity"
                       title="Eliminar concepto"
                     >
                       <Trash2 className="h-3 w-3" />

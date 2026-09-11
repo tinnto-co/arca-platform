@@ -416,15 +416,16 @@ export function SueldosConceptos({ clientId }: SueldosConceptosProps) {
 
       {/* Table */}
       <div
-        className="w-full overflow-hidden rounded-xl"
+        className="w-full overflow-hidden rounded-xl bg-[var(--arca-surface)]"
         style={{ border: '1px solid var(--arca-border)' }}
       >
-        {/* Navy header */}
+        {/* Header claro con micro-label */}
         <div
           className="grid h-[44px] items-center px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase"
           style={{
-            background: 'var(--arca-accent)',
-            color: '#FFFFFF',
+            background: 'var(--arca-bg)',
+            color: 'var(--arca-ink-3)',
+            borderBottom: '1px solid var(--arca-border)',
             gridTemplateColumns: '120px 140px 1fr 96px',
           }}
         >

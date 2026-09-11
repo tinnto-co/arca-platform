@@ -254,7 +254,7 @@ export function SueldosCierreContable({ clientId, periodo }: Props) {
                   <th className="py-1.5 pl-3 font-medium text-right">Haber</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {preview.lines.map((l, i) => (
                   <tr key={i} className="border-t border-[var(--arca-border)]">
                     <td className="py-1.5 pr-3 text-[var(--arca-ink)]">

@@ -262,7 +262,7 @@ export function ScanPdfConfirmation({
       <Card className="my-2 max-w-lg border-[var(--arca-accent-warn)]/60">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <FileWarning className="h-4 w-4 text-[var(--arca-accent-warn)]" />
+            <FileWarning className="h-4 w-4 text-[var(--arca-accent-warn-fg)]" />
             Falta el PDF
           </CardTitle>
           <CardDescription>
@@ -321,7 +321,7 @@ export function ScanPdfConfirmation({
     <Card className="my-2 max-w-2xl">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-warn)]" />
+          <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-warn-fg)]" />
           Escanear extracto bancario
         </CardTitle>
         <CardDescription>

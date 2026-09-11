@@ -2399,7 +2399,7 @@ export function RepresentativeDetailPage({
                           <button
                             onClick={() => markOpenedMutation.mutate(notif.id)}
                             disabled={markOpenedMutation.isPending}
-                            className="shrink-0 mt-0.5 text-[var(--arca-accent-pos)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
+                            className="shrink-0 mt-0.5 text-[var(--arca-accent-pos-fg)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
                             title="Marcar como leída"
                           >
                             <Check className="h-3.5 w-3.5" />
@@ -2787,7 +2787,7 @@ export function RepresentativeDetailPage({
                         </th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-[var(--arca-surface)]">
                       {pagedDebts.map((debt, i) => {
                         const balance = Number(debt.saldo || 0);
                         const intC = Number(debt.interesResarcitorio || 0);
@@ -4842,7 +4842,7 @@ export function RepresentativeDetailPage({
                         ))}
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-[var(--arca-surface)]">
                       {clientRequestsData.map(
                         (req: SolicitudRow, i: number) => {
                           const statusColors: Record<
@@ -4962,7 +4962,7 @@ export function RepresentativeDetailPage({
                                             estado: 'completada',
                                           })
                                         }
-                                        className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                        className="text-[11px] text-[var(--arca-accent-pos-fg)] hover:underline font-medium"
                                       >
                                         Completar
                                       </button>
@@ -5619,7 +5619,7 @@ function PortalAccessTab({ clienteId }: { clienteId: string }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-[var(--arca-accent-neg)] hover:text-[var(--arca-accent-neg)]"
+                        className="h-7 w-7 text-[var(--arca-accent-neg-fg)] hover:text-[var(--arca-accent-neg-fg)]"
                         title="Revocar acceso"
                         onClick={() => setRevokeTarget(u)}
                       >

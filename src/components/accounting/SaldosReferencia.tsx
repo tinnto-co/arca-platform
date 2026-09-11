@@ -225,7 +225,7 @@ function Planilla({
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="bg-[var(--arca-surface)]">
             {visible.map((r) => (
               <BalanceRow
                 key={r.accountId}

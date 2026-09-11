@@ -2801,7 +2801,7 @@ function EditableEntryTable({
           <th className="py-1.5 text-right w-32">Haber</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody className="bg-[var(--arca-surface)]">
         {lines.map((l, i) => (
           <tr
             key={l.accountId}
@@ -7641,7 +7641,7 @@ function Contabilizar({
                 <th className="py-2 pr-4 text-right">Acción</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {invoices.map((inv) => (
                 <PostingRow
                   key={inv.id}
@@ -7882,7 +7882,7 @@ function Pendientes({
                 <th className="py-2 pr-4 text-right">Acción</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="bg-[var(--arca-surface)]">
               {entries.map((e) => (
                 <PendingRow
                   key={e.id}
@@ -8117,7 +8117,7 @@ function BienesDeUso({
                   <th className="py-2 pr-4 text-right">Acción</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {assets.map((a) => (
                   <tr
                     key={a.id}
@@ -8895,7 +8895,7 @@ function AnexoIView({
                   <th className="px-3 py-1.5 text-right">Monto</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.categories.map((cat) => (
                   <AnexoICategoryRows
                     key={cat.category}
@@ -8976,7 +8976,7 @@ function AnexoIView({
                   <th className="py-1.5 text-right">Haber</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.suggestion.lines.map((l, i) => (
                   <tr
                     key={i}
@@ -9802,7 +9802,7 @@ function EspView({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {macros.map(({ macro, title }) => {
                   const secs = data.sections.filter((s) => s.macro === macro);
                   const totalCur = secs.reduce((s, x) => s + x.current, 0);
@@ -10082,7 +10082,7 @@ function InventarioView({
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="bg-[var(--arca-surface)]">
             {macros.map(({ macro, title, total }) => {
               const secs = data.sections.filter((s) => s.macro === macro);
               if (secs.every((s) => s.rubros.length === 0)) return null;
@@ -10732,7 +10732,7 @@ function EepnView({
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="bg-[var(--arca-surface)]">
             {data.rows.map((row) => {
               const strong = row.kind === 'inicio' || row.kind === 'cierre';
               return (
@@ -10927,7 +10927,7 @@ function ErView({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.lines.map((line: ErLine) => {
                   if (line.kind === 'subtotal') {
                     const isFinal = line.key === 'resultado_ejercicio';
@@ -11348,7 +11348,7 @@ function AnexoIIView({
                   </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-[var(--arca-surface)]">
                 {data.functions.map((fn: AnexoIIFunction) => (
                   <Fragment key={fn.key}>
                     <tr className="bg-[var(--arca-surface-2)]">
@@ -11911,7 +11911,7 @@ function NotesEditor({
                     </button>
                     <button
                       onClick={() => remove(note.id)}
-                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-accent-neg)] hover:bg-[var(--arca-accent-neg-bg)]"
+                      className="text-[12px] px-1.5 h-6 rounded-[5px] text-[var(--arca-accent-neg-fg)] hover:bg-[var(--arca-accent-neg-bg)]"
                       title="Eliminar"
                     >
                       ✕

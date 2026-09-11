@@ -236,7 +236,7 @@ export function VencimientosTab({
   const StatusPill = ({ status }: { status: ReturnType<typeof getStatus> }) => {
     if (status === 'vencido') {
       return (
-        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[var(--arca-accent-neg)] bg-[#fce8e6] rounded-full px-[10px] py-[3px]">
+        <span className="inline-flex items-center gap-[5px] text-[12px] font-semibold text-[var(--arca-accent-neg-fg)] bg-[#fce8e6] rounded-full px-[10px] py-[3px]">
           <span className="inline-block w-[6px] h-[6px] rounded-full bg-[var(--arca-accent-neg)]" />
           Vencido
         </span>
@@ -276,7 +276,7 @@ export function VencimientosTab({
     const next7 = new Date(today);
     next7.setDate(today.getDate() + 7);
     if (!dd.completadoAt && dueDate < today)
-      return 'text-[var(--arca-accent-neg)]';
+      return 'text-[var(--arca-accent-neg-fg)]';
     if (!dd.completadoAt && dueDate <= next7) return 'text-[var(--arca-ink)]';
     return 'text-[var(--arca-ink-2)]';
   };
@@ -389,12 +389,12 @@ export function VencimientosTab({
             </span>
           </div>
           <div
-            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[var(--arca-accent-neg)]"
+            className="font-[family-name:var(--ff-display)] font-bold tabular-nums leading-none text-[var(--arca-accent-neg-fg)]"
             style={{ fontSize: 30 }}
           >
             {isLoading ? '—' : dueDateStats.overdueCount}
           </div>
-          <div className="text-[12px] text-[var(--arca-accent-neg)] mt-[6px]">
+          <div className="text-[12px] text-[var(--arca-accent-neg-fg)] mt-[6px]">
             Requieren atención
           </div>
         </div>
@@ -524,8 +524,9 @@ export function VencimientosTab({
       </div>
 
       {/* ── Table ── */}
-      <div>
-        {/* Navy header row */}
+      <div className="bg-[var(--arca-surface)]">
+        {/* Header: fondo claro y micro-label. Las filas van sobre blanco, que
+            es lo que hace que el gris del header se lea como header. */}
         <div
           className="grid items-center px-6 h-12 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[12px] font-semibold tracking-[0.04em] uppercase"
           style={{

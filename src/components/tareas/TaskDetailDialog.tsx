@@ -488,7 +488,7 @@ export function TaskDetailDialog({
                   <span className="ml-auto flex items-center gap-2">
                     {guardado.texto && (
                       <span className="flex items-center gap-1 text-[11px] text-[var(--arca-ink-3)]">
-                        <Check className="size-3 text-[var(--arca-accent-pos)]" />
+                        <Check className="size-3 text-[var(--arca-accent-pos-fg)]" />
                         {guardado.texto}
                       </span>
                     )}

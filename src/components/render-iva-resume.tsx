@@ -549,7 +549,7 @@ function AdjustControl({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)]"
+          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)]"
           onClick={() => {
             setIsEditing(false);
             setInputValue('');
@@ -570,7 +570,7 @@ function AdjustControl({
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg)]"
+          className="h-7 w-7 text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)]"
           onClick={() => onChange(0)}
         >
           <X className="h-4 w-4" />

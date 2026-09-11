@@ -283,7 +283,7 @@ function PortalSolicitudes() {
                         </span>
                       )}
                       {req.completadaAt && (
-                        <span className="text-[11px] text-[var(--arca-accent-pos)]">
+                        <span className="text-[11px] text-[var(--arca-accent-pos-fg)]">
                           Completada el{' '}
                           {format(new Date(req.completadaAt), 'dd/MM/yyyy', {
                             locale: es,
@@ -318,7 +318,7 @@ function PortalSolicitudes() {
                         <>
                           {hasDocument ? (
                             <>
-                              <span className="text-[11px] text-[var(--arca-accent-pos)] flex items-center gap-1">
+                              <span className="text-[11px] text-[var(--arca-accent-pos-fg)] flex items-center gap-1">
                                 <CheckCircle2 size={12} />
                                 Documento enviado
                               </span>

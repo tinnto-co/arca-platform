@@ -367,14 +367,14 @@ export function ImportarPlanDialog({
                     {summary.modified} modificada(s)
                   </span>
                   {summary.errors > 0 && (
-                    <span className="text-[var(--arca-accent-neg)] font-medium">
+                    <span className="text-[var(--arca-accent-neg-fg)] font-medium">
                       {summary.errors} con error
                     </span>
                   )}
                 </div>
 
                 {preview?.blocker && (
-                  <p className="flex items-start gap-1.5 text-[12px] text-[var(--arca-accent-neg)]">
+                  <p className="flex items-start gap-1.5 text-[12px] text-[var(--arca-accent-neg-fg)]">
                     <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                     No se puede reemplazar: {preview.blocker}. Cambiá a modo
                     “Complementar”.
@@ -409,7 +409,7 @@ export function ImportarPlanDialog({
                 )}
 
                 {preview && preview.errors.length > 0 && (
-                  <ul className="max-h-32 overflow-y-auto space-y-0.5 text-[12px] text-[var(--arca-accent-neg)]">
+                  <ul className="max-h-32 overflow-y-auto space-y-0.5 text-[12px] text-[var(--arca-accent-neg-fg)]">
                     {preview.errors.map((e, i) => (
                       <li key={i}>
                         Fila {e.row}

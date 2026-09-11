@@ -164,7 +164,7 @@ function InvitePage() {
       <div className="flex min-h-svh items-center justify-center bg-[var(--arca-sidebar)] p-4">
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
-            <CheckCircle className="mx-auto size-12 text-[var(--arca-accent-pos)] mb-2" />
+            <CheckCircle className="mx-auto size-12 text-[var(--arca-accent-pos-fg)] mb-2" />
             <CardTitle>¡Bienvenido!</CardTitle>
             <CardDescription>
               Te uniste a {invitation?.organizationName ?? 'la organización'}.
