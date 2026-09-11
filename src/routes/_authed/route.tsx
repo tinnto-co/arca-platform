@@ -109,25 +109,42 @@ function RouteComponent() {
     </OrgSwitchProvider>
   );
 
-  if (aiAgentEnabled) {
-    return (
-      <CopilotKit
-        runtimeUrl="/api/copilotkit"
-        showDevConsole={false}
-        enableInspector={false}
-      >
-        <CopilotAttachmentProvider>
-          <CopilotActions />
-          <FrontendTools />
-          <GlobalCopilotReadables />
-          <VisiblePageReadable />
-          {shell(!hideAgentInput ? <AgentInput /> : null)}
-          {!isChatRoute && !altoCompleto && <CopilotBottomPanel />}
-          <BuscadorGlobal />
-        </CopilotAttachmentProvider>
-      </CopilotKit>
-    );
-  }
-
-  return shell(null);
+  /**
+   * El provider va siempre, y lo que se gatea es la funcionalidad.
+   *
+   * Antes el árbol entero dependía de `aiAgentEnabled`: mientras
+   * `listOrgModules` no resolvía, el layout devolvía el shell sin provider y
+   * las pantallas que montan un `CopilotReadableEntity` —la ficha del
+   * cliente, la tabla de clientes, sueldos por cliente— reventaban con
+   * "useCopilotKit must be used within CopilotKitProvider". Las dos partes
+   * leen la misma query, pero no re-renderizan en el mismo instante, y esa
+   * ventana alcanzaba para romper la página.
+   *
+   * Montar el provider no habla con el runtime: eso pasa cuando alguien usa
+   * el chat. Lo que sí se sigue gateando es lo que pesa —acciones, tools,
+   * readables globales, la barra y el panel—.
+   */
+  return (
+    <CopilotKit
+      runtimeUrl="/api/copilotkit"
+      showDevConsole={false}
+      enableInspector={false}
+    >
+      <CopilotAttachmentProvider>
+        {aiAgentEnabled && (
+          <>
+            <CopilotActions />
+            <FrontendTools />
+            <GlobalCopilotReadables />
+            <VisiblePageReadable />
+          </>
+        )}
+        {shell(aiAgentEnabled && !hideAgentInput ? <AgentInput /> : null)}
+        {aiAgentEnabled && !isChatRoute && !altoCompleto && (
+          <CopilotBottomPanel />
+        )}
+        <BuscadorGlobal />
+      </CopilotAttachmentProvider>
+    </CopilotKit>
+  );
 }

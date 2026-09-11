@@ -2527,7 +2527,7 @@ export function RepresentativeDetailPage({
                     <span className="pl-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
                       {kpi.label}
                     </span>
-                    <div className="pl-[6px] font-display font-semibold text-[22px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums">
+                    <div className="pl-[6px] text-[22px] leading-none font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
                       {new Intl.NumberFormat('es-AR', {
                         style: 'currency',
                         currency: 'ARS',
@@ -2545,8 +2545,10 @@ export function RepresentativeDetailPage({
               </div>
             )}
 
-            {/* Actualizar deudas (acción) + última actualización */}
-            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-col gap-[12px]">
+            {/* Barra de actualización y filtros. No es una card a propósito:
+                el marco con borde y sombra era lo que le metía el aire, para
+                dos líneas de controles que pertenecen a la tabla de abajo. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-[14px]">
                 <div className="flex flex-col gap-[2px]">
                   <span className="text-[11.5px] text-[var(--arca-ink-4)]">
@@ -2630,7 +2632,7 @@ export function RepresentativeDetailPage({
 
               {/* Filtros de tabla (solo afectan la vista, no la actualización) */}
               {!loadingDebts && debts.length > 0 && (
-                <div className="flex flex-wrap items-center gap-x-[16px] gap-y-[8px] pt-[12px] border-t border-[var(--arca-border)]">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
                     <ListFilter className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />
                     Filtrar
@@ -2646,7 +2648,7 @@ export function RepresentativeDetailPage({
                         setDebtPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                      <SelectTrigger size="sm" className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
                         <SelectValue placeholder="Todos" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2670,7 +2672,7 @@ export function RepresentativeDetailPage({
                         setDebtPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                      <SelectTrigger size="sm" className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
                         <SelectValue placeholder="Todos" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2729,9 +2731,29 @@ export function RepresentativeDetailPage({
               ) : (
                 <div className="overflow-x-auto">
                   <table
-                    className="w-full border-collapse text-[12.5px] [&_th]:!px-[10px] [&_td]:!px-[10px]"
+                    className="w-full table-fixed border-collapse text-[12.5px] [&_th]:!px-[10px] [&_td]:!px-[10px]"
                     style={{ minWidth: 880 }}
                   >
+                    {/* `table-fixed` + anchos declarados: sin esto el ancho lo
+                        decide el contenido, y la celda de Gestión —un select de
+                        110px más el botón— empujaba la tabla 12px más allá del
+                        contenedor y aparecía una barra horizontal. Así las
+                        columnas de texto ceden y recortan, que es lo que ya
+                        hacían de todos modos. */}
+                    <colgroup>
+                      <col style={{ width: '12.5%' }} />
+                      <col style={{ width: '13.5%' }} />
+                      <col style={{ width: '6.5%' }} />
+                      <col style={{ width: '8%' }} />
+                      <col style={{ width: '7.5%' }} />
+                      <col style={{ width: '8.5%' }} />
+                      <col style={{ width: '8.5%' }} />
+                      <col style={{ width: '8.5%' }} />
+                      <col style={{ width: '7%' }} />
+                      {/* Gestión es la única que no puede ceder: adentro van un
+                          select y un botón, que no recortan como el texto. */}
+                      <col style={{ width: '19.5%' }} />
+                    </colgroup>
                     <thead>
                       <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                         {[
@@ -2801,13 +2823,13 @@ export function RepresentativeDetailPage({
                         // Row background: red=abierta+vencida, orange=intimada, green=pagada, gray=plan_pago, default=prescripta
                         const rowBg =
                           debtStatus === 'pagada'
-                            ? 'rgba(34,197,94,0.06)'
+                            ? 'color-mix(in oklab, var(--arca-accent-pos-bg), white 55%)'
                             : debtStatus === 'plan_pago'
-                              ? 'rgba(148,163,184,0.10)'
+                              ? 'var(--arca-surface-hover)'
                               : isIntimated
-                                ? 'rgba(249,115,22,0.08)'
+                                ? 'color-mix(in oklab, var(--arca-accent-warn-bg), white 45%)'
                                 : isOverdue
-                                  ? 'rgba(239,68,68,0.07)'
+                                  ? 'color-mix(in oklab, var(--arca-accent-neg-bg), white 50%)'
                                   : i % 2 === 1
                                     ? 'var(--arca-bg)'
                                     : undefined;
@@ -2886,23 +2908,23 @@ export function RepresentativeDetailPage({
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap">
                               {debtStatus === 'pagada' ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">
                                   Pagada
                                 </span>
                               ) : debtStatus === 'plan_pago' ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(148,163,184,0.25)] text-[var(--arca-ink-3)]">
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
                                   En plan
                                 </span>
                               ) : debtStatus === 'prescripta' ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(139,92,246,0.15)] text-[rgba(139,92,246,0.9)]">
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]">
                                   Prescripta
                                 </span>
                               ) : isOverdue ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">
                                   Vencida
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                                   Abierta
                                 </span>
                               )}
