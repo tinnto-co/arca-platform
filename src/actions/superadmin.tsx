@@ -38,13 +38,19 @@ export const listOrganizaciones = createServerFn({ method: 'GET' }).handler(
         slug: organization.slug,
         logo: organization.logo,
         createdAt: organization.createdAt,
+        // La columna de la tabla externa va calificada a mano. Drizzle
+        // interpola `${organization.id}` como `"id"` a secas, y adentro del
+        // subquery ese `"id"` resuelve contra `member m` —que también tiene
+        // una columna `id`—: la condición pasaba a comparar el id de la
+        // membresía consigo mismo y no coincidía nunca. De ahí el "0
+        // miembros" en todos los estudios.
         miembros: sql<number>`(
           select count(*)::int from ${member} m
-          where m.organization_id = ${organization.id}
+          where m.organization_id = "organization"."id"
         )`,
         yaEsMiembro: sql<boolean>`exists (
           select 1 from ${member} m
-          where m.organization_id = ${organization.id}
+          where m.organization_id = "organization"."id"
             and m.user_id = ${userId}
         )`,
       })
