@@ -193,14 +193,11 @@ function RouteComponent() {
           subtitle="Esta empresa no liquida sueldos"
           actions={<SelectorClienteGlobal />}
         />
-        <div
-          className="mt-6 flex items-center gap-2 rounded-[10px] border px-4 py-2.5 text-[13px]"
-          style={{
-            background: 'var(--arca-accent-warn-bg)',
-            borderColor: 'var(--arca-border)',
-            color: 'var(--arca-accent-warn-fg)',
-          }}
-        >
+        <div className="mt-6 flex items-center gap-3 rounded-[10px] border border-[oklch(0.88_0.08_75)] bg-[oklch(0.97_0.03_75)] px-[14px] py-[10px] text-[13px] text-[var(--arca-accent-warn-fg)]">
+          <span
+            aria-hidden
+            className="size-2 shrink-0 rounded-full bg-[var(--arca-accent-warn)]"
+          />
           La empresa de este link no liquida sueldos (o ya no existe). Volvé al
           listado y agregala con «Agregar empresa» si corresponde.
         </div>
