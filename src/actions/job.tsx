@@ -8,19 +8,13 @@ import {
   credencialAfip,
   cliente,
   clienteCredencial,
-  comprobante,
-  ivaDeclaracion,
-  notificacion,
-  deuda,
-  vencimiento,
-  escalaSalarial,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
   getMemberRole,
   assertCanWrite,
 } from '@/actions/helpers';
-import { and, asc, desc, eq, inArray, sql, type AnyColumn } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   classifyStoredFailedReason,
   CATEGORY_LABELS,
@@ -540,111 +534,141 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
     };
   });
 
-/** Una fuente de datos scrapeada: última corrida y última actualización real. */
+/**
+ * Una fuente de datos y qué tan al día está.
+ *
+ * Antes esto traía dos fechas —cuándo corrió el job y `max(updated_at)` de la
+ * tabla destino— y las mostraba juntas. Se contradecían todo el tiempo, y las
+ * dos tenían razón: median cosas distintas. `max(updated_at)` sube con
+ * cualquier escritura, no sólo con las del scrapper: alguien marcando un
+ * vencimiento como cumplido mueve la fecha de toda la fuente. Medido en
+ * producción: el 07/09 a las 19:21 se tocó UNA fila de `vencimiento` sin ningún
+ * job corriendo, y con eso el panel anunciaba datos frescos mientras el último
+ * scrapeo real era de cuatro días antes.
+ *
+ * Así que la frescura del dato es una sola cosa: cuándo fue la última corrida
+ * exitosa. Y la salud es otra: cuántas credenciales están fallando hoy.
+ */
 export interface FuenteDatoRow {
   id: string;
   nombre: string;
-  /** Último job terminado OK (ISO) o null si nunca corrió. */
+  /** Última corrida exitosa (ISO), o null si nunca hubo una. */
   ultimoOkAt: string | null;
-  /** Último job fallido (ISO) o null. */
-  ultimoErrorAt: string | null;
-  /** max(updated_at) de la tabla destino (ISO) o null si está vacía. */
-  datosActualizadosAt: string | null;
+  /** Credenciales cuya corrida más reciente de esta fuente terminó mal. */
+  credencialesFallando: number;
+  /** Credenciales que alguna vez corrieron esta fuente. El total del "N de M". */
+  credencialesTotal: number;
 }
-
-// max(timestamptz) crudo vuelve como string no-ISO del driver → patrón to_json.
-const isoMax = (col: AnyColumn) =>
-  sql<string | null>`to_json(max(${col}))#>>'{}'`;
 
 export const getFuentesDatos = createServerFn({ method: 'GET' }).handler(
   async (): Promise<FuenteDatoRow[]> => {
     const { orgId } = await getSessionWithOrg();
 
-    const jobsPorTipo = await db
+    /**
+     * La corrida más reciente de cada credencial, por fuente.
+     *
+     * Por credencial y no por tipo de job: el scrapper dispara uno por clave,
+     * así que en una misma tanda conviven éxitos y fallas. Mirar
+     * `max(failed_at)` contra `max(finished_at)` —lo que hacía antes— compara
+     * dos poblaciones distintas y da rojo casi siempre.
+     *
+     * El `distinct on` es por (fuente, credencial) y no por (tipo, credencial)
+     * porque Comprobantes junta dos tipos de job: contando por tipo, una clave
+     * que corre los dos se cuenta dos veces y el total sale mayor que la
+     * cantidad de claves que existen.
+     */
+    const filas = await db
       .select({
-        type: job.type,
+        fuente: sql<string>`fuente`,
+        status: sql<string>`status`,
+        cuando: sql<string | null>`to_json(max(cuando))#>>'{}'`,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(
+        sql`(
+          select distinct on (fuente, credencial_id) fuente, credencial_id, status, cuando
+          from (
+            select case ${job.type}
+                     when 'comprobantes' then 'comprobantes'
+                     when 'comprobantes_full' then 'comprobantes'
+                     else ${job.type}::text
+                   end as fuente,
+                   ${job.credencialId} as credencial_id,
+                   ${job.status} as status,
+                   coalesce(${job.finishedAt}, ${job.failedAt}, ${job.updatedAt}) as cuando,
+                   ${job.createdAt} as created_at
+            from ${job}
+            where ${job.orgId} = ${orgId} and ${job.credencialId} is not null
+          ) j
+          order by fuente, credencial_id, created_at desc
+        ) u`
+      )
+      .groupBy(sql`fuente, status`);
+
+    /**
+     * `ultimoOkAt` sale del job y no de `max(updated_at)` de la tabla destino
+     * a propósito: es el único momento del que sabemos que ARCA contestó bien.
+     */
+    const resumenDe = (fuente: string) => {
+      let ultimoOkAt: string | null = null;
+      let fallando = 0;
+      let total = 0;
+      for (const f of filas) {
+        if (f.fuente !== fuente) continue;
+        total += f.n;
+        if (f.status === 'failed') fallando += f.n;
+        if (
+          f.status === 'finished' &&
+          f.cuando &&
+          (!ultimoOkAt || f.cuando > ultimoOkAt)
+        )
+          ultimoOkAt = f.cuando;
+      }
+      return {
+        ultimoOkAt,
+        credencialesFallando: fallando,
+        credencialesTotal: total,
+      };
+    };
+
+    /**
+     * Las escalas no se scrapean por credencial: las trae un job semanal que
+     * lee `cct_fuente`. No hay "N de M claves" que contar, así que la frescura
+     * sale del último job del tipo y el conteo queda en cero.
+     */
+    const [escalas] = await db
+      .select({
         ultimoOkAt: sql<
           string | null
         >`to_json(max(${job.finishedAt}) filter (where ${job.status} = 'finished'))#>>'{}'`,
-        ultimoErrorAt: sql<
-          string | null
-        >`to_json(max(coalesce(${job.failedAt}, ${job.updatedAt})) filter (where ${job.status} = 'failed'))#>>'{}'`,
       })
       .from(job)
-      .where(eq(job.orgId, orgId))
-      .groupBy(job.type);
-
-    const porTipo = new Map(jobsPorTipo.map((r) => [r.type as string, r]));
-
-    // Última actualización real de cada tabla destino (RLS scopea por org;
-    // escala_salarial es catálogo por convenio, scopeada a 2 saltos).
-    const [[comp], [ivaDecl], [notif], [deu], [venc], [esc]] =
-      await Promise.all([
-        db.select({ at: isoMax(comprobante.updatedAt) }).from(comprobante),
-        db
-          .select({ at: isoMax(ivaDeclaracion.updatedAt) })
-          .from(ivaDeclaracion),
-        db.select({ at: isoMax(notificacion.updatedAt) }).from(notificacion),
-        db.select({ at: isoMax(deuda.updatedAt) }).from(deuda),
-        db.select({ at: isoMax(vencimiento.updatedAt) }).from(vencimiento),
-        db
-          .select({ at: isoMax(escalaSalarial.updatedAt) })
-          .from(escalaSalarial),
-      ]);
-
-    // Combina varios job types en una fuente (ej. comprobantes + full).
-    const jobsDe = (tipos: string[]) => {
-      let ultimoOkAt: string | null = null;
-      let ultimoErrorAt: string | null = null;
-      for (const t of tipos) {
-        const r = porTipo.get(t);
-        if (r?.ultimoOkAt && (!ultimoOkAt || r.ultimoOkAt > ultimoOkAt))
-          ultimoOkAt = r.ultimoOkAt;
-        if (
-          r?.ultimoErrorAt &&
-          (!ultimoErrorAt || r.ultimoErrorAt > ultimoErrorAt)
-        )
-          ultimoErrorAt = r.ultimoErrorAt;
-      }
-      return { ultimoOkAt, ultimoErrorAt };
-    };
+      .where(and(eq(job.orgId, orgId), eq(job.type, 'escalas')));
 
     return [
       {
         id: 'comprobantes',
         nombre: 'Comprobantes',
-        ...jobsDe(['comprobantes', 'comprobantes_full']),
-        datosActualizadosAt: comp.at,
+        ...resumenDe('comprobantes'),
       },
-      {
-        id: 'iva',
-        nombre: 'IVA (F2051)',
-        ...jobsDe(['iva']),
-        datosActualizadosAt: ivaDecl.at,
-      },
+      { id: 'iva', nombre: 'IVA (F2051)', ...resumenDe('iva') },
       {
         id: 'notificaciones',
         nombre: 'Notificaciones',
-        ...jobsDe(['notificaciones']),
-        datosActualizadosAt: notif.at,
+        ...resumenDe('notificaciones'),
       },
-      {
-        id: 'deuda',
-        nombre: 'Deudas',
-        ...jobsDe(['deuda']),
-        datosActualizadosAt: deu.at,
-      },
+      { id: 'deuda', nombre: 'Deudas', ...resumenDe('deuda') },
       {
         id: 'vencimientos',
         nombre: 'Vencimientos',
-        ...jobsDe(['vencimientos']),
-        datosActualizadosAt: venc.at,
+        ...resumenDe('vencimientos'),
       },
       {
         id: 'escalas',
         nombre: 'Escalas salariales',
-        ...jobsDe(['escalas']),
-        datosActualizadosAt: esc.at,
+        ultimoOkAt: escalas?.ultimoOkAt ?? null,
+        credencialesFallando: 0,
+        credencialesTotal: 0,
       },
     ];
   }
