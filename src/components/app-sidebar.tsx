@@ -23,6 +23,7 @@ import {
   Database,
   ClipboardList,
   ChevronRight,
+  ShieldCheck,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -898,8 +899,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <NavGroup id="plataforma" label="Plataforma">
               <NavItem
                 to="/organizaciones"
-                icon={Building}
-                label="Organizaciones"
+                icon={ShieldCheck}
+                label="Superadmin"
               />
             </NavGroup>
           )}

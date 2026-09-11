@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed')({
   component: RouteComponent,
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const session = await getSession();
     if (!session) {
       throw redirect({ to: '/login' });
@@ -40,6 +40,21 @@ export const Route = createFileRoute('/_authed')({
     if (!activeOrgId) {
       const orgs = await getOrganizations();
       if (orgs.length === 0) {
+        // El superadmin no pertenece a ningún estudio: su trabajo es darlos de
+        // alta. Mandarlo a /no-organization lo deja encerrado —esa pantalla no
+        // lleva a ningún lado— justo cuando todavía no existe la primera
+        // organización y es el único que puede crearla.
+        //
+        // El módulo cuelga de este mismo layout, así que no se puede redirigir
+        // a ciegas: estando ya ahí, el redirect se dispararía contra sí mismo.
+        const esSuperadmin =
+          (session.user as { role?: string | null } | undefined)?.role ===
+          'admin';
+        if (esSuperadmin) {
+          if (location.pathname.startsWith('/organizaciones')) return session;
+          throw redirect({ to: '/organizaciones' });
+        }
+
         // Un usuario del portal tampoco pertenece a ninguna organización, pero
         // su lugar es el portal, no la pantalla de "sin organización" (sin esto
         // cualquier deep link o refresh lo deja en un callejón sin salida).
