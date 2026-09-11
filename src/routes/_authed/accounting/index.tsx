@@ -2805,7 +2805,7 @@ function EditableEntryTable({
   return (
     <table className="w-full text-[12px]">
       <thead>
-        <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+        <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
           <th className="py-1.5">Cuenta</th>
           <th className="py-1.5 text-right w-32">Debe</th>
           <th className="py-1.5 text-right w-32">Haber</th>
@@ -7568,65 +7568,67 @@ function Contabilizar({
 
   return (
     <div className="space-y-4">
-      {/* Explicación */}
-      <div className="flex gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
-        <Lightbulb
-          className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent)]"
-          strokeWidth={1.8}
-        />
-        <div>
-          <strong>Contabilizar comprobantes.</strong> Acá generás los asientos
-          automáticos de las facturas aplicando las{' '}
-          <strong>reglas de mapeo</strong>. Revisá la regla que matchea cada
-          comprobante y generá los que estén correctos. Si una factura no tiene
-          regla (o tiene percepciones/otros impuestos sin mapear), el asiento se
-          crea con la cuenta <strong>Pendiente de revisión</strong>, que bloquea
-          el cierre hasta que la corrijas a mano.
-        </div>
+      {/* Los filtros afuera de la tabla y la explicación detrás del botón de
+        ayuda: eran cuatro renglones fijos arriba de todo. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={direction}
+          onValueChange={(v) => {
+            setDirection(v as 'all' | 'emitido' | 'recibido');
+            setSelected(new Set());
+          }}
+        >
+          <SelectTrigger size="sm" className="w-[176px] data-[size=sm]:h-8">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Ventas y compras</SelectItem>
+            <SelectItem value="emitido">Solo ventas</SelectItem>
+            <SelectItem value="recibido">Solo compras</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Chip, como "Incluir anulados" y "Ocultar bajas": en esta
+          plataforma un filtro de sí/no es un chip, no un checkbox. */}
+        <button
+          type="button"
+          aria-pressed={includePosted}
+          onClick={() => setIncludePosted(!includePosted)}
+          className={chipFiltro(includePosted)}
+        >
+          Mostrar ya contabilizadas
+        </button>
+
+        <Ayuda titulo="Contabilizar comprobantes" etiqueta="Cómo funciona">
+          <p>
+            Acá generás los asientos automáticos de las facturas aplicando las{' '}
+            <strong>reglas de mapeo</strong>. Revisá la regla que matchea cada
+            comprobante y generá los que estén correctos.
+          </p>
+          <p>
+            Si una factura no tiene regla (o tiene percepciones u otros
+            impuestos sin mapear), el asiento se crea con la cuenta{' '}
+            <strong>Pendiente de revisión</strong>, que bloquea el cierre hasta
+            que la corrijas a mano.
+          </p>
+        </Ayuda>
+
+        {canWrite && (
+          <Button
+            size="sm"
+            className="ml-auto gap-1.5"
+            onClick={() => genMut.mutate([...selected])}
+            disabled={selected.size === 0 || genMut.isPending}
+          >
+            <Zap className="size-3.5" strokeWidth={2} />
+            {genMut.isPending
+              ? 'Generando…'
+              : `Generar ${selected.size > 0 ? `(${selected.size})` : 'seleccionadas'}`}
+          </Button>
+        )}
       </div>
 
-      {/* Controles */}
       <ArcaCard>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-[var(--arca-border)]">
-          <Select
-            value={direction}
-            onValueChange={(v) => {
-              setDirection(v as 'all' | 'emitido' | 'recibido');
-              setSelected(new Set());
-            }}
-          >
-            <SelectTrigger size="sm" className="w-44 text-[12.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Ventas y compras</SelectItem>
-              <SelectItem value="emitido">Solo ventas</SelectItem>
-              <SelectItem value="recibido">Solo compras</SelectItem>
-            </SelectContent>
-          </Select>
-          <label className="flex items-center gap-1.5 text-[12.5px] text-[var(--arca-ink-2)] cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={includePosted}
-              onChange={(e) => setIncludePosted(e.target.checked)}
-            />
-            Mostrar ya contabilizadas
-          </label>
-          <div className="flex-1" />
-          {canWrite && (
-            <button
-              onClick={() => genMut.mutate([...selected])}
-              disabled={selected.size === 0 || genMut.isPending}
-              className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50 inline-flex items-center gap-1.5"
-            >
-              <Zap className="w-3.5 h-3.5" strokeWidth={2} />
-              {genMut.isPending
-                ? 'Generando…'
-                : `Generar ${selected.size > 0 ? `(${selected.size})` : 'seleccionadas'}`}
-            </button>
-          )}
-        </div>
-
         {isLoading ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             Cargando comprobantes…
@@ -7640,7 +7642,7 @@ function Contabilizar({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+              <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                 <th className="w-9 py-2 pl-4">
                   {canWrite && selectable.length > 0 && (
                     <button
@@ -7868,12 +7870,15 @@ function Pendientes({
 
   return (
     <div className="space-y-4">
-      {/* Explicación */}
-      <div className="flex gap-2 rounded-[10px] border border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)]/60 px-4 py-3 text-[12px] leading-relaxed text-[var(--arca-ink-2)]">
-        <AlertTriangle
-          className="w-4 h-4 shrink-0 mt-0.5 text-[var(--arca-accent-warn-fg)]"
-          strokeWidth={1.8}
-        />
+      {/* Es un aviso de verdad —bloquea el cierre— así que se queda como
+        banner y no como botón de ayuda. Lo que cambia es el color: el texto
+        va en el `-fg` del estado, no en `ink-2`, y el borde a un cuarto de
+        opacidad como el resto de los banners tonales. */}
+      <div
+        role="status"
+        className="flex gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-accent-warn)]/25 bg-[var(--arca-accent-warn-bg)] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--arca-accent-warn-fg)]"
+      >
+        <AlertTriangle className="mt-0.5 size-4 shrink-0" strokeWidth={1.8} />
         <div>
           <strong>Pendientes de revisión.</strong> Asientos automáticos que el
           sistema no pudo imputar del todo a una cuenta concreta (falta una
@@ -7897,7 +7902,7 @@ function Pendientes({
         ) : (
           <table className="w-full text-[12.5px]">
             <thead>
-              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+              <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                 <th className="py-2 pl-4">N°</th>
                 <th className="py-2">Fecha</th>
                 <th className="py-2">Período</th>
@@ -8134,7 +8139,7 @@ function BienesDeUso({
           ) : (
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-4">Nombre</th>
                   <th className="py-2">Categoría</th>
                   <th className="py-2">Fecha adq.</th>
@@ -8838,7 +8843,7 @@ function AnexoIView({
               className={`w-full min-w-[1000px] text-[11.5px] ${COL_FIJA}`}
             >
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th
                     className="py-2 pl-4 text-left align-bottom border-b border-[var(--arca-border)]"
                     rowSpan={3}
@@ -8998,7 +9003,7 @@ function AnexoIView({
             </p>
             <table className="w-full text-[12.5px] mb-3">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-1.5">Cuenta</th>
                   <th className="py-1.5 text-right">Debe</th>
                   <th className="py-1.5 text-right">Haber</th>
@@ -9818,7 +9823,7 @@ function EspView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-3 text-left">Rubro</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -10098,7 +10103,7 @@ function InventarioView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+            <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
               <th className="text-left font-semibold px-4 py-1.5">Conceptos</th>
               {[1, 2, 3, 4].map((n) => (
                 <th
@@ -10718,7 +10723,7 @@ function EepnView({
       <div className="overflow-x-auto">
         <table className={`w-full text-[12.5px] min-w-[720px] ${COL_FIJA}`}>
           <thead>
-            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+            <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
               <th className="text-left font-semibold px-4 py-1.5" rowSpan={2}>
                 Concepto
               </th>
@@ -10943,7 +10948,7 @@ function ErView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-3 text-left">Concepto</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
@@ -11364,7 +11369,7 @@ function AnexoIIView({
           <div className="px-2 py-3">
             <table className="w-full text-[12.5px]">
               <thead>
-                <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                   <th className="py-2 pl-3 text-left">Función / cuenta</th>
                   <th className="py-2 pr-3 text-right w-40">
                     Ej. N°{data.fiscalYearNumber}
