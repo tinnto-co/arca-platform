@@ -243,9 +243,26 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     );
     const [currentPage, setCurrentPage] = useState(1);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    /**
+     * El tilde del encabezado manda sobre la página que se está viendo, y sólo
+     * sobre ella: suma o quita esos ids conservando lo tildado en las otras.
+     *
+     * Antes reemplazaba el conjunto entero, así que tildar todo en la página 2
+     * borraba la selección de la página 1 —y destildar ahí borraba todo—. La
+     * exportación siempre supo cruzar ids de varias páginas; lo que no dejaba
+     * era juntarlos.
+     */
     const toggleAllInvoices = (ids: string[]) => {
-      const allSel = ids.length > 0 && ids.every((id) => selectedIds.has(id));
-      setSelectedIds(allSel ? new Set() : new Set(ids));
+      const yaEstabanTodas =
+        ids.length > 0 && ids.every((id) => selectedIds.has(id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (yaEstabanTodas) next.delete(id);
+          else next.add(id);
+        }
+        return next;
+      });
     };
     const toggleInvoiceRow = (id: string) => {
       setSelectedIds((prev) => {
@@ -683,7 +700,12 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       return (
         <Badge
           variant={typeInfo.variant}
-          className="!whitespace-normal break-words text-[10px] px-1.5 py-0.5 inline-block max-w-full leading-tight"
+          // Se queda con el `inline-flex items-center justify-center` de la
+          // variante base: con `inline-block` el texto se apoyaba arriba de la
+          // caja de `h-6` y dejaba el aire abajo. Lo que sí hay que soltar es
+          // esa altura fija, porque "Ticket Factura A" necesita dos líneas y
+          // la base recorta con `overflow-hidden`.
+          className="!h-auto !whitespace-normal break-words text-[10px] px-1.5 py-1 max-w-full leading-tight text-center"
         >
           {typeInfo.label}
         </Badge>

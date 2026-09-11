@@ -373,3 +373,46 @@ REGLAS CRÍTICAS Y VALIDACIONES:
 
     return outputSchema.parse(normalized);
   });
+
+/* =========================
+   PDF → TEXTO (genérico)
+========================= */
+
+/**
+ * Pasa un PDF a texto plano para que el asistente lo pueda leer.
+ *
+ * Es el mismo circuito que `scanBankStatement` —mismo cliente de Gemini, mismo
+ * `inlineData` con el PDF en base64— pero sin esquema de salida: acá no
+ * queremos movimientos bancarios, queremos el documento tal cual dice, sea una
+ * F.8600, un recibo de sueldo o un balance.
+ *
+ * Existe porque `/api/agent` no recibe archivos: la vista extrae el texto acá y
+ * lo antepone al mensaje del usuario. Cuando el endpoint acepte adjuntos
+ * nativos esto se puede tirar.
+ */
+export const extraerTextoPdf = createServerFn({ method: 'POST' })
+  .validator(z.object({ fileBase64: z.string().min(1) }))
+  .handler(async (ctx) => {
+    await getSessionWithOrg();
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: [
+        {
+          text: `Transcribí este documento a texto plano, respetando el orden de
+lectura. Las tablas van como filas con los valores separados por " | ",
+manteniendo la fila de encabezados. No resumas, no interpretes y no agregues
+comentarios: solo el contenido del documento.`,
+        },
+        {
+          inlineData: {
+            mimeType: 'application/pdf',
+            data: ctx.data.fileBase64,
+          },
+        },
+      ],
+    });
+
+    if (!response.text) throw new Error('No se pudo leer el PDF');
+    return { texto: response.text };
+  });

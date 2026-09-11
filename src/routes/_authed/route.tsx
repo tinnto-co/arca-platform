@@ -27,10 +27,13 @@ import { FrontendTools } from '@/components/copilot/FrontendTools';
 import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
 import { VisiblePageReadable } from '@/components/copilot/VisiblePageReadable';
 import { cn } from '@/lib/utils';
+import { userQuery } from '@/lib/user-query';
+import { ROL_SOPORTE } from '@/lib/permissions';
+import { ShieldAlert } from 'lucide-react';
 
 export const Route = createFileRoute('/_authed')({
   component: RouteComponent,
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const session = await getSession();
     if (!session) {
       throw redirect({ to: '/login' });
@@ -40,6 +43,21 @@ export const Route = createFileRoute('/_authed')({
     if (!activeOrgId) {
       const orgs = await getOrganizations();
       if (orgs.length === 0) {
+        // El superadmin no pertenece a ningún estudio: su trabajo es darlos de
+        // alta. Mandarlo a /no-organization lo deja encerrado —esa pantalla no
+        // lleva a ningún lado— justo cuando todavía no existe la primera
+        // organización y es el único que puede crearla.
+        //
+        // El módulo cuelga de este mismo layout, así que no se puede redirigir
+        // a ciegas: estando ya ahí, el redirect se dispararía contra sí mismo.
+        const esSuperadmin =
+          (session.user as { role?: string | null } | undefined)?.role ===
+          'admin';
+        if (esSuperadmin) {
+          if (location.pathname.startsWith('/organizaciones')) return session;
+          throw redirect({ to: '/organizaciones' });
+        }
+
         // Un usuario del portal tampoco pertenece a ninguna organización, pero
         // su lugar es el portal, no la pantalla de "sin organización" (sin esto
         // cualquier deep link o refresh lo deja en un callejón sin salida).
@@ -52,6 +70,43 @@ export const Route = createFileRoute('/_authed')({
     return session;
   },
 });
+
+/**
+ * Franja de aviso mientras el superadmin trabaja dentro de un estudio ajeno.
+ *
+ * El acceso de soporte es invisible para el estudio —no aparece entre sus
+ * miembros— así que tiene que ser bien visible para quien lo está usando: sin
+ * esto es fácil olvidarse de que lo que se está tocando son los datos fiscales
+ * de otro, y dejar el acceso abierto por semanas.
+ */
+function AvisoSoporte() {
+  const { data: user } = useQuery(userQuery);
+  const enSoporte =
+    (user as { organizationRole?: string | null } | undefined)
+      ?.organizationRole === ROL_SOPORTE;
+  if (!enSoporte) return null;
+
+  const estudio =
+    (user as { organizationName?: string | null } | undefined)
+      ?.organizationName ?? 'este estudio';
+
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] px-4 py-1.5 text-[12px] text-[var(--arca-accent-warn-fg)]">
+      <ShieldAlert className="size-3.5 shrink-0" strokeWidth={1.75} />
+      <span className="min-w-0 flex-1">
+        Estás dentro de <strong className="font-semibold">{estudio}</strong> con
+        un acceso de soporte. No sos miembro del estudio y todo lo que hagas
+        queda registrado.
+      </span>
+      <a
+        href="/organizaciones"
+        className="shrink-0 font-semibold underline underline-offset-2"
+      >
+        Salir
+      </a>
+    </div>
+  );
+}
 
 function RouteComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -94,11 +149,15 @@ function RouteComponent() {
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
         <SidebarInset className="relative flex min-h-0 min-w-0 flex-col">
+          <AvisoSoporte />
           <div
             data-arca-content
             className={cn(
               'min-w-0 flex-1 min-h-0 overflow-y-auto',
-              isChatDetail || altoCompleto
+              // `/chat` maneja su propio alto y su propio scroll. Si entra por
+              // la rama de abajo se le suma el scroll del shell y la pantalla
+              // queda con dos barras, una dentro de la otra.
+              isChatRoute || altoCompleto
                 ? 'h-full overflow-hidden'
                 : 'bg-[var(--arca-bg)] pb-28 md:pb-24 min-h-full'
             )}

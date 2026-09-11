@@ -12,6 +12,7 @@ import {
   Building2,
   CalendarDays,
   Loader2,
+  LogOut,
   Plus,
   Users,
 } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
   crearOrganizacion,
   entrarOrganizacion,
   listOrganizaciones,
+  salirOrganizacion,
 } from '@/actions/superadmin';
 import { getUser } from '@/actions/user';
 import { PageHeader } from '@/components/shared/page-header';
@@ -164,6 +166,24 @@ function OrganizacionesPage() {
     },
   });
 
+  const [saliendoDe, setSaliendoDe] = useState<string | null>(null);
+
+  const salir = useMutation({
+    mutationFn: (organizationId: string) => {
+      setSaliendoDe(organizationId);
+      return salirOrganizacion({ data: { organizationId } });
+    },
+    onSuccess: () => {
+      // Igual que al entrar: cambió la organización activa, así que conviene
+      // que todo el árbol vuelva a arrancar en vez de invalidar a mano.
+      window.location.href = '/organizaciones';
+    },
+    onError: (e: Error) => {
+      setSaliendoDe(null);
+      toast.error(e.message);
+    },
+  });
+
   const activa = user?.activeOrganizationId ?? null;
 
   return (
@@ -236,22 +256,47 @@ function OrganizacionesPage() {
 
                 <div className="mt-auto flex items-center justify-between border-t border-[var(--arca-border)] px-5 py-3">
                   <span className="text-[12px] text-[var(--arca-ink-4)]">
-                    {esActiva ? 'Estás en esta cuenta' : 'Entrar a esta cuenta'}
+                    {org.accesoAbierto
+                      ? 'Acceso de soporte abierto'
+                      : org.esPropia
+                        ? 'Es tu estudio'
+                        : esActiva
+                          ? 'Estás en esta cuenta'
+                          : 'Entrar a esta cuenta'}
                   </span>
-                  {!esActiva && (
-                    <button
-                      type="button"
-                      disabled={entrar.isPending}
-                      onClick={() => entrar.mutate(org.id)}
-                      className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--arca-ink)] hover:underline disabled:opacity-50"
-                    >
-                      {entrandoA === org.id ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : null}
-                      Entrar
-                      <ArrowRight className="size-3.5" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-3">
+                    {/* Salir sólo tiene sentido si hay un acceso de soporte que
+                        cerrar: en un estudio propio no hay nada que revocar. */}
+                    {org.accesoAbierto && (
+                      <button
+                        type="button"
+                        disabled={salir.isPending}
+                        onClick={() => salir.mutate(org.id)}
+                        className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] hover:underline disabled:opacity-50 cursor-pointer"
+                      >
+                        {saliendoDe === org.id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <LogOut className="size-3.5" />
+                        )}
+                        Salir
+                      </button>
+                    )}
+                    {!esActiva && (
+                      <button
+                        type="button"
+                        disabled={entrar.isPending}
+                        onClick={() => entrar.mutate(org.id)}
+                        className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--arca-ink)] hover:underline disabled:opacity-50 cursor-pointer"
+                      >
+                        {entrandoA === org.id ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : null}
+                        Entrar
+                        <ArrowRight className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );

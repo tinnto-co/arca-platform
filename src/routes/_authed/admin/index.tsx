@@ -821,9 +821,28 @@ function InviteDialog() {
 
   const mutation = useMutation({
     mutationFn: () => inviteMember({ data: { email, role } }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
-      toast.success(`Invitación enviada a ${email}`);
+      if (res.emailEnviado) {
+        toast.success(`Invitación enviada a ${email}`);
+      } else {
+        // Sin correo configurado la invitación existe igual, pero nadie la va
+        // a recibir: hay que decirlo y dar el link a mano, no cantar victoria.
+        toast.warning('Invitación creada, pero no se envió el correo', {
+          description:
+            'No hay servicio de correo configurado. Copiá el link y pasáselo vos.',
+          duration: 10000,
+          action: {
+            label: 'Copiar link',
+            onClick: () => {
+              void navigator.clipboard
+                .writeText(res.link)
+                .then(() => toast.success('Link copiado'))
+                .catch(() => toast.error('No se pudo copiar'));
+            },
+          },
+        });
+      }
       setEmail('');
       setRole('member');
       setStep('edit');

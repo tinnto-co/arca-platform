@@ -23,6 +23,7 @@ import {
   Database,
   ClipboardList,
   ChevronRight,
+  ShieldCheck,
 } from 'lucide-react';
 
 import { Sidebar, SidebarRail, useSidebar } from '@/components/ui/sidebar';
@@ -58,7 +59,6 @@ import { getPendingNotificationsCount } from '@/actions/dashboard';
 import { listAlerts } from '@/actions/alert';
 import { listOrgModules } from '@/actions/admin';
 import { getFuentesDatos } from '@/actions/job';
-import { relativeTime } from '@/components/dashboard/shared';
 import {
   Popover,
   PopoverContent,
@@ -314,17 +314,69 @@ function FuentesDatosItem() {
     staleTime: 5 * 60_000,
   });
 
-  // Semáforo por fuente: rojo = el último run falló; ámbar = nunca corrió o
-  // el último OK tiene más de 7 días; verde = OK reciente.
+  /**
+   * Días de calendario, no bloques de 24 h.
+   *
+   * Con horas corridas, dos fuentes de la misma fecha se rotulan distinto —una
+   * "ayer" y la otra "hace 2 días" según el minuto—, y en el panel se leen una
+   * debajo de la otra.
+   */
+  const diasDesde = (iso: string | null) => {
+    if (!iso) return Infinity;
+    const aMedianoche = (t: number) => {
+      const d = new Date(t);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    };
+    return Math.round(
+      (aMedianoche(abiertoEn) - aMedianoche(new Date(iso).getTime())) /
+        86_400_000
+    );
+  };
+
+  /**
+   * Semáforo por fuente. Mira dos cosas: qué tan viejo es el último dato y
+   * cuántas claves están caídas.
+   *
+   * Antes miraba si la falla más reciente era posterior al éxito más reciente.
+   * Con un job por credencial eso da rojo casi siempre —siempre hay una clave
+   * fallando entre sesenta— y el punto dejaba de significar nada.
+   */
   const estadoDe = (f: (typeof fuentes)[number]) => {
-    if (f.ultimoErrorAt && (!f.ultimoOkAt || f.ultimoErrorAt > f.ultimoOkAt))
-      return 'var(--arca-accent-neg)';
-    if (
-      !f.ultimoOkAt ||
-      abiertoEn - new Date(f.ultimoOkAt).getTime() > 7 * 86_400_000
-    )
-      return 'var(--arca-accent-warn)';
+    const dias = diasDesde(f.ultimoOkAt);
+    const caidas = f.credencialesTotal
+      ? f.credencialesFallando / f.credencialesTotal
+      : 0;
+    // Un puñado de claves fallando es el estado normal —siempre hay alguna
+    // con la clave vencida—, así que el umbral no es "alguna falló" sino una
+    // proporción. Con "alguna" el punto quedaba ámbar para siempre, que es el
+    // mismo problema que tenía el rojo permanente de antes.
+    if (dias > 7 || caidas >= 0.5) return 'var(--arca-accent-neg)';
+    if (dias > 2 || caidas >= 0.25) return 'var(--arca-accent-warn)';
     return 'var(--arca-accent-pos)';
+  };
+
+  /**
+   * "hoy" / "ayer" / "hace 4 días". Al lado de la fecha exacta alcanza con
+   * esto: `relativeTime` repite la hora, que ya está escrita ahí mismo.
+   */
+  const antiguedad = (iso: string) => {
+    const d = diasDesde(iso);
+    if (d <= 0) return 'hoy';
+    if (d === 1) return 'ayer';
+    return `hace ${d} días`;
+  };
+
+  /** "11/09 08:57". El año sólo si no es el corriente. */
+  const fechaDato = (iso: string) => {
+    const d = new Date(iso);
+    const esteAnio = d.getFullYear() === new Date(abiertoEn).getFullYear();
+    return d.toLocaleString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+      ...(esteAnio ? {} : { year: 'numeric' }),
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   };
 
   return (
@@ -373,21 +425,46 @@ function FuentesDatosItem() {
                   <div className="text-[12.5px] font-medium leading-tight">
                     {f.nombre}
                   </div>
+                  {/* Una sola fecha, y absoluta: dos fechas relativas al lado
+                      una de la otra era lo que se contradecía. */}
                   <div className="text-[11.5px] text-muted-foreground leading-snug">
-                    {f.ultimoOkAt
-                      ? `Actualizado ${relativeTime(f.ultimoOkAt)}`
-                      : 'Sin corridas OK'}
-                    {' · '}
-                    {f.datosActualizadosAt
-                      ? `datos ${relativeTime(f.datosActualizadosAt)}`
-                      : 'sin datos'}
-                  </div>
-                  {f.ultimoErrorAt &&
-                    (!f.ultimoOkAt || f.ultimoErrorAt > f.ultimoOkAt) && (
-                      <div className="text-[11px] leading-snug text-[var(--arca-accent-neg-fg)]">
-                        Último intento falló {relativeTime(f.ultimoErrorAt)}
-                      </div>
+                    {f.ultimoOkAt ? (
+                      <>
+                        Último dato{' '}
+                        <span className="tabular-nums">
+                          {fechaDato(f.ultimoOkAt)}
+                        </span>{' '}
+                        <span className="opacity-70">
+                          ({antiguedad(f.ultimoOkAt)})
+                        </span>
+                      </>
+                    ) : (
+                      'Todavía no trajo datos'
                     )}
+                  </div>
+                  {/* El síntoma de que algo se rompió es que el dato deja de
+                      llegar. Decirlo con todas las letras, no sólo pintar el
+                      punto de rojo. */}
+                  {diasDesde(f.ultimoOkAt) > 2 && (
+                    <div className="text-[11px] leading-snug text-[var(--arca-accent-neg-fg)]">
+                      {f.ultimoOkAt
+                        ? `Sin novedades hace ${diasDesde(f.ultimoOkAt)} días`
+                        : 'Nunca trajo datos'}
+                    </div>
+                  )}
+                  {f.credencialesFallando > 0 && (
+                    <div className="text-[11px] leading-snug text-[var(--arca-accent-neg-fg)]">
+                      {/* "en la última corrida" no sobra: el aviso de arriba
+                          del Inicio cuenta claves que ARCA rechaza, que es
+                          otra cosa y da otro número. Acá entran también las
+                          fallas pasajeras. */}
+                      {f.credencialesFallando} de {f.credencialesTotal}{' '}
+                      {f.credencialesTotal === 1
+                        ? 'clave falló'
+                        : 'claves fallaron'}{' '}
+                      en la última corrida
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -601,13 +678,18 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           'flex flex-col h-full py-3.5 gap-1',
           colapsado ? 'px-2' : 'px-3'
         )}
-        style={{
-          background: 'var(--arca-sidebar)',
-          color: 'var(--arca-sidebar-fg)',
-        }}
+        style={
+          {
+            background: 'var(--arca-sidebar)',
+            color: 'var(--arca-sidebar-fg)',
+            // Sobre el navy, el pulgar del scroll va en blanco translúcido.
+            '--arca-scroll-thumb': 'rgba(255,255,255,0.16)',
+            '--arca-scroll-thumb-hover': 'rgba(255,255,255,0.3)',
+          } as React.CSSProperties
+        }
       >
         {/* Identidad del producto. Va arriba del switcher para que quede claro
-            que Ordo es la app y el estudio es el workspace, no al revés: por eso
+            que Orddo es la app y el estudio es el workspace, no al revés: por eso
             manda en tamaño y el estudio queda un escalón abajo. */}
         <div
           className={cn(
@@ -618,7 +700,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           {colapsado ? (
             <img
               src="/brand/ordo-app-icon.svg"
-              alt="Ordo Suite Contable"
+              alt="Orddo Suite Contable"
               className="block size-[34px] rounded-[10px]"
             />
           ) : (
@@ -629,7 +711,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 className="block size-[28px] shrink-0"
               />
               <span className="text-[21px] leading-none font-semibold tracking-[-0.03em] text-white">
-                Ordo
+                Orddo
               </span>
             </>
           )}
@@ -753,7 +835,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         )}
 
         {/* ─── Nav ─── */}
-        <nav className="flex flex-col gap-0.5 flex-1 overflow-y-auto overflow-x-visible min-h-0">
+        <nav className="arca-scroll-sutil flex flex-col gap-0.5 flex-1 overflow-y-auto overflow-x-visible min-h-0">
           <NavItem to="/" icon={Home} label="Inicio" />
 
           <NavGroup id="clientes" label="Clientes" porDefecto>
@@ -817,8 +899,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <NavGroup id="plataforma" label="Plataforma">
               <NavItem
                 to="/organizaciones"
-                icon={Building}
-                label="Organizaciones"
+                icon={ShieldCheck}
+                label="Superadmin"
               />
             </NavGroup>
           )}

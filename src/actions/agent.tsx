@@ -17,6 +17,9 @@ export const getAgentConversations = createServerFn({ method: 'GET' })
       .select({
         id: agentConversation.id,
         titulo: agentConversation.titulo,
+        etiqueta: agentConversation.etiqueta,
+        fijado: agentConversation.fijado,
+        compartido: agentConversation.compartido,
         createdAt: agentConversation.createdAt,
         updatedAt: agentConversation.updatedAt,
       })
@@ -27,7 +30,8 @@ export const getAgentConversations = createServerFn({ method: 'GET' })
           eq(agentConversation.userId, userId)
         )
       )
-      .orderBy(desc(agentConversation.updatedAt))
+      // Las fijadas primero: el orden por fecha manda dentro de cada grupo.
+      .orderBy(desc(agentConversation.fijado), desc(agentConversation.updatedAt))
       .limit(data?.limit ?? 15)
       .offset(data?.offset ?? 0);
   });
@@ -40,6 +44,10 @@ export const searchConversations = createServerFn({ method: 'GET' })
       .select({
         id: agentConversation.id,
         titulo: agentConversation.titulo,
+        etiqueta: agentConversation.etiqueta,
+        fijado: agentConversation.fijado,
+        compartido: agentConversation.compartido,
+        createdAt: agentConversation.createdAt,
         updatedAt: agentConversation.updatedAt,
       })
       .from(agentConversation)
@@ -59,17 +67,24 @@ export const getConversationMessages = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     const [conv] = await db
-      .select({ id: agentConversation.id })
+      .select({
+        id: agentConversation.id,
+        userId: agentConversation.userId,
+        compartido: agentConversation.compartido,
+      })
       .from(agentConversation)
       .where(
         and(
           eq(agentConversation.id, data.conversationId),
-          eq(agentConversation.orgId, orgId),
-          eq(agentConversation.userId, userId)
+          eq(agentConversation.orgId, orgId)
         )
       )
       .limit(1);
-    if (!conv) throw new Error('Conversación no encontrada');
+    // Propia, o compartida por alguien del mismo estudio. El filtro por `orgId`
+    // de arriba es el que impide que `compartido` abra la puerta hacia afuera.
+    if (!conv || (conv.userId !== userId && !conv.compartido)) {
+      throw new Error('Conversación no encontrada');
+    }
     const rows = await db
       .select({
         id: agentMessage.id,
@@ -107,4 +122,92 @@ export const deleteConversation = createServerFn({ method: 'POST' })
       .delete(agentConversation)
       .where(eq(agentConversation.id, data.conversationId));
     return { success: true };
+  });
+
+/**
+ * Devuelve la cabecera de una conversación: título, etiqueta y los dos flags.
+ * La vista la necesita para pintar el header sin esperar a que resuelva el
+ * listado completo, y para saber si ya está fijada o compartida.
+ */
+export const getConversation = createServerFn({ method: 'GET' })
+  .validator(z.object({ conversationId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const [conv] = await db
+      .select({
+        id: agentConversation.id,
+        titulo: agentConversation.titulo,
+        etiqueta: agentConversation.etiqueta,
+        fijado: agentConversation.fijado,
+        compartido: agentConversation.compartido,
+        userId: agentConversation.userId,
+        updatedAt: agentConversation.updatedAt,
+      })
+      .from(agentConversation)
+      .where(
+        and(
+          eq(agentConversation.id, data.conversationId),
+          eq(agentConversation.orgId, orgId)
+        )
+      )
+      .limit(1);
+    if (!conv) return null;
+    // Propia, o de otro del estudio que la compartió: en ese caso es de lectura.
+    if (conv.userId !== userId && !conv.compartido) return null;
+    return { ...conv, esPropia: conv.userId === userId };
+  });
+
+/** Ancla o desancla una conversación en el listado. */
+export const toggleConversationFijado = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ conversationId: z.string().uuid(), fijado: z.boolean() })
+  )
+  .handler(async ({ data }) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const actualizadas = await db
+      .update(agentConversation)
+      .set({ fijado: data.fijado })
+      .where(
+        and(
+          eq(agentConversation.id, data.conversationId),
+          eq(agentConversation.orgId, orgId),
+          eq(agentConversation.userId, userId)
+        )
+      )
+      .returning({ id: agentConversation.id });
+    if (actualizadas.length === 0) {
+      throw new Error('Conversación no encontrada');
+    }
+    return { fijado: data.fijado };
+  });
+
+/**
+ * Abre o cierra la conversación al resto del estudio.
+ *
+ * Compartir NO la saca de la organización: sigue filtrada por `org_id`, y lo
+ * único que cambia es que otros miembros de esa misma org pueden leerla. Nadie
+ * de afuera, y nadie puede escribir en ella —eso lo garantiza `getConversation`,
+ * que sólo devuelve `esPropia: true` al dueño—.
+ */
+export const setConversationCompartido = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ conversationId: z.string().uuid(), compartido: z.boolean() })
+  )
+  .handler(async ({ data }) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const actualizadas = await db
+      .update(agentConversation)
+      .set({ compartido: data.compartido })
+      .where(
+        and(
+          eq(agentConversation.id, data.conversationId),
+          eq(agentConversation.orgId, orgId),
+          eq(agentConversation.userId, userId)
+        )
+      )
+      .returning({ id: agentConversation.id });
+    if (actualizadas.length === 0) {
+      throw new Error('Conversación no encontrada');
+    }
+    return { compartido: data.compartido };
   });
