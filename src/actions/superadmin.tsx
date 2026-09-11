@@ -14,9 +14,13 @@ import { z } from 'zod';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { member, organization } from '@/drizzle/auth';
+import { invitation, member, organization } from '@/drizzle/auth';
 import { superadminAcceso } from '@/drizzle/schema';
 import { ROL_SOPORTE } from '@/lib/permissions';
+import {
+  hayCorreoConfigurado,
+  linkDeInvitacion,
+} from '@/lib/send-invitation-email';
 
 async function requireSuperadmin() {
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
@@ -75,6 +79,18 @@ export const listOrganizaciones = createServerFn({ method: 'GET' }).handler(
  * Crea una organización vía Better Auth (org + creador como owner, atómico).
  * El slug identifica al estudio en URLs e invitaciones: minúsculas y guiones.
  */
+/**
+ * Da de alta un estudio y se lo entrega a su responsable.
+ *
+ * Quien lo crea es el superadmin, pero el estudio no es suyo: el dueño es el
+ * contador que lo va a usar. Better Auth deja como owner a quien llama a
+ * `createOrganization`, así que acá esa membresía se convierte en acceso de
+ * soporte apenas la organización existe, y el lugar de dueño queda para la
+ * persona que se invita.
+ *
+ * La invitación sale con rol owner y lleva el nombre cargado en el alta, para
+ * que quien la recibe sólo elija una contraseña.
+ */
 export const crearOrganizacion = createServerFn({ method: 'POST' })
   .validator(
     z.object({
@@ -86,10 +102,13 @@ export const crearOrganizacion = createServerFn({ method: 'POST' })
           /^[a-z0-9]+(-[a-z0-9]+)*$/,
           'El identificador va en minúsculas, números y guiones (ej. estudio-perez)'
         ),
+      ownerNombre: z.string().trim().min(2, 'Falta el nombre'),
+      ownerApellido: z.string().trim().min(2, 'Falta el apellido'),
+      ownerEmail: z.string().trim().email('El correo no es válido'),
     })
   )
   .handler(async (ctx) => {
-    await requireSuperadmin();
+    const { userId } = await requireSuperadmin();
 
     const [existente] = await db
       .select({ id: organization.id })
@@ -105,7 +124,43 @@ export const crearOrganizacion = createServerFn({ method: 'POST' })
     });
     if (!creada) throw new Error('No se pudo crear la organización');
 
-    return { id: creada.id, name: creada.name, slug: creada.slug };
+    // La invitación se manda ANTES de bajarse de owner: Better Auth exige
+    // permiso de invitación, y el acceso de soporte no lo tiene.
+    const invitacion = await auth.api.createInvitation({
+      headers: getRequestHeaders(),
+      body: {
+        email: ctx.data.ownerEmail,
+        role: 'owner',
+        organizationId: creada.id,
+      },
+    });
+
+    const nombreCompleto =
+      `${ctx.data.ownerNombre} ${ctx.data.ownerApellido}`.trim();
+    await db
+      .update(invitation)
+      .set({ nombre: nombreCompleto })
+      .where(eq(invitation.id, invitacion.id));
+
+    // Y acá el superadmin deja de ser dueño de un estudio que no es suyo.
+    await db
+      .update(member)
+      .set({ role: ROL_SOPORTE })
+      .where(
+        and(eq(member.organizationId, creada.id), eq(member.userId, userId))
+      );
+    await db
+      .insert(superadminAcceso)
+      .values({ userId, organizationId: creada.id });
+
+    return {
+      id: creada.id,
+      name: creada.name,
+      slug: creada.slug,
+      ownerEmail: ctx.data.ownerEmail,
+      emailEnviado: hayCorreoConfigurado(),
+      link: linkDeInvitacion(invitacion.id),
+    };
   });
 
 /**

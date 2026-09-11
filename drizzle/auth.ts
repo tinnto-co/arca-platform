@@ -104,6 +104,8 @@ export const invitation = pgTable("invitation", {
     .notNull()
     .references(() => organization.id, { onDelete: "cascade" }),
   email: text("email").notNull(),
+  /** Nombre de quien se invita, cargado por quien invita. Ampliación nuestra. */
+  nombre: text("nombre"),
   role: text("role"),
   status: text("status").notNull(),
   inviterId: text("inviter_id")

@@ -7,6 +7,8 @@ import { and, eq, gt } from 'drizzle-orm';
 export interface PublicInvitationPreview {
   id: string;
   email: string;
+  /** Cargado por quien invitó; puede no estar en invitaciones viejas. */
+  nombre: string | null;
   role: string;
   organizationId: string;
   organizationName: string;
@@ -35,6 +37,9 @@ export const getPublicInvitationPreview = createServerFn({
       .select({
         id: invitation.id,
         email: invitation.email,
+        // Lo cargó quien invitó: la pantalla de alta lo usa para no volver a
+        // pedírselo a quien ya fue nombrado.
+        nombre: invitation.nombre,
         role: invitation.role,
         organizationId: invitation.organizationId,
         organizationName: organization.name,
@@ -58,6 +63,7 @@ export const getPublicInvitationPreview = createServerFn({
     return {
       id: row.id,
       email: row.email,
+      nombre: row.nombre,
       role: row.role ?? 'member',
       organizationId: row.organizationId,
       organizationName: row.organizationName,

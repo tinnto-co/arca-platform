@@ -56,15 +56,47 @@ function NuevaOrganizacionDialog() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
+  const [ownerNombre, setOwnerNombre] = useState('');
+  const [ownerApellido, setOwnerApellido] = useState('');
+  const [ownerEmail, setOwnerEmail] = useState('');
+
+  const limpiar = () => {
+    setName('');
+    setSlug('');
+    setOwnerNombre('');
+    setOwnerApellido('');
+    setOwnerEmail('');
+  };
 
   const crear = useMutation({
-    mutationFn: () => crearOrganizacion({ data: { name, slug } }),
+    mutationFn: () =>
+      crearOrganizacion({
+        data: { name, slug, ownerNombre, ownerApellido, ownerEmail },
+      }),
     onSuccess: (org) => {
-      toast.success(`${org.name} dada de alta`);
       void queryClient.invalidateQueries({ queryKey: ['organizaciones'] });
       setOpen(false);
-      setName('');
-      setSlug('');
+      limpiar();
+      if (org.emailEnviado) {
+        toast.success(`${org.name} dada de alta`, {
+          description: `Le mandamos el acceso a ${org.ownerEmail}.`,
+        });
+        return;
+      }
+      // Sin correo configurado el estudio existe pero su dueño no se entera.
+      toast.warning(`${org.name} dada de alta, pero no salió el correo`, {
+        description: `Pasale este link a ${org.ownerEmail} para que entre.`,
+        duration: 12000,
+        action: {
+          label: 'Copiar link',
+          onClick: () => {
+            void navigator.clipboard
+              .writeText(org.link)
+              .then(() => toast.success('Link copiado'))
+              .catch(() => toast.error('No se pudo copiar'));
+          },
+        },
+      });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -81,8 +113,9 @@ function NuevaOrganizacionDialog() {
         <DialogHeader>
           <DialogTitle>Nueva organización</DialogTitle>
           <DialogDescription>
-            Da de alta un estudio contable. Quedás como administrador y podés
-            invitar a su gente desde Administración.
+            El estudio queda a nombre de su responsable, que recibe el acceso
+            por correo. Vos no quedás como dueño: entrás como soporte cuando
+            haga falta.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -115,6 +148,46 @@ function NuevaOrganizacionDialog() {
               invitaciones.
             </p>
           </div>
+
+          <div className="space-y-3 rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-bg)] p-3">
+            <p className="text-[12px] font-semibold text-[var(--arca-ink-2)]">
+              Responsable del estudio
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label htmlFor="org-owner-nombre">Nombre</Label>
+                <Input
+                  id="org-owner-nombre"
+                  value={ownerNombre}
+                  onChange={(e) => setOwnerNombre(e.target.value)}
+                  placeholder="María"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="org-owner-apellido">Apellido</Label>
+                <Input
+                  id="org-owner-apellido"
+                  value={ownerApellido}
+                  onChange={(e) => setOwnerApellido(e.target.value)}
+                  placeholder="Pérez"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="org-owner-email">Correo</Label>
+              <Input
+                id="org-owner-email"
+                type="email"
+                value={ownerEmail}
+                onChange={(e) => setOwnerEmail(e.target.value)}
+                placeholder="maria@estudioperez.com"
+              />
+              <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                Le llega una invitación para crear su cuenta y entrar como
+                administrador del estudio.
+              </p>
+            </div>
+          </div>
           <DialogFooter>
             <Button
               type="button"
@@ -126,7 +199,14 @@ function NuevaOrganizacionDialog() {
             </Button>
             <Button
               type="submit"
-              disabled={crear.isPending || !name.trim() || !slug.trim()}
+              disabled={
+                crear.isPending ||
+                !name.trim() ||
+                !slug.trim() ||
+                !ownerNombre.trim() ||
+                !ownerApellido.trim() ||
+                !ownerEmail.trim()
+              }
             >
               {crear.isPending && <Loader2 className="size-3.5 animate-spin" />}
               Crear
