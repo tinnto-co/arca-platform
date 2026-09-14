@@ -114,8 +114,7 @@ function NuevaOrganizacionDialog() {
           <DialogTitle>Nueva organización</DialogTitle>
           <DialogDescription>
             El estudio queda a nombre de su responsable, que recibe el acceso
-            por correo. Vos no quedás como dueño: entrás como soporte cuando
-            haga falta.
+            por correo.
           </DialogDescription>
         </DialogHeader>
         <form
