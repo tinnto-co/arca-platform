@@ -119,15 +119,33 @@ TIPOS DE DOCUMENTO:
 - Importación Directa: despacho oficial (formato SIM de Aduana, membrete AFIP/DGA, número de despacho tipo "AA DDD LLNN NNNNNN L").
 - Destinación Simplificada: documento de courier (DHL, UPS, correo, agentes); buscá el número de MANIFIESTO.
 
+OJO CON LOS LEGAJOS DE COURIER (error clásico):
+El PDF de un courier suele ser un LEGAJO con varios documentos pegados: la
+factura comercial del proveedor, la factura de servicios del courier, la
+"DESTINACIÓN SIMPLIFICADA DE IMPORTACIÓN" del envío PARTICULAR del importador
+(con IDENTIFICADOR PARTICULAR, ej. "26073PART010986H"), y al final la
+liquidación del MANIFIESTO COMPLETO del courier (muchos envíos de muchos
+importadores: se reconoce por "Cantidad de envíos" > 1, "Total Bultos" altos,
+"PERMISIONARIO", "Total de Tributos").
+→ El concepto 415 que importa es el de la DESTINACIÓN PARTICULAR del
+importador indicado, NUNCA el total del manifiesto. Si en la página del envío
+particular el 415 figura con su alícuota y monto (en USD), ese es el dato.
+→ Como control: la factura del courier suele trasladar "IVA Aduanero" en
+pesos; monto_particular × tipo de cambio debería aproximarlo.
+→ El tipo de cambio puede venir como lista ("T/CAMBIO: 1520/1498.5/1498.5"):
+usá el que pesifica el IVA aduanero (si la factura trae el IVA aduanero en
+pesos, elegí el valor de la lista que haga cerrar esa cuenta).
+
 REGLAS:
 - Números en formato argentino: punto de miles, coma decimal ("1.234,56" = 1234.56).
 - NO inventes: si un dato no está, devolvé 0 (o cadena vacía para la fecha) y marcá legible=false si el documento es dudoso.
-- Si hay varios conceptos, el 415 es el IVA; no lo confundas con 410 (derechos), 416 (IVA adicional/percepción) ni otros.
+- Si hay varios conceptos, el 415 es el IVA; no lo confundas con 410 (derechos), 416/422 (IVA adicional/percepción) ni otros.
 - La imagen puede ser una foto de baja calidad: esforzate igual, priorizá la fila del concepto 415.`;
 
 async function extraerConGemini(
   base64Data: string,
-  mimeType: string
+  mimeType: string,
+  importador: { razonSocial: string; cuit: string }
 ): Promise<Extraccion> {
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-pro',
@@ -136,7 +154,11 @@ async function extraerConGemini(
       responseJsonSchema: extraccionSchema,
     },
     contents: [
-      { text: PROMPT },
+      {
+        text:
+          PROMPT +
+          `\n\nEL IMPORTADOR DE ESTA CARGA ES: ${importador.razonSocial} (CUIT ${importador.cuit}). Si el legajo contiene envíos o totales de otros sujetos, IGNORALOS: extraé solo lo de este importador.`,
+      },
       { inlineData: { mimeType, data: base64Data } },
     ],
   });
@@ -170,7 +192,11 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
       throw new Error('El archivo no puede superar los 15 MB');
 
     const [cli] = await db
-      .select({ id: cliente.id })
+      .select({
+        id: cliente.id,
+        razonSocial: cliente.razonSocial,
+        cuit: cliente.cuit,
+      })
       .from(cliente)
       .where(and(eq(cliente.id, ctx.data.clienteId), eq(cliente.orgId, orgId)))
       .limit(1);
@@ -191,7 +217,11 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
     try {
       extraccion = await extraerConGemini(
         ctx.data.base64Data,
-        ctx.data.mimeType
+        ctx.data.mimeType,
+        {
+          razonSocial: cli.razonSocial,
+          cuit: cli.cuit,
+        }
       );
     } catch (error) {
       console.error('[despachos] falló la extracción', { error });
