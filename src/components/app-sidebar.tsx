@@ -870,9 +870,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           )}
 
           {/* Lo que se hace PARA un cliente: quién es, qué le llegó, qué se le
-              vence, qué estamos haciendo al respecto y su liquidación de
-              sueldos. Vencimientos y Tareas van pegados a propósito: uno dice
-              qué se vence y el otro qué se está haciendo con eso. */}
+              vence, su liquidación de sueldos y qué estamos haciendo con todo
+              eso. Tareas cierra el grupo porque es el estado del trabajo sobre
+              lo de arriba, no otra cosa que mirar. */}
           <NavGroup id="clientes" label="Clientes" porDefecto>
             <NavItem to="/clients" icon={Users} label="Clientes" />
             <NavItem
@@ -882,8 +882,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               urgentCount={notifCount}
             />
             <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
-            <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
             <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
+            <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
           </NavGroup>
 
           {/* Los comprobantes abren el grupo porque son la materia prima: de
