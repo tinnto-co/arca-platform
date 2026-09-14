@@ -109,6 +109,7 @@ function CardDespacho({
   const derivados = calcularDespacho(nums);
   const alicuotaRara = nums.alicuota > 0 && !alicuotaValida(nums.alicuota);
   const yaConfirmado = despacho.estado === 'confirmado';
+  const importadorNoCoincide = despacho.importadorCoincide === false;
 
   const invalidar = () => {
     void queryClient.invalidateQueries({ queryKey: ['despachos'] });
@@ -157,7 +158,11 @@ function CardDespacho({
           <span className="inline-flex items-center gap-1 rounded-full bg-[var(--arca-accent-warn-bg)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--arca-accent-warn-fg)]">
             <AlertTriangle className="size-3" />
             Revisar:{' '}
-            {alicuotaRara ? 'alícuota fuera de 21% / 10,5%' : 'lectura dudosa'}
+            {importadorNoCoincide
+              ? 'el documento no es de esta empresa'
+              : alicuotaRara
+                ? 'alícuota fuera de 21% / 10,5%'
+                : 'lectura dudosa'}
           </span>
         )}
         {duplicado && (
@@ -177,6 +182,21 @@ function CardDespacho({
         </button>
       </div>
 
+      {importadorNoCoincide && !yaConfirmado && (
+        <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] px-3.5 py-2.5 text-[12px] leading-relaxed text-[var(--arca-accent-warn-fg)]">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            El documento parece pertenecer a{' '}
+            <span className="font-semibold">
+              {despacho.importadorDocumento?.trim()
+                ? despacho.importadorDocumento.trim()
+                : 'otro importador'}
+            </span>
+            , no a la empresa seleccionada. Descartalo y subilo con la empresa
+            correcta — o confirmá solo si sabés que corresponde acá.
+          </span>
+        </div>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-5">
         <label className="col-span-2 flex flex-col gap-1 text-[11.5px] text-[var(--arca-ink-3)]">
           {despacho.tipo === 'importacion_directa'
@@ -556,16 +576,29 @@ export function DespachosImportacionDialog({
                             {fmt.format(Number(d.total))}
                           </td>
                           <td className="px-3 py-2">
-                            <Badge
-                              variant={
-                                d.estado === 'confirmado'
-                                  ? 'outline'
-                                  : 'secondary'
-                              }
-                              className="text-[10px]"
-                            >
-                              {ESTADO_LABEL[d.estado] ?? d.estado}
-                            </Badge>
+                            <span className="inline-flex items-center gap-1.5">
+                              <Badge
+                                variant={
+                                  d.estado === 'confirmado'
+                                    ? 'outline'
+                                    : 'secondary'
+                                }
+                                className="text-[10px]"
+                              >
+                                {ESTADO_LABEL[d.estado] ?? d.estado}
+                              </Badge>
+                              {d.importadorCoincide === false &&
+                                d.estado !== 'confirmado' && (
+                                  <AlertTriangle
+                                    className="size-3.5 text-[var(--arca-accent-warn-fg)]"
+                                    aria-label="El documento no es de esta empresa"
+                                  >
+                                    <title>
+                                      El documento no es de esta empresa
+                                    </title>
+                                  </AlertTriangle>
+                                )}
+                            </span>
                           </td>
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-3">

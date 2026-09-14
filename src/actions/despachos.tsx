@@ -348,6 +348,12 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
         total: despachoImportacion.total,
         estado: despachoImportacion.estado,
         comprobanteId: despachoImportacion.comprobanteId,
+        importadorCoincide: sql<
+          boolean | null
+        >`(extraccion -> 'importadorCoincide')::boolean`,
+        importadorDocumento: sql<
+          string | null
+        >`extraccion ->> 'importadorDelDocumento'`,
       });
 
     if (!fila) {
@@ -368,6 +374,12 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
           total: despachoImportacion.total,
           estado: despachoImportacion.estado,
           comprobanteId: despachoImportacion.comprobanteId,
+          importadorCoincide: sql<
+            boolean | null
+          >`(extraccion -> 'importadorCoincide')::boolean`,
+          importadorDocumento: sql<
+            string | null
+          >`extraccion ->> 'importadorDelDocumento'`,
         })
         .from(despachoImportacion)
         .where(
@@ -511,6 +523,12 @@ export const confirmarDespacho = createServerFn({ method: 'POST' })
         total: despachoImportacion.total,
         estado: despachoImportacion.estado,
         comprobanteId: despachoImportacion.comprobanteId,
+        importadorCoincide: sql<
+          boolean | null
+        >`(extraccion -> 'importadorCoincide')::boolean`,
+        importadorDocumento: sql<
+          string | null
+        >`extraccion ->> 'importadorDelDocumento'`,
       });
 
     return {
@@ -590,6 +608,12 @@ export const listarDespachos = createServerFn({ method: 'GET' })
         total: despachoImportacion.total,
         estado: despachoImportacion.estado,
         comprobanteId: despachoImportacion.comprobanteId,
+        importadorCoincide: sql<
+          boolean | null
+        >`(extraccion -> 'importadorCoincide')::boolean`,
+        importadorDocumento: sql<
+          string | null
+        >`extraccion ->> 'importadorDelDocumento'`,
         createdAt: despachoImportacion.createdAt,
       })
       .from(despachoImportacion)
