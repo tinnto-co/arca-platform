@@ -860,6 +860,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <nav className="arca-scroll-sutil flex flex-col gap-0.5 flex-1 overflow-y-auto overflow-x-visible min-h-0">
           <NavItem to="/" icon={Home} label="Inicio" />
 
+          {/* No es el mismo asistente que el de la barra flotante: aquél corre
+              sobre CopilotKit y no guarda nada —lo conversado se pierde al
+              recargar—, y éste sobre /api/agent, que persiste cada hilo. Es el
+              único lugar donde una conversación sobrevive, así que es un
+              destino de trabajo y va arriba. */}
+          {isEnabled('ai_agent') && (
+            <NavItem to="/chat" icon={IconoOrbe} label="Chats" />
+          )}
+
+          {/* Lo que se hace PARA un cliente: quién es, qué le llegó, qué se le
+              vence, qué estamos haciendo al respecto y su liquidación de
+              sueldos. Vencimientos y Tareas van pegados a propósito: uno dice
+              qué se vence y el otro qué se está haciendo con eso. */}
           <NavGroup id="clientes" label="Clientes" porDefecto>
             <NavItem to="/clients" icon={Users} label="Clientes" />
             <NavItem
@@ -870,13 +883,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             />
             <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
             <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
-            <NavItem to="/invoices" icon={FileText} label="Facturas" />
+            <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           </NavGroup>
 
+          {/* Los comprobantes abren el grupo porque son la materia prima: de
+              ahí sale la posición de IVA. El orden es el del trabajo. */}
           <NavGroup id="impuestos" label="Impuestos" porDefecto>
+            <NavItem to="/invoices" icon={FileText} label="Facturas" />
             <NavItem to="/iva" icon={Percent} label="IVA" />
             <NavItem to="/iibb" icon={Globe} label="IIBB" />
-            <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           </NavGroup>
 
           {/* Todo el grupo depende de módulos: si no hay ninguno habilitado no
@@ -884,20 +899,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           {hayContabilidad && (
             <NavGroup id="contabilidad" label="Contabilidad">
               {isEnabled('contabilidad') && (
-                <NavItem
-                  to="/accounting"
-                  icon={BookOpen}
-                  label="Contabilidad"
-                />
+                <NavItem to="/accounting" icon={BookOpen} label="Balances" />
               )}
               {isEnabled('banco') && (
                 <NavItem to="/bank" icon={Landmark} label="Banco" />
               )}
               {isEnabled('analytics') && (
                 <NavItem to="/analytics" icon={BarChart2} label="Analytics" />
-              )}
-              {isEnabled('ai_agent') && (
-                <NavItem to="/chat" icon={IconoOrbe} label="Chats" />
               )}
             </NavGroup>
           )}
