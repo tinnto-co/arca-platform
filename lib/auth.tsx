@@ -7,7 +7,13 @@ import { db } from '@/lib/db';
 import { anonymous } from 'better-auth/plugins';
 import { eq } from 'drizzle-orm';
 import { member } from '@/drizzle/auth';
-import { ac, owner, member as memberRole, viewer } from '@/lib/permissions';
+import {
+  ac,
+  owner,
+  member as memberRole,
+  viewer,
+  ROL_SOPORTE,
+} from '@/lib/permissions';
 import { sendOrganizationInvitationEmail } from '@/lib/send-invitation-email';
 import 'dotenv/config';
 
@@ -44,6 +50,14 @@ export const auth = betterAuth({
         owner,
         member: memberRole,
         viewer,
+        // El acceso de soporte del superadmin, con los permisos del dueño.
+        //
+        // Sin esto Better Auth no lo encuentra en este mapa, le da cero
+        // permisos, y todo lo que pasa por sus endpoints —invitar, cambiar
+        // roles, quitar miembros— responde FORBIDDEN. Nuestras server
+        // functions ya lo trataban como owner, así que el acceso quedaba
+        // pudiendo hacer todo menos justo lo que administra gente.
+        [ROL_SOPORTE]: owner,
       },
       // Solo el superadmin (user.role === 'admin', plugin admin) puede crear
       // organizaciones: es la persona que da de alta estudios para vender el
