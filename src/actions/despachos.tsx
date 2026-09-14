@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { GoogleGenAI, type Schema } from '@google/genai';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import * as r2 from '@/lib/r2';
 import {
@@ -310,12 +310,28 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
         extraccion: extraccion,
         creadoPor: userId,
       })
-      .onConflictDoNothing({
+      // Resubir un despacho NO confirmado lo reprocesa (extracción y PDF
+      // nuevos): descartar + volver a intentar es el camino normal cuando la
+      // primera lectura salió mal. Uno confirmado no se pisa jamás.
+      .onConflictDoUpdate({
         target: [
           despachoImportacion.clienteId,
           despachoImportacion.tipo,
           despachoImportacion.numero,
         ],
+        set: {
+          documentoId,
+          fecha: extraccion.fecha === '' ? null : extraccion.fecha,
+          alicuota: extraccion.alicuota.toFixed(2),
+          ivaUsd: extraccion.ivaUsd.toFixed(2),
+          tipoCambio: extraccion.tipoCambio.toFixed(6),
+          ivaPesos: derivados.ivaPesos.toFixed(2),
+          netoGravado: derivados.netoGravado.toFixed(2),
+          total: derivados.total.toFixed(2),
+          estado,
+          extraccion: extraccion,
+        },
+        setWhere: sql`despacho_importacion.estado <> 'confirmado'`,
       })
       .returning({
         id: despachoImportacion.id,
@@ -532,10 +548,23 @@ export const descartarDespacho = createServerFn({ method: 'POST' })
           )
         )
         .returning({ id: despachoImportacion.id });
-      if (!rev)
-        throw new Error(
-          'El despacho no se puede descartar (¿ya está confirmado?)'
-        );
+      if (!rev) {
+        // Ya estaba descartado: descartar dos veces no es un error.
+        const [ya] = await db
+          .select({ estado: despachoImportacion.estado })
+          .from(despachoImportacion)
+          .where(
+            and(
+              eq(despachoImportacion.id, ctx.data.despachoId),
+              eq(despachoImportacion.orgId, orgId)
+            )
+          )
+          .limit(1);
+        if (ya?.estado !== 'descartado')
+          throw new Error(
+            'El despacho no se puede descartar (¿ya está confirmado?)'
+          );
+      }
     }
     return { ok: true };
   });

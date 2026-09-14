@@ -570,7 +570,8 @@ export function DespachosImportacionDialog({
                           <td className="px-3 py-2 text-right">
                             <div className="flex items-center justify-end gap-3">
                               {(d.estado === 'extraido' ||
-                                d.estado === 'revision') && (
+                                d.estado === 'revision' ||
+                                d.estado === 'descartado') && (
                                 <button
                                   type="button"
                                   className="text-[11.5px] font-medium text-[var(--arca-ink)] hover:underline"
