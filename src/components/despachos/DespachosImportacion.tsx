@@ -539,14 +539,42 @@ export function DespachosImportacionDialog({
                             </Badge>
                           </td>
                           <td className="px-3 py-2 text-right">
-                            <a
-                              className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
-                              href={`/api/documents/${d.documentoId}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              PDF
-                            </a>
+                            <div className="flex items-center justify-end gap-3">
+                              {(d.estado === 'extraido' ||
+                                d.estado === 'revision') && (
+                                <button
+                                  type="button"
+                                  className="text-[11.5px] font-medium text-[var(--arca-ink)] hover:underline"
+                                  onClick={() => {
+                                    setExtraidos((prev) =>
+                                      prev.some((e) => e.despacho.id === d.id)
+                                        ? prev
+                                        : [
+                                            { despacho: d, duplicado: false },
+                                            ...prev,
+                                          ]
+                                    );
+                                    setDocAbierto(d.documentoId);
+                                    setSubirAbierto(false);
+                                  }}
+                                >
+                                  Revisar
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
+                                onClick={() =>
+                                  setDocAbierto(
+                                    docAbierto === d.documentoId
+                                      ? null
+                                      : d.documentoId
+                                  )
+                                }
+                              >
+                                PDF
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
