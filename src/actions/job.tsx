@@ -34,6 +34,27 @@ const JOBS_API_URL =
   process.env.BACKEND_API_URL ||
   'http://localhost:3002';
 
+/**
+ * Candado global del scrapper (SCRAPING_PAUSED). Si el scrapper es viejo y no
+ * tiene /api/status, o está caído, se asume que NO está pausado: el candado
+ * solo apaga botones cuando el scrapper lo dice explícitamente.
+ */
+export const getScrapingStatus = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    await getSessionWithOrg();
+    try {
+      const res = await fetch(`${JOBS_API_URL}/api/status`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!res.ok) return { scrapingPaused: false };
+      const body = (await res.json()) as { scrapingPaused?: unknown };
+      return { scrapingPaused: body.scrapingPaused === true };
+    } catch {
+      return { scrapingPaused: false };
+    }
+  }
+);
+
 const jobStatusEnum = z.enum(['pending', 'running', 'failed', 'finished']);
 const jobTypeEnum = z.enum([
   'iva',
@@ -469,12 +490,12 @@ export const getJobErrorSummary = createServerFn({ method: 'GET' })
     }
 
     // Agrupar por categoría normalizada.
-    type GroupAcc = {
+    interface GroupAcc {
       classification: ErrorClassification;
       count: number;
       reasons: Map<string, number>;
       credenciales: Map<string, { nombre: string | null; count: number }>;
-    };
+    }
     const groupsByCategory = new Map<ErrorCategory, GroupAcc>();
     for (const row of failedRows) {
       const classification = classifyStoredFailedReason(row.failedReason);

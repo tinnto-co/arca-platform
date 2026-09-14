@@ -37,6 +37,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { getClientes, scrapBatchJobs } from '@/actions/client';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
+import {
+  AVISO_SCRAPING_PAUSADO,
+  useScrapingPausado,
+} from '@/hooks/use-scraping-status';
 import { deleteCliente } from '@/actions/afip-profiles';
 import { listOrgModules } from '@/actions/admin';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
@@ -125,6 +129,7 @@ export function RepresentativesTable({
   } | null>(null);
   const [selectedClients, setSelectedClients] = useState<ClientRow[]>([]);
   const [isScraping, setIsScraping] = useState(false);
+  const scrapingPausado = useScrapingPausado();
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [selectedJobTypes, setSelectedJobTypes] = useState<Set<BulkJobType>>(
     () => new Set(BULK_JOB_TYPES.map((t) => t.value))
@@ -447,11 +452,13 @@ export function RepresentativesTable({
               <DialogTrigger asChild>
                 <Button
                   size="sm"
-                  disabled={isScraping || allSelectedRunning}
+                  disabled={isScraping || allSelectedRunning || scrapingPausado}
                   title={
-                    allSelectedRunning
-                      ? 'Todos los clientes seleccionados ya se están actualizando'
-                      : undefined
+                    scrapingPausado
+                      ? AVISO_SCRAPING_PAUSADO
+                      : allSelectedRunning
+                        ? 'Todos los clientes seleccionados ya se están actualizando'
+                        : undefined
                   }
                 >
                   {isScraping ? (

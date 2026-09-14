@@ -68,6 +68,10 @@ import {
 import { scrapSingleJob, updateDeudaEstado } from '@/actions/client';
 import { getLibroIvaPeriodo } from '@/actions/iva';
 import {
+  AVISO_SCRAPING_PAUSADO,
+  useScrapingPausado,
+} from '@/hooks/use-scraping-status';
+import {
   listSolicitudes,
   createSolicitud,
   updateSolicitudEstado,
@@ -771,6 +775,8 @@ export function RepresentativeDetailPage({
     if (!b?.createdAt) return a;
     return new Date(b.createdAt) > new Date(a.createdAt) ? b : a;
   })();
+
+  const scrapingPausado = useScrapingPausado();
 
   const { data: lastIvaJob } = useQuery({
     queryKey: ['lastIvaJob', representativeId],
@@ -1864,10 +1870,23 @@ export function RepresentativeDetailPage({
               </div>
               {/* Actions */}
               <div className="flex items-center gap-1.5 shrink-0">
+                {scrapingPausado && (
+                  <span
+                    className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]"
+                    title="El servicio de actualización está pausado; se reanuda pronto."
+                  >
+                    Actualizaciones en pausa temporal
+                  </span>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={scrapingAll || !!scrapingSection}
+                  disabled={scrapingAll || !!scrapingSection || scrapingPausado}
+                  title={
+                    scrapingPausado
+                      ? AVISO_SCRAPING_PAUSADO
+                      : 'Traer de ARCA todo: deudas, vencimientos, IVA, notificaciones y facturas'
+                  }
                   onClick={async () => {
                     setScrapingAll(true);
                     toast('Iniciando la actualización');
@@ -1908,7 +1927,6 @@ export function RepresentativeDetailPage({
                       setScrapingAll(false);
                     }
                   }}
-                  title="Traer de ARCA todo: deudas, vencimientos, IVA, notificaciones y facturas"
                 >
                   {scrapingAll ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -2579,7 +2597,8 @@ export function RepresentativeDetailPage({
                 <div className="flex-1" />
                 <Button
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('deudas');
                     try {
@@ -3095,7 +3114,8 @@ export function RepresentativeDetailPage({
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('vencimientos');
                     try {
@@ -3277,7 +3297,8 @@ export function RepresentativeDetailPage({
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('notificaciones');
                     try {
@@ -3340,7 +3361,8 @@ export function RepresentativeDetailPage({
             <Button
               variant="default"
               size="sm"
-              disabled={!!scrapingSection}
+              disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
               onClick={async () => {
                 setScrapingSection("facturas");
                 try {
@@ -3615,7 +3637,8 @@ export function RepresentativeDetailPage({
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('facturas');
                     try {
@@ -4263,13 +4286,14 @@ export function RepresentativeDetailPage({
                     Comprobantes al día al{' '}
                     {frescuraIva?.ultimaEmision ? (
                       <span className="text-[var(--arca-accent-pos-fg)] font-medium">
-                        {new Date(
-                          frescuraIva.ultimaEmision
-                        ).toLocaleDateString('es-AR', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric',
-                        })}
+                        {new Date(frescuraIva.ultimaEmision).toLocaleDateString(
+                          'es-AR',
+                          {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          }
+                        )}
                       </span>
                     ) : (
                       '—'
@@ -4308,7 +4332,10 @@ export function RepresentativeDetailPage({
                         <Button
                           variant="default"
                           size="sm"
-                          disabled={!!scrapingSection}
+                          disabled={!!scrapingSection || scrapingPausado}
+                          title={
+                            scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined
+                          }
                         >
                           Actualizar IVA
                         </Button>
