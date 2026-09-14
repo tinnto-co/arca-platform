@@ -32,13 +32,24 @@ export function hayCorreoConfigurado(): boolean {
   return !!apiKey?.trim() && !!from?.trim();
 }
 
-/** El link que abre la invitación, con o sin correo de por medio. */
+/**
+ * El link que abre la invitación, con o sin correo de por medio.
+ *
+ * `BETTER_AUTH_URL` se usa de las dos formas en la práctica: unos entornos la
+ * ponen como la base de la aplicación y otros como la del endpoint de auth
+ * —`…/api/auth`—, que es lo que documenta Better Auth. La invitación es una
+ * pantalla de la aplicación, no del endpoint, así que ese sufijo se saca: con
+ * él, el link llegaba como `/api/auth/invite/…` y daba 404.
+ */
 export function linkDeInvitacion(invitationId: string): string {
   const base =
     process.env.BETTER_AUTH_URL ||
     process.env.PUBLIC_APP_URL ||
     'http://localhost:3000';
-  return `${base.replace(/\/$/, '')}/invite/${invitationId}`;
+  const raiz = base
+    .replace(/\/+$/, '')
+    .replace(/\/api\/auth$/, '');
+  return `${raiz}/invite/${invitationId}`;
 }
 
 export async function sendOrganizationInvitationEmail(
