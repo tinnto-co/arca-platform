@@ -4,7 +4,7 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
-import { ROL_SOPORTE } from '@/lib/permissions';
+import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
 import {
   hayCorreoConfigurado,
   linkDeInvitacion,
@@ -29,9 +29,7 @@ async function requireOwner() {
     )
     .limit(1);
 
-  // El acceso de soporte del superadmin vale lo mismo que un owner: entra
-  // justamente a configurar el estudio o a destrabar algo.
-  if (m?.role !== 'owner' && m?.role !== ROL_SOPORTE) {
+  if (!mandaEnElEstudio(m?.role)) {
     throw new Error('Solo el administrador puede realizar esta acción');
   }
 

@@ -15,7 +15,7 @@ import {
   setModuleEnabled,
 } from '@/actions/admin';
 import { getUser } from '@/actions/user';
-import { ROL_SOPORTE } from '@/lib/permissions';
+import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
 import {
   getAccountantSignature,
   saveAccountantSignature,
@@ -86,11 +86,7 @@ import { PageShell } from '@/components/shared/page-shell';
 export const Route = createFileRoute('/_authed/admin/')({
   beforeLoad: async () => {
     const user = await getUser();
-    // El acceso de soporte del superadmin llega acá a configurar el estudio o
-    // a ver quién tiene acceso: vale lo mismo que un owner. Sin esto entraba
-    // al estudio y rebotaba justo de la pantalla a la que iba.
-    const rol = user?.organizationRole;
-    if (rol !== 'owner' && rol !== ROL_SOPORTE) {
+    if (!mandaEnElEstudio(user?.organizationRole)) {
       throw redirect({ to: '/' });
     }
   },

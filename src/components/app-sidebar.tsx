@@ -67,7 +67,7 @@ import {
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
 import { abrirBuscador } from '@/lib/buscador-global';
-import { ROL_SOPORTE } from '@/lib/permissions';
+import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
 
 export { userQuery };
 
@@ -589,12 +589,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const navigate = useNavigate();
   const esSuperadmin =
     (user as { role?: string | null } | undefined)?.role === 'admin';
-  // El acceso de soporte entra a configurar el estudio: para el menú vale lo
-  // mismo que un owner. Sin esto el superadmin entraba y no veía ni
-  // Administración, que es justo a lo que iba.
-  const isOwner =
-    user?.organizationRole === 'owner' ||
-    user?.organizationRole === ROL_SOPORTE;
+  const isOwner = mandaEnElEstudio(user?.organizationRole);
   const isViewer = user?.organizationRole === 'viewer';
 
   // El badge cuenta lo mismo que el usuario va a ver al entrar: la bandeja
