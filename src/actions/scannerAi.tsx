@@ -8,8 +8,11 @@ import {
 
 import { GoogleGenAI, type Schema } from '@google/genai';
 
+// Acepta los dos nombres: CLAUDE.md documenta GEMINI_API_KEY y algún entorno
+// usa el nombre largo del SDK.
 const ai = new GoogleGenAI({
-  apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY!,
+  apiKey: (process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
+    process.env.GEMINI_API_KEY)!,
 });
 
 /* =========================
