@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { invitation, member, organization } from '@/drizzle/auth';
+import { invitation, member, organization, user } from '@/drizzle/auth';
 import { superadminAcceso } from '@/drizzle/schema';
 import { ROL_SOPORTE } from '@/lib/permissions';
 import {
@@ -182,7 +182,17 @@ export const crearOrganizacion = createServerFn({ method: 'POST' })
  * quién entró a qué estudio y cuándo.
  */
 export const entrarOrganizacion = createServerFn({ method: 'POST' })
-  .validator(z.object({ organizationId: z.string().min(1) }))
+  .validator(
+    z.object({
+      organizationId: z.string().min(1),
+      motivo: z
+        .string()
+        .trim()
+        .min(4, 'Escribí para qué entrás')
+        .max(200)
+        .optional(),
+    })
+  )
   .handler(async (ctx) => {
     const { userId } = await requireSuperadmin();
     const { organizationId } = ctx.data;
@@ -230,7 +240,7 @@ export const entrarOrganizacion = createServerFn({ method: 'POST' })
       if (!abierto) {
         await db
           .insert(superadminAcceso)
-          .values({ userId, organizationId });
+          .values({ userId, organizationId, motivo: ctx.data.motivo ?? null });
       }
     }
 
@@ -298,7 +308,13 @@ export const salirOrganizacion = createServerFn({ method: 'POST' })
     return { success: true };
   });
 
-/** La bitácora, para responder quién entró a qué estudio y cuándo. */
+/**
+ * La bitácora: quién entró a qué estudio, cuándo, por cuánto y para qué.
+ *
+ * Es el respaldo del día que un estudio pregunte quién vio sus datos. Por eso
+ * incluye el correo de quien entró y no sólo su id: una respuesta que hay que
+ * traducir no sirve de respuesta.
+ */
 export const listAccesosSoporte = createServerFn({ method: 'GET' }).handler(
   async () => {
     await requireSuperadmin();
@@ -307,6 +323,9 @@ export const listAccesosSoporte = createServerFn({ method: 'GET' }).handler(
         id: superadminAcceso.id,
         organizationId: superadminAcceso.organizationId,
         organizacion: organization.name,
+        email: user.email,
+        nombre: user.name,
+        motivo: superadminAcceso.motivo,
         entroAt: superadminAcceso.entroAt,
         salioAt: superadminAcceso.salioAt,
       })
@@ -315,6 +334,7 @@ export const listAccesosSoporte = createServerFn({ method: 'GET' }).handler(
         organization,
         eq(organization.id, superadminAcceso.organizationId)
       )
+      .innerJoin(user, eq(user.id, superadminAcceso.userId))
       .orderBy(sql`${superadminAcceso.entroAt} desc`)
       .limit(200);
   }

@@ -19,6 +19,7 @@ import {
 import {
   crearOrganizacion,
   entrarOrganizacion,
+  listAccesosSoporte,
   listOrganizaciones,
   salirOrganizacion,
 } from '@/actions/superadmin';
@@ -228,11 +229,24 @@ function OrganizacionesPage() {
   });
 
   const [entrandoA, setEntrandoA] = useState<string | null>(null);
+  // Estudio para el que se está pidiendo el motivo. Entrar a uno propio no
+  // pasa por acá: no hay soporte que registrar.
+  const [pidiendoMotivo, setPidiendoMotivo] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [motivo, setMotivo] = useState('');
 
   const entrar = useMutation({
-    mutationFn: (organizationId: string) => {
+    mutationFn: ({
+      organizationId,
+      motivo: razon,
+    }: {
+      organizationId: string;
+      motivo?: string;
+    }) => {
       setEntrandoA(organizationId);
-      return entrarOrganizacion({ data: { organizationId } });
+      return entrarOrganizacion({ data: { organizationId, motivo: razon } });
     },
     onSuccess: () => {
       // Cambió la organización activa: recarga completa para que TODO
@@ -365,7 +379,11 @@ function OrganizacionesPage() {
                       <button
                         type="button"
                         disabled={entrar.isPending}
-                        onClick={() => entrar.mutate(org.id)}
+                        onClick={() =>
+                          org.esPropia
+                            ? entrar.mutate({ organizationId: org.id })
+                            : setPidiendoMotivo({ id: org.id, name: org.name })
+                        }
                         className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-[var(--arca-ink)] hover:underline disabled:opacity-50 cursor-pointer"
                       >
                         {entrandoA === org.id ? (
@@ -382,6 +400,177 @@ function OrganizacionesPage() {
           })}
         </div>
       )}
+      {/* Motivo del acceso. Se pide antes de entrar y no después: después uno
+          ya está adentro y el campo se completa de memoria o no se completa. */}
+      <Dialog
+        open={!!pidiendoMotivo}
+        onOpenChange={(abierto) => {
+          if (!abierto) {
+            setPidiendoMotivo(null);
+            setMotivo('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Entrar a {pidiendoMotivo?.name}</DialogTitle>
+            <DialogDescription>
+              Este estudio no es tuyo. Dejá anotado para qué entrás: es lo que
+              se le muestra al estudio si algún día pregunta quién vio sus
+              datos.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!pidiendoMotivo) return;
+              entrar.mutate({
+                organizationId: pidiendoMotivo.id,
+                motivo: motivo.trim(),
+              });
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="motivo-acceso">Motivo</Label>
+              <Input
+                id="motivo-acceso"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Consulta de soporte, alta del estudio, revisión…"
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                'Alta del estudio',
+                'Consulta de soporte',
+                'Revisión de sincronización',
+              ].map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMotivo(m)}
+                  className="rounded-lg border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2.5 py-1 text-[12px] text-[var(--arca-ink-3)] transition-colors hover:border-[var(--arca-accent)] hover:text-[var(--arca-accent)] cursor-pointer"
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPidiendoMotivo(null)}
+                disabled={entrar.isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={entrar.isPending || motivo.trim().length < 4}
+              >
+                {entrar.isPending && (
+                  <Loader2 className="size-3.5 animate-spin" />
+                )}
+                Entrar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <BitacoraAccesos />
     </PageShell>
+  );
+}
+
+/**
+ * La bitácora de accesos de soporte.
+ *
+ * El estudio no ve estos accesos en su lista de miembros —su lista es su
+ * gente— así que este es el único lugar donde queda constancia de quién entró
+ * a qué estudio, cuándo y para qué. Es lo que se muestra el día que un
+ * contador pregunte quién vio los datos de sus clientes.
+ */
+function BitacoraAccesos() {
+  const { data: accesos = [], isLoading } = useQuery({
+    queryKey: ['accesosSoporte'],
+    queryFn: () => listAccesosSoporte(),
+  });
+
+  if (isLoading || accesos.length === 0) return null;
+
+  const fecha = (d: Date | string) =>
+    new Date(d).toLocaleString('es-AR', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+  return (
+    <section className="mt-8">
+      <h2
+        className="text-[14px] font-semibold text-[var(--arca-ink)]"
+        style={{ fontFamily: 'var(--ff-display)' }}
+      >
+        Accesos de soporte
+      </h2>
+      <p className="mt-0.5 text-[12.5px] text-[var(--arca-ink-3)]">
+        Quién de Orddo entró a cada estudio, cuándo y para qué.
+      </p>
+
+      <div className="mt-3 overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        <table className="w-full border-collapse text-[12.5px]">
+          <thead>
+            <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-left text-[10.5px] uppercase tracking-[0.06em] text-[var(--arca-ink-3)]">
+              <th className="px-4 py-2 font-semibold">Quién</th>
+              <th className="px-4 py-2 font-semibold">Estudio</th>
+              <th className="px-4 py-2 font-semibold">Motivo</th>
+              <th className="px-4 py-2 font-semibold">Entró</th>
+              <th className="px-4 py-2 font-semibold">Salió</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accesos.map((a) => (
+              <tr
+                key={a.id}
+                className="border-b border-[var(--arca-border)] last:border-b-0"
+              >
+                <td className="px-4 py-2 text-[var(--arca-ink-2)]">
+                  {a.nombre ?? a.email}
+                </td>
+                <td className="px-4 py-2 font-medium text-[var(--arca-ink)]">
+                  {a.organizacion}
+                </td>
+                <td className="px-4 py-2 text-[var(--arca-ink-3)]">
+                  {a.motivo ?? (
+                    <span className="text-[var(--arca-ink-4)]">
+                      sin registrar
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-[var(--arca-ink-3)] tabular-nums">
+                  {fecha(a.entroAt)}
+                </td>
+                <td className="px-4 py-2 tabular-nums">
+                  {a.salioAt ? (
+                    <span className="text-[var(--arca-ink-3)]">
+                      {fecha(a.salioAt)}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 font-medium text-[var(--arca-accent-info-fg)]">
+                      <span className="size-1.5 rounded-full bg-[var(--arca-accent-light)]" />
+                      abierto
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

@@ -10,7 +10,7 @@ import {
   linkDeInvitacion,
 } from '@/lib/send-invitation-email';
 import { organizationModule, orgModule } from '@/drizzle/schema';
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, ne, or } from 'drizzle-orm';
 import { getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 
@@ -47,7 +47,7 @@ async function requireOwner() {
 export const getOrgMembers = createServerFn({
   method: 'GET',
 }).handler(async () => {
-  const { orgId } = await requireOwner();
+  const { orgId, esSuperadmin } = await requireOwner();
 
   const members = await db
     .select({
@@ -61,13 +61,18 @@ export const getOrgMembers = createServerFn({
     })
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
-    // Los accesos de soporte se muestran, también al estudio. Esconderle a un
-    // contador que alguien de la plataforma puede ver los datos fiscales de
-    // sus clientes es exactamente lo que no se puede hacer: que sea visible y
-    // auditable es la condición para que exista. Lo que no corresponde es
-    // contarlos entre su gente ni dejar que los revoquen, y de eso se encargan
-    // el conteo de abajo y `removeMember`.
-    .where(eq(member.organizationId, orgId));
+    // El estudio no ve los accesos de soporte: su lista de miembros es su
+    // gente. El rastro de quién entró vive en `superadmin_acceso`, que es el
+    // registro de la plataforma y se consulta desde el módulo Superadmin.
+    //
+    // El superadmin sí los ve: si entró a revisar quién tiene acceso a este
+    // estudio, esconderle justamente los accesos de plataforma sería mentirle
+    // sobre lo que está mirando.
+    .where(
+      esSuperadmin
+        ? eq(member.organizationId, orgId)
+        : and(eq(member.organizationId, orgId), ne(member.role, ROL_SOPORTE))
+    );
 
   return members.map((m) => ({ ...m, esSoporte: m.role === ROL_SOPORTE }));
 });
