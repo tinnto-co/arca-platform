@@ -83,10 +83,14 @@ function CardDespacho({
   despacho,
   duplicado,
   onListo,
+  docAbierto,
+  onVerDocumento,
 }: {
   despacho: NonNullable<DespachoExtraido>;
   duplicado: boolean;
   onListo: () => void;
+  docAbierto: boolean;
+  onVerDocumento: (documentoId: string | null) => void;
 }) {
   const queryClient = useQueryClient();
   const [numero, setNumero] = useState(despacho.numero);
@@ -161,15 +165,16 @@ function CardDespacho({
             Ya estaba cargado — se muestra el existente.
           </span>
         )}
-        <a
+        <button
+          type="button"
           className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
-          href={`/api/documents/${despacho.documentoId}`}
-          target="_blank"
-          rel="noreferrer"
+          onClick={() =>
+            onVerDocumento(docAbierto ? null : despacho.documentoId)
+          }
         >
           <FileText className="size-3.5" />
-          Ver documento
-        </a>
+          {docAbierto ? 'Ocultar documento' : 'Ver documento'}
+        </button>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -310,6 +315,10 @@ export function DespachosImportacionDialog({
   const [extraidos, setExtraidos] = useState<
     { despacho: NonNullable<DespachoExtraido>; duplicado: boolean }[]
   >([]);
+  // El PDF se abre al costado de los números, en la misma vista.
+  const [docAbierto, setDocAbierto] = useState<string | null>(null);
+  // El dropzone se pliega mientras se analizan números; un click lo reabre.
+  const [subirAbierto, setSubirAbierto] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: clientes = [] } = useQuery({
@@ -360,6 +369,8 @@ export function DespachosImportacionDialog({
             { despacho: r.despacho, duplicado: r.duplicado },
             ...prev,
           ]);
+          setSubirAbierto(false);
+          setDocAbierto((d) => d ?? r.despacho.documentoId);
           if (r.duplicado) toast.info(`${file.name}: ya estaba cargado`);
         }
       } catch (e) {
@@ -377,11 +388,15 @@ export function DespachosImportacionDialog({
       open={open}
       onOpenChange={(o) => {
         setOpen(o);
-        if (!o) setExtraidos([]);
+        if (!o) {
+          setExtraidos([]);
+          setDocAbierto(null);
+          setSubirAbierto(true);
+        }
       }}
     >
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="!max-w-4xl w-[94vw] max-h-[86vh] overflow-y-auto">
+      <DialogContent className="!max-w-6xl w-[96vw] max-h-[88vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Ship className="size-4" />
@@ -406,112 +421,152 @@ export function DespachosImportacionDialog({
           />
         )}
 
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="flex flex-col items-center gap-2 rounded-[12px] border border-dashed border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-6 py-8 text-[13px] text-[var(--arca-ink-3)] transition-colors hover:bg-[var(--arca-surface)]"
-        >
-          <Upload className="size-5 text-[var(--arca-ink-4)]" />
-          Arrastrá o hacé click para subir despachos (PDF, JPG, PNG — hasta 15
-          MB)
-          <input
-            ref={inputRef}
-            type="file"
-            multiple
-            accept="application/pdf,image/png,image/jpeg,image/webp"
-            className="hidden"
-            onChange={(e) => {
-              void procesarArchivos(e.target.files);
-              e.target.value = '';
-            }}
-          />
-        </button>
-
-        {procesando.map((nombre) => (
-          <div
-            key={nombre}
-            className="flex items-center gap-2 rounded-[10px] border border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]"
+        {subirAbierto ? (
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="flex flex-col items-center gap-2 rounded-[12px] border border-dashed border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-6 py-8 text-[13px] text-[var(--arca-ink-3)] transition-colors hover:bg-[var(--arca-surface)]"
           >
-            <Loader2 className="size-3.5 animate-spin" />
-            Leyendo {nombre}…
-          </div>
-        ))}
-
-        {extraidos.map(({ despacho, duplicado }) => (
-          <CardDespacho
-            key={despacho.id}
-            despacho={despacho}
-            duplicado={duplicado}
-            onListo={() =>
-              setExtraidos((prev) =>
-                prev.filter((e) => e.despacho.id !== despacho.id)
-              )
-            }
-          />
-        ))}
-
-        {historial.length > 0 && (
-          <div className="mt-2">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-              Cargados recientemente
-            </p>
-            <div className="overflow-x-auto rounded-[10px] border border-[var(--arca-border)]">
-              <table className="w-full text-[12px]">
-                <thead>
-                  <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-left text-[var(--arca-ink-3)]">
-                    <th className="px-3 py-2 font-medium">Empresa</th>
-                    <th className="px-3 py-2 font-medium">Tipo</th>
-                    <th className="px-3 py-2 font-medium">Número</th>
-                    <th className="px-3 py-2 text-right font-medium">Total</th>
-                    <th className="px-3 py-2 font-medium">Estado</th>
-                    <th className="px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {historial.slice(0, 12).map((d) => (
-                    <tr
-                      key={d.id}
-                      className="border-b border-[var(--arca-border)] last:border-0"
-                    >
-                      <td className="max-w-[180px] truncate px-3 py-2">
-                        {d.clienteNombre}
-                      </td>
-                      <td className="px-3 py-2 text-[var(--arca-ink-3)]">
-                        {TIPO_LABEL[d.tipo] ?? d.tipo}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-[11.5px]">
-                        {d.numero}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {fmt.format(Number(d.total))}
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge
-                          variant={
-                            d.estado === 'confirmado' ? 'outline' : 'secondary'
-                          }
-                          className="text-[10px]"
-                        >
-                          {ESTADO_LABEL[d.estado] ?? d.estado}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <a
-                          className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
-                          href={`/api/documents/${d.documentoId}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          PDF
-                        </a>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+            <Upload className="size-5 text-[var(--arca-ink-4)]" />
+            Arrastrá o hacé click para subir despachos (PDF, JPG, PNG — hasta 15
+            MB)
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setSubirAbierto(true);
+              inputRef.current?.click();
+            }}
+            className="inline-flex w-fit items-center gap-1.5 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 py-1.5 text-[12.5px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+          >
+            <Upload className="size-3.5" />
+            Subir más despachos
+          </button>
         )}
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept="application/pdf,image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            void procesarArchivos(e.target.files);
+            e.target.value = '';
+          }}
+        />
+
+        <div
+          className={
+            docAbierto
+              ? 'grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,44%)]'
+              : ''
+          }
+        >
+          <div className="flex min-w-0 flex-col gap-3">
+            {procesando.map((nombre) => (
+              <div
+                key={nombre}
+                className="flex items-center gap-2 rounded-[10px] border border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]"
+              >
+                <Loader2 className="size-3.5 animate-spin" />
+                Leyendo {nombre}…
+              </div>
+            ))}
+
+            {extraidos.map(({ despacho, duplicado }) => (
+              <CardDespacho
+                key={despacho.id}
+                despacho={despacho}
+                duplicado={duplicado}
+                docAbierto={docAbierto === despacho.documentoId}
+                onVerDocumento={setDocAbierto}
+                onListo={() =>
+                  setExtraidos((prev) =>
+                    prev.filter((e) => e.despacho.id !== despacho.id)
+                  )
+                }
+              />
+            ))}
+
+            {historial.length > 0 && (
+              <div className="mt-2">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                  Cargados recientemente
+                </p>
+                <div className="overflow-x-auto rounded-[10px] border border-[var(--arca-border)]">
+                  <table className="w-full text-[12px]">
+                    <thead>
+                      <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-left text-[var(--arca-ink-3)]">
+                        <th className="px-3 py-2 font-medium">Empresa</th>
+                        <th className="px-3 py-2 font-medium">Tipo</th>
+                        <th className="px-3 py-2 font-medium">Número</th>
+                        <th className="px-3 py-2 text-right font-medium">
+                          Total
+                        </th>
+                        <th className="px-3 py-2 font-medium">Estado</th>
+                        <th className="px-3 py-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historial.slice(0, 12).map((d) => (
+                        <tr
+                          key={d.id}
+                          className="border-b border-[var(--arca-border)] last:border-0"
+                        >
+                          <td className="max-w-[180px] truncate px-3 py-2">
+                            {d.clienteNombre}
+                          </td>
+                          <td className="px-3 py-2 text-[var(--arca-ink-3)]">
+                            {TIPO_LABEL[d.tipo] ?? d.tipo}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-[11.5px]">
+                            {d.numero}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {fmt.format(Number(d.total))}
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge
+                              variant={
+                                d.estado === 'confirmado'
+                                  ? 'outline'
+                                  : 'secondary'
+                              }
+                              className="text-[10px]"
+                            >
+                              {ESTADO_LABEL[d.estado] ?? d.estado}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <a
+                              className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
+                              href={`/api/documents/${d.documentoId}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              PDF
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {docAbierto && (
+            <div className="min-w-0 lg:sticky lg:top-0">
+              <iframe
+                title="Documento del despacho"
+                src={`/api/documents/${docAbierto}`}
+                className="h-[62vh] w-full rounded-[12px] border border-[var(--arca-border)] bg-white"
+              />
+            </div>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
