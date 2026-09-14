@@ -4,13 +4,13 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
-import { ROL_SOPORTE } from '@/lib/permissions';
+import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
 import {
   hayCorreoConfigurado,
   linkDeInvitacion,
 } from '@/lib/send-invitation-email';
 import { organizationModule, orgModule } from '@/drizzle/schema';
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, or } from 'drizzle-orm';
 import { getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 
@@ -29,19 +29,23 @@ async function requireOwner() {
     )
     .limit(1);
 
-  // El acceso de soporte del superadmin vale lo mismo que un owner: entra
-  // justamente a configurar el estudio o a destrabar algo.
-  if (m?.role !== 'owner' && m?.role !== ROL_SOPORTE) {
+  if (!mandaEnElEstudio(m?.role)) {
     throw new Error('Solo el administrador puede realizar esta acción');
   }
 
-  return { session, orgId, userId: session.user.id };
+  return {
+    session,
+    orgId,
+    userId: session.user.id,
+    esSuperadmin:
+      (session.user as { role?: string | null }).role === 'admin',
+  };
 }
 
 export const getOrgMembers = createServerFn({
   method: 'GET',
 }).handler(async () => {
-  const { orgId } = await requireOwner();
+  const { orgId, esSuperadmin } = await requireOwner();
 
   const members = await db
     .select({
@@ -55,12 +59,20 @@ export const getOrgMembers = createServerFn({
     })
     .from(member)
     .innerJoin(user, eq(member.userId, user.id))
-    // El acceso de soporte del superadmin no es un miembro del estudio y no
-    // tiene por qué aparecer en su lista: es alguien de la plataforma entrando
-    // a ayudar, y queda registrado en `superadmin_acceso`.
-    .where(and(eq(member.organizationId, orgId), ne(member.role, ROL_SOPORTE)));
+    // El estudio no ve los accesos de soporte: su lista de miembros es su
+    // gente. El rastro de quién entró vive en `superadmin_acceso`, que es el
+    // registro de la plataforma y se consulta desde el módulo Superadmin.
+    //
+    // El superadmin sí los ve: si entró a revisar quién tiene acceso a este
+    // estudio, esconderle justamente los accesos de plataforma sería mentirle
+    // sobre lo que está mirando.
+    .where(
+      esSuperadmin
+        ? eq(member.organizationId, orgId)
+        : and(eq(member.organizationId, orgId), ne(member.role, ROL_SOPORTE))
+    );
 
-  return members;
+  return members.map((m) => ({ ...m, esSoporte: m.role === ROL_SOPORTE }));
 });
 
 export const getOrgDetails = createServerFn({
@@ -141,7 +153,57 @@ export const removeMember = createServerFn({
 })
   .validator(z.object({ memberIdOrEmail: z.string() }))
   .handler(async (ctx) => {
-    await requireOwner();
+    const { orgId, userId, esSuperadmin } = await requireOwner();
+
+    // Better Auth impide dejar al estudio sin ningún dueño, pero no impide
+    // que te borres a vos si hay otros. Desde una pantalla que se llama
+    // "Miembros" y tiene una papelera por fila, eso es un botón para quedarte
+    // afuera de tu propio estudio sin querer. Esta pantalla administra a los
+    // demás; irse es otra acción y merece su propio lugar.
+    const [propia] = await db
+      .select({ id: member.id })
+      .from(member)
+      .where(
+        and(
+          eq(member.organizationId, orgId),
+          eq(member.userId, userId),
+          or(
+            eq(member.id, ctx.data.memberIdOrEmail),
+            eq(member.userId, ctx.data.memberIdOrEmail)
+          )
+        )
+      )
+      .limit(1);
+    if (propia) {
+      throw new Error(
+        'No podés quitarte a vos misma desde acá. Pedile a otro administrador que lo haga.'
+      );
+    }
+
+    // El acceso de soporte no es del estudio y no se revoca desde acá: se
+    // cierra saliendo, desde el módulo de plataforma. Esconder el botón en la
+    // pantalla no alcanza —la server function se puede llamar igual—, así que
+    // la regla vive donde se aplica.
+    if (!esSuperadmin) {
+      const [objetivo] = await db
+        .select({ role: member.role })
+        .from(member)
+        .where(
+          and(
+            eq(member.organizationId, orgId),
+            or(
+              eq(member.id, ctx.data.memberIdOrEmail),
+              eq(member.userId, ctx.data.memberIdOrEmail)
+            )
+          )
+        )
+        .limit(1);
+      if (objetivo?.role === ROL_SOPORTE) {
+        throw new Error(
+          'El acceso de soporte de Orddo no se quita desde acá. Escribinos y lo cerramos.'
+        );
+      }
+    }
 
     await auth.api.removeMember({
       headers: getRequestHeaders(),

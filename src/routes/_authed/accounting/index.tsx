@@ -309,6 +309,7 @@ import {
 import { toast } from 'sonner';
 import { IndicesInflacion } from '@/components/accounting/IndicesInflacion';
 import { AjustePorInflacion } from '@/components/accounting/AjustePorInflacion';
+import { mandaEnElEstudio } from '@/lib/permissions';
 
 const TAB_IDS = [
   'plan',
@@ -782,7 +783,7 @@ function AccountingPage() {
     queryKey: ['accounting', 'role'],
     queryFn: () => getCurrentRole(),
   });
-  const isOwner = roleData?.role === 'owner';
+  const isOwner = mandaEnElEstudio(roleData?.role);
 
   /**
    * El recordado solo vale si sigue en la lista: un cliente dado de baja, o
@@ -937,7 +938,7 @@ function AccountingPage() {
       ) : tab === 'estados' ? (
         <EstadosContables
           clientId={effectiveClientId}
-          isOwner={roleData?.role === 'owner'}
+          isOwner={mandaEnElEstudio(roleData?.role)}
           clientName={
             clients.find((c) => c.id === effectiveClientId)?.name ?? ''
           }

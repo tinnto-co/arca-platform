@@ -2922,4 +2922,6 @@ export const superadminAcceso = pgTable("superadmin_acceso", {
 	organizationId: text("organization_id").notNull(),
 	entroAt: timestamp("entro_at", { withTimezone: true }).defaultNow().notNull(),
 	salioAt: timestamp("salio_at", { withTimezone: true }),
+	/** Para qué se entró. Es lo que convierte el registro en algo mostrable. */
+	motivo: text(),
 });

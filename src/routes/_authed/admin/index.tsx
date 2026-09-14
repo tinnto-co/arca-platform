@@ -15,6 +15,7 @@ import {
   setModuleEnabled,
 } from '@/actions/admin';
 import { getUser } from '@/actions/user';
+import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
 import {
   getAccountantSignature,
   saveAccountantSignature,
@@ -72,6 +73,7 @@ import {
   Loader2,
   Mail,
   Shield,
+  ShieldCheck,
   Trash2,
   UserPlus,
   Users,
@@ -84,7 +86,7 @@ import { PageShell } from '@/components/shared/page-shell';
 export const Route = createFileRoute('/_authed/admin/')({
   beforeLoad: async () => {
     const user = await getUser();
-    if (!user?.organizationRole || user.organizationRole !== 'owner') {
+    if (!mandaEnElEstudio(user?.organizationRole)) {
       throw redirect({ to: '/' });
     }
   },
@@ -95,12 +97,16 @@ const ROLE_LABELS: Record<string, string> = {
   owner: 'Administrador',
   member: 'Miembro',
   viewer: 'Solo lectura',
+  // Sólo lo ve el superadmin: al estudio estas filas se le filtran.
+  [ROL_SOPORTE]: 'Soporte Orddo',
 };
 
 const ROLE_COLORS: Record<string, string> = {
   owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn-fg)]',
   member: 'bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]',
   viewer: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
+  [ROL_SOPORTE]:
+    'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
 };
 
 function AdminPanel() {
@@ -190,13 +196,21 @@ function MembersTab() {
 
   const removingMember = members?.find((m) => m.memberId === removeMemberId);
 
+  // El acceso de soporte de la plataforma no es gente del estudio: se muestra
+  // —esconderlo sería ocultarle a un contador quién puede ver los datos de sus
+  // clientes— pero no se cuenta entre los suyos ni ocupa un lugar.
+  const miembrosDelEstudio =
+    members?.filter((m) => !m.esSoporte).length ?? 0;
+
+  const { data: usuarioActual } = useQuery(userQuery);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Miembros</CardTitle>
           <CardDescription>
-            {members?.length ?? 0} miembros en la organización
+            {miembrosDelEstudio} miembros en la organización
           </CardDescription>
         </div>
         <InviteDialog />
@@ -232,35 +246,62 @@ function MembersTab() {
                     {m.email}
                   </TableCell>
                   <TableCell>
-                    <Select
-                      value={m.role}
-                      onValueChange={(role: 'owner' | 'member' | 'viewer') =>
-                        rolesMutation.mutate({ memberId: m.memberId, role })
-                      }
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="owner">
-                          <div className="flex items-center gap-2">
-                            <Shield className="size-3" />
-                            Administrador
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="member">Miembro</SelectItem>
-                        <SelectItem value="viewer">Solo lectura</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {/* El acceso de soporte no es un rol de este estudio: no
+                        se elige de esta lista ni se cambia desde acá. Se
+                        muestra como lo que es y se revoca saliendo. */}
+                    {m.role === ROL_SOPORTE ? (
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-[var(--arca-r-sm)] px-2 py-1 text-[12px] font-medium ${ROLE_COLORS[ROL_SOPORTE]}`}
+                      >
+                        <ShieldCheck className="size-3" />
+                        {ROLE_LABELS[ROL_SOPORTE]}
+                      </span>
+                    ) : (
+                      <Select
+                        value={m.role}
+                        onValueChange={(role: 'owner' | 'member' | 'viewer') =>
+                          rolesMutation.mutate({ memberId: m.memberId, role })
+                        }
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="owner">
+                            <div className="flex items-center gap-2">
+                              <Shield className="size-3" />
+                              Administrador
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="member">Miembro</SelectItem>
+                          <SelectItem value="viewer">Solo lectura</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setRemoveMemberId(m.memberId)}
-                    >
-                      <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
-                    </Button>
+                    {/* El acceso de soporte no se revoca desde acá: se cierra
+                        saliendo, desde el módulo de plataforma. */}
+                    {m.esSoporte || m.userId === usuarioActual?.id ? (
+                      <span
+                        title={
+                          m.esSoporte
+                            ? 'Acceso de la plataforma. Se cierra desde Orddo, no desde el estudio.'
+                            : 'Sos vos: pedile a otro administrador que te quite.'
+                        }
+                        className="text-[11.5px] text-[var(--arca-ink-4)]"
+                      >
+                        —
+                      </span>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setRemoveMemberId(m.memberId)}
+                      >
+                        <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
+                      </Button>
+                    )}
                     <AlertDialog
                       open={removeMemberId === m.memberId}
                       onOpenChange={(open) =>

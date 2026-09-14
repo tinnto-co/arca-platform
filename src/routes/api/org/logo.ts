@@ -12,6 +12,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member } from '@/drizzle/auth';
 import * as r2 from '@/lib/r2';
+import { mandaEnElEstudio } from '@/lib/permissions';
 
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 
@@ -43,7 +44,7 @@ export const Route = createFileRoute('/api/org/logo')({
             )
           )
           .limit(1);
-        if (m?.role !== 'owner')
+        if (!mandaEnElEstudio(m?.role))
           return Response.json(
             { error: 'Solo el administrador puede cambiar el logo' },
             { status: 403 }

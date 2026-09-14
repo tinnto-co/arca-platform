@@ -49,26 +49,9 @@ const viewer = ac.newRole({
  */
 export const ROL_SOPORTE = 'superadmin';
 
-/** Si este rol es un acceso de soporte de la plataforma. */
+/** Puede hacer lo que un owner: es la superadmin dando de alta o asistiendo. */
 export function esAccesoDeSoporte(rol: string | null | undefined) {
   return rol === ROL_SOPORTE;
-}
-
-/**
- * Manda en el estudio: el dueño, o alguien de Orddo entrando como soporte.
- *
- * Existe para que la pregunta se haga en un solo lugar. Comparar contra
- * `'owner'` a mano dejó al acceso de soporte a mitad de camino —podía
- * administrar el estudio y borrar clientes, pero no tocar el plan de cuentas—
- * porque cada pantalla se acordó del rol nuevo por su cuenta, o no.
- *
- * El soporte vale lo mismo que el dueño a propósito: entra a configurar un
- * estudio nuevo o a destrabar algo, y un acceso que mira sin poder tocar no
- * sirve para ninguna de las dos cosas. Lo que lo hace aceptable no es
- * limitarlo, sino que quede registrado: ver `superadmin_acceso`.
- */
-export function mandaEnElEstudio(rol: string | null | undefined) {
-  return rol === 'owner' || rol === ROL_SOPORTE;
 }
 
 export { ac, owner, member, viewer };

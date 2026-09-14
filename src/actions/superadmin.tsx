@@ -14,9 +14,13 @@ import { z } from 'zod';
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { member, organization } from '@/drizzle/auth';
+import { invitation, member, organization, user } from '@/drizzle/auth';
 import { superadminAcceso } from '@/drizzle/schema';
 import { ROL_SOPORTE } from '@/lib/permissions';
+import {
+  hayCorreoConfigurado,
+  linkDeInvitacion,
+} from '@/lib/send-invitation-email';
 
 async function requireSuperadmin() {
   const session = await auth.api.getSession({ headers: getRequestHeaders() });
@@ -75,6 +79,18 @@ export const listOrganizaciones = createServerFn({ method: 'GET' }).handler(
  * Crea una organización vía Better Auth (org + creador como owner, atómico).
  * El slug identifica al estudio en URLs e invitaciones: minúsculas y guiones.
  */
+/**
+ * Da de alta un estudio y se lo entrega a su responsable.
+ *
+ * Quien lo crea es el superadmin, pero el estudio no es suyo: el dueño es el
+ * contador que lo va a usar. Better Auth deja como owner a quien llama a
+ * `createOrganization`, así que acá esa membresía se convierte en acceso de
+ * soporte apenas la organización existe, y el lugar de dueño queda para la
+ * persona que se invita.
+ *
+ * La invitación sale con rol owner y lleva el nombre cargado en el alta, para
+ * que quien la recibe sólo elija una contraseña.
+ */
 export const crearOrganizacion = createServerFn({ method: 'POST' })
   .validator(
     z.object({
@@ -86,10 +102,13 @@ export const crearOrganizacion = createServerFn({ method: 'POST' })
           /^[a-z0-9]+(-[a-z0-9]+)*$/,
           'El identificador va en minúsculas, números y guiones (ej. estudio-perez)'
         ),
+      ownerNombre: z.string().trim().min(2, 'Falta el nombre'),
+      ownerApellido: z.string().trim().min(2, 'Falta el apellido'),
+      ownerEmail: z.string().trim().email('El correo no es válido'),
     })
   )
   .handler(async (ctx) => {
-    await requireSuperadmin();
+    const { userId } = await requireSuperadmin();
 
     const [existente] = await db
       .select({ id: organization.id })
@@ -105,7 +124,43 @@ export const crearOrganizacion = createServerFn({ method: 'POST' })
     });
     if (!creada) throw new Error('No se pudo crear la organización');
 
-    return { id: creada.id, name: creada.name, slug: creada.slug };
+    // La invitación se manda ANTES de bajarse de owner: Better Auth exige
+    // permiso de invitación, y el acceso de soporte no lo tiene.
+    const invitacion = await auth.api.createInvitation({
+      headers: getRequestHeaders(),
+      body: {
+        email: ctx.data.ownerEmail,
+        role: 'owner',
+        organizationId: creada.id,
+      },
+    });
+
+    const nombreCompleto =
+      `${ctx.data.ownerNombre} ${ctx.data.ownerApellido}`.trim();
+    await db
+      .update(invitation)
+      .set({ nombre: nombreCompleto })
+      .where(eq(invitation.id, invitacion.id));
+
+    // Y acá el superadmin deja de ser dueño de un estudio que no es suyo.
+    await db
+      .update(member)
+      .set({ role: ROL_SOPORTE })
+      .where(
+        and(eq(member.organizationId, creada.id), eq(member.userId, userId))
+      );
+    await db
+      .insert(superadminAcceso)
+      .values({ userId, organizationId: creada.id });
+
+    return {
+      id: creada.id,
+      name: creada.name,
+      slug: creada.slug,
+      ownerEmail: ctx.data.ownerEmail,
+      emailEnviado: hayCorreoConfigurado(),
+      link: linkDeInvitacion(invitacion.id),
+    };
   });
 
 /**
@@ -127,7 +182,15 @@ export const crearOrganizacion = createServerFn({ method: 'POST' })
  * quién entró a qué estudio y cuándo.
  */
 export const entrarOrganizacion = createServerFn({ method: 'POST' })
-  .validator(z.object({ organizationId: z.string().min(1) }))
+  .validator(
+    z.object({
+      organizationId: z.string().min(1),
+      // Para qué se entra. Hoy ninguna pantalla lo manda —se decidió no
+      // pedirlo al entrar— pero el parámetro y la columna existen para el día
+      // que se quiera: ver la nota sobre la bitácora, más abajo.
+      motivo: z.string().trim().min(4).max(200).optional(),
+    })
+  )
   .handler(async (ctx) => {
     const { userId } = await requireSuperadmin();
     const { organizationId } = ctx.data;
@@ -175,7 +238,7 @@ export const entrarOrganizacion = createServerFn({ method: 'POST' })
       if (!abierto) {
         await db
           .insert(superadminAcceso)
-          .values({ userId, organizationId });
+          .values({ userId, organizationId, motivo: ctx.data.motivo ?? null });
       }
     }
 
@@ -243,7 +306,44 @@ export const salirOrganizacion = createServerFn({ method: 'POST' })
     return { success: true };
   });
 
-/** La bitácora, para responder quién entró a qué estudio y cuándo. */
+/**
+ * La bitácora: quién entró a qué estudio, cuándo, por cuánto y para qué.
+ *
+ * ────────────────────────────────────────────────────────────────────────────
+ * HOY NO TIENE PANTALLA. Es deliberado: se decidió no mostrarla todavía. La
+ * tabla se llena igual con cada entrada y salida, así que el historial existe
+ * desde el primer día aunque nadie lo esté mirando —que es la única forma de
+ * que sirva cuando haga falta, porque un registro no se puede llenar hacia
+ * atrás—.
+ *
+ * Lo que se puede hacer con ella cuando se quiera, de menor a mayor trabajo:
+ *
+ * 1. CONSULTARLA A MANO. Esta función ya devuelve todo listo: quién (correo y
+ *    nombre), qué estudio, motivo, entrada y salida. Alcanza con llamarla.
+ *
+ * 2. UNA PANTALLA EN EL MÓDULO SUPERADMIN. Una tabla debajo de las tarjetas de
+ *    estudios. Es el paso natural el día que haya más de un superadmin o más
+ *    de un puñado de estudios, porque hoy la información existe pero sólo se
+ *    llega a ella abriendo la base.
+ *
+ * 3. PEDIR EL MOTIVO AL ENTRAR. La columna `motivo` existe y esta función lo
+ *    acepta, pero ninguna pantalla lo manda: entrar es directo. Pedirlo
+ *    convierte "adriana entró a Estudio X el martes" en algo que se le puede
+ *    mostrar a un cliente que pregunta quién vio sus datos. Si se agrega, va
+ *    ANTES de entrar: después uno ya está adentro y el campo se completa de
+ *    memoria o no se completa.
+ *
+ * 4. MOSTRÁRSELA AL ESTUDIO. Hoy el estudio no ve estos accesos en ningún
+ *    lado. Si algún cliente lo pide —o si se decide adelantarse—, esta tabla
+ *    es de dónde sale la respuesta. Ojo: filtrada por su organización y sin el
+ *    id interno del usuario.
+ *
+ * Y una cosa que conviene resolver antes que cualquiera de las cuatro: los
+ * accesos NO VENCEN. Se cierran sólo con "Salir". Mientras eso siga así, la
+ * bitácora acumula filas abiertas que no significan "hay alguien adentro"
+ * sino "alguien entró y nadie cerró".
+ * ────────────────────────────────────────────────────────────────────────────
+ */
 export const listAccesosSoporte = createServerFn({ method: 'GET' }).handler(
   async () => {
     await requireSuperadmin();
@@ -252,6 +352,9 @@ export const listAccesosSoporte = createServerFn({ method: 'GET' }).handler(
         id: superadminAcceso.id,
         organizationId: superadminAcceso.organizationId,
         organizacion: organization.name,
+        email: user.email,
+        nombre: user.name,
+        motivo: superadminAcceso.motivo,
         entroAt: superadminAcceso.entroAt,
         salioAt: superadminAcceso.salioAt,
       })
@@ -260,6 +363,7 @@ export const listAccesosSoporte = createServerFn({ method: 'GET' }).handler(
         organization,
         eq(organization.id, superadminAcceso.organizationId)
       )
+      .innerJoin(user, eq(user.id, superadminAcceso.userId))
       .orderBy(sql`${superadminAcceso.entroAt} desc`)
       .limit(200);
   }

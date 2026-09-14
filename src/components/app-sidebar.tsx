@@ -67,6 +67,7 @@ import {
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { cn } from '@/lib/utils';
 import { abrirBuscador } from '@/lib/buscador-global';
+import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
 
 export { userQuery };
 
@@ -586,7 +587,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { runOrgSwitch } = useOrgSwitch();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const isOwner = user?.organizationRole === 'owner';
+  const esSuperadmin =
+    (user as { role?: string | null } | undefined)?.role === 'admin';
+  const isOwner = mandaEnElEstudio(user?.organizationRole);
   const isViewer = user?.organizationRole === 'viewer';
 
   // El badge cuenta lo mismo que el usuario va a ver al entrar: la bandeja
@@ -626,6 +629,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // hover y flechitas promete una acción que no existe.
   const puedeCambiarOrg =
     ((organizations as ListedOrg[] | undefined)?.length ?? 0) > 1;
+
+  const enSoporte = user?.organizationRole === ROL_SOPORTE;
 
   const displayName = user?.organizationName ?? activeOrg?.name ?? 'Workspace';
   const displaySlug = user?.organizationSlug ?? activeOrg?.slug ?? '';
@@ -768,8 +773,25 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 {!colapsado && (
                   <>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12px] font-medium text-white/90 tracking-[-0.01em] truncate">
-                        {displayName}
+                      <div className="flex items-center gap-1.5">
+                        <span className="min-w-0 truncate text-[12px] font-medium text-white/90 tracking-[-0.01em]">
+                          {displayName}
+                        </span>
+                        {/* Este estudio no es tuyo: estás entrando como
+                            soporte. Va pegado a su nombre porque es
+                            exactamente el dato que matiza ese nombre. */}
+                        {enSoporte && (
+                          <span
+                            title="Acceso de soporte: no sos miembro de este estudio"
+                            className="flex shrink-0 items-center gap-1 rounded-[5px] bg-[rgba(127,209,207,0.16)] px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-accent-light)]"
+                          >
+                            <span
+                              aria-hidden
+                              className="size-1 rounded-full bg-[var(--arca-accent-light)]"
+                            />
+                            soporte
+                          </span>
+                        )}
                       </div>
                       <div
                         className="text-[10.5px] text-[var(--arca-sidebar-muted)] truncate"
@@ -838,6 +860,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <nav className="arca-scroll-sutil flex flex-col gap-0.5 flex-1 overflow-y-auto overflow-x-visible min-h-0">
           <NavItem to="/" icon={Home} label="Inicio" />
 
+          {/* No es el mismo asistente que el de la barra flotante: aquél corre
+              sobre CopilotKit y no guarda nada —lo conversado se pierde al
+              recargar—, y éste sobre /api/agent, que persiste cada hilo. Es el
+              único lugar donde una conversación sobrevive, así que es un
+              destino de trabajo y va arriba. */}
+          {isEnabled('ai_agent') && (
+            <NavItem to="/chat" icon={IconoOrbe} label="Chats" />
+          )}
+
+          {/* Lo que se hace PARA un cliente: quién es, qué le llegó, qué se le
+              vence, su liquidación de sueldos y qué estamos haciendo con todo
+              eso. Tareas cierra el grupo porque es el estado del trabajo sobre
+              lo de arriba, no otra cosa que mirar. */}
           <NavGroup id="clientes" label="Clientes" porDefecto>
             <NavItem to="/clients" icon={Users} label="Clientes" />
             <NavItem
@@ -847,14 +882,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               urgentCount={notifCount}
             />
             <NavItem to="/vencimientos" icon={Calendar} label="Vencimientos" />
+            <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
             <NavItem to="/tareas" icon={ClipboardList} label="Tareas" />
-            <NavItem to="/invoices" icon={FileText} label="Facturas" />
           </NavGroup>
 
+          {/* Los comprobantes abren el grupo porque son la materia prima: de
+              ahí sale la posición de IVA. El orden es el del trabajo. */}
           <NavGroup id="impuestos" label="Impuestos" porDefecto>
+            <NavItem to="/invoices" icon={FileText} label="Facturas" />
             <NavItem to="/iva" icon={Percent} label="IVA" />
             <NavItem to="/iibb" icon={Globe} label="IIBB" />
-            <NavItem to="/sueldos" icon={DollarSign} label="Sueldos" />
           </NavGroup>
 
           {/* Todo el grupo depende de módulos: si no hay ninguno habilitado no
@@ -862,11 +899,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           {hayContabilidad && (
             <NavGroup id="contabilidad" label="Contabilidad">
               {isEnabled('contabilidad') && (
-                <NavItem
-                  to="/accounting"
-                  icon={BookOpen}
-                  label="Contabilidad"
-                />
+                <NavItem to="/accounting" icon={BookOpen} label="Balances" />
               )}
               {isEnabled('banco') && (
                 <NavItem to="/bank" icon={Landmark} label="Banco" />
@@ -874,14 +907,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               {isEnabled('analytics') && (
                 <NavItem to="/analytics" icon={BarChart2} label="Analytics" />
               )}
-              {isEnabled('ai_agent') && (
-                <NavItem to="/chat" icon={IconoOrbe} label="Chats" />
-              )}
             </NavGroup>
           )}
 
+          {/* Administración es del estudio: sus miembros, su configuración y
+              sus módulos. Va suelta porque quedó sola en su grupo cuando el
+              resto pasó a Plataforma. */}
           {isOwner && (
-            <NavGroup id="operaciones" label="Operaciones">
+            <NavItem to="/admin" icon={Settings} label="Administración" />
+          )}
+
+          {/* Plataforma: lo que es de Orddo y no del estudio. Jobs y Fuentes de
+              datos son la plomería del scrapper, y las alertas se miran para
+              atender a los estudios, no desde adentro de uno. Sólo superadmin.  */}
+          {esSuperadmin && (
+            <NavGroup id="plataforma" label="Plataforma">
+              <NavItem
+                to="/organizaciones"
+                icon={ShieldCheck}
+                label="Superadmin"
+              />
               <NavItem to="/jobs" icon={Clock} label="Jobs" />
               <FuentesDatosItem />
               <NavItem
@@ -889,18 +934,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 icon={AlertTriangle}
                 label="Alertas"
                 urgentCount={openAlertsCount}
-              />
-              <NavItem to="/admin" icon={Settings} label="Administración" />
-            </NavGroup>
-          )}
-
-          {/* Superadmin (rol de usuario, plugin admin): gestión de estudios. */}
-          {(user as { role?: string | null } | undefined)?.role === 'admin' && (
-            <NavGroup id="plataforma" label="Plataforma">
-              <NavItem
-                to="/organizaciones"
-                icon={ShieldCheck}
-                label="Superadmin"
               />
             </NavGroup>
           )}

@@ -101,6 +101,7 @@ import {
 } from '@/lib/accounting-depreciation';
 import { parentCodeOf } from '@/lib/accounting-base-chart';
 import * as r2Storage from '@/lib/r2';
+import { mandaEnElEstudio } from '@/lib/permissions';
 import {
   planChartImport,
   type ExistingAccount,
@@ -190,7 +191,7 @@ function accountingEvent(args: {
 
 /** Solo el Owner del estudio configura el plan de cuentas. */
 function assertOwner(role: string): void {
-  if (role !== 'owner') {
+  if (!mandaEnElEstudio(role)) {
     throw new Error(
       'Solo el Owner del estudio puede modificar el plan de cuentas'
     );
