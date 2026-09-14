@@ -185,12 +185,10 @@ export const entrarOrganizacion = createServerFn({ method: 'POST' })
   .validator(
     z.object({
       organizationId: z.string().min(1),
-      motivo: z
-        .string()
-        .trim()
-        .min(4, 'Escribí para qué entrás')
-        .max(200)
-        .optional(),
+      // Para qué se entra. Hoy ninguna pantalla lo manda —se decidió no
+      // pedirlo al entrar— pero el parámetro y la columna existen para el día
+      // que se quiera: ver la nota sobre la bitácora, más abajo.
+      motivo: z.string().trim().min(4).max(200).optional(),
     })
   )
   .handler(async (ctx) => {
@@ -311,9 +309,40 @@ export const salirOrganizacion = createServerFn({ method: 'POST' })
 /**
  * La bitácora: quién entró a qué estudio, cuándo, por cuánto y para qué.
  *
- * Es el respaldo del día que un estudio pregunte quién vio sus datos. Por eso
- * incluye el correo de quien entró y no sólo su id: una respuesta que hay que
- * traducir no sirve de respuesta.
+ * ────────────────────────────────────────────────────────────────────────────
+ * HOY NO TIENE PANTALLA. Es deliberado: se decidió no mostrarla todavía. La
+ * tabla se llena igual con cada entrada y salida, así que el historial existe
+ * desde el primer día aunque nadie lo esté mirando —que es la única forma de
+ * que sirva cuando haga falta, porque un registro no se puede llenar hacia
+ * atrás—.
+ *
+ * Lo que se puede hacer con ella cuando se quiera, de menor a mayor trabajo:
+ *
+ * 1. CONSULTARLA A MANO. Esta función ya devuelve todo listo: quién (correo y
+ *    nombre), qué estudio, motivo, entrada y salida. Alcanza con llamarla.
+ *
+ * 2. UNA PANTALLA EN EL MÓDULO SUPERADMIN. Una tabla debajo de las tarjetas de
+ *    estudios. Es el paso natural el día que haya más de un superadmin o más
+ *    de un puñado de estudios, porque hoy la información existe pero sólo se
+ *    llega a ella abriendo la base.
+ *
+ * 3. PEDIR EL MOTIVO AL ENTRAR. La columna `motivo` existe y esta función lo
+ *    acepta, pero ninguna pantalla lo manda: entrar es directo. Pedirlo
+ *    convierte "adriana entró a Estudio X el martes" en algo que se le puede
+ *    mostrar a un cliente que pregunta quién vio sus datos. Si se agrega, va
+ *    ANTES de entrar: después uno ya está adentro y el campo se completa de
+ *    memoria o no se completa.
+ *
+ * 4. MOSTRÁRSELA AL ESTUDIO. Hoy el estudio no ve estos accesos en ningún
+ *    lado. Si algún cliente lo pide —o si se decide adelantarse—, esta tabla
+ *    es de dónde sale la respuesta. Ojo: filtrada por su organización y sin el
+ *    id interno del usuario.
+ *
+ * Y una cosa que conviene resolver antes que cualquiera de las cuatro: los
+ * accesos NO VENCEN. Se cierran sólo con "Salir". Mientras eso siga así, la
+ * bitácora acumula filas abiertas que no significan "hay alguien adentro"
+ * sino "alguien entró y nadie cerró".
+ * ────────────────────────────────────────────────────────────────────────────
  */
 export const listAccesosSoporte = createServerFn({ method: 'GET' }).handler(
   async () => {
