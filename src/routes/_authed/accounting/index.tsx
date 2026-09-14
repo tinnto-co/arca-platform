@@ -62,6 +62,7 @@ import {
   Eye,
   Loader2,
   GripVertical,
+  Ship,
 } from 'lucide-react';
 import {
   DndContext,
@@ -80,6 +81,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { PageHeader } from '@/components/shared/page-header';
+import { DespachosImportacionDialog } from '@/components/despachos/DespachosImportacion';
 import { PageShell } from '@/components/shared/page-shell';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { SaldosReferencia } from '@/components/accounting/SaldosReferencia';
@@ -852,6 +854,16 @@ function AccountingPage() {
               emptyMessage="No se encontraron empresas"
               width={300}
             />
+            {/* El pedido vino de balances: la misma carga de despachos vive
+                acá y en Facturas — una estructura, dos puertas. */}
+            <DespachosImportacionDialog
+              clienteId={effectiveClientId || undefined}
+            >
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Ship className="size-3.5" />
+                Despachos
+              </Button>
+            </DespachosImportacionDialog>
           </div>
         }
       />
