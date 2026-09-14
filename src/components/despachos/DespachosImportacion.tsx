@@ -319,6 +319,7 @@ export function DespachosImportacionDialog({
   const [docAbierto, setDocAbierto] = useState<string | null>(null);
   // El dropzone se pliega mientras se analizan números; un click lo reabre.
   const [subirAbierto, setSubirAbierto] = useState(true);
+  const [arrastrando, setArrastrando] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: clientes = [] } = useQuery({
@@ -421,29 +422,56 @@ export function DespachosImportacionDialog({
           />
         )}
 
-        {subirAbierto ? (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="flex flex-col items-center gap-2 rounded-[12px] border border-dashed border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] px-6 py-8 text-[13px] text-[var(--arca-ink-3)] transition-colors hover:bg-[var(--arca-surface)]"
-          >
-            <Upload className="size-5 text-[var(--arca-ink-4)]" />
-            Arrastrá o hacé click para subir despachos (PDF, JPG, PNG — hasta 15
-            MB)
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              setSubirAbierto(true);
-              inputRef.current?.click();
-            }}
-            className="inline-flex w-fit items-center gap-1.5 rounded-[10px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 py-1.5 text-[12.5px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
-          >
-            <Upload className="size-3.5" />
-            Subir más despachos
-          </button>
-        )}
+        {(() => {
+          // Sin preventDefault en dragover/drop, el navegador navega al
+          // archivo en vez de entregarlo.
+          const dragProps = {
+            onDragOver: (e: React.DragEvent) => {
+              e.preventDefault();
+              setArrastrando(true);
+            },
+            onDragLeave: () => setArrastrando(false),
+            onDrop: (e: React.DragEvent) => {
+              e.preventDefault();
+              setArrastrando(false);
+              void procesarArchivos(e.dataTransfer.files);
+            },
+          };
+          return subirAbierto ? (
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              {...dragProps}
+              className={`flex flex-col items-center gap-2 rounded-[12px] border border-dashed px-6 py-8 text-[13px] transition-colors ${
+                arrastrando
+                  ? 'border-[var(--arca-ink)] bg-[var(--arca-surface)] text-[var(--arca-ink)]'
+                  : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)]'
+              }`}
+            >
+              <Upload className="size-5 text-[var(--arca-ink-4)]" />
+              {arrastrando
+                ? 'Soltá para subir'
+                : 'Arrastrá o hacé click para subir despachos (PDF, JPG, PNG — hasta 15 MB)'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setSubirAbierto(true);
+                inputRef.current?.click();
+              }}
+              {...dragProps}
+              className={`inline-flex w-fit items-center gap-1.5 rounded-[10px] border px-3 py-1.5 text-[12.5px] ${
+                arrastrando
+                  ? 'border-[var(--arca-ink)] bg-[var(--arca-surface-2)] text-[var(--arca-ink)]'
+                  : 'border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]'
+              }`}
+            >
+              <Upload className="size-3.5" />
+              {arrastrando ? 'Soltá para subir' : 'Subir más despachos'}
+            </button>
+          );
+        })()}
         <input
           ref={inputRef}
           type="file"
