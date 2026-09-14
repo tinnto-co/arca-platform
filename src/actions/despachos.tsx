@@ -54,6 +54,8 @@ interface Extraccion {
   ivaUsd: number;
   tipoCambio: number;
   legible: boolean;
+  importadorCoincide: boolean;
+  importadorDelDocumento: string;
 }
 
 const extraccionSchema: Schema = {
@@ -95,6 +97,16 @@ const extraccionSchema: Schema = {
       description:
         'false si la imagen es tan ilegible que los importes son dudosos.',
     },
+    importadorCoincide: {
+      type: 'BOOLEAN',
+      description:
+        'true si el importador/destinatario del envío del documento coincide con el importador indicado en las instrucciones (mismo CUIT o razón social equivalente).',
+    },
+    importadorDelDocumento: {
+      type: 'STRING',
+      description:
+        'Razón social (y CUIT si figura) del importador/destinatario que se lee en el documento. Cadena vacía si no se lee.',
+    },
   },
   required: [
     'tipoDocumento',
@@ -104,6 +116,8 @@ const extraccionSchema: Schema = {
     'ivaUsd',
     'tipoCambio',
     'legible',
+    'importadorCoincide',
+    'importadorDelDocumento',
   ],
 } as Schema;
 
@@ -157,7 +171,7 @@ async function extraerConGemini(
       {
         text:
           PROMPT +
-          `\n\nEL IMPORTADOR DE ESTA CARGA ES: ${importador.razonSocial} (CUIT ${importador.cuit}). Si el legajo contiene envíos o totales de otros sujetos, IGNORALOS: extraé solo lo de este importador.`,
+          `\n\nEL IMPORTADOR ESPERADO ES: ${importador.razonSocial} (CUIT ${importador.cuit}). Si el legajo tiene envíos de VARIOS sujetos, extraé el de este importador e ignorá los totales de manifiesto. Si el documento entero pertenece a OTRO importador, extraé igual sus datos y marcá importadorCoincide=false con su nombre en importadorDelDocumento — nunca devuelvas todo en 0 por esto.`,
       },
       { inlineData: { mimeType, data: base64Data } },
     ],
@@ -230,8 +244,9 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
       );
     }
     if (!extraccion.numero || (!extraccion.ivaUsd && !extraccion.tipoCambio)) {
+      console.error('[despachos] extracción vacía', { extraccion });
       throw new Error(
-        'El documento no parece un despacho de importación (no se encontró el Concepto 415 ni el número).'
+        'No se encontró el Concepto 415 ni el número de despacho en el documento. Si es un despacho, avisá al equipo con el archivo.'
       );
     }
 
@@ -267,9 +282,14 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
     // 3. La fila del despacho. Alícuota rara → 'revision', nunca cálculo mudo.
     const derivados = calcularDespacho(extraccion);
     const estado =
-      alicuotaValida(extraccion.alicuota) && extraccion.legible
+      alicuotaValida(extraccion.alicuota) &&
+      extraccion.legible &&
+      extraccion.importadorCoincide
         ? 'extraido'
         : 'revision';
+    const aviso = !extraccion.importadorCoincide
+      ? `Ojo: el documento parece ser de ${extraccion.importadorDelDocumento || 'otro importador'}, no de la empresa seleccionada.`
+      : null;
 
     const [fila] = await db
       .insert(despachoImportacion)
@@ -342,9 +362,9 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
           )
         )
         .limit(1);
-      return { despacho: existente, duplicado: true };
+      return { despacho: existente, duplicado: true, aviso };
     }
-    return { despacho: fila, duplicado: false };
+    return { despacho: fila, duplicado: false, aviso };
   });
 
 /** La contraparte única de todos los despachos: la Aduana. */

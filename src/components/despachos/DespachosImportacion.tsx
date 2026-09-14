@@ -373,6 +373,7 @@ export function DespachosImportacionDialog({
           setSubirAbierto(false);
           setDocAbierto((d) => d ?? r.despacho.documentoId);
           if (r.duplicado) toast.info(`${file.name}: ya estaba cargado`);
+          if (r.aviso) toast.warning(r.aviso, { duration: 9000 });
         }
       } catch (e) {
         toast.error(
