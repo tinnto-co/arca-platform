@@ -67,6 +67,7 @@ import {
 } from '@/actions/notification';
 import { scrapSingleJob, updateDeudaEstado } from '@/actions/client';
 import { getLibroIvaPeriodo } from '@/actions/iva';
+import { SERVICIO_AFIP_LABEL } from '@/lib/delegaciones-afip';
 import {
   AVISO_SCRAPING_PAUSADO,
   useScrapingPausado,
@@ -180,13 +181,6 @@ type DelegacionesAfip = Record<
   string,
   { estado: 'ok' | 'sin_delegacion'; at: string }
 > | null;
-
-const SERVICIO_AFIP_LABEL: Record<string, string> = {
-  mis_comprobantes: 'Mis Comprobantes',
-  ctacte: 'Cuentas Tributarias',
-  portal_iva: 'Portal IVA',
-  domicilio_fiscal: 'Domicilio Fiscal Electrónico',
-};
 
 function sinDelegacion(
   delegaciones: DelegacionesAfip | undefined,

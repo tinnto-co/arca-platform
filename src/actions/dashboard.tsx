@@ -12,6 +12,7 @@ import z from 'zod';
 import { db } from '@/lib/db';
 import {
   cliente,
+  clienteCredencial,
   credencialAfip,
   comprobante,
   deuda,
@@ -24,6 +25,7 @@ import {
 import {
   eq,
   and,
+  asc,
   gte,
   lte,
   sql,
@@ -604,6 +606,58 @@ export const getTodayScrapedCredenciales = createServerFn({
     .where(and(eq(job.orgId, orgId), gte(job.createdAt, hoy)))
     .groupBy(job.credencialId, credencialAfip.nombre, credencialAfip.cuit)
     .orderBy(desc(sql`max(${job.createdAt})`));
+});
+
+// ── getDelegacionesFaltantes ─────────────────────────────────────────────────
+// Empresas que AFIP no le muestra a su credencial para algún servicio
+// (delegaciones_afip con sin_delegacion, lo escribe el scraper). La franja
+// del Inicio las lista para que el estudio haga el trámite sin esperar a
+// chocarse con una solapa vacía.
+
+export const getDelegacionesFaltantes = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const filas = await db
+    .select({
+      clienteId: cliente.id,
+      razonSocial: cliente.razonSocial,
+      cuit: cliente.cuit,
+      credencialId: clienteCredencial.credencialId,
+      credencialNombre: credencialAfip.nombre,
+      delegaciones: sql<Record<
+        string,
+        { estado: 'ok' | 'sin_delegacion'; at: string }
+      > | null>`${clienteCredencial.delegacionesAfip}`,
+    })
+    .from(clienteCredencial)
+    .innerJoin(cliente, eq(cliente.id, clienteCredencial.clienteId))
+    .innerJoin(
+      credencialAfip,
+      eq(credencialAfip.id, clienteCredencial.credencialId)
+    )
+    .where(
+      and(
+        eq(cliente.orgId, orgId),
+        sql`exists (
+          select 1 from jsonb_each(${clienteCredencial.delegacionesAfip}) s
+          where s.value ->> 'estado' = 'sin_delegacion'
+        )`
+      )
+    )
+    .orderBy(asc(cliente.razonSocial));
+
+  return filas.map((f) => ({
+    clienteId: f.clienteId,
+    razonSocial: f.razonSocial,
+    cuit: f.cuit,
+    credencialId: f.credencialId,
+    credencialNombre: f.credencialNombre,
+    servicios: Object.entries(f.delegaciones ?? {})
+      .filter(([, v]) => v?.estado === 'sin_delegacion')
+      .map(([k]) => k),
+  }));
 });
 
 // ── getCredentialAlerts ──────────────────────────────────────────────────────
