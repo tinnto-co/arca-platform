@@ -51,7 +51,7 @@ grant update (nombre, email, telefono, estado, ultimo_login_ok) on credencial_af
 -- Del vínculo cliente↔credencial solo cachea el índice posicional de AFIP.
 -- No puede crear vínculos: un CUIT desconocido va a `evento`, nunca a una fila acá.
 grant select on cliente_credencial to arca_scrapper;
-grant update (afip_contribuyente_id) on cliente_credencial to arca_scrapper;
+grant update (afip_contribuyente_id, delegaciones_afip) on cliente_credencial to arca_scrapper;
 
 -- Del cliente solo marca el estado del servicio ante AFIP (irregularidades/ok),
 -- que detecta el processor de comprobantes. El resto del cliente es del estudio.

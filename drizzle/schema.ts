@@ -141,6 +141,7 @@ export const clienteCredencial = pgTable("cliente_credencial", {
 	credencialId: uuid("credencial_id").notNull(),
 	fuente: relacionFuente().default('manual').notNull(),
 	afipContribuyenteId: integer("afip_contribuyente_id"),
+	delegacionesAfip: jsonb("delegaciones_afip").default({}).notNull(),
 	preferida: boolean().default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

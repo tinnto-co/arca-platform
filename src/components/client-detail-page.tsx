@@ -175,6 +175,55 @@ interface RepresentativeDetailPageProps {
 }
 
 /** Fecha y hora para el texto "Ult. actualización" en pestañas de scrape (Deudas, Vencimientos, etc.). */
+/** Estado de delegación por servicio de AFIP (lo escribe el scraper). */
+type DelegacionesAfip = Record<
+  string,
+  { estado: 'ok' | 'sin_delegacion'; at: string }
+> | null;
+
+const SERVICIO_AFIP_LABEL: Record<string, string> = {
+  mis_comprobantes: 'Mis Comprobantes',
+  ctacte: 'Cuentas Tributarias',
+  portal_iva: 'Portal IVA',
+  domicilio_fiscal: 'Domicilio Fiscal Electrónico',
+};
+
+function sinDelegacion(
+  delegaciones: DelegacionesAfip | undefined,
+  servicio: string
+): boolean {
+  return delegaciones?.[servicio]?.estado === 'sin_delegacion';
+}
+
+/**
+ * La solapa no está vacía porque no haya datos: AFIP no le muestra la empresa
+ * a esta credencial para ese servicio. Sin este aviso, el estudio reporta
+ * «no aparece nada» (caso KASUR).
+ */
+function AvisoSinDelegacion({
+  servicio,
+  credencialNombre,
+}: {
+  servicio: string;
+  credencialNombre: string | null;
+}) {
+  return (
+    <div className="flex items-start gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--arca-accent-warn-fg)]">
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        <span className="font-semibold">
+          Esta empresa no está conectada en AFIP para{' '}
+          {SERVICIO_AFIP_LABEL[servicio] ?? servicio}
+        </span>{' '}
+        con la credencial{credencialNombre ? ` de ${credencialNombre}` : ''}:
+        AFIP no la lista, así que no hay datos para traer. Se resuelve delegando
+        el servicio en «Administrador de Relaciones de Clave Fiscal» — la
+        plataforma lo detecta sola en la próxima actualización.
+      </span>
+    </div>
+  );
+}
+
 const formatLastUpdateAt = (iso: string | Date) =>
   new Date(iso).toLocaleString('es-AR', {
     day: '2-digit',
@@ -1802,6 +1851,23 @@ export function RepresentativeDetailPage({
                       Clave de AFIP desactualizada
                     </span>
                   )}
+                  {(() => {
+                    const faltantes = Object.entries(
+                      selectedProfile?.delegacionesAfip ?? {}
+                    )
+                      .filter(([, v]) => v?.estado === 'sin_delegacion')
+                      .map(([k]) => SERVICIO_AFIP_LABEL[k] ?? k);
+                    if (faltantes.length === 0) return null;
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
+                        title={`AFIP no le muestra esta empresa a la credencial para: ${faltantes.join(', ')}. Se resuelve delegando el servicio en «Administrador de Relaciones de Clave Fiscal»; la plataforma lo detecta sola en la próxima actualización.`}
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        No conectada en AFIP · {faltantes.join(' · ')}
+                      </span>
+                    );
+                  })()}
                   {selectedProfile?.estadoAfip === 'irregularidades' && (
                     <span
                       className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
@@ -2526,6 +2592,12 @@ export function RepresentativeDetailPage({
 
           {/* Deudas Tab */}
           <TabsContent value="deudas" className="space-y-[14px]">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'ctacte') && (
+              <AvisoSinDelegacion
+                servicio="ctacte"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Resumen. La forma la pone `CardsResumen`; acá sólo qué
                 significa cada cifra y con qué acento se lee. */}
             {!loadingDebts && debts.length > 0 && (
@@ -3031,6 +3103,12 @@ export function RepresentativeDetailPage({
 
           {/* Vencimientos Tab */}
           <TabsContent value="vencimientos" className="space-y-[14px]">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'ctacte') && (
+              <AvisoSinDelegacion
+                servicio="ctacte"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Resumen, con la misma banda que Deudas. Los acentos los
                 elige el significado: rojo lo vencido, ámbar lo que se viene,
                 acento lo informativo. */}
@@ -3254,6 +3332,15 @@ export function RepresentativeDetailPage({
 
           {/* Notificaciones Tab - mismo formato que la vista del navbar */}
           <TabsContent value="notificaciones" className="mt-2 space-y-[14px]">
+            {sinDelegacion(
+              selectedProfile?.delegacionesAfip,
+              'domicilio_fiscal'
+            ) && (
+              <AvisoSinDelegacion
+                servicio="domicilio_fiscal"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Misma franja de actualización que Deudas y Vencimientos. */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3357,6 +3444,15 @@ export function RepresentativeDetailPage({
 
           {/* Facturas Tab */}
           <TabsContent value="facturas" className="space-y-[14px]">
+            {sinDelegacion(
+              selectedProfile?.delegacionesAfip,
+              'mis_comprobantes'
+            ) && (
+              <AvisoSinDelegacion
+                servicio="mis_comprobantes"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* <div className="flex justify-end">
             <Button
               variant="default"
@@ -4274,6 +4370,12 @@ export function RepresentativeDetailPage({
 
           {/* IVA Tab */}
           <TabsContent value="iva" className="">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'portal_iva') && (
+              <AvisoSinDelegacion
+                servicio="portal_iva"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Misma franja de actualización que el resto de las pestañas. */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">

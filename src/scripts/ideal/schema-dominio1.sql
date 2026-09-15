@@ -228,6 +228,7 @@ create table cliente_credencial (
   credencial_id uuid not null references credencial_afip(id) on delete cascade,
   fuente relacion_fuente not null default 'manual',
   afip_contribuyente_id integer,
+  delegaciones_afip jsonb not null default '{}'::jsonb,
   preferida boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -235,6 +236,9 @@ create table cliente_credencial (
 );
 create index idx_cliente_credencial_cliente on cliente_credencial(cliente_id);
 create index idx_cliente_credencial_credencial on cliente_credencial(credencial_id);
+
+comment on column cliente_credencial.delegaciones_afip is
+  'Por servicio de AFIP, si esta credencial ve a este cliente. Lo escribe el scraper. Forma: {"mis_comprobantes":{"estado":"ok"|"sin_delegacion","at":"<iso>"}, "ctacte":{...}, "portal_iva":{...}, "domicilio_fiscal":{...}}. sin_delegacion = la empresa está cargada en la plataforma pero AFIP no se la muestra a esta credencial para ese servicio (falta delegar en Administrador de Relaciones). Se sobreescribe en cada corrida: al delegar en AFIP se limpia sola.';
 create trigger trg_set_updated_at before update on cliente_credencial for each row execute function set_updated_at();
 
 comment on table cliente_credencial is
