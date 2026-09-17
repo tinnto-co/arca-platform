@@ -32,6 +32,7 @@ import {
 import {
   cuadreExtracto,
   idExternoDeMovimiento,
+  monedaIso,
   type MovimientoExtraido,
 } from '@/lib/extracto-calc';
 import {
@@ -57,15 +58,22 @@ class ErrorDeLectura extends Error {
 
 /* ───────────────────────── extracción con Gemini ───────────────────────── */
 
-interface ExtractoExtraido {
-  banco: string;
+interface CuentaExtraida {
   numeroCuenta: string;
+  cbu: string;
+  tipo: string;
   moneda: string;
-  periodoDesde: string;
-  periodoHasta: string;
   saldoInicial: number;
   saldoFinal: number;
   movimientos: MovimientoExtraido[];
+}
+
+interface ExtractoExtraido {
+  banco: string;
+  periodoDesde: string;
+  periodoHasta: string;
+  /** Un extracto consolidado trae varias; uno común, una sola. */
+  cuentas: CuentaExtraida[];
   legible: boolean;
 }
 
@@ -93,6 +101,45 @@ const movimientoSchema: Schema = {
   required: ['fecha', 'descripcion', 'importe', 'direccion', 'saldoPosterior'],
 } as Schema;
 
+const cuentaSchema: Schema = {
+  type: 'OBJECT',
+  properties: {
+    numeroCuenta: {
+      type: 'STRING',
+      description: 'Número de cuenta tal como figura, ej. "147-013617/6".',
+    },
+    cbu: {
+      type: 'STRING',
+      description: 'CBU o CVU sin espacios (22 dígitos); vacío si no figura.',
+    },
+    tipo: {
+      type: 'STRING',
+      enum: ['caja_ahorro', 'cuenta_corriente', 'otra'],
+      description:
+        '"Cta. Cte." / "Cuenta Corriente" = cuenta_corriente; "Caja de Ahorro" = caja_ahorro.',
+    },
+    moneda: { type: 'STRING', description: 'ARS, USD, etc.' },
+    saldoInicial: {
+      type: 'NUMBER',
+      description: 'El "SALDO ANTERIOR" de ESTA cuenta.',
+    },
+    saldoFinal: {
+      type: 'NUMBER',
+      description: 'El "SALDO AL <fecha>" de ESTA cuenta.',
+    },
+    movimientos: { type: 'ARRAY', items: movimientoSchema },
+  },
+  required: [
+    'numeroCuenta',
+    'cbu',
+    'tipo',
+    'moneda',
+    'saldoInicial',
+    'saldoFinal',
+    'movimientos',
+  ],
+} as Schema;
+
 const extractoSchema: Schema = {
   type: 'OBJECT',
   properties: {
@@ -101,40 +148,32 @@ const extractoSchema: Schema = {
       description:
         'Entidad emisora (BBVA, Galicia, Santander, ICBC, Macro, Coinag, Mercado Pago, etc.).',
     },
-    numeroCuenta: {
-      type: 'STRING',
-      description: 'Número de cuenta o CBU/CVU si figura; vacío si no.',
-    },
-    moneda: { type: 'STRING', description: 'ARS, USD, etc.' },
     periodoDesde: { type: 'STRING', description: 'YYYY-MM-DD' },
     periodoHasta: { type: 'STRING', description: 'YYYY-MM-DD' },
-    saldoInicial: { type: 'NUMBER' },
-    saldoFinal: { type: 'NUMBER' },
-    movimientos: { type: 'ARRAY', items: movimientoSchema },
+    cuentas: { type: 'ARRAY', items: cuentaSchema },
     legible: {
       type: 'BOOLEAN',
       description: 'false si el documento no parece un extracto o es ilegible.',
     },
   },
-  required: [
-    'banco',
-    'numeroCuenta',
-    'moneda',
-    'periodoDesde',
-    'periodoHasta',
-    'saldoInicial',
-    'saldoFinal',
-    'movimientos',
-    'legible',
-  ],
+  required: ['banco', 'periodoDesde', 'periodoHasta', 'cuentas', 'legible'],
 } as Schema;
 
 const PROMPT = `Sos un extractor de EXTRACTOS BANCARIOS argentinos (bancos y billeteras: BBVA, Galicia, Santander, ICBC, Macro, Coinag, Mercado Pago, etc.).
 
 QUÉ EXTRAER:
-1. Banco/entidad, número de cuenta o CBU/CVU, moneda, período del extracto.
-2. SALDO INICIAL y SALDO FINAL del período (los bancos los llaman "saldo anterior", "saldo al inicio", "saldo actual", "saldo al cierre").
-3. TODOS los movimientos de la tabla, uno por uno: fecha, concepto/descripción, importe (siempre positivo) y si es ingreso o egreso PARA EL TITULAR.
+1. Banco/entidad y período del extracto.
+2. UNA ENTRADA POR CADA CUENTA del documento. Un extracto CONSOLIDADO trae
+   varias cuentas (ej. "CC $ 147-013617/6" y "CC $ 147-013618/3"), y cada una
+   tiene SU PROPIA tabla de movimientos más adelante en el PDF, con su propio
+   "SALDO ANTERIOR" y su propio "SALDO AL <fecha>". Recorré el documento
+   entero: las tablas de las cuentas siguientes suelen estar en las últimas
+   hojas, después de la primera. Por cada cuenta: número, CBU/CVU, tipo,
+   moneda, saldo inicial, saldo final y sus movimientos.
+3. De cada cuenta, TODOS los movimientos de SU tabla, uno por uno: fecha,
+   concepto/descripción, importe (siempre positivo) y si es ingreso o egreso
+   PARA EL TITULAR. No mezcles movimientos entre cuentas: cada movimiento va
+   en la cuenta cuya tabla lo contiene.
 
 CÓMO DISTINGUIR INGRESO DE EGRESO (cada banco lo marca distinto):
 - Columnas separadas "Crédito"/"Débito" (o "Depósitos"/"Extracciones"): crédito = ingreso, débito = egreso.
@@ -143,7 +182,7 @@ CÓMO DISTINGUIR INGRESO DE EGRESO (cada banco lo marca distinto):
 
 REGLAS:
 - Números argentinos: punto de miles, coma decimal ("1.234,56" = 1234.56).
-- NO saltees movimientos: el control de cuadre (inicial + ingresos − egresos = final) delata cualquier faltante.
+- NO saltees movimientos NI CUENTAS: el control de cuadre de cada cuenta (inicial + ingresos − egresos = final) delata cualquier faltante.
 - Si la tabla trae columna de saldo, completá saldoPosterior de cada fila; si no, 0.
 - Descripciones multilínea: unilas en una sola línea.
 - Si el documento NO es un extracto bancario o es ilegible, marcá legible=false.`;
@@ -229,11 +268,16 @@ async function extraerConGemini(
     'gemini-2.5-flash',
     false
   );
+  // Tienen que cerrar TODAS las cuentas: si una sola no cuadra, la lectura
+  // rápida se perdió algo y vale la pena releer.
   const cuadra =
     rapida.legible &&
-    rapida.movimientos.length > 0 &&
-    cuadreExtracto(rapida.saldoInicial, rapida.saldoFinal, rapida.movimientos)
-      .cuadra;
+    rapida.cuentas.length > 0 &&
+    rapida.cuentas.every(
+      (c) =>
+        c.movimientos.length > 0 &&
+        cuadreExtracto(c.saldoInicial, c.saldoFinal, c.movimientos).cuadra
+    );
   if (cuadra) return rapida;
 
   console.warn('[extractos] la lectura rápida no cuadró, releyendo con pro');
@@ -286,59 +330,115 @@ export const extraerExtracto = createServerFn({ method: 'POST' })
         'No se pudo leer el documento. Si es una foto, probá con una toma más nítida.'
       );
     }
-    if (!extracto.legible || extracto.movimientos.length === 0) {
+    const conMovimientos = extracto.cuentas.filter(
+      (c) => c.movimientos.length > 0
+    );
+    if (!extracto.legible || conMovimientos.length === 0) {
       throw new Error(
         'El documento no parece un extracto bancario legible. Si lo es y este banco no está soportado, avisá al equipo con el archivo.'
       );
     }
 
-    const cuadre = cuadreExtracto(
-      extracto.saldoInicial,
-      extracto.saldoFinal,
-      extracto.movimientos
-    );
+    // Las cuentas que la empresa ya tiene, para reconocer cuáles del PDF son
+    // nuevas sin que la persona tenga que elegirlas a mano.
+    const existentes = await db
+      .select({
+        id: cuentaBancaria.id,
+        banco: cuentaBancaria.banco,
+        numero: cuentaBancaria.numero,
+        cbu: cuentaBancaria.cbu,
+        alias: cuentaBancaria.alias,
+      })
+      .from(cuentaBancaria)
+      .where(
+        and(
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+          eq(cuentaBancaria.activa, true)
+        )
+      );
 
-    // Categoría propuesta por el clasificador, para mostrar en la revisión.
-    const movimientos = extracto.movimientos.map((m) => ({
-      ...m,
-      importe: Math.abs(m.importe),
-      categoria: clasificarMovimiento(m.descripcion),
-    }));
+    const soloDigitos = (s: string) => s.replace(/\D/g, '');
+
+    const cuentas = conMovimientos.map((c) => {
+      // Se reconoce por CBU (es único) y, si no lo hay, por número: los
+      // separadores varían entre el PDF y lo cargado a mano.
+      const cbu = soloDigitos(c.cbu);
+      const numero = soloDigitos(c.numeroCuenta);
+      const match = existentes.find((e) => {
+        const mismoCbu =
+          cbu !== '' && e.cbu != null && soloDigitos(e.cbu) === cbu;
+        const mismoNumero =
+          numero !== '' && e.numero != null && soloDigitos(e.numero) === numero;
+        return mismoCbu || mismoNumero;
+      });
+
+      return {
+        numeroCuenta: c.numeroCuenta,
+        cbu: c.cbu,
+        tipo: c.tipo,
+        moneda: monedaIso(c.moneda),
+        saldoInicial: c.saldoInicial,
+        saldoFinal: c.saldoFinal,
+        cuadre: cuadreExtracto(c.saldoInicial, c.saldoFinal, c.movimientos),
+        cuentaExistenteId: match?.id ?? null,
+        cuentaExistenteNombre: match
+          ? `${match.banco}${match.alias ? ` · ${match.alias}` : ''}`
+          : null,
+        // Categoría propuesta por el clasificador, para la revisión.
+        movimientos: c.movimientos.map((m) => ({
+          ...m,
+          importe: Math.abs(m.importe),
+          categoria: clasificarMovimiento(m.descripcion),
+        })),
+      };
+    });
 
     return {
       banco: extracto.banco,
-      numeroCuenta: extracto.numeroCuenta,
-      moneda: extracto.moneda || 'ARS',
       periodoDesde: extracto.periodoDesde,
       periodoHasta: extracto.periodoHasta,
-      saldoInicial: extracto.saldoInicial,
-      saldoFinal: extracto.saldoFinal,
-      movimientos,
-      cuadre,
+      cuentas,
     };
   });
 
 /**
  * Persiste el extracto revisado: PDF a R2 + movimientos deduplicados (el
  * idExterno estable hace que reimportar el mismo extracto no duplique).
+ *
+ * Toma TODAS las cuentas del extracto de una vez. Las que ya existen vienen
+ * con su id; las nuevas se crean acá con los datos que el PDF ya trae, así un
+ * consolidado se importa completo sin cargar cuentas a mano.
  */
 export const confirmarExtracto = createServerFn({ method: 'POST' })
   .validator(
     z.object({
       clienteId: z.string().uuid(),
-      cuentaBancariaId: z.string().uuid(),
       fileName: z.string().min(1),
       mimeType: z.string().min(1),
       base64Data: z.string().min(1),
-      movimientos: z
+      banco: z.string().min(1),
+      cuentas: z
         .array(
           z.object({
-            fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-            descripcion: z.string(),
-            importe: z.number().positive(),
-            direccion: z.enum(['ingreso', 'egreso']),
-            saldoPosterior: z.number().nullable().optional(),
-            categoria: z.enum(CATEGORIAS_MOVIMIENTO),
+            /** Cuenta ya existente; si es null, se crea con los datos de acá. */
+            cuentaBancariaId: z.string().uuid().nullable(),
+            numeroCuenta: z.string(),
+            cbu: z.string(),
+            tipo: z.enum(['caja_ahorro', 'cuenta_corriente', 'otra']),
+            moneda: z.string(),
+            movimientos: z
+              .array(
+                z.object({
+                  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                  descripcion: z.string(),
+                  importe: z.number().positive(),
+                  direccion: z.enum(['ingreso', 'egreso']),
+                  saldoPosterior: z.number().nullable().optional(),
+                  categoria: z.enum(CATEGORIAS_MOVIMIENTO),
+                })
+              )
+              .min(1),
           })
         )
         .min(1),
@@ -348,19 +448,24 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
 
-    // La cuenta tiene que ser de la org y de la misma empresa.
-    const [cta] = await db
-      .select({ id: cuentaBancaria.id, clienteId: cuentaBancaria.clienteId })
-      .from(cuentaBancaria)
-      .where(
-        and(
-          eq(cuentaBancaria.id, ctx.data.cuentaBancariaId),
-          eq(cuentaBancaria.orgId, orgId)
-        )
-      )
-      .limit(1);
-    if (cta?.clienteId !== ctx.data.clienteId)
-      throw new Error('La cuenta bancaria no corresponde a esta empresa');
+    // Las cuentas ya existentes tienen que ser de la org y de esta empresa.
+    const idsElegidos = ctx.data.cuentas
+      .map((c) => c.cuentaBancariaId)
+      .filter((id): id is string => id !== null);
+    if (idsElegidos.length > 0) {
+      const propias = await db
+        .select({ id: cuentaBancaria.id })
+        .from(cuentaBancaria)
+        .where(
+          and(
+            eq(cuentaBancaria.orgId, orgId),
+            eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+            inArray(cuentaBancaria.id, idsElegidos)
+          )
+        );
+      if (propias.length !== new Set(idsElegidos).size)
+        throw new Error('Alguna cuenta bancaria no corresponde a esta empresa');
+    }
 
     // El PDF de respaldo, como en despachos.
     const buffer = Buffer.from(ctx.data.base64Data, 'base64');
@@ -400,55 +505,95 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
       fuente: 'manual',
     });
 
-    // idExterno estable por movimiento (ocurrencia distingue repetidos).
-    const vistos = new Map<string, number>();
-    const filas = ctx.data.movimientos.map((m) => {
-      const base = idExternoDeMovimiento(m, 0).slice(0, -2);
-      const n = vistos.get(base) ?? 0;
-      vistos.set(base, n + 1);
-      return { ...m, idExterno: idExternoDeMovimiento(m, n) };
-    });
+    let importados = 0;
+    let salteados = 0;
+    let cuentasCreadas = 0;
 
-    // Dedup contra lo ya importado en esa cuenta.
-    const existentes = await db
-      .select({ idExterno: movimientoBancario.idExterno })
-      .from(movimientoBancario)
-      .where(
-        and(
-          eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId),
-          inArray(
-            movimientoBancario.idExterno,
-            filas.map((f) => f.idExterno)
+    for (const cta of ctx.data.cuentas) {
+      // La cuenta que falta se crea con lo que el PDF ya dijo.
+      let cuentaId = cta.cuentaBancariaId;
+      if (!cuentaId) {
+        const cbu = cta.cbu.replace(/\D/g, '');
+        try {
+          const [creada] = await db
+            .insert(cuentaBancaria)
+            .values({
+              orgId,
+              clienteId: ctx.data.clienteId,
+              banco: ctx.data.banco,
+              tipo: cta.tipo,
+              numero: cta.numeroCuenta || null,
+              cbu: cbu.length === 22 ? cbu : null,
+              moneda: monedaIso(cta.moneda),
+            })
+            .returning({ id: cuentaBancaria.id });
+          cuentaId = creada.id;
+          cuentasCreadas++;
+        } catch (error) {
+          // El CBU es único en todo el sistema: si ya está, es de otra
+          // empresa y hay que decirlo con nombre y apellido.
+          console.error('[extractos] no se pudo crear la cuenta', { error });
+          throw new Error(
+            `No se pudo crear la cuenta ${cta.numeroCuenta || ctx.data.banco}. Puede que su CBU ya esté registrado en otra empresa.`
+          );
+        }
+      }
+
+      // idExterno estable por movimiento (ocurrencia distingue repetidos).
+      const vistos = new Map<string, number>();
+      const filas = cta.movimientos.map((m) => {
+        const base = idExternoDeMovimiento(m, 0).slice(0, -2);
+        const n = vistos.get(base) ?? 0;
+        vistos.set(base, n + 1);
+        return { ...m, idExterno: idExternoDeMovimiento(m, n) };
+      });
+
+      // Dedup contra lo ya importado en esa cuenta.
+      const yaImportados = await db
+        .select({ idExterno: movimientoBancario.idExterno })
+        .from(movimientoBancario)
+        .where(
+          and(
+            eq(movimientoBancario.cuentaBancariaId, cuentaId),
+            inArray(
+              movimientoBancario.idExterno,
+              filas.map((f) => f.idExterno)
+            )
           )
-        )
-      );
-    const ya = new Set(existentes.map((e) => e.idExterno));
-    const nuevos = filas.filter((f) => !ya.has(f.idExterno));
+        );
+      const ya = new Set(yaImportados.map((e) => e.idExterno));
+      const nuevos = filas.filter((f) => !ya.has(f.idExterno));
 
-    if (nuevos.length > 0) {
-      await db.insert(movimientoBancario).values(
-        nuevos.map((m) => ({
-          cuentaBancariaId: ctx.data.cuentaBancariaId,
-          fecha: m.fecha,
-          importe: m.importe.toFixed(2),
-          direccion: m.direccion,
-          descripcion: m.descripcion || null,
-          saldoPosterior:
-            m.saldoPosterior != null && m.saldoPosterior !== 0
-              ? m.saldoPosterior.toFixed(2)
-              : null,
-          idExterno: m.idExterno,
-          categoria: m.categoria,
-          categoriaFuente: 'sistema',
-          fuente: 'import' as const,
-          datosCrudos: { documentoId },
-        }))
-      );
+      if (nuevos.length > 0) {
+        await db.insert(movimientoBancario).values(
+          nuevos.map((m) => ({
+            cuentaBancariaId: cuentaId,
+            fecha: m.fecha,
+            importe: m.importe.toFixed(2),
+            direccion: m.direccion,
+            descripcion: m.descripcion || null,
+            saldoPosterior:
+              m.saldoPosterior != null && m.saldoPosterior !== 0
+                ? m.saldoPosterior.toFixed(2)
+                : null,
+            idExterno: m.idExterno,
+            categoria: m.categoria,
+            categoriaFuente: 'sistema',
+            fuente: 'import' as const,
+            datosCrudos: { documentoId },
+          }))
+        );
+      }
+
+      importados += nuevos.length;
+      salteados += filas.length - nuevos.length;
     }
 
     return {
-      importados: nuevos.length,
-      salteados: filas.length - nuevos.length,
+      importados,
+      salteados,
+      cuentas: ctx.data.cuentas.length,
+      cuentasCreadas,
       documentoId,
     };
   });

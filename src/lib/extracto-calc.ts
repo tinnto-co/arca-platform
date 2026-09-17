@@ -55,6 +55,18 @@ export function cuadreExtracto(
   };
 }
 
+/**
+ * Los extractos escriben la moneda como la muestran ("CC $", "U$S"), no con
+ * el código ISO de tres letras que espera la columna.
+ */
+export function monedaIso(valor: string): string {
+  const limpio = valor.trim().toUpperCase();
+  if (/^[A-Z]{3}$/.test(limpio)) return limpio;
+  if (limpio.includes('U$S') || limpio.includes('US$')) return 'USD';
+  if (limpio.includes('€')) return 'EUR';
+  return 'ARS';
+}
+
 export type SemaforoIncongruencia = 'ok' | 'atencion' | 'alerta';
 
 /**

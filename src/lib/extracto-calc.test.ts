@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   cuadreExtracto,
   idExternoDeMovimiento,
+  monedaIso,
   semaforoBancoVsFacturacion,
   type MovimientoExtraido,
 } from './extracto-calc';
@@ -38,6 +39,17 @@ describe('cuadreExtracto', () => {
   it('tolera redondeos de centavos', () => {
     const c = cuadreExtracto(0, 99.99, [mov('ingreso', 100)]);
     expect(c.cuadra).toBe(true);
+  });
+});
+
+describe('monedaIso', () => {
+  it('traduce cómo el banco muestra la moneda al código de la columna', () => {
+    // BBVA titula las cuentas "CC $": el signo no es un código ISO.
+    expect(monedaIso('$')).toBe('ARS');
+    expect(monedaIso('U$S')).toBe('USD');
+    expect(monedaIso('usd')).toBe('USD');
+    expect(monedaIso('ARS')).toBe('ARS');
+    expect(monedaIso('')).toBe('ARS');
   });
 });
 
