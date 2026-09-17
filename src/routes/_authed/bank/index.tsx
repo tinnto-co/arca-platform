@@ -11,6 +11,9 @@ import {
   TrendingDown,
   ArrowLeftRight,
   Plus,
+  Upload,
+  EyeOff,
+  Eye,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -31,6 +34,18 @@ import {
   getResumenConciliacion,
   createCuentaBancaria,
 } from '@/actions/bank';
+import {
+  agregarMovimientoManual,
+  excluirMovimiento,
+  recategorizarMovimiento,
+} from '@/actions/extractos';
+import { ImportarExtractoDialog } from '@/components/banco/ImportarExtractoDialog';
+import { BancoVsFacturacionCard } from '@/components/banco/BancoVsFacturacionCard';
+import {
+  CATEGORIAS_MOVIMIENTO,
+  CATEGORIA_MOVIMIENTO_LABEL,
+  type CategoriaMovimiento,
+} from '@/lib/clasificar-movimiento';
 import { toast } from 'sonner';
 
 export const Route = createFileRoute('/_authed/bank/')({
@@ -137,11 +152,49 @@ function SummaryCards({ summary }: { summary: ResumenConciliacion }) {
 }
 
 /* ─── Transaction row ─── */
-function TransactionItem({ tx }: { tx: MovimientoRow }) {
+function TransactionItem({
+  tx,
+  accountId,
+}: {
+  tx: MovimientoRow;
+  accountId: string;
+}) {
   const isIngreso = tx.direccion === 'ingreso';
   const conciliacion = tx.conciliaciones[0];
+  const queryClient = useQueryClient();
+
+  // Recategorizar a mano pisa lo del clasificador (queda marcado 'manual').
+  const recategorizar = useMutation({
+    mutationFn: (categoria: CategoriaMovimiento) =>
+      recategorizarMovimiento({ data: { movimientoId: tx.id, categoria } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['bankTransactions', accountId],
+      });
+    },
+    onError: () => toast.error('No se pudo cambiar la categoría'),
+  });
+
+  // Excluir saca el movimiento de la comparación Banco vs Facturación
+  // (transferencias entre cuentas propias, ajustes) sin borrarlo.
+  const excluir = useMutation({
+    mutationFn: (excluido: boolean) =>
+      excluirMovimiento({ data: { movimientoId: tx.id, excluido } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['bankTransactions', accountId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['bancoVsFacturacion'] });
+    },
+    onError: () => toast.error('No se pudo actualizar el movimiento'),
+  });
+
   return (
-    <div className="px-5 py-3.5 flex items-center gap-4 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms]">
+    <div
+      className={`px-5 py-3.5 flex items-center gap-4 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] ${
+        tx.excluido ? 'opacity-45' : ''
+      }`}
+    >
       {/* Match indicator */}
       <div className="shrink-0">
         {tx.conciliado ? (
@@ -173,6 +226,26 @@ function TransactionItem({ tx }: { tx: MovimientoRow }) {
             {tx.contraparteTexto}
           </div>
         )}
+      </div>
+
+      {/* Categoría (editable: el select pisa al clasificador) */}
+      <div className="w-[150px] shrink-0">
+        <Select
+          value={tx.categoria ?? 'varios'}
+          onValueChange={(v) => recategorizar.mutate(v as CategoriaMovimiento)}
+          disabled={recategorizar.isPending}
+        >
+          <SelectTrigger className="h-6 w-full border-0 bg-transparent px-1.5 text-[11.5px] text-[var(--arca-ink-3)] shadow-none">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CATEGORIAS_MOVIMIENTO.map((c) => (
+              <SelectItem key={c} value={c} className="text-[12px]">
+                {CATEGORIA_MOVIMIENTO_LABEL[c]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Match type badge */}
@@ -208,6 +281,130 @@ function TransactionItem({ tx }: { tx: MovimientoRow }) {
       >
         {fmtAmount(tx.importe, tx.direccion)}
       </div>
+
+      {/* Excluir de Banco vs Facturación */}
+      <button
+        type="button"
+        className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
+        title={
+          tx.excluido
+            ? 'Excluido de Banco vs Facturación — volver a incluir'
+            : 'Excluir de Banco vs Facturación (ej. transferencia entre cuentas propias)'
+        }
+        disabled={excluir.isPending}
+        onClick={() => excluir.mutate(!tx.excluido)}
+      >
+        {tx.excluido ? (
+          <EyeOff className="w-3.5 h-3.5" strokeWidth={1.8} />
+        ) : (
+          <Eye className="w-3.5 h-3.5" strokeWidth={1.8} />
+        )}
+      </button>
+    </div>
+  );
+}
+
+/* ─── Movimiento manual (ajuste) ─── */
+function ManualMovementForm({
+  cuentaBancariaId,
+  clienteId,
+  onDone,
+}: {
+  cuentaBancariaId: string;
+  clienteId: string;
+  onDone: () => void;
+}) {
+  const [fecha, setFecha] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [importe, setImporte] = useState('');
+  const [direccion, setDireccion] = useState<'ingreso' | 'egreso'>('ingreso');
+  const queryClient = useQueryClient();
+
+  const crear = useMutation({
+    mutationFn: () =>
+      agregarMovimientoManual({
+        data: {
+          cuentaBancariaId,
+          fecha,
+          descripcion,
+          importe: Number(importe.replace(',', '.')),
+          direccion,
+        },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['bankTransactions', cuentaBancariaId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ['bankSummary', clienteId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['bancoVsFacturacion'] });
+      toast.success('Movimiento agregado');
+      onDone();
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : 'No se pudo agregar el movimiento'
+      ),
+  });
+
+  const importeNum = Number(importe.replace(',', '.'));
+
+  return (
+    <div className="px-5 py-3 flex flex-wrap items-end gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
+      <div className="flex flex-col gap-1">
+        <label className="text-[11px] text-[var(--arca-ink-3)]">Fecha *</label>
+        <input
+          type="date"
+          value={fecha}
+          onChange={(e) => setFecha(e.target.value)}
+          className="h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none"
+        />
+      </div>
+      <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+        <label className="text-[11px] text-[var(--arca-ink-3)]">
+          Descripción *
+        </label>
+        <input
+          value={descripcion}
+          onChange={(e) => setDescripcion(e.target.value)}
+          placeholder="Ej: Ajuste por diferencia de cierre"
+          className="h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-[11px] text-[var(--arca-ink-3)]">
+          Importe *
+        </label>
+        <input
+          value={importe}
+          onChange={(e) => setImporte(e.target.value)}
+          inputMode="decimal"
+          placeholder="0,00"
+          className="h-8 px-2.5 text-[12.5px] border border-[var(--arca-border)] rounded-[8px] bg-[var(--arca-surface)] text-[var(--arca-ink)] focus:outline-none w-28 tabular-nums"
+        />
+      </div>
+      <Select
+        value={direccion}
+        onValueChange={(v) => setDireccion(v as 'ingreso' | 'egreso')}
+      >
+        <SelectTrigger className="h-8 w-[110px] text-[12.5px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="ingreso">Ingreso</SelectItem>
+          <SelectItem value="egreso">Egreso</SelectItem>
+        </SelectContent>
+      </Select>
+      <button
+        onClick={() => crear.mutate()}
+        disabled={
+          !fecha || !descripcion.trim() || !(importeNum > 0) || crear.isPending
+        }
+        className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-50 transition-opacity"
+      >
+        {crear.isPending ? 'Guardando...' : 'Agregar'}
+      </button>
     </div>
   );
 }
@@ -317,6 +514,7 @@ function BankPage() {
   const clienteId = clienteGlobal ?? '';
   const [accountId, setAccountId] = useState('');
   const [showCreateAccount, setShowCreateAccount] = useState(false);
+  const [showManualMovement, setShowManualMovement] = useState(false);
   const queryClient = useQueryClient();
 
   // Si la empresa cambia (desde acá o desde otra vista), la cuenta elegida
@@ -327,6 +525,7 @@ function BankPage() {
     setPrevCliente(clienteId);
     setAccountId('');
     setShowCreateAccount(false);
+    setShowManualMovement(false);
   }
 
   /* Bank accounts */
@@ -382,7 +581,13 @@ function BankPage() {
       {/* Filter bar */}
       <div className="flex flex-wrap gap-2 mb-5 items-center">
         {clienteId && (
-          <Select value={accountId} onValueChange={(v) => setAccountId(v)}>
+          <Select
+            value={accountId}
+            onValueChange={(v) => {
+              setAccountId(v);
+              setShowManualMovement(false);
+            }}
+          >
             <SelectTrigger className="w-[260px] text-[13px]">
               <SelectValue placeholder="Seleccionar cuenta..." />
             </SelectTrigger>
@@ -408,6 +613,15 @@ function BankPage() {
           </button>
         )}
 
+        {clienteId && (
+          <ImportarExtractoDialog clienteId={clienteId}>
+            <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity">
+              <Upload className="w-3.5 h-3.5" strokeWidth={2} />
+              Importar extracto
+            </button>
+          </ImportarExtractoDialog>
+        )}
+
         {accountId && (
           <button
             onClick={() => autoMatchMutation.mutate()}
@@ -424,6 +638,13 @@ function BankPage() {
 
       {/* Summary stats */}
       {clienteId && summary && <SummaryCards summary={summary} />}
+
+      {/* Incongruencias: lo que entró al banco vs lo facturado */}
+      {clienteId && (
+        <div className="mb-5">
+          <BancoVsFacturacionCard clienteId={clienteId} />
+        </div>
+      )}
 
       {/* Create account form */}
       {showCreateAccount && clienteId && (
@@ -447,12 +668,27 @@ function BankPage() {
               {transactions.length} total · {matchedCount} conciliados ·{' '}
               {unmatchedCount} pendientes
             </span>
+            <button
+              onClick={() => setShowManualMovement((v) => !v)}
+              className="ml-auto flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
+            >
+              <Plus className="w-3 h-3" strokeWidth={2} />
+              Movimiento manual
+            </button>
             {txsFetching && (
-              <span className="text-[11px] text-[var(--arca-ink-3)] ml-auto">
+              <span className="text-[11px] text-[var(--arca-ink-3)]">
                 Cargando...
               </span>
             )}
           </div>
+
+          {showManualMovement && (
+            <ManualMovementForm
+              cuentaBancariaId={accountId}
+              clienteId={clienteId}
+              onDone={() => setShowManualMovement(false)}
+            />
+          )}
 
           {/* Column headers */}
           <div className="px-5 py-2 flex items-center gap-4 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
@@ -462,6 +698,9 @@ function BankPage() {
             </div>
             <div className="flex-1 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
               Descripción / Contraparte
+            </div>
+            <div className="w-[150px] shrink-0 text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
+              Categoría
             </div>
             <div className="w-[60px] text-[11px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-wide">
               Match
@@ -485,7 +724,7 @@ function BankPage() {
           ) : (
             <div className="divide-y divide-[var(--arca-border)]">
               {transactions.map((tx) => (
-                <TransactionItem key={tx.id} tx={tx} />
+                <TransactionItem key={tx.id} tx={tx} accountId={accountId} />
               ))}
             </div>
           )}

@@ -16,8 +16,10 @@ import {
   movimientoDireccion,
   conciliacionComprobante,
   comprobante,
+  comprobanteTipo,
   cliente,
 } from '@/drizzle/schema';
+import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
 import {
   getSessionWithOrg,
   assertCanWrite,
@@ -127,7 +129,8 @@ export const importMovimientos = createServerFn({ method: 'POST' })
     assertCanWrite(await getMemberRole());
     await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
 
-    if (ctx.data.movimientos.length === 0) return { importados: 0, salteados: 0 };
+    if (ctx.data.movimientos.length === 0)
+      return { importados: 0, salteados: 0 };
 
     // Dedupe por el id que da el banco.
     const idsExternos = ctx.data.movimientos
@@ -198,7 +201,8 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     ];
     if (ctx.data.from)
       conditions.push(gte(movimientoBancario.fecha, ctx.data.from));
-    if (ctx.data.to) conditions.push(lte(movimientoBancario.fecha, ctx.data.to));
+    if (ctx.data.to)
+      conditions.push(lte(movimientoBancario.fecha, ctx.data.to));
 
     const movimientos = await db
       .select({
@@ -211,6 +215,9 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         contraparteId: movimientoBancario.contraparteId,
         contraparteTexto: movimientoBancario.contraparteTexto,
         idExterno: movimientoBancario.idExterno,
+        categoria: movimientoBancario.categoria,
+        categoriaFuente: movimientoBancario.categoriaFuente,
+        excluido: movimientoBancario.excluido,
         fuente: movimientoBancario.fuente,
         createdAt: movimientoBancario.createdAt,
       })
@@ -234,9 +241,7 @@ export const listMovimientos = createServerFn({ method: 'GET' })
               confianza: conciliacionComprobante.confianza,
             })
             .from(conciliacionComprobante)
-            .where(
-              inArray(conciliacionComprobante.movimientoBancarioId, ids)
-            )
+            .where(inArray(conciliacionComprobante.movimientoBancarioId, ids))
         : [];
 
     const porMovimiento = new Map<string, typeof conciliaciones>();
@@ -490,5 +495,92 @@ export const getResumenConciliacion = createServerFn({ method: 'GET' })
       totalIngresos: totales?.totalIngresos ?? '0.00',
       totalEgresos: totales?.totalEgresos ?? '0.00',
       cuentas: cuentas.length,
+    };
+  });
+
+/**
+ * Banco vs Facturación (TIN-1634): lo que entró al banco contra lo que la
+ * empresa facturó en el mismo mes. La brecha grande es la incongruencia que
+ * el estudio necesita ver (el caso del ticket: $10M facturados, $800M en la
+ * cuenta). Los movimientos marcados `excluido` (p. ej. transferencias entre
+ * cuentas propias) quedan afuera de la suma.
+ */
+export const getBancoVsFacturacion = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clienteId: z.string().uuid(),
+      /** Mes a comparar, 'YYYY-MM'. */
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await assertClienteDeOrg(ctx.data.clienteId, orgId);
+
+    const desde = `${ctx.data.periodo}-01`;
+    const hasta = sql`(${desde}::date + interval '1 month')`;
+
+    const cuentas = await db
+      .select({ id: cuentaBancaria.id })
+      .from(cuentaBancaria)
+      .where(
+        and(
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+          eq(cuentaBancaria.activa, true)
+        )
+      );
+    const cuentaIds = cuentas.map((c) => c.id);
+
+    const [banco] =
+      cuentaIds.length > 0
+        ? await db
+            .select({
+              ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
+              egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
+              movimientos: sql<number>`(count(*) filter (where not ${movimientoBancario.excluido}))::int`,
+              excluidos: sql<number>`(count(*) filter (where ${movimientoBancario.excluido}))::int`,
+            })
+            .from(movimientoBancario)
+            .where(
+              and(
+                inArray(movimientoBancario.cuentaBancariaId, cuentaIds),
+                gte(movimientoBancario.fecha, desde),
+                sql`${movimientoBancario.fecha} < ${hasta}`
+              )
+            )
+        : [];
+
+    // Ventas del mismo mes (mismo criterio que la solapa de IVA: emitidos,
+    // con las notas de crédito restando).
+    const [ventas] = await db
+      .select({
+        total: sql<string>`coalesce(sum(case when ${comprobanteTipo.esNc} then -${comprobante.total} else ${comprobante.total} end), 0)::text`,
+        comprobantes: sql<number>`count(${comprobante.id})::int`,
+      })
+      .from(comprobante)
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .where(
+        and(
+          eq(comprobante.clienteId, ctx.data.clienteId),
+          eq(comprobante.direccion, 'emitido'),
+          gte(comprobante.fechaEmision, desde),
+          sql`${comprobante.fechaEmision} < ${hasta}`
+        )
+      );
+
+    const ingresosBancarios = Number(banco?.ingresos ?? 0);
+    const ventasFacturadas = Number(ventas?.total ?? 0);
+
+    return {
+      periodo: ctx.data.periodo,
+      cuentas: cuentaIds.length,
+      ingresosBancarios,
+      egresosBancarios: Number(banco?.egresos ?? 0),
+      movimientos: Number(banco?.movimientos ?? 0),
+      movimientosExcluidos: Number(banco?.excluidos ?? 0),
+      ventasFacturadas,
+      comprobantes: Number(ventas?.comprobantes ?? 0),
+      ...semaforoBancoVsFacturacion(ingresosBancarios, ventasFacturadas),
     };
   });

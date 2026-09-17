@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
+import { BancoVsFacturacionCard } from '@/components/banco/BancoVsFacturacionCard';
 import { PanelLectura } from '@/components/notificaciones/PanelLectura';
 import { CrearTareaDesdeNotificacion } from '@/components/notificaciones/CrearTareaDesdeNotificacion';
 import {
@@ -2514,6 +2515,14 @@ export function RepresentativeDetailPage({
               La configuración de cierre de ejercicio se eliminó: la tabla
               `representative_balance_config` no existe en el modelo nuevo.
             */}
+
+            {/* Banco vs Facturación (TIN-1634): el semáforo del mes pasado.
+                Solo aparece si la empresa tiene cuentas bancarias cargadas. */}
+            {selectedClientId && (
+              <div className="max-w-[560px]">
+                <BancoVsFacturacionCard clienteId={selectedClientId} compacto />
+              </div>
+            )}
 
             {/* Datos fiscales para el módulo de Balances (norma RT 54/RT 6,
                 actividad e inscripción). Por empresa seleccionada. */}

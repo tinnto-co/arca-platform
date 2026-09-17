@@ -57,6 +57,9 @@ create table movimiento_bancario (
   contraparte_texto text,
   id_externo text,
   datos_crudos jsonb,
+  categoria text,
+  categoria_fuente text check (categoria_fuente in ('sistema', 'manual')),
+  excluido boolean not null default false,
   fuente dato_fuente not null default 'import',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -84,6 +87,12 @@ comment on column movimiento_bancario.id_externo is
   'Identificador del movimiento en el banco. Es la clave de deduplicación: reimportar el mismo extracto no duplica movimientos.';
 comment on column movimiento_bancario.datos_crudos is
   'Fila original del extracto (CSV/API) sin procesar. Se conserva para poder reinterpretar sin volver a pedirle el archivo al cliente.';
+comment on column movimiento_bancario.categoria is
+  'Agrupación del movimiento (transferencias, impuestos, comisiones, ..., varios). La asigna el clasificador por palabras clave al importar; una persona puede pisarla.';
+comment on column movimiento_bancario.categoria_fuente is
+  'sistema = la puso el clasificador; manual = la corrigió una persona (y el clasificador no la vuelve a tocar).';
+comment on column movimiento_bancario.excluido is
+  'Excluido de la comparación Banco vs Facturación (ej. transferencia entre cuentas propias). Ajuste manual del estudio; el movimiento sigue existiendo.';
 
 -- ============================================================================
 -- CONCILIACIÓN
