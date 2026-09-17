@@ -5,30 +5,26 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
 import { organizationModule, orgModule } from '@/drizzle/schema';
-import { eq, and } from 'drizzle-orm';
-import { getSessionWithOrg } from './helpers';
+import { eq } from 'drizzle-orm';
+import { getMemberRole, getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 
+/**
+ * Sesión + verificación de que quien llama es owner del estudio.
+ *
+ * Se apoya en `getSessionWithOrg()` en lugar de leer la sesión por su cuenta:
+ * ese helper es el que activa el contexto de RLS (`app.org_id`). Sin él, las
+ * escrituras sobre tablas con política —`organization_module`, por ejemplo—
+ * salían por el pool sin organización y Postgres las rechazaba.
+ */
 async function requireOwner() {
-  const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error('Unauthorized');
+  const { session, orgId, userId } = await getSessionWithOrg();
 
-  const orgId = (session.session as any).activeOrganizationId as string | null;
-  if (!orgId) throw new Error('No active organization');
-
-  const [m] = await db
-    .select({ role: member.role })
-    .from(member)
-    .where(
-      and(eq(member.userId, session.user.id), eq(member.organizationId, orgId))
-    )
-    .limit(1);
-
-  if (m?.role !== 'owner') {
+  if ((await getMemberRole()) !== 'owner') {
     throw new Error('Solo el administrador puede realizar esta acción');
   }
 
-  return { session, orgId, userId: session.user.id };
+  return { session, orgId, userId };
 }
 
 export const getOrgMembers = createServerFn({
