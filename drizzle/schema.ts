@@ -2925,3 +2925,17 @@ export const superadminAcceso = pgTable("superadmin_acceso", {
 	/** Para qué se entró. Es lo que convierte el registro en algo mostrable. */
 	motivo: text(),
 });
+
+/**
+ * Tutoriales que cada usuario ya terminó u omitió. Sin fila, el tutorial se
+ * abre solo la próxima vez que entra al módulo.
+ */
+export const usuarioTutorial = pgTable("usuario_tutorial", {
+	userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+	tutorial: text().notNull(),
+	estado: text().$type<'completado' | 'omitido'>().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.userId, table.tutorial], name: "usuario_tutorial_pkey" }),
+	check("usuario_tutorial_estado_check", sql`${table.estado} IN ('completado', 'omitido')`),
+]);
