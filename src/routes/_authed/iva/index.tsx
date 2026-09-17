@@ -1,5 +1,6 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useState, useMemo } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Percent,
@@ -20,6 +21,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Ayuda } from '@/components/shared/ayuda';
 import {
   SelectorPeriodo,
@@ -357,33 +363,58 @@ function EstadoBadge({ row }: { row: RiRow }) {
   const cls = (extra: string) =>
     `inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${extra}`;
 
-  if (!row.declaracionId) {
+  // Una declaración sin importes no es una declaración contra la cual comparar.
+  // El scrapper llegó a guardar filas así (el panel de AFIP se pintaba antes de
+  // traducirse y no matcheaba ninguna etiqueta), y con el `?? 0` de antes esas
+  // filas salían "Difiere de ARCA" contra $0.
+  const sinImportes = row.debitoFiscal == null && row.creditoFiscal == null;
+
+  if (!row.declaracionId || sinImportes) {
     return row.comprobantes === 0 ? (
-      <span
-        className={cls('bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]')}
-        title="No hay comprobantes cargados para este período ni declaración de ARCA."
-      >
-        Sin datos
-      </span>
+      <ConDetalle detalle="No hay comprobantes cargados para este período ni declaración de ARCA.">
+        <span
+          tabIndex={0}
+          className={cls('bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]')}
+        >
+          Sin datos
+        </span>
+      </ConDetalle>
     ) : (
-      <span
-        className={cls(
-          'bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
-        )}
-        title={`Calculado sobre ${row.comprobantes} comprobante${
+      <ConDetalle
+        detalle={`Calculado sobre ${row.comprobantes} comprobante${
           row.comprobantes === 1 ? '' : 's'
         }. Todavía no se trajo la declaración de ARCA.`}
       >
-        Calculado
-      </span>
+        <span
+          tabIndex={0}
+          className={cls(
+            'bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]'
+          )}
+        >
+          Calculado
+        </span>
+      </ConDetalle>
     );
   }
 
-  const difDebito = row.calcDebitoFiscal - Number(row.debitoFiscal ?? 0);
-  const difCredito = row.calcCreditoFiscal - Number(row.creditoFiscal ?? 0);
-  const difiere =
-    Math.abs(difDebito) > TOLERANCIA_ARS ||
-    Math.abs(difCredito) > TOLERANCIA_ARS;
+  // Cada importe se compara sólo si ARCA lo trae: si falta uno de los dos, no
+  // hay contra qué decir que difiere.
+  const lineas = [
+    {
+      nombre: 'Débito',
+      calculado: row.calcDebitoFiscal,
+      arca: row.debitoFiscal,
+    },
+    {
+      nombre: 'Crédito',
+      calculado: row.calcCreditoFiscal,
+      arca: row.creditoFiscal,
+    },
+  ]
+    .filter((l) => l.arca != null)
+    .map((l) => ({ ...l, dif: l.calculado - Number(l.arca) }));
+
+  const difiere = lineas.some((l) => Math.abs(l.dif) > TOLERANCIA_ARS);
 
   if (!difiere) {
     return (
@@ -397,17 +428,56 @@ function EstadoBadge({ row }: { row: RiRow }) {
     );
   }
   return (
-    <span
-      className={cls(
-        'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]'
-      )}
-      title={[
-        `Débito — calculado ${formatARS(row.calcDebitoFiscal)} · ARCA ${formatARS(row.debitoFiscal)}`,
-        `Crédito — calculado ${formatARS(row.calcCreditoFiscal)} · ARCA ${formatARS(row.creditoFiscal)}`,
-      ].join('\n')}
+    <ConDetalle
+      detalle={
+        <div className="space-y-0.5 text-left tabular-nums">
+          {lineas.map((l) => (
+            <div key={l.nombre}>
+              <span className="font-semibold">{l.nombre}</span>: calculado{' '}
+              {formatARS(l.calculado)} · ARCA {formatARS(l.arca)}
+              {Math.abs(l.dif) > TOLERANCIA_ARS && (
+                <> · difiere {formatARS(l.dif)}</>
+              )}
+            </div>
+          ))}
+        </div>
+      }
     >
-      Difiere de ARCA
-    </span>
+      <span
+        tabIndex={0}
+        className={cls(
+          'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]'
+        )}
+      >
+        Difiere de ARCA
+      </span>
+    </ConDetalle>
+  );
+}
+
+/**
+ * Explicación de un badge al pasar el mouse o enfocarlo con el teclado.
+ *
+ * Reemplaza al `title=` nativo, que en la práctica no aparece —o tarda tanto que
+ * nadie lo ve—, y en "Difiere de ARCA" era el único lugar donde se leía cuánto
+ * difiere y contra qué.
+ */
+function ConDetalle({
+  detalle,
+  children,
+}: {
+  detalle: ReactNode;
+  /** El badge. Lleva `tabIndex={0}`: un span no es enfocable por sí solo y sin
+   *  eso el detalle no se puede leer con teclado. */
+  children: ReactElement;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="left" className="max-w-[360px]">
+        {detalle}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -760,7 +830,9 @@ function IvaResumenRI({ search }: { search: string }) {
                 <td className="px-3 py-2 font-semibold text-[var(--arca-ink)]">
                   Total ({rows.length})
                 </td>
-                <td className="px-3 py-2" />
+                {/* Una sola celda vacía, la de CUIT: el débito es la tercera
+                    columna. Con dos, cada total caía bajo el encabezado de la
+                    columna siguiente. */}
                 <td className="px-3 py-2" />
                 <td
                   className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"

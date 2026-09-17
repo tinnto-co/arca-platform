@@ -249,15 +249,20 @@ function BloqueCuenta({
       </div>
 
       {/* Movimientos: categoría editable, fila descartable */}
-      <div className="max-h-[300px] overflow-y-auto border-t border-[var(--arca-border)]">
-        <table className="w-full text-[12px]">
+      {/* El importe es el dato que no puede quedar fuera de pantalla: la
+          tabla es de ancho fijo y la descripción es la que cede. */}
+      <div className="max-h-[300px] overflow-auto border-t border-[var(--arca-border)]">
+        <table className="w-full table-fixed text-[12px]">
           <thead className="sticky top-0 z-10">
             <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-left text-[var(--arca-ink-3)]">
-              <th className="px-3 py-2 font-medium">Fecha</th>
+              <th className="w-[86px] px-3 py-2 font-medium">Fecha</th>
+              {/* Sin ancho: es la única que cede cuando falta lugar. */}
               <th className="px-3 py-2 font-medium">Descripción</th>
-              <th className="px-3 py-2 font-medium">Categoría</th>
-              <th className="px-3 py-2 text-right font-medium">Importe</th>
-              <th className="px-2 py-2" />
+              <th className="w-[140px] px-3 py-2 font-medium">Categoría</th>
+              <th className="w-[124px] px-3 py-2 text-right font-medium">
+                Importe
+              </th>
+              <th className="w-[34px] px-2 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -271,8 +276,11 @@ function BloqueCuenta({
                 <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[11.5px]">
                   {f.fecha}
                 </td>
-                <td className="max-w-[300px] truncate px-3 py-1.5">
-                  {f.descripcion || '—'}
+                <td className="px-3 py-1.5">
+                  {/* El truncate va en el div: en una celda de tabla no corta. */}
+                  <div className="truncate" title={f.descripcion}>
+                    {f.descripcion || '—'}
+                  </div>
                 </td>
                 <td className="px-3 py-1.5">
                   <Select
@@ -284,7 +292,7 @@ function BloqueCuenta({
                     }
                     disabled={f.quitar}
                   >
-                    <SelectTrigger className="h-6 w-[170px] border-0 bg-transparent px-1.5 text-[11.5px] shadow-none">
+                    <SelectTrigger className="h-6 w-full border-0 bg-transparent px-1.5 text-[11.5px] shadow-none">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
