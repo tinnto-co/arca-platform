@@ -76,6 +76,36 @@ function leerComoBase64(file: File): Promise<string> {
   });
 }
 
+/**
+ * Línea de progreso mientras el modelo lee el PDF.
+ *
+ * Con el contador a la vista: un extracto de varias hojas puede tardar un
+ * par de minutos y sin el segundero parece colgado.
+ */
+function LeyendoArchivo({ nombre }: { nombre: string }) {
+  const [segundos, setSegundos] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setSegundos((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 rounded-[10px] border border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]">
+      <Loader2 className="size-3.5 animate-spin" />
+      <span className="min-w-0 truncate">Leyendo {nombre}…</span>
+      <span className="ml-auto shrink-0 tabular-nums">
+        {Math.floor(segundos / 60)}:{String(segundos % 60).padStart(2, '0')}
+      </span>
+      {segundos > 45 && (
+        <span className="shrink-0 text-[11.5px] text-[var(--arca-ink-4)]">
+          los extractos largos tardan un par de minutos
+        </span>
+      )}
+    </div>
+  );
+}
+
 /** Card de un extracto extraído: cuadre, cuenta destino, filas y confirmación. */
 function CardExtracto({
   pendiente,
@@ -563,13 +593,7 @@ export function ImportarExtractoDialog({
         >
           <div className="flex min-w-0 flex-col gap-3">
             {procesando.map((nombre) => (
-              <div
-                key={nombre}
-                className="flex items-center gap-2 rounded-[10px] border border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]"
-              >
-                <Loader2 className="size-3.5 animate-spin" />
-                Leyendo {nombre}… (los extractos largos tardan un rato)
-              </div>
+              <LeyendoArchivo key={nombre} nombre={nombre} />
             ))}
 
             {extraidos.map((p) => (

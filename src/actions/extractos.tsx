@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
-import { GoogleGenAI, type Schema } from '@google/genai';
+import { FinishReason, GoogleGenAI, type Schema } from '@google/genai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import * as r2 from '@/lib/r2';
@@ -42,6 +42,15 @@ const ai = new GoogleGenAI({
 });
 
 const MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Error de lectura con un mensaje pensado para el usuario. Se distingue por
+ * clase para que el `catch` de la extracción lo deje pasar en vez de
+ * reemplazarlo por el mensaje genérico.
+ */
+class ErrorDeLectura extends Error {
+  override name = 'ErrorDeLectura';
+}
 
 /* ───────────────────────── extracción con Gemini ───────────────────────── */
 
@@ -140,20 +149,53 @@ async function extraerConGemini(
   base64Data: string,
   mimeType: string
 ): Promise<ExtractoExtraido> {
+  const t0 = Date.now();
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-pro',
     config: {
       responseMimeType: 'application/json',
       responseJsonSchema: extractoSchema,
+      // Un extracto trimestral son cientos de movimientos, y cada uno es un
+      // objeto JSON: con el techo por defecto la respuesta se corta al medio
+      // y el JSON no parsea.
+      maxOutputTokens: 65_536,
     },
     contents: [
       { text: PROMPT },
       { inlineData: { mimeType, data: base64Data } },
     ],
   });
+
+  const finish = response.candidates?.[0]?.finishReason;
+  const segundos = Math.round((Date.now() - t0) / 1000);
+  // Solo se loguea lo anómalo: una lectura que tardó de más o que no terminó
+  // sola es lo que sirve para diagnosticar después.
+  if (segundos > 90 || (finish && finish !== FinishReason.STOP)) {
+    console.warn('[extractos] lectura lenta o incompleta', {
+      segundos,
+      finishReason: finish,
+      tokensSalida: response.usageMetadata?.candidatesTokenCount,
+    });
+  }
+
   const texto = response.text;
   if (!texto) throw new Error('El modelo no devolvió datos');
-  return JSON.parse(texto) as ExtractoExtraido;
+
+  // Respuesta cortada por el techo de tokens: el JSON viene incompleto, así
+  // que el error tiene que decir qué hacer y no «no se pudo leer».
+  if (finish === FinishReason.MAX_TOKENS) {
+    throw new ErrorDeLectura(
+      'El extracto es demasiado largo para leerlo de una vez. Subilo partido por mes y volvé a intentar.'
+    );
+  }
+
+  try {
+    return JSON.parse(texto) as ExtractoExtraido;
+  } catch {
+    throw new ErrorDeLectura(
+      'La lectura del extracto quedó incompleta. Probá de nuevo; si vuelve a pasar, subilo partido por mes.'
+    );
+  }
 }
 
 /* ───────────────────────────── server fns ──────────────────────────────── */
@@ -196,6 +238,8 @@ export const extraerExtracto = createServerFn({ method: 'POST' })
       extracto = await extraerConGemini(ctx.data.base64Data, ctx.data.mimeType);
     } catch (error) {
       console.error('[extractos] falló la extracción', { error });
+      // Los mensajes que escribimos a propósito ya explican qué hacer.
+      if (error instanceof ErrorDeLectura) throw error;
       throw new Error(
         'No se pudo leer el documento. Si es una foto, probá con una toma más nítida.'
       );
