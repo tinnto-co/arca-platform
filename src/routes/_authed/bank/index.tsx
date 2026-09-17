@@ -41,7 +41,7 @@ import {
   recategorizarMovimiento,
 } from '@/actions/extractos';
 import { ImportarExtractoDialog } from '@/components/banco/ImportarExtractoDialog';
-import { BancoVsFacturacionCard } from '@/components/banco/BancoVsFacturacionCard';
+import { BandejaConciliacion } from '@/components/banco/BandejaConciliacion';
 import {
   CATEGORIAS_MOVIMIENTO,
   CATEGORIA_MOVIMIENTO_LABEL,
@@ -619,6 +619,8 @@ function BankPage() {
   const [accountId, setAccountId] = useState('');
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [showManualMovement, setShowManualMovement] = useState(false);
+  // El registro completo arranca plegado: la vista es la conciliación.
+  const [showRegistro, setShowRegistro] = useState(false);
   const queryClient = useQueryClient();
 
   // Si la empresa cambia (desde acá o desde otra vista), el filtro de cuenta
@@ -715,30 +717,14 @@ function BankPage() {
         actions={<SelectorClienteGlobal />}
       />
 
-      {/* Totales primero: es lo que se viene a ver */}
-      <TotalesDelPeriodo
-        ingresos={ingresos}
-        egresos={egresos}
-        movimientos={
-          accountId
-            ? (cuentaElegida?.movimientos ?? 0)
-            : (summary?.movimientos ?? 0)
-        }
-        conciliados={summary?.conciliados ?? 0}
-        porcentaje={summary?.porcentajeConciliado ?? 0}
-        alcance={
-          cuentaElegida
-            ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`.trim()
-            : `${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''}`
-        }
-      />
+      {/* La bandeja ES la vista: el trabajo del mes, no el resumen de caja. */}
+      {accounts.length > 0 && (
+        <div className="mb-5">
+          <BandejaConciliacion clienteId={clienteId} />
+        </div>
+      )}
 
-      {/* Incongruencias: lo que entró al banco contra lo facturado */}
-      <div className="mb-4">
-        <BancoVsFacturacionCard clienteId={clienteId} />
-      </div>
-
-      {/* Las cuentas, a la vista y como filtro del registro */}
+      {/* Las cuentas: qué son y cuánto movieron. También filtran el registro. */}
       <div className="mb-2 flex items-center gap-3">
         <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
           Cuentas
@@ -797,8 +783,46 @@ function BankPage() {
         </div>
       )}
 
-      {/* El registro de movimientos, siempre visible */}
+      {/* Totales de caja y registro: el respaldo, no el foco. */}
       {accounts.length > 0 && (
+        <div className="mb-3 mt-5 flex items-center gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Registro y totales
+          </span>
+          <div className="flex-1 h-px bg-[var(--arca-border)]" />
+          <button
+            onClick={() => setShowRegistro((v) => !v)}
+            className="text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
+          >
+            {showRegistro
+              ? 'Ocultar'
+              : `Ver los ${summary?.movimientos ?? 0} movimientos`}
+          </button>
+        </div>
+      )}
+
+      {accounts.length > 0 && showRegistro && (
+        <div className="mb-4">
+          <TotalesDelPeriodo
+            ingresos={ingresos}
+            egresos={egresos}
+            movimientos={
+              accountId
+                ? (cuentaElegida?.movimientos ?? 0)
+                : (summary?.movimientos ?? 0)
+            }
+            conciliados={summary?.conciliados ?? 0}
+            porcentaje={summary?.porcentajeConciliado ?? 0}
+            alcance={
+              cuentaElegida
+                ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`.trim()
+                : `${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''}`
+            }
+          />
+        </div>
+      )}
+
+      {accounts.length > 0 && showRegistro && (
         <ArcaCard>
           <div className="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-[var(--arca-border)]">
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
