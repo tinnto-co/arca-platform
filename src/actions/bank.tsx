@@ -515,66 +515,68 @@ export const getBancoVsFacturacion = createServerFn({ method: 'GET' })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    await assertClienteDeOrg(ctx.data.clienteId, orgId);
 
     const desde = `${ctx.data.periodo}-01`;
     const hasta = sql`(${desde}::date + interval '1 month')`;
 
-    const cuentas = await db
-      .select({ id: cuentaBancaria.id })
-      .from(cuentaBancaria)
-      .where(
-        and(
-          eq(cuentaBancaria.orgId, orgId),
-          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
-          eq(cuentaBancaria.activa, true)
+    // Contra la base remota cada viaje cuesta cientos de milisegundos, y la
+    // card se repregunta con cada cambio de mes: las dos mitades salen en
+    // paralelo y los movimientos cuelgan del join con la cuenta, así no hace
+    // falta un viaje extra para saber qué cuentas tiene la empresa.
+    const [[banco], [ventas]] = await Promise.all([
+      db
+        .select({
+          cuentas: sql<number>`(count(distinct ${cuentaBancaria.id}))::int`,
+          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          movimientos: sql<number>`(count(${movimientoBancario.id}) filter (where not ${movimientoBancario.excluido}))::int`,
+          excluidos: sql<number>`(count(${movimientoBancario.id}) filter (where ${movimientoBancario.excluido}))::int`,
+        })
+        .from(cuentaBancaria)
+        // LEFT JOIN: una empresa con cuentas pero sin movimientos en el mes
+        // tiene que seguir contando sus cuentas.
+        .leftJoin(
+          movimientoBancario,
+          and(
+            eq(movimientoBancario.cuentaBancariaId, cuentaBancaria.id),
+            gte(movimientoBancario.fecha, desde),
+            sql`${movimientoBancario.fecha} < ${hasta}`
+          )
         )
-      );
-    const cuentaIds = cuentas.map((c) => c.id);
+        .where(
+          and(
+            eq(cuentaBancaria.orgId, orgId),
+            eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+            eq(cuentaBancaria.activa, true)
+          )
+        ),
 
-    const [banco] =
-      cuentaIds.length > 0
-        ? await db
-            .select({
-              ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
-              egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
-              movimientos: sql<number>`(count(*) filter (where not ${movimientoBancario.excluido}))::int`,
-              excluidos: sql<number>`(count(*) filter (where ${movimientoBancario.excluido}))::int`,
-            })
-            .from(movimientoBancario)
-            .where(
-              and(
-                inArray(movimientoBancario.cuentaBancariaId, cuentaIds),
-                gte(movimientoBancario.fecha, desde),
-                sql`${movimientoBancario.fecha} < ${hasta}`
-              )
-            )
-        : [];
-
-    // Ventas del mismo mes (mismo criterio que la solapa de IVA: emitidos,
-    // con las notas de crédito restando).
-    const [ventas] = await db
-      .select({
-        total: sql<string>`coalesce(sum(case when ${comprobanteTipo.esNc} then -${comprobante.total} else ${comprobante.total} end), 0)::text`,
-        comprobantes: sql<number>`count(${comprobante.id})::int`,
-      })
-      .from(comprobante)
-      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
-      .where(
-        and(
-          eq(comprobante.clienteId, ctx.data.clienteId),
-          eq(comprobante.direccion, 'emitido'),
-          gte(comprobante.fechaEmision, desde),
-          sql`${comprobante.fechaEmision} < ${hasta}`
-        )
-      );
+      // Ventas del mismo mes (mismo criterio que la solapa de IVA: emitidos,
+      // con las notas de crédito restando).
+      db
+        .select({
+          total: sql<string>`coalesce(sum(case when ${comprobanteTipo.esNc} then -${comprobante.total} else ${comprobante.total} end), 0)::text`,
+          comprobantes: sql<number>`count(${comprobante.id})::int`,
+        })
+        .from(comprobante)
+        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+        .where(
+          and(
+            eq(comprobante.orgId, orgId),
+            eq(comprobante.clienteId, ctx.data.clienteId),
+            eq(comprobante.direccion, 'emitido'),
+            gte(comprobante.fechaEmision, desde),
+            sql`${comprobante.fechaEmision} < ${hasta}`
+          )
+        ),
+    ]);
 
     const ingresosBancarios = Number(banco?.ingresos ?? 0);
     const ventasFacturadas = Number(ventas?.total ?? 0);
 
     return {
       periodo: ctx.data.periodo,
-      cuentas: cuentaIds.length,
+      cuentas: Number(banco?.cuentas ?? 0),
       ingresosBancarios,
       egresosBancarios: Number(banco?.egresos ?? 0),
       movimientos: Number(banco?.movimientos ?? 0),
