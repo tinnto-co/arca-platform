@@ -183,21 +183,97 @@ export const importMovimientos = createServerFn({ method: 'POST' })
     };
   });
 
+/**
+ * Las cuentas de la empresa con su actividad, para poder mostrar CUÁLES son
+ * y no solo cuántas: cada una con sus totales, su cantidad de movimientos y
+ * la fecha del último.
+ */
+export const listCuentasConResumen = createServerFn({ method: 'GET' })
+  .validator(z.object({ clienteId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    return await db
+      .select({
+        id: cuentaBancaria.id,
+        banco: cuentaBancaria.banco,
+        numero: cuentaBancaria.numero,
+        cbu: cuentaBancaria.cbu,
+        alias: cuentaBancaria.alias,
+        tipo: cuentaBancaria.tipo,
+        moneda: cuentaBancaria.moneda,
+        movimientos: sql<number>`(count(${movimientoBancario.id}))::int`,
+        ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+        egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+        ultimoMovimiento: sql<
+          string | null
+        >`max(${movimientoBancario.fecha})::text`,
+        // El saldo del último movimiento importado: lo que el banco decía al
+        // cierre del extracto más reciente.
+        saldoUltimo: sql<string | null>`(
+          select mb2.saldo_posterior from movimiento_bancario mb2
+          where mb2.cuenta_bancaria_id = ${cuentaBancaria.id}
+            and mb2.saldo_posterior is not null
+          order by mb2.fecha desc, mb2.created_at desc limit 1
+        )::text`,
+      })
+      .from(cuentaBancaria)
+      .leftJoin(
+        movimientoBancario,
+        eq(movimientoBancario.cuentaBancariaId, cuentaBancaria.id)
+      )
+      .where(
+        and(
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+          eq(cuentaBancaria.activa, true)
+        )
+      )
+      .groupBy(cuentaBancaria.id)
+      .orderBy(cuentaBancaria.createdAt);
+  });
+
 export const listMovimientos = createServerFn({ method: 'GET' })
   .validator(
-    z.object({
-      cuentaBancariaId: z.string().uuid(),
-      from: z.string().optional(),
-      to: z.string().optional(),
-      limit: z.number().int().min(1).max(500).default(100),
-    })
+    z
+      .object({
+        /** Una cuenta puntual, o todas las de la empresa con `clienteId`. */
+        cuentaBancariaId: z.string().uuid().optional(),
+        clienteId: z.string().uuid().optional(),
+        from: z.string().optional(),
+        to: z.string().optional(),
+        limit: z.number().int().min(1).max(500).default(100),
+      })
+      .refine((v) => v.cuentaBancariaId ?? v.clienteId, {
+        message: 'Falta indicar la cuenta o la empresa',
+      })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
+
+    // Sin cuenta puntual se listan todas las de la empresa: el registro se ve
+    // completo sin tener que elegir una por una.
+    let cuentaIds: string[];
+    if (ctx.data.cuentaBancariaId) {
+      await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
+      cuentaIds = [ctx.data.cuentaBancariaId];
+    } else {
+      const cuentas = await db
+        .select({ id: cuentaBancaria.id })
+        .from(cuentaBancaria)
+        .where(
+          and(
+            eq(cuentaBancaria.orgId, orgId),
+            eq(cuentaBancaria.clienteId, ctx.data.clienteId!),
+            eq(cuentaBancaria.activa, true)
+          )
+        );
+      cuentaIds = cuentas.map((c) => c.id);
+      if (cuentaIds.length === 0) return [];
+    }
 
     const conditions: SQL[] = [
-      eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId),
+      inArray(movimientoBancario.cuentaBancariaId, cuentaIds),
     ];
     if (ctx.data.from)
       conditions.push(gte(movimientoBancario.fecha, ctx.data.from));
@@ -220,8 +296,16 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         excluido: movimientoBancario.excluido,
         fuente: movimientoBancario.fuente,
         createdAt: movimientoBancario.createdAt,
+        cuentaBancariaId: movimientoBancario.cuentaBancariaId,
+        // De qué cuenta es la fila: se muestra cuando se ven todas juntas.
+        cuentaBanco: cuentaBancaria.banco,
+        cuentaNumero: cuentaBancaria.numero,
       })
       .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
       .where(and(...conditions))
       .orderBy(desc(movimientoBancario.fecha))
       .limit(ctx.data.limit);
@@ -531,6 +615,14 @@ export const getBancoVsFacturacion = createServerFn({ method: 'GET' })
           egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
           movimientos: sql<number>`(count(${movimientoBancario.id}) filter (where not ${movimientoBancario.excluido}))::int`,
           excluidos: sql<number>`(count(${movimientoBancario.id}) filter (where ${movimientoBancario.excluido}))::int`,
+          // El último mes con movimientos, sin importar el período pedido.
+          ultimoPeriodo: sql<string | null>`(
+            select to_char(max(mb2.fecha), 'YYYY-MM') from movimiento_bancario mb2
+            where mb2.cuenta_bancaria_id in (
+              select cb2.id from cuenta_bancaria cb2
+              where cb2.cliente_id = ${ctx.data.clienteId} and cb2.activa
+            )
+          )`,
         })
         .from(cuentaBancaria)
         // LEFT JOIN: una empresa con cuentas pero sin movimientos en el mes
@@ -576,6 +668,9 @@ export const getBancoVsFacturacion = createServerFn({ method: 'GET' })
 
     return {
       periodo: ctx.data.periodo,
+      // Para que la card pueda abrirse en un mes con datos en vez de en uno
+      // vacío: los extractos se cargan a mes vencido y con atraso.
+      ultimoPeriodoConDatos: banco?.ultimoPeriodo ?? null,
       cuentas: Number(banco?.cuentas ?? 0),
       ingresosBancarios,
       egresosBancarios: Number(banco?.egresos ?? 0),

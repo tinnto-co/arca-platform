@@ -455,6 +455,7 @@ function CardExtracto({
       }),
     onSuccess: (r) => {
       void queryClient.invalidateQueries({ queryKey: ['bankAccounts'] });
+      void queryClient.invalidateQueries({ queryKey: ['bankAccountsResumen'] });
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
       void queryClient.invalidateQueries({ queryKey: ['bankSummary'] });
       void queryClient.invalidateQueries({ queryKey: ['bancoVsFacturacion'] });

@@ -7,6 +7,8 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Scale, ArrowRight, Loader2 } from 'lucide-react';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { getBancoVsFacturacion } from '@/actions/bank';
 import { MesPicker } from '@/components/shared/mes-picker';
 import type { SemaforoIncongruencia } from '@/lib/extracto-calc';
@@ -72,6 +74,14 @@ function mesAnterior(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+/** 'YYYY-MM' → 'agosto 2026', que es como lo lee una persona. */
+function mesEnPalabras(periodo: string): string {
+  const [ano, mes] = periodo.split('-');
+  return format(new Date(Number(ano), Number(mes) - 1, 1), 'MMMM yyyy', {
+    locale: es,
+  });
+}
+
 export function BancoVsFacturacionCard({
   clienteId,
   compacto = false,
@@ -81,6 +91,10 @@ export function BancoVsFacturacionCard({
   compacto?: boolean;
 }) {
   const [periodo, setPeriodo] = useState(mesAnterior());
+  // Los extractos se cargan con atraso, así que el mes anterior suele estar
+  // vacío. Si lo está, la card se corre sola —una sola vez— al último mes con
+  // movimientos: abrir en un mes vacío no le dice nada a nadie.
+  const [yaReubicada, setYaReubicada] = useState(false);
 
   const { data, isFetching } = useQuery({
     queryKey: ['bancoVsFacturacion', clienteId, periodo],
@@ -91,6 +105,19 @@ export function BancoVsFacturacionCard({
     // que algo se rompió.
     placeholderData: (previo) => previo,
   });
+
+  // Reubicación al último mes con datos. Se hace durante el render y una sola
+  // vez, así el usuario que elige un mes vacío a mano se queda en el que eligió.
+  if (
+    !yaReubicada &&
+    data &&
+    data.movimientos === 0 &&
+    data.ultimoPeriodoConDatos &&
+    data.ultimoPeriodoConDatos !== periodo
+  ) {
+    setYaReubicada(true);
+    setPeriodo(data.ultimoPeriodoConDatos);
+  }
 
   // Primera carga: el esqueleto ocupa el lugar de la card. En la ficha no se
   // muestra nada hasta saber si la empresa tiene cuentas, para no anunciar
@@ -131,6 +158,11 @@ export function BancoVsFacturacionCard({
           </div>
         )}
         {compacto && (
+          <span className="text-[11px] text-[var(--arca-ink-4)]">
+            {mesEnPalabras(periodo)}
+          </span>
+        )}
+        {compacto && (
           <Link
             to="/bank"
             className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
@@ -150,7 +182,7 @@ export function BancoVsFacturacionCard({
           <p className="mt-3 text-[12.5px] text-[var(--arca-ink-3)]">
             {data.cuentas === 0
               ? 'La empresa no tiene cuentas bancarias cargadas. Importá un extracto para empezar a comparar.'
-              : `Sin movimientos bancarios en ${periodo}. Importá el extracto del mes para comparar.`}
+              : `Sin movimientos bancarios en ${mesEnPalabras(periodo)}. Importá el extracto del mes para comparar.`}
           </p>
         ) : (
           <>
