@@ -22,6 +22,16 @@ import {
   Scale,
   Sparkles,
 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { conciliarLote, getBandejaConciliacion } from '@/actions/bank';
 import { excluirMovimiento } from '@/actions/extractos';
 import { MesPicker } from '@/components/shared/mes-picker';
@@ -251,6 +261,9 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
   const [periodo, setPeriodo] = useState(mesAnterior());
   const [yaReubicada, setYaReubicada] = useState(false);
   const [movElegido, setMovElegido] = useState<string | null>(null);
+  // Excluir saca plata de la comparación con facturación: se pregunta antes.
+  const [aExcluir, setAExcluir] = useState<MovimientoPendiente | null>(null);
+  const [verExcluidos, setVerExcluidos] = useState(false);
 
   const { data, isFetching } = useQuery({
     queryKey: ['bandejaConciliacion', clienteId, periodo],
@@ -288,14 +301,24 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
   });
 
   const excluir = useMutation({
-    mutationFn: (movimientoId: string) =>
-      excluirMovimiento({ data: { movimientoId, excluido: true } }),
-    onSuccess: () => {
+    mutationFn: ({
+      movimientoId,
+      excluido,
+    }: {
+      movimientoId: string;
+      excluido: boolean;
+    }) => excluirMovimiento({ data: { movimientoId, excluido } }),
+    onSuccess: (_r, { excluido }) => {
       invalidar();
       setMovElegido(null);
-      toast.success('Movimiento excluido de la conciliación');
+      setAExcluir(null);
+      toast.success(
+        excluido
+          ? 'Movimiento excluido de la conciliación'
+          : 'Movimiento de vuelta en la bandeja'
+      );
     },
-    onError: () => toast.error('No se pudo excluir el movimiento'),
+    onError: () => toast.error('No se pudo actualizar el movimiento'),
   });
 
   if (!data) {
@@ -494,7 +517,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
                     onElegir={() =>
                       setMovElegido((prev) => (prev === m.id ? null : m.id))
                     }
-                    onExcluir={() => excluir.mutate(m.id)}
+                    onExcluir={() => setAExcluir(m)}
                     excluyendo={excluir.isPending}
                   />
                 ))}
@@ -566,19 +589,123 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
             {pesos(totales.conciliado)}
           </span>
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <EyeOff className="size-3.5 text-[var(--arca-ink-4)]" />
-          Excluido por no ser venta{' '}
-          <span className="font-medium tabular-nums text-[var(--arca-ink)]">
-            {pesos(totales.excluido)}
+        {data.excluidos.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setVerExcluidos((v) => !v)}
+            className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
+          >
+            <EyeOff className="size-3.5 text-[var(--arca-ink-4)]" />
+            {data.excluidos.length} excluido
+            {data.excluidos.length === 1 ? '' : 's'} por no ser venta{' '}
+            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+              {pesos(totales.excluido)}
+            </span>
+            <span className="underline">
+              {verExcluidos ? 'ocultar' : 'ver y revertir'}
+            </span>
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
+            <EyeOff className="size-3.5" />
+            sin movimientos excluidos
           </span>
-        </span>
+        )}
         <span className="text-[var(--arca-ink-4)]">
           {totales.comprobantes} comprobante
           {totales.comprobantes === 1 ? '' : 's'} emitidos por{' '}
           {pesos(totales.facturado)}
         </span>
       </div>
+
+      {/* Los excluidos, con la puerta de vuelta */}
+      {verExcluidos && data.excluidos.length > 0 && (
+        <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+          <div className="border-b border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]">
+            Fuera de la conciliación y de la comparación con facturación
+          </div>
+          {data.excluidos.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+            >
+              <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
+                {fecha(m.fecha)}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--arca-ink-2)]">
+                {m.descripcion ?? 'Sin descripción'}
+              </span>
+              <span className="shrink-0 text-[13px] font-semibold tabular-nums text-[var(--arca-ink-3)]">
+                {pesos(Number(m.importe))}
+              </span>
+              <button
+                type="button"
+                disabled={excluir.isPending}
+                onClick={() =>
+                  excluir.mutate({ movimientoId: m.id, excluido: false })
+                }
+                className="shrink-0 rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+              >
+                Volver a incluir
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Confirmación de exclusión: es plata que sale de la comparación */}
+      <AlertDialog
+        open={aExcluir !== null}
+        onOpenChange={(abierto) => !abierto && setAExcluir(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              ¿Excluir este movimiento de la conciliación?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="flex flex-col gap-2.5">
+                <span>
+                  <span className="font-medium text-[var(--arca-ink)]">
+                    {aExcluir?.descripcion ?? 'Sin descripción'}
+                  </span>{' '}
+                  por{' '}
+                  <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                    {pesos(Number(aExcluir?.importe ?? 0))}
+                  </span>
+                  {aExcluir ? ` del ${fecha(aExcluir.fecha)}` : ''}.
+                </span>
+                <span>
+                  Deja de contar como ingreso en «Banco vs Facturación» y sale
+                  de esta bandeja. Se usa para lo que entró al banco pero no es
+                  una venta: transferencias entre cuentas propias, préstamos,
+                  devoluciones.
+                </span>
+                <span>
+                  El movimiento no se borra y esto se puede revertir desde «ver
+                  y revertir», al pie de la bandeja.
+                </span>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (aExcluir)
+                  excluir.mutate({
+                    movimientoId: aExcluir.id,
+                    excluido: true,
+                  });
+              }}
+              disabled={excluir.isPending}
+            >
+              {excluir.isPending ? 'Excluyendo…' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

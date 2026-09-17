@@ -27,6 +27,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { ArcaCard } from '@/components/dashboard/shared';
 import {
   listCuentasConResumen,
@@ -103,6 +114,7 @@ function TransactionItem({
   const isIngreso = tx.direccion === 'ingreso';
   const conciliacion = tx.conciliaciones[0];
   const queryClient = useQueryClient();
+  const [confirmarExcluir, setConfirmarExcluir] = useState(false);
 
   // Recategorizar a mano pisa lo del clasificador (queda marcado 'manual').
   const recategorizar = useMutation({
@@ -123,6 +135,8 @@ function TransactionItem({
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
       void queryClient.invalidateQueries({ queryKey: ['bankAccountsResumen'] });
       void queryClient.invalidateQueries({ queryKey: ['bancoVsFacturacion'] });
+      void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      setConfirmarExcluir(false);
     },
     onError: () => toast.error('No se pudo actualizar el movimiento'),
   });
@@ -230,24 +244,75 @@ function TransactionItem({
         {fmtAmount(tx.importe, tx.direccion)}
       </div>
 
-      {/* Excluir de Banco vs Facturación */}
-      <button
-        type="button"
-        className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
-        title={
-          tx.excluido
-            ? 'Excluido de Banco vs Facturación — volver a incluir'
-            : 'Excluir de Banco vs Facturación (ej. transferencia entre cuentas propias)'
-        }
-        disabled={excluir.isPending}
-        onClick={() => excluir.mutate(!tx.excluido)}
-      >
-        {tx.excluido ? (
+      {/* Excluir de la conciliación. Volver a incluir no pregunta: es la
+          dirección segura. Excluir sí, porque saca plata de la comparación. */}
+      {tx.excluido ? (
+        <button
+          type="button"
+          className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
+          title="Excluido de la conciliación — volver a incluir"
+          disabled={excluir.isPending}
+          onClick={() => excluir.mutate(false)}
+        >
           <EyeOff className="w-3.5 h-3.5" strokeWidth={1.8} />
-        ) : (
-          <Eye className="w-3.5 h-3.5" strokeWidth={1.8} />
-        )}
-      </button>
+        </button>
+      ) : (
+        <AlertDialog open={confirmarExcluir} onOpenChange={setConfirmarExcluir}>
+          <AlertDialogTrigger asChild>
+            <button
+              type="button"
+              className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
+              title="Excluir de la conciliación (ej. transferencia entre cuentas propias)"
+              disabled={excluir.isPending}
+            >
+              <Eye className="w-3.5 h-3.5" strokeWidth={1.8} />
+            </button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                ¿Excluir este movimiento de la conciliación?
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="flex flex-col gap-2.5">
+                  <span>
+                    <span className="font-medium text-[var(--arca-ink)]">
+                      {tx.descripcion ?? 'Sin descripción'}
+                    </span>{' '}
+                    por{' '}
+                    <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                      {fmtAmount(tx.importe, tx.direccion)}
+                    </span>{' '}
+                    del {fmtDate(tx.fecha)}.
+                  </span>
+                  <span>
+                    Deja de contar en «Banco vs Facturación» y sale de la
+                    bandeja de conciliación. Se usa para lo que pasó por el
+                    banco pero no es una venta: transferencias entre cuentas
+                    propias, préstamos, devoluciones.
+                  </span>
+                  <span>
+                    El movimiento no se borra: queda atenuado en esta lista y se
+                    puede volver a incluir con el mismo botón.
+                  </span>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  excluir.mutate(true);
+                }}
+                disabled={excluir.isPending}
+              >
+                {excluir.isPending ? 'Excluyendo…' : 'Excluir'}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }

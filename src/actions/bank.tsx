@@ -873,6 +873,15 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
       },
       movimientos: conCandidatos,
       comprobantes: sinCobro,
+      // Los excluidos se devuelven para poder volver a incorporarlos: sacar
+      // un movimiento de la conciliación no puede ser un camino de ida.
+      excluidos: excluidos.map((m) => ({
+        id: m.id,
+        fecha: m.fecha,
+        descripcion: m.descripcion,
+        importe: m.importe,
+        cuentaNumero: m.cuentaNumero,
+      })),
     };
   });
 
