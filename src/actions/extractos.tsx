@@ -6,6 +6,9 @@
  * La IA solo LEE (banco, saldos y cada movimiento); el cuadre
  * (inicial + ingresos − egresos = final) es nuestro, y nada se guarda sin
  * que una persona confirme. El PDF queda en documento/R2 como respaldo.
+ *
+ * El cuadre además elige el modelo: se lee rápido y solo se relee con el
+ * modelo lento cuando los saldos no cierran.
  */
 import { randomUUID } from 'node:crypto';
 import { createServerFn } from '@tanstack/react-start';
@@ -145,13 +148,20 @@ REGLAS:
 - Descripciones multilínea: unilas en una sola línea.
 - Si el documento NO es un extracto bancario o es ilegible, marcá legible=false.`;
 
-async function extraerConGemini(
+/**
+ * Una pasada de lectura. `pensar` prende el razonamiento del modelo: sin él
+ * la misma tabla se lee en un sexto del tiempo (medido sobre un BBVA de un
+ * mes: 31s contra 181s), y el control de cuadre nos dice si hizo falta.
+ */
+async function leerExtracto(
   base64Data: string,
-  mimeType: string
+  mimeType: string,
+  modelo: string,
+  pensar: boolean
 ): Promise<ExtractoExtraido> {
   const t0 = Date.now();
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-pro',
+    model: modelo,
     config: {
       responseMimeType: 'application/json',
       responseJsonSchema: extractoSchema,
@@ -159,6 +169,7 @@ async function extraerConGemini(
       // objeto JSON: con el techo por defecto la respuesta se corta al medio
       // y el JSON no parsea.
       maxOutputTokens: 65_536,
+      ...(pensar ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
     },
     contents: [
       { text: PROMPT },
@@ -172,6 +183,7 @@ async function extraerConGemini(
   // sola es lo que sirve para diagnosticar después.
   if (segundos > 90 || (finish && finish !== FinishReason.STOP)) {
     console.warn('[extractos] lectura lenta o incompleta', {
+      modelo,
       segundos,
       finishReason: finish,
       tokensSalida: response.usageMetadata?.candidatesTokenCount,
@@ -196,6 +208,36 @@ async function extraerConGemini(
       'La lectura del extracto quedó incompleta. Probá de nuevo; si vuelve a pasar, subilo partido por mes.'
     );
   }
+}
+
+/**
+ * Lee el extracto rápido y, si no cuadra, lo relee con el modelo que razona.
+ *
+ * El cuadre es el árbitro: cuando cierra, la lectura rápida está completa y
+ * no hay nada que ganar esperando tres minutos. Cuando no cierra —o el
+ * documento salió ilegible— vale la pena la segunda pasada, y si tampoco
+ * cuadra se devuelve la del modelo más cuidadoso para que la persona decida
+ * sobre la mejor lectura disponible.
+ */
+async function extraerConGemini(
+  base64Data: string,
+  mimeType: string
+): Promise<ExtractoExtraido> {
+  const rapida = await leerExtracto(
+    base64Data,
+    mimeType,
+    'gemini-2.5-flash',
+    false
+  );
+  const cuadra =
+    rapida.legible &&
+    rapida.movimientos.length > 0 &&
+    cuadreExtracto(rapida.saldoInicial, rapida.saldoFinal, rapida.movimientos)
+      .cuadra;
+  if (cuadra) return rapida;
+
+  console.warn('[extractos] la lectura rápida no cuadró, releyendo con pro');
+  return await leerExtracto(base64Data, mimeType, 'gemini-2.5-pro', true);
 }
 
 /* ───────────────────────────── server fns ──────────────────────────────── */
