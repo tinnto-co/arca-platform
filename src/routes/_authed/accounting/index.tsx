@@ -132,6 +132,13 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { cn } from '@/lib/utils';
+import { Checkbox } from '@/components/ui/checkbox';
+import { TutorialReglas } from '@/components/accounting/TutorialReglas';
+import { esClicEnTutorial } from '@/components/shared/tutorial';
+import {
+  analizarCuadreRegla,
+  direccionSugeridaPorNombre,
+} from '@/lib/accounting-invoice-posting';
 import {
   variablesDelBalance,
   missingVars,
@@ -166,6 +173,8 @@ import {
   createJournalEntry,
   updateJournalEntry,
   voidJournalEntry,
+  voidJournalEntries,
+  resetFiscalYearInvoiceEntries,
   getJournalEntry,
   getPostableAccounts,
   getLedgerAccount,
@@ -184,6 +193,7 @@ import {
   getInvoicePostingPreview,
   generateInvoiceEntries,
   regenerateInvoiceEntry,
+  regenerateInvoiceEntries,
   getPendingReviewEntries,
   getFixedAssetAccounts,
   createFixedAsset,
@@ -910,6 +920,7 @@ function AccountingPage() {
         <Contabilizar
           clientId={effectiveClientId}
           canWrite={roleData?.role !== 'viewer'}
+          isOwner={isOwner}
         />
       ) : tab === 'pendientes' ? (
         <Pendientes
@@ -3837,6 +3848,18 @@ function Asientos({
 
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /**
+   * Asientos marcados para anular en bloque. Sobrevive al cambio de página
+   * —se puede ir marcando de a 25— pero no al de filtros ni de empresa.
+   */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [voidOpen, setVoidOpen] = useState(false);
+  const filtrosKey = `${clientId}|${from}|${to}|${accountId}|${origin}|${includeVoided}`;
+  const [selKey, setSelKey] = useState(filtrosKey);
+  if (selKey !== filtrosKey) {
+    setSelKey(filtrosKey);
+    setSelected(new Set());
+  }
 
   const { data: postable = [] } = useQuery({
     queryKey: ['accounting', 'postable', clientId],
@@ -3876,6 +3899,26 @@ function Asientos({
       return next;
     });
   const allExpanded = rows.length > 0 && rows.every((r) => expanded.has(r.id));
+  const seleccionables = rows.filter((r) => !r.isVoided);
+  const paginaMarcada =
+    seleccionables.length > 0 &&
+    seleccionables.every((r) => selected.has(r.id));
+  const toggleSelected = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const togglePagina = () =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const r of seleccionables) {
+        if (paginaMarcada) next.delete(r.id);
+        else next.add(r.id);
+      }
+      return next;
+    });
   const toggleExpandAll = () =>
     setExpanded(allExpanded ? new Set() : new Set(rows.map((r) => r.id)));
 
@@ -4100,7 +4143,36 @@ function Asientos({
         {/* Los rótulos llevaban `text-white` al final de la lista de clases
           —resto de una versión con header navy—, así que se dibujaban blancos
           sobre fondo claro: invisibles. */}
+        {selected.size > 0 && (
+          <BarraSeleccion
+            cantidad={selected.size}
+            unidad="asiento"
+            unidadPlural="asientos"
+            onLimpiar={() => setSelected(new Set())}
+          >
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-[var(--arca-accent-neg-fg)]"
+              onClick={() => setVoidOpen(true)}
+            >
+              <Ban className="size-3.5" strokeWidth={2} />
+              Anular {selected.size}
+            </Button>
+          </BarraSeleccion>
+        )}
         <div className="flex items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
+          {canWrite && (
+            <div className="w-4 shrink-0">
+              {seleccionables.length > 0 && (
+                <CasillaSeleccion
+                  checked={paginaMarcada}
+                  onChange={togglePagina}
+                  label="Marcar los asientos de esta página"
+                />
+              )}
+            </div>
+          )}
           <div className="w-4 shrink-0" />
           <div className="w-12 shrink-0">N°</div>
           <div className="w-24 shrink-0">Fecha</div>
@@ -4123,6 +4195,9 @@ function Asientos({
             <EntryRow
               key={r.id}
               row={r}
+              selectable={canWrite}
+              checked={selected.has(r.id)}
+              onCheck={() => toggleSelected(r.id)}
               expanded={expanded.has(r.id)}
               onToggle={() => toggleExpand(r.id)}
               canWrite={canWrite}
@@ -4145,6 +4220,19 @@ function Asientos({
           />
         )}
       </ArcaCard>
+
+      {voidOpen && (
+        <AnularEnBloqueDialog
+          clientId={clientId}
+          entryIds={[...selected]}
+          onClose={() => setVoidOpen(false)}
+          onDone={() => {
+            setVoidOpen(false);
+            setSelected(new Set());
+            invalidate();
+          }}
+        />
+      )}
 
       {editor && (
         <AsientoEditor
@@ -5218,8 +5306,275 @@ function AsientoDetail({
 }
 
 /** Fila expandible del libro diario: resumen clickeable + detalle inline. */
+/** Casilla de selección de una fila (cuadrado vacío / tildado). */
+function CasillaSeleccion({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
+      className="inline-flex"
+    >
+      {checked ? (
+        <CheckSquare
+          className="w-4 h-4 text-[var(--arca-accent)]"
+          strokeWidth={2}
+        />
+      ) : (
+        <Square className="w-4 h-4 text-[var(--arca-ink-3)]" strokeWidth={2} />
+      )}
+    </button>
+  );
+}
+
+/** Franja que aparece arriba de una tabla cuando hay filas marcadas. */
+function BarraSeleccion({
+  cantidad,
+  unidad,
+  unidadPlural,
+  onLimpiar,
+  children,
+}: {
+  cantidad: number;
+  unidad: string;
+  unidadPlural: string;
+  onLimpiar: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-accent-bg)] px-4 py-2 text-[12.5px]">
+      <span className="font-medium text-[var(--arca-ink)]">
+        {cantidad} {cantidad === 1 ? unidad : unidadPlural}{' '}
+        {cantidad === 1 ? 'marcado' : 'marcados'}
+      </span>
+      <button
+        type="button"
+        onClick={onLimpiar}
+        className="text-[12px] text-[var(--arca-ink-3)] underline-offset-2 hover:underline"
+      >
+        Desmarcar
+      </button>
+      <div className="ml-auto flex flex-wrap items-center gap-2">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Lo que el contador pregunta antes de anular: que no borra ni mueve saldos. */
+function QueHaceAnular() {
+  return (
+    <>
+      <p>
+        Un asiento anulado <strong>deja de sumar</strong> en el mayor, el
+        balance y los estados contables. No se borra: queda en el Libro Diario
+        tachado, con el motivo, y conserva su número.
+      </p>
+      <p>
+        Si era un asiento automático de una factura, la factura vuelve a quedar
+        pendiente en <strong>Contabilizar</strong>. Los asientos de períodos
+        cerrados no se tocan.
+      </p>
+    </>
+  );
+}
+
+/** Anula varios asientos de una vez, con un motivo. */
+function AnularEnBloqueDialog({
+  clientId,
+  entryIds,
+  onClose,
+  onDone,
+}: {
+  clientId: string;
+  entryIds: string[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const mut = useMutation({
+    mutationFn: () =>
+      voidJournalEntries({
+        data: { clientId, ids: entryIds, reason: reason.trim() },
+      }),
+    onSuccess: (r) => {
+      const partes = [`${r.voided} asiento(s) anulado(s)`];
+      if (r.skippedClosed > 0)
+        partes.push(`${r.skippedClosed} en período cerrado, sin tocar`);
+      toast.success(partes.join(' · '));
+      onDone();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <AlertDialog open onOpenChange={(o) => !o && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Anular {entryIds.length}{' '}
+            {entryIds.length === 1 ? 'asiento' : 'asientos'}
+          </AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2">
+              <QueHaceAnular />
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <input
+          autoFocus
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Motivo (ej. reglas mal configuradas)"
+          className={`${INPUT_CLASS} w-full h-9`}
+        />
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            disabled={!reason.trim() || mut.isPending}
+            onClick={() => mut.mutate()}
+          >
+            {mut.isPending ? 'Anulando…' : 'Anular'}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+/**
+ * Reinicia la contabilización automática de facturas del ejercicio: anula sus
+ * asientos generados y las facturas quedan listas para volver a generarse con
+ * las reglas corregidas. Primero muestra cuántos va a tocar.
+ */
+function ReiniciarEjercicioDialog({
+  clientId,
+  onClose,
+  onDone,
+}: {
+  clientId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [includeEdited, setIncludeEdited] = useState(false);
+  const { data: preview, isLoading } = useQuery({
+    queryKey: ['accounting', 'reset-preview', clientId, includeEdited],
+    queryFn: () =>
+      resetFiscalYearInvoiceEntries({
+        data: { clientId, includeEdited, dryRun: true },
+      }),
+  });
+  const mut = useMutation({
+    mutationFn: () =>
+      resetFiscalYearInvoiceEntries({
+        data: {
+          clientId,
+          fiscalYearId: preview?.fiscalYear.id,
+          includeEdited,
+        },
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        `${r.voided} asiento(s) anulado(s). Las facturas quedaron pendientes para volver a generarlas.`
+      );
+      onDone();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <AlertDialog open onOpenChange={(o) => !o && onClose()}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Reiniciar asientos de facturas</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2">
+              <p>
+                Anula{' '}
+                <strong>todos los asientos automáticos de facturas</strong> del
+                ejercicio
+                {preview
+                  ? ` ${fmtFecha(preview.fiscalYear.from)} – ${fmtFecha(preview.fiscalYear.to)}`
+                  : ''}
+                . Los asientos manuales, de sueldos, de apertura y de cierre no
+                se tocan.
+              </p>
+              <QueHaceAnular />
+              <p>
+                Después corregí las reglas y generá de nuevo desde esta misma
+                pantalla.
+              </p>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="rounded-[8px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 text-[12.5px]">
+          {isLoading || !preview ? (
+            'Contando asientos…'
+          ) : (
+            <>
+              Se van a anular <strong>{preview.voided}</strong> asiento(s).
+              {preview.skippedClosed > 0 && (
+                <>
+                  {' '}
+                  {preview.skippedClosed} están en períodos cerrados y quedan
+                  como están.
+                </>
+              )}
+              {!includeEdited && preview.skippedEdited > 0 && (
+                <>
+                  {' '}
+                  {preview.skippedEdited} fueron editados a mano y se conservan.
+                </>
+              )}
+            </>
+          )}
+        </div>
+        <label className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-2)]">
+          <Checkbox
+            checked={includeEdited}
+            onCheckedChange={(v) => setIncludeEdited(v === true)}
+          />
+          Anular también los que se editaron a mano
+        </label>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <Button
+            variant="destructive"
+            disabled={!preview || preview.voided === 0 || mut.isPending}
+            onClick={() => mut.mutate()}
+          >
+            {mut.isPending
+              ? 'Reiniciando…'
+              : `Anular ${preview?.voided ?? ''} asientos`}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function EntryRow({
   row,
+  selectable,
+  checked,
+  onCheck,
   expanded,
   onToggle,
   canWrite,
@@ -5227,6 +5582,9 @@ function EntryRow({
   onChanged,
 }: {
   row: JournalEntryListRow;
+  selectable: boolean;
+  checked: boolean;
+  onCheck: () => void;
   expanded: boolean;
   onToggle: () => void;
   canWrite: boolean;
@@ -5235,52 +5593,75 @@ function EntryRow({
 }) {
   return (
     <div className="border-b border-[var(--arca-border)]">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--arca-surface-2)] transition-colors text-left"
+      {/* La casilla va afuera del botón de la fila: un control dentro de otro
+        no es HTML válido, y el clic en la casilla no debe abrir el detalle. */}
+      <div
+        className={cn(
+          'flex items-center hover:bg-[var(--arca-surface-2)] transition-colors',
+          checked && 'bg-[var(--arca-accent-bg)]'
+        )}
       >
-        <span className="w-4 shrink-0 text-[var(--arca-ink-3)]">
-          {expanded ? (
-            <ChevronDown className="w-4 h-4" strokeWidth={1.8} />
-          ) : (
-            <ChevronRight className="w-4 h-4" strokeWidth={1.8} />
+        {selectable && (
+          <div className="w-4 shrink-0 ml-4">
+            {!row.isVoided && (
+              <CasillaSeleccion
+                checked={checked}
+                onChange={onCheck}
+                label={`Marcar el asiento ${row.number}`}
+              />
+            )}
+          </div>
+        )}
+        <button
+          onClick={onToggle}
+          className={cn(
+            'flex-1 min-w-0 flex items-center gap-3 py-2.5 pr-4 text-left',
+            selectable ? 'pl-3' : 'pl-4'
           )}
-        </span>
-        <div className="w-12 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
-          {row.number}
-        </div>
-        <div className="w-24 shrink-0 text-[12px] text-[var(--arca-ink-2)]">
-          {fmtFecha(row.entryDate)}
-        </div>
-        <div
-          className={`flex-1 min-w-0 truncate text-[13px] ${
-            row.isVoided
-              ? 'line-through text-[var(--arca-ink-3)]'
-              : 'text-[var(--arca-ink)]'
-          }`}
         >
-          {row.description?.trim() ? (
-            row.description
-          ) : (
-            <span className="text-[var(--arca-ink-3)] italic">
-              (sin descripción)
-            </span>
-          )}
-          {row.isVoided && (
-            <span className="ml-2 text-[10px] not-italic no-underline text-[oklch(0.55_0.18_25)]">
-              ANULADO
-            </span>
-          )}
-        </div>
-        <div className="w-28 shrink-0 text-right text-[12.5px] font-medium text-[var(--arca-ink)]">
-          $ {fmtMoney(row.total)}
-        </div>
-        <div className="w-28 shrink-0">
-          <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
-            {JOURNAL_ORIGIN_LABELS[row.origin] ?? row.origin}
+          <span className="w-4 shrink-0 text-[var(--arca-ink-3)]">
+            {expanded ? (
+              <ChevronDown className="w-4 h-4" strokeWidth={1.8} />
+            ) : (
+              <ChevronRight className="w-4 h-4" strokeWidth={1.8} />
+            )}
           </span>
-        </div>
-      </button>
+          <div className="w-12 shrink-0 text-[12px] font-mono text-[var(--arca-ink-3)]">
+            {row.number}
+          </div>
+          <div className="w-24 shrink-0 text-[12px] text-[var(--arca-ink-2)]">
+            {fmtFecha(row.entryDate)}
+          </div>
+          <div
+            className={`flex-1 min-w-0 truncate text-[13px] ${
+              row.isVoided
+                ? 'line-through text-[var(--arca-ink-3)]'
+                : 'text-[var(--arca-ink)]'
+            }`}
+          >
+            {row.description?.trim() ? (
+              row.description
+            ) : (
+              <span className="text-[var(--arca-ink-3)] italic">
+                (sin descripción)
+              </span>
+            )}
+            {row.isVoided && (
+              <span className="ml-2 text-[10px] not-italic no-underline text-[oklch(0.55_0.18_25)]">
+                ANULADO
+              </span>
+            )}
+          </div>
+          <div className="w-28 shrink-0 text-right text-[12.5px] font-medium text-[var(--arca-ink)]">
+            $ {fmtMoney(row.total)}
+          </div>
+          <div className="w-28 shrink-0">
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
+              {JOURNAL_ORIGIN_LABELS[row.origin] ?? row.origin}
+            </span>
+          </div>
+        </button>
+      </div>
       {expanded && (
         <div className="px-4 pb-4 pt-1 pl-11 bg-[color-mix(in_oklch,var(--arca-surface-2),transparent_45%)]">
           <EntryDetailBody
@@ -6298,6 +6679,32 @@ function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
 
 type ModuloRegla = 'comprobante' | 'recibo' | 'movimiento_bancario';
 
+/** Aviso sobre cómo se va a comportar una regla (solapada, sin cuadre…). */
+function AvisoRegla({
+  tono,
+  texto,
+}: {
+  tono: 'error' | 'warn' | 'info';
+  texto: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-start gap-2 rounded-[8px] border px-3 py-2 text-[12px]',
+        tono === 'error' &&
+          'border-[var(--arca-accent-neg)] bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]',
+        tono === 'warn' &&
+          'border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+        tono === 'info' &&
+          'border-[var(--arca-border)] bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]'
+      )}
+    >
+      <AlertTriangle className="mt-px size-3.5 shrink-0" strokeWidth={2} />
+      <div>{texto}</div>
+    </div>
+  );
+}
+
 /**
  * Una regla en la lista, arrastrable para cambiar su lugar en la cola.
  *
@@ -6369,8 +6776,44 @@ function FilaRegla({
           />
         )}
       </div>
-      <div className="flex-1 min-w-0 truncate font-medium text-[var(--arca-ink)]">
-        {r.name}
+      <div className="flex-1 min-w-0">
+        <div className="truncate font-medium text-[var(--arca-ink)]">
+          {r.name}
+        </div>
+        {r.sourceModule === 'comprobante' && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+            {r.scope && (
+              <span className="text-[var(--arca-ink-3)]">{r.scope}</span>
+            )}
+            {r.isActive && r.shadowedBy && (
+              <Badge
+                variant="warning"
+                size="sm"
+                title={`Todo lo que tomaría esta regla ya lo toma «${r.shadowedBy.name}», que está antes en la lista.`}
+              >
+                Nunca se aplica: la tapa «{r.shadowedBy.name}»
+              </Badge>
+            )}
+            {r.missingDirection && (
+              <Badge
+                variant="warning"
+                size="sm"
+                title="Sin dirección, la regla se aplica a ventas y a compras. Editala y elegí una."
+              >
+                Sin ventas/compras
+              </Badge>
+            )}
+            {r.balance?.status === 'descuadra' && (
+              <Badge
+                variant="error"
+                size="sm"
+                title={r.balance.message ?? undefined}
+              >
+                No cuadra
+              </Badge>
+            )}
+          </div>
+        )}
       </div>
       <div className="w-24 shrink-0">
         {/* Píldora de 10px en gris sobre gris: era ilegible. El badge del
@@ -6550,99 +6993,105 @@ function Reglas({
           </SelectContent>
         </Select>
 
-        {isOwner && (
-          <div className="ml-auto flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setImportOpen(true)}
-            >
-              <Upload className="size-3.5" strokeWidth={1.8} />
-              Importar de otra empresa
-            </Button>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setEditor({ mode: 'create' })}
-            >
-              <Plus className="size-3.5" strokeWidth={2.5} />
-              Nueva regla
-            </Button>
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          <TutorialReglas />
+          {isOwner && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setImportOpen(true)}
+              >
+                <Upload className="size-3.5" strokeWidth={1.8} />
+                Importar de otra empresa
+              </Button>
+              <Button
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setEditor({ mode: 'create' })}
+                data-tour="reglas-nueva"
+              >
+                <Plus className="size-3.5" strokeWidth={2.5} />
+                Nueva regla
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
-      <ArcaCard>
-        {/* Mismo `text-white` colgado que en Asientos: los rótulos se
+      <div data-tour="reglas-lista">
+        <ArcaCard>
+          {/* Mismo `text-white` colgado que en Asientos: los rótulos se
           dibujaban blancos sobre fondo claro. Abajo, la fila gris con el
           nombre del módulo no es un segundo header: separa los grupos
           —arrastrar reordena dentro de un módulo, no entre módulos— y por eso
           va más chica, sin mayúsculas anchas y sobre otro fondo. */}
-        <div className="flex items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
-          <div className="w-8 shrink-0" aria-hidden />
-          <div className="flex-1 min-w-0">Nombre</div>
-          <div className="w-24 shrink-0">Módulo</div>
-          <div className="w-28 shrink-0">Tipo</div>
-          <div className="w-16 shrink-0 text-center">Líneas</div>
-          <div className="w-24 shrink-0 text-center">Estado</div>
-        </div>
+          <div className="flex items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-4 py-2 text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
+            <div className="w-8 shrink-0" aria-hidden />
+            <div className="flex-1 min-w-0">Nombre</div>
+            <div className="w-24 shrink-0">Módulo</div>
+            <div className="w-28 shrink-0">Tipo</div>
+            <div className="w-16 shrink-0 text-center">Líneas</div>
+            <div className="w-24 shrink-0 text-center">Estado</div>
+          </div>
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={onDragEnd}
-        >
-          {isLoading ? (
-            <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
-              Cargando…
-            </div>
-          ) : rules.length === 0 ? (
-            <div className="px-5 py-12 text-center">
-              <Workflow
-                className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
-                strokeWidth={1.5}
-              />
-              <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
-                No hay reglas de mapeo configuradas.
-              </p>
-              <p className="text-[12px] text-[var(--arca-ink-3)]">
-                Las reglas le enseñan al sistema cómo armar los asientos
-                automáticos desde facturas y sueldos.
-              </p>
-            </div>
-          ) : (
-            grupos.map(([modulo, delModulo]) => (
-              <SortableContext
-                key={modulo}
-                items={delModulo.map((r) => r.id)}
-                strategy={verticalListSortingStrategy}
-              >
-                {/* El encabezado sólo aparece con el filtro en "Todos": es lo
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={onDragEnd}
+          >
+            {isLoading ? (
+              <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
+                Cargando…
+              </div>
+            ) : rules.length === 0 ? (
+              <div className="px-5 py-12 text-center">
+                <Workflow
+                  className="w-8 h-8 mx-auto mb-3 text-[var(--arca-ink-3)]"
+                  strokeWidth={1.5}
+                />
+                <p className="text-[13px] text-[var(--arca-ink-2)] mb-1">
+                  No hay reglas de mapeo configuradas.
+                </p>
+                <p className="text-[12px] text-[var(--arca-ink-3)]">
+                  Las reglas le enseñan al sistema cómo armar los asientos
+                  automáticos desde facturas y sueldos.
+                </p>
+              </div>
+            ) : (
+              grupos.map(([modulo, delModulo]) => (
+                <SortableContext
+                  key={modulo}
+                  items={delModulo.map((r) => r.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {/* El encabezado sólo aparece con el filtro en "Todos": es lo
                   que deja claro que arrastrar mueve dentro del módulo y no
                   contra las reglas de otro. */}
-                {!moduleFilter && (
-                  <div className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
-                    {MAPPING_SOURCE_LABELS[modulo]}
-                  </div>
-                )}
-                {delModulo.map((r) => (
-                  <FilaRegla
-                    key={r.id}
-                    r={r}
-                    isOwner={isOwner}
-                    ordenable={isOwner && delModulo.length > 1}
-                    onAbrir={() => setDetailId(r.id)}
-                    onToggle={() =>
-                      toggleMut.mutate({ id: r.id, isActive: !r.isActive })
-                    }
-                  />
-                ))}
-              </SortableContext>
-            ))
-          )}
-        </DndContext>
-      </ArcaCard>
+                  {!moduleFilter && (
+                    <div className="border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
+                      {MAPPING_SOURCE_LABELS[modulo]}
+                    </div>
+                  )}
+                  {delModulo.map((r) => (
+                    <FilaRegla
+                      key={r.id}
+                      r={r}
+                      isOwner={isOwner}
+                      ordenable={isOwner && delModulo.length > 1}
+                      onAbrir={() => setDetailId(r.id)}
+                      onToggle={() =>
+                        toggleMut.mutate({ id: r.id, isActive: !r.isActive })
+                      }
+                    />
+                  ))}
+                </SortableContext>
+              ))
+            )}
+          </DndContext>
+        </ArcaCard>
+      </div>
 
       {editor && (
         <RuleEditorDialog
@@ -6715,6 +7164,11 @@ function RuleEditorDialog({
   const [condDirection, setCondDirection] = useState<
     '' | 'emitido' | 'recibido'
   >('');
+  /**
+   * La dirección se sugiere a partir del nombre ("Compras A" → compras)
+   * mientras el usuario no la elija a mano. Elegida, el nombre ya no la toca.
+   */
+  const [directionTouched, setDirectionTouched] = useState(false);
   const [condTypes, setCondTypes] = useState<string[]>([]);
   /** Sueldos: tipos de concepto a los que aplica la regla. */
   const [condConceptTipos, setCondConceptTipos] = useState<string[]>([]);
@@ -6732,7 +7186,15 @@ function RuleEditorDialog({
     setRuleType(existing.rule.tipo);
     {
       const cond = (existing.rule.condition ?? {}) as Record<string, unknown>;
-      setCondDirection(normalizeCondDirection(cond.direccion));
+      const dir = normalizeCondDirection(cond.direccion);
+      // Una regla vieja sin dirección: se sugiere por el nombre, sin darla
+      // por elegida, para que el aviso de "sugerido" quede a la vista.
+      setCondDirection(
+        dir !== '' || existing.rule.modulo !== 'comprobante'
+          ? dir
+          : (direccionSugeridaPorNombre(existing.rule.nombre) ?? '')
+      );
+      setDirectionTouched(dir !== '');
       const rawLetra = cond.letra;
       const typeArr = Array.isArray(rawLetra)
         ? rawLetra
@@ -6785,16 +7247,32 @@ function RuleEditorDialog({
     lines.every(
       (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
     );
-  const canSave = !!name.trim() && linesOk;
+  const needsDirection = sourceModule === 'comprobante';
+  const canSave =
+    !!name.trim() && linesOk && (!needsDirection || condDirection !== '');
+  const cuadre =
+    sourceModule === 'comprobante'
+      ? analizarCuadreRegla(
+          lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
+        )
+      : null;
+
+  const onNameChange = (v: string) => {
+    setName(v);
+    if (sourceModule === 'comprobante' && !directionTouched) {
+      setCondDirection(direccionSugeridaPorNombre(v) ?? '');
+    }
+  };
 
   const mut = useMutation({
     mutationFn: async () => {
       let condition: unknown = undefined;
-      if (ruleType === 'condicional' && sourceModule === 'comprobante') {
-        const c: Record<string, unknown> = {};
-        if (condDirection) c.direccion = condDirection;
-        if (condTypes.length) c.letra = condTypes;
-        condition = Object.keys(c).length ? c : undefined;
+      if (sourceModule === 'comprobante') {
+        // La dirección va siempre, también en una default: es el fallback
+        // de ventas o de compras, nunca de los dos.
+        const c: Record<string, unknown> = { direccion: condDirection };
+        if (ruleType === 'condicional' && condTypes.length) c.letra = condTypes;
+        condition = c;
       } else if (ruleType === 'condicional' && sourceModule === 'recibo') {
         const c: Record<string, unknown> = {};
         const codes = condSosCodes
@@ -6834,7 +7312,17 @@ function RuleEditorDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[780px]">
+      {/* Con los avisos y varias líneas el formulario pasa el alto de una
+        notebook: scrollea el contenido y el pie queda pegado abajo, para que
+        Guardar no quede fuera de la pantalla. */}
+      <DialogContent
+        className="sm:max-w-[780px] max-h-[calc(100dvh-2rem)] overflow-y-auto"
+        data-tour="regla-editor"
+        // Con el tutorial abierto, tocar su tarjeta no cierra el formulario.
+        onInteractOutside={(e) => {
+          if (esClicEnTutorial(e.target)) e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {isEdit ? 'Editar regla de mapeo' : 'Nueva regla de mapeo'}
@@ -6881,8 +7369,9 @@ function RuleEditorDialog({
           <Field label="Nombre *" full>
             <input
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Ej: Factura de venta tipo A"
+              onChange={(e) => onNameChange(e.target.value)}
+              data-tour="regla-nombre"
+              placeholder="Ej: Ventas A · Compras C (gastos)"
               className={`${INPUT_CLASS} w-full h-9`}
             />
           </Field>
@@ -6915,7 +7404,7 @@ function RuleEditorDialog({
             label={
               <>
                 Tipo
-                <HelpTip text="Default: se aplica como regla por defecto del módulo. Condicional: solo se aplica si el comprobante cumple la condición que definas abajo." />
+                <HelpTip text="Default: la que se usa cuando ninguna otra aplica (en facturas, una para ventas y otra para compras). Condicional: sólo si el comprobante cumple lo que marques abajo, por ejemplo la letra." />
               </>
             }
           >
@@ -6923,7 +7412,10 @@ function RuleEditorDialog({
               value={ruleType}
               onValueChange={(v) => setRuleType(v as 'default' | 'condicional')}
             >
-              <SelectTrigger className="w-full text-[12.5px]">
+              <SelectTrigger
+                className="w-full text-[12.5px]"
+                data-tour="regla-tipo"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -6932,34 +7424,67 @@ function RuleEditorDialog({
               </SelectContent>
             </Select>
           </Field>
+          {sourceModule === 'comprobante' && (
+            <Field
+              label={
+                <>
+                  ¿Ventas o compras? *
+                  <HelpTip text="La regla sólo se aplica a los comprobantes de esa dirección. El nombre de la regla no filtra nada: esto sí." />
+                </>
+              }
+              full
+            >
+              <div
+                role="radiogroup"
+                aria-label="Dirección"
+                className="grid grid-cols-2 gap-2"
+                data-tour="regla-direccion"
+              >
+                {(
+                  [
+                    ['emitido', 'Ventas', 'Facturas emitidas'],
+                    ['recibido', 'Compras', 'Facturas recibidas'],
+                  ] as const
+                ).map(([value, label, hint]) => {
+                  const on = condDirection === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => {
+                        setCondDirection(value);
+                        setDirectionTouched(true);
+                      }}
+                      className={cn(
+                        'flex flex-col items-start rounded-[8px] border px-3 py-2 text-left transition-colors',
+                        on
+                          ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)]'
+                          : 'border-[var(--arca-border)] hover:bg-[var(--arca-surface-2)]'
+                      )}
+                    >
+                      <span className="text-[13px] font-medium text-[var(--arca-ink)]">
+                        {label}
+                      </span>
+                      <span className="text-[11px] text-[var(--arca-ink-3)]">
+                        {hint}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
+                {condDirection === ''
+                  ? 'Elegí una para poder guardar.'
+                  : !directionTouched
+                    ? 'Sugerido por el nombre de la regla. Cambialo si no corresponde.'
+                    : null}
+              </p>
+            </Field>
+          )}
           {ruleType === 'condicional' && sourceModule === 'comprobante' && (
             <>
-              <Field
-                label={
-                  <>
-                    Dirección
-                    <HelpTip text="La regla aplica solo a comprobantes de esta dirección. 'Cualquiera' = no filtra por dirección." />
-                  </>
-                }
-              >
-                <Select
-                  value={condDirection === '' ? 'any' : condDirection}
-                  onValueChange={(v) =>
-                    setCondDirection(
-                      (v === 'any' ? '' : v) as '' | 'emitido' | 'recibido'
-                    )
-                  }
-                >
-                  <SelectTrigger className="w-full text-[12.5px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="any">Cualquiera</SelectItem>
-                    <SelectItem value="emitido">Venta (emitido)</SelectItem>
-                    <SelectItem value="recibido">Compra (recibido)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
               <Field
                 label={
                   <>
@@ -6995,19 +7520,18 @@ function RuleEditorDialog({
                   })}
                 </div>
                 <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
-                  {condDirection || condTypes.length ? (
+                  {condTypes.length ? (
                     <>
                       Aplica a{' '}
                       {condDirection === 'emitido'
                         ? 'ventas'
                         : condDirection === 'recibido'
                           ? 'compras'
-                          : 'comprobantes'}
-                      {condTypes.length ? ` letra ${condTypes.join(', ')}` : ''}
-                      .
+                          : 'comprobantes'}{' '}
+                      letra {condTypes.join(', ')}.
                     </>
                   ) : (
-                    'Sin filtros: esta regla condicional aplicaría a cualquier comprobante.'
+                    'Sin letras marcadas: aplica a cualquier letra.'
                   )}
                 </p>
               </Field>
@@ -7095,7 +7619,10 @@ function RuleEditorDialog({
         </div>
 
         {/* Líneas-plantilla */}
-        <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
+        <div
+          className="border border-[var(--arca-border)] rounded-xl overflow-hidden"
+          data-tour="regla-lineas"
+        >
           <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[10px] font-semibold">
             <div className="flex-1">Cuenta</div>
             <div className="w-20 flex items-center gap-1">
@@ -7200,7 +7727,11 @@ function RuleEditorDialog({
               <Plus className="w-3 h-3" strokeWidth={2.5} /> Agregar línea
             </button>
             <span className="ml-auto text-[11.5px]">
-              {linesOk ? (
+              {linesOk && cuadre?.estado === 'descuadra' ? (
+                <span className="text-[var(--arca-accent-neg-fg)]">
+                  Las líneas no cuadran (ver abajo)
+                </span>
+              ) : linesOk ? (
                 <span className="text-[oklch(0.40_0.14_145)]">
                   ✓ Líneas válidas
                 </span>
@@ -7213,8 +7744,16 @@ function RuleEditorDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        {cuadre?.mensaje && (
+          <AvisoRegla
+            tono={cuadre.estado === 'descuadra' ? 'error' : 'info'}
+            texto={cuadre.mensaje}
+          />
+        )}
+
+        <DialogFooter className="sticky -bottom-6 -mx-6 -mb-6 bg-[var(--arca-surface)] px-6 pb-6">
           <button
+            data-tour="regla-cancelar"
             onClick={onClose}
             className="h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-3)]"
           >
@@ -7223,6 +7762,7 @@ function RuleEditorDialog({
           <button
             onClick={() => mut.mutate()}
             disabled={!canSave || mut.isPending}
+            data-tour="regla-guardar"
             className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-50"
           >
             {mut.isPending ? 'Guardando…' : 'Guardar regla'}
@@ -7263,7 +7803,7 @@ function RuleDetailDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-[680px]">
+      <DialogContent className="sm:max-w-[680px] max-h-[calc(100dvh-2rem)] overflow-y-auto">
         {isLoading || !data ? (
           <div className="py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             Cargando…
@@ -7285,10 +7825,29 @@ function RuleDetailDialog({
               </DialogDescription>
             </DialogHeader>
 
-            {data.rule.tipo === 'condicional' && data.rule.condition && (
-              <div className="text-[11.5px] font-mono rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2 text-[var(--arca-ink-2)]">
-                {JSON.stringify(data.rule.condition)}
+            {data.scope ? (
+              <div className="rounded-[8px] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-2 text-[12.5px] text-[var(--arca-ink-2)]">
+                Aplica a: <strong>{data.scope}</strong>
               </div>
+            ) : (
+              data.rule.tipo === 'condicional' &&
+              data.rule.condition && (
+                <div className="text-[11.5px] font-mono rounded-[8px] bg-[var(--arca-surface-2)] border border-[var(--arca-border)] px-3 py-2 text-[var(--arca-ink-2)]">
+                  {JSON.stringify(data.rule.condition)}
+                </div>
+              )
+            )}
+            {data.missingDirection && (
+              <AvisoRegla
+                tono="warn"
+                texto="Esta regla no dice si es de ventas o de compras, así que se aplica a las dos. Editala y elegí una."
+              />
+            )}
+            {data.balance?.message && (
+              <AvisoRegla
+                tono={data.balance.status === 'descuadra' ? 'error' : 'info'}
+                texto={data.balance.message}
+              />
             )}
 
             <div className="border border-[var(--arca-border)] rounded-xl overflow-hidden">
@@ -7509,9 +8068,11 @@ type PostingInvoice = Awaited<
 function Contabilizar({
   clientId,
   canWrite,
+  isOwner,
 }: {
   clientId: string;
   canWrite: boolean;
+  isOwner: boolean;
 }) {
   const qc = useQueryClient();
   const [direction, setDirection] = useState<'all' | 'emitido' | 'recibido'>(
@@ -7523,6 +8084,13 @@ function Contabilizar({
     invoiceId: string;
     number: number;
   } | null>(null);
+  /** Regeneración en bloque que se salteó asientos editados a mano. */
+  const [confirmBulkForce, setConfirmBulkForce] = useState<{
+    invoiceIds: string[];
+    edited: number;
+  } | null>(null);
+  const [voidIds, setVoidIds] = useState<string[] | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: [
@@ -7541,11 +8109,27 @@ function Contabilizar({
   const invoices = data?.invoices ?? [];
   const hasFy = data?.hasFiscalYear ?? true;
 
-  // Solo se pueden contabilizar las pendientes con período abierto.
+  // Se marca cualquier factura de un período abierto: las pendientes para
+  // generar, las contabilizadas para regenerar o anular.
   const selectable = useMemo(
-    () => invoices.filter((i) => !i.posted && i.periodStatus !== 'cerrado'),
+    () => invoices.filter((i) => i.periodStatus !== 'cerrado'),
     [invoices]
   );
+  const marcadas = useMemo(
+    () => selectable.filter((i) => selected.has(i.id)),
+    [selectable, selected]
+  );
+  const marcadasPendientes = marcadas.filter((i) => !i.posted);
+  const marcadasContabilizadas = marcadas.filter((i) => i.posted);
+  const cambiarian = invoices.filter((i) => i.posted && i.ruleWouldChange);
+
+  // Otra empresa u otro filtro: lo marcado ya no está a la vista.
+  const selKey = `${clientId}|${direction}|${includePosted}`;
+  const [prevSelKey, setPrevSelKey] = useState(selKey);
+  if (prevSelKey !== selKey) {
+    setPrevSelKey(selKey);
+    setSelected(new Set());
+  }
 
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['accounting'] });
@@ -7594,6 +8178,30 @@ function Contabilizar({
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const bulkRegMut = useMutation({
+    mutationFn: (v: { invoiceIds: string[]; force: boolean }) =>
+      regenerateInvoiceEntries({ data: { clientId, ...v } }),
+    onSuccess: (r, v) => {
+      if (r.regenerated > 0)
+        toast.success(`${r.regenerated} asiento(s) regenerado(s)`);
+      if (r.errors.length > 0)
+        toast.error(
+          `${r.errors.length} no se pudieron regenerar: ${r.errors[0].reason}`
+        );
+      if (r.skippedEdited > 0 && !v.force) {
+        setConfirmBulkForce({
+          invoiceIds: v.invoiceIds,
+          edited: r.skippedEdited,
+        });
+      } else {
+        setConfirmBulkForce(null);
+      }
+      setSelected(new Set());
+      refresh();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   const toggle = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -7603,7 +8211,7 @@ function Contabilizar({
     });
 
   const allSelected =
-    selectable.length > 0 && selected.size === selectable.length;
+    selectable.length > 0 && marcadas.length === selectable.length;
   const toggleAll = () =>
     setSelected(allSelected ? new Set() : new Set(selectable.map((i) => i.id)));
 
@@ -7619,6 +8227,8 @@ function Contabilizar({
     );
   }
 
+  const ocupado = genMut.isPending || bulkRegMut.isPending;
+
   return (
     <div className="space-y-4">
       {/* Los filtros afuera de la tabla y la explicación detrás del botón de
@@ -7626,10 +8236,9 @@ function Contabilizar({
       <div className="flex flex-wrap items-center gap-2">
         <Select
           value={direction}
-          onValueChange={(v) => {
-            setDirection(v as 'all' | 'emitido' | 'recibido');
-            setSelected(new Set());
-          }}
+          onValueChange={(v) =>
+            setDirection(v as 'all' | 'emitido' | 'recibido')
+          }
         >
           <SelectTrigger size="sm" className="w-[176px] data-[size=sm]:h-8">
             <SelectValue />
@@ -7655,33 +8264,123 @@ function Contabilizar({
         <Ayuda titulo="Contabilizar comprobantes" etiqueta="Cómo funciona">
           <p>
             Acá generás los asientos automáticos de las facturas aplicando las{' '}
-            <strong>reglas de mapeo</strong>. Revisá la regla que matchea cada
-            comprobante y generá los que estén correctos.
+            <strong>reglas de mapeo</strong>. La columna «Regla» dice cuál se va
+            a usar; en las ya contabilizadas, cuál se usó.
           </p>
           <p>
-            Si una factura no tiene regla (o tiene percepciones u otros
-            impuestos sin mapear), el asiento se crea con la cuenta{' '}
-            <strong>Pendiente de revisión</strong>, que bloquea el cierre hasta
-            que la corrijas a mano.
+            Si cambiaste las reglas, marcá las contabilizadas y tocá{' '}
+            <strong>Regenerar</strong>: se anula el asiento viejo y se crea uno
+            nuevo con las reglas de hoy.
+          </p>
+          <p>
+            Si una factura no tiene regla (o la regla no cubre el total), el
+            asiento se crea con la cuenta <strong>Pendiente de revisión</strong>
+            , que bloquea el cierre hasta que la corrijas a mano.
           </p>
         </Ayuda>
 
-        {canWrite && (
-          <Button
-            size="sm"
-            className="ml-auto gap-1.5"
-            onClick={() => genMut.mutate([...selected])}
-            disabled={selected.size === 0 || genMut.isPending}
-          >
-            <Zap className="size-3.5" strokeWidth={2} />
-            {genMut.isPending
-              ? 'Generando…'
-              : `Generar ${selected.size > 0 ? `(${selected.size})` : 'seleccionadas'}`}
-          </Button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {isOwner && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setResetOpen(true)}
+            >
+              <RotateCcw className="size-3.5" strokeWidth={2} />
+              Reiniciar ejercicio
+            </Button>
+          )}
+          {canWrite && (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={() => genMut.mutate(marcadasPendientes.map((i) => i.id))}
+              disabled={marcadasPendientes.length === 0 || ocupado}
+            >
+              <Zap className="size-3.5" strokeWidth={2} />
+              {genMut.isPending
+                ? 'Generando…'
+                : `Generar ${marcadasPendientes.length > 0 ? `(${marcadasPendientes.length})` : 'seleccionadas'}`}
+            </Button>
+          )}
+        </div>
       </div>
 
+      {cambiarian.length > 0 && (
+        <AvisoRegla
+          tono="warn"
+          texto={
+            <>
+              {cambiarian.length}{' '}
+              {cambiarian.length === 1
+                ? 'factura contabilizada usaría'
+                : 'facturas contabilizadas usarían'}{' '}
+              otra regla con la configuración de hoy.{' '}
+              {canWrite && (
+                <button
+                  type="button"
+                  className="font-medium underline underline-offset-2"
+                  onClick={() =>
+                    setSelected(new Set(cambiarian.map((i) => i.id)))
+                  }
+                >
+                  Marcarlas
+                </button>
+              )}{' '}
+              y regenerarlas.
+            </>
+          }
+        />
+      )}
+
       <ArcaCard>
+        {canWrite && marcadas.length > 0 && (
+          <BarraSeleccion
+            cantidad={marcadas.length}
+            unidad="factura"
+            unidadPlural="facturas"
+            onLimpiar={() => setSelected(new Set())}
+          >
+            {marcadasContabilizadas.length > 0 && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5"
+                  disabled={ocupado}
+                  onClick={() =>
+                    bulkRegMut.mutate({
+                      invoiceIds: marcadasContabilizadas.map((i) => i.id),
+                      force: false,
+                    })
+                  }
+                >
+                  <RefreshCw className="size-3.5" strokeWidth={2} />
+                  {bulkRegMut.isPending
+                    ? 'Regenerando…'
+                    : `Regenerar ${marcadasContabilizadas.length}`}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-[var(--arca-accent-neg-fg)]"
+                  disabled={ocupado}
+                  onClick={() =>
+                    setVoidIds(
+                      marcadasContabilizadas
+                        .map((i) => i.entryId)
+                        .filter((x): x is string => !!x)
+                    )
+                  }
+                >
+                  <Ban className="size-3.5" strokeWidth={2} />
+                  Anular {marcadasContabilizadas.length}
+                </Button>
+              </>
+            )}
+          </BarraSeleccion>
+        )}
         {isLoading ? (
           <div className="px-5 py-10 text-center text-[13px] text-[var(--arca-ink-3)]">
             Cargando comprobantes…
@@ -7698,20 +8397,11 @@ function Contabilizar({
               <tr className="border-b border-[var(--arca-border)] bg-[var(--arca-bg)] text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
                 <th className="w-9 py-2 pl-4">
                   {canWrite && selectable.length > 0 && (
-                    <button
-                      onClick={toggleAll}
-                      className="inline-flex"
-                      title="Seleccionar todo"
-                    >
-                      {allSelected ? (
-                        <CheckSquare
-                          className="w-4 h-4 text-[var(--arca-accent)]"
-                          strokeWidth={2}
-                        />
-                      ) : (
-                        <Square className="w-4 h-4" strokeWidth={2} />
-                      )}
-                    </button>
+                    <CasillaSeleccion
+                      checked={allSelected}
+                      onChange={toggleAll}
+                      label="Marcar todas"
+                    />
                   )}
                 </th>
                 <th className="py-2">Fecha</th>
@@ -7779,6 +8469,62 @@ function Contabilizar({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Lo mismo, para la regeneración en bloque */}
+      <AlertDialog
+        open={!!confirmBulkForce}
+        onOpenChange={(o) => !o && setConfirmBulkForce(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmBulkForce?.edited} asiento(s) editados a mano
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              No se regeneraron porque alguien los corrigió después de
+              generarlos. Si los regenerás, se pierden esas correcciones.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Dejarlos como están</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (confirmBulkForce)
+                  bulkRegMut.mutate({
+                    invoiceIds: confirmBulkForce.invoiceIds,
+                    force: true,
+                  });
+              }}
+            >
+              Regenerarlos también
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {voidIds && (
+        <AnularEnBloqueDialog
+          clientId={clientId}
+          entryIds={voidIds}
+          onClose={() => setVoidIds(null)}
+          onDone={() => {
+            setVoidIds(null);
+            setSelected(new Set());
+            refresh();
+          }}
+        />
+      )}
+      {resetOpen && (
+        <ReiniciarEjercicioDialog
+          clientId={clientId}
+          onClose={() => setResetOpen(false)}
+          onDone={() => {
+            setResetOpen(false);
+            setSelected(new Set());
+            refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -7799,7 +8545,6 @@ function PostingRow({
   regenerating: boolean;
 }) {
   const closed = inv.periodStatus === 'cerrado';
-  const selectable = !inv.posted && !closed;
   const dirLabel =
     inv.direction === 'emitido'
       ? 'Venta'
@@ -7808,22 +8553,19 @@ function PostingRow({
         : '—';
 
   return (
-    <tr className="border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]">
+    <tr
+      className={cn(
+        'border-b border-[var(--arca-border)] last:border-0 hover:bg-[var(--arca-surface-2)]',
+        checked && 'bg-[var(--arca-accent-bg)]'
+      )}
+    >
       <td className="py-2 pl-4">
-        {canWrite && selectable && (
-          <button onClick={onToggle} className="inline-flex">
-            {checked ? (
-              <CheckSquare
-                className="w-4 h-4 text-[var(--arca-accent)]"
-                strokeWidth={2}
-              />
-            ) : (
-              <Square
-                className="w-4 h-4 text-[var(--arca-ink-3)]"
-                strokeWidth={2}
-              />
-            )}
-          </button>
+        {canWrite && !closed && (
+          <CasillaSeleccion
+            checked={checked}
+            onChange={onToggle}
+            label={`Marcar ${dirLabel.toLowerCase()} ${inv.type} de ${inv.counterparty}`}
+          />
         )}
       </td>
       <td className="py-2 whitespace-nowrap">{fmtFecha(inv.emitionDate)}</td>
@@ -7838,13 +8580,24 @@ function PostingRow({
       </td>
       <td className="py-2 pl-4">
         {inv.posted ? (
-          <span className="inline-flex items-center gap-1.5">
+          <span className="inline-flex flex-wrap items-center gap-1.5">
             <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] border border-[var(--arca-accent-pos)]">
               Asiento N°{inv.entryNumber}
+            </span>
+            <span className="text-[var(--arca-ink-2)]">
+              {inv.appliedRuleName ?? 'Sin regla'}
             </span>
             {inv.entryEdited && (
               <span className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)] border border-[var(--arca-accent)]">
                 editado
+              </span>
+            )}
+            {inv.ruleWouldChange && !closed && (
+              <span
+                className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border border-[var(--arca-accent-warn)]"
+                title="Con las reglas de hoy este comprobante usaría otra regla. Regeneralo para aplicarla."
+              >
+                hoy: {inv.ruleName ?? 'sin regla'}
               </span>
             )}
           </span>
@@ -7856,7 +8609,7 @@ function PostingRow({
             {inv.willUsePendingReview && (
               <span
                 className="px-1.5 py-px rounded-full text-[11px] bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border border-[var(--arca-accent-warn)]"
-                title="Tiene otros impuestos/percepciones sin mapear: la diferencia irá a Pendiente de revisión"
+                title="La regla no cubre todo el importe (percepciones sin mapear o bases que no cuadran): la diferencia irá a Pendiente de revisión"
               >
                 + pendiente
               </span>

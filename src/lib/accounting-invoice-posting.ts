@@ -102,15 +102,22 @@ export interface ReglaLike {
 }
 
 /**
- * ¿La regla condicional matchea el comprobante?
+ * ¿La regla matchea el comprobante?
  * Vocabulario soportado en `condicion`:
  *  - `direccion`: "emitido" | "recibido"
  *  - `letra`: letra del comprobante; string o array (ej. "A" o ["A","M"])
  * Una clave no soportada hace que la regla NO matchee (evita imputaciones erróneas).
+ *
+ * Una regla default es el fallback de su dirección: sólo mira `direccion` (si
+ * la tiene) e ignora el resto. Las default viejas, sin condición, siguen
+ * aplicando a ventas y compras.
  */
 export function reglaMatchea(regla: ReglaLike, c: ComprobanteLike): boolean {
-  if (regla.tipo === 'default') return true;
   const cond = regla.condicion;
+  if (regla.tipo === 'default') {
+    const dir = direccionDeCondicion(cond);
+    return dir === null || dir === c.direccion;
+  }
   if (!cond || typeof cond !== 'object') return true; // condicional sin condición = comodín
 
   for (const [clave, valor] of Object.entries(cond)) {
@@ -127,6 +134,170 @@ export function reglaMatchea(regla: ReglaLike, c: ComprobanteLike): boolean {
     }
   }
   return true;
+}
+
+/** `direccion` de una condición, normalizada; null si no filtra por dirección. */
+export function direccionDeCondicion(
+  cond: Record<string, unknown> | null | undefined
+): Direccion | null {
+  if (!cond || typeof cond !== 'object') return null;
+  const raw = Object.entries(cond).find(
+    ([k]) => k.toLowerCase() === 'direccion'
+  )?.[1];
+  const v = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  return v === 'emitido' || v === 'recibido' ? v : null;
+}
+
+/** Letras de una condición, en mayúsculas; null si no filtra por letra. */
+export function letrasDeCondicion(
+  cond: Record<string, unknown> | null | undefined
+): string[] | null {
+  if (!cond || typeof cond !== 'object') return null;
+  const entry = Object.entries(cond).find(([k]) => k.toLowerCase() === 'letra');
+  if (!entry) return null;
+  const vals = Array.isArray(entry[1]) ? entry[1] : [entry[1]];
+  return vals.map((v) => String(v).trim().toUpperCase()).filter(Boolean);
+}
+
+/**
+ * Sugiere la dirección a partir del nombre de la regla ("Compras A" → recibido).
+ * Es sólo una sugerencia para el formulario: el motor nunca mira el nombre.
+ */
+export function direccionSugeridaPorNombre(nombre: string): Direccion | null {
+  const n = nombre
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const compra =
+    /\b(compra|compras|proveedor|proveedores|gasto|gastos|recibid[oa]s?)\b/.test(
+      n
+    );
+  const venta = /\b(venta|ventas|cliente|clientes|emitid[oa]s?)\b/.test(n);
+  if (compra === venta) return null; // ninguna o las dos: no adivinar
+  return compra ? 'recibido' : 'emitido';
+}
+
+/** Texto corto de a qué comprobantes aplica una regla ("Compras · letra A, M"). */
+export function describirAlcanceRegla(
+  tipo: ReglaTipo,
+  cond: Record<string, unknown> | null | undefined
+): string {
+  const dir = direccionDeCondicion(cond);
+  const dirTxt =
+    dir === 'emitido'
+      ? 'Ventas'
+      : dir === 'recibido'
+        ? 'Compras'
+        : 'Ventas y compras';
+  if (tipo === 'default') return `${dirTxt} · cualquier letra (por defecto)`;
+  const letras = letrasDeCondicion(cond);
+  return letras?.length
+    ? `${dirTxt} · letra ${letras.join(', ')}`
+    : `${dirTxt} · cualquier letra`;
+}
+
+/**
+ * ¿Todo comprobante que matchea `b` matchea también `a`? Si `a` va antes en la
+ * cola, `b` no se aplica nunca. Sólo entiende el vocabulario de facturas: una
+ * clave desconocida en `a` hace que `a` no matchee nada, así que no tapa.
+ */
+export function reglaCubre(
+  a: Pick<ReglaLike, 'tipo' | 'condicion'>,
+  b: Pick<ReglaLike, 'tipo' | 'condicion'>
+): boolean {
+  const dirA = direccionDeCondicion(a.condicion);
+  const dirB = direccionDeCondicion(b.condicion);
+  if (dirA !== null && dirA !== dirB) return false;
+  if (a.tipo === 'default') return true;
+
+  const condA = a.condicion;
+  if (condA && typeof condA === 'object') {
+    const claves = Object.keys(condA).map((k) => k.toLowerCase());
+    if (claves.some((k) => k !== 'direccion' && k !== 'letra')) return false;
+  }
+  const letrasA = letrasDeCondicion(condA);
+  if (letrasA === null || letrasA.length === 0) return true;
+  // b default o sin letras aplica a cualquier letra: a (con letras) no la cubre.
+  const letrasB = b.tipo === 'default' ? null : letrasDeCondicion(b.condicion);
+  if (letrasB === null || letrasB.length === 0) return false;
+  return letrasB.every((l) => letrasA.includes(l));
+}
+
+/**
+ * Para cada regla activa que nunca se va a aplicar, la primera regla anterior
+ * que la tapa. `reglas` en el orden de la cola (prioridad asc).
+ */
+export function detectarReglasTapadas(
+  reglas: (Pick<ReglaLike, 'id' | 'nombre' | 'tipo' | 'condicion'> & {
+    activa: boolean;
+  })[]
+): Map<string, { id: string; nombre: string }> {
+  const out = new Map<string, { id: string; nombre: string }>();
+  const activas = reglas.filter((r) => r.activa);
+  activas.forEach((b, i) => {
+    const tapa = activas.slice(0, i).find((a) => reglaCubre(a, b));
+    if (tapa) out.set(b.id, { id: tapa.id, nombre: tapa.nombre });
+  });
+  return out;
+}
+
+export type EstadoCuadre =
+  | 'ok'
+  | 'sin_otros_tributos'
+  | 'descuadra'
+  | 'indeterminado';
+
+/**
+ * ¿Las líneas de la regla suman lo mismo en el Debe que en el Haber?
+ *
+ * Cada base es una combinación de neto, IVA y otros tributos (el total es la
+ * suma de los tres), así que se puede comparar sin un comprobante concreto.
+ * Con una base fija o de sueldos no se puede decidir: `indeterminado`.
+ *
+ * `sin_otros_tributos` no es un error: la regla no mapea percepciones, y si la
+ * factura las trae la diferencia va a Pendiente de revisión.
+ */
+export function analizarCuadreRegla(
+  lineas: Pick<ReglaLineaLike, 'lado' | 'base'>[]
+): { estado: EstadoCuadre; mensaje: string | null } {
+  const vec: Record<string, [number, number, number]> = {
+    total: [1, 1, 1],
+    neto: [1, 0, 0],
+    iva: [0, 1, 0],
+    otros_tributos: [0, 0, 1],
+  };
+  const debe = [0, 0, 0];
+  const haber = [0, 0, 0];
+  for (const l of lineas) {
+    const v = vec[l.base];
+    if (!v) return { estado: 'indeterminado', mensaje: null };
+    const lado = l.lado === 'debe' ? debe : haber;
+    for (let i = 0; i < 3; i++) lado[i] += v[i];
+  }
+  const dif = debe.map((d, i) => d - haber[i]);
+  if (dif.every((x) => x === 0)) return { estado: 'ok', mensaje: null };
+  if (dif[0] === 0 && dif[1] === 0) {
+    return {
+      estado: 'sin_otros_tributos',
+      mensaje:
+        'Si el comprobante trae percepciones u otros tributos, esa parte va a Pendiente de revisión. Agregá una línea con base «Otros impuestos / percepciones» para imputarla.',
+    };
+  }
+  const etiqueta: Record<string, string> = {
+    total: 'Total',
+    neto: 'Neto',
+    iva: 'IVA',
+    otros_tributos: 'Otros tributos',
+  };
+  const suma = (lado: Lado) =>
+    lineas
+      .filter((l) => l.lado === lado)
+      .map((l) => etiqueta[l.base])
+      .join(' + ');
+  return {
+    estado: 'descuadra',
+    mensaje: `La regla no cuadra: el Debe suma ${suma('debe')} y el Haber suma ${suma('haber')}. Como el Total ya incluye Neto + IVA + Otros tributos, los dos lados no dan lo mismo y la diferencia irá siempre a Pendiente de revisión. Revisá la base de cada línea.`,
+  };
 }
 
 /**
