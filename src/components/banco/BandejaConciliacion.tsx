@@ -32,7 +32,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { conciliarLote, getBandejaConciliacion } from '@/actions/bank';
+import {
+  conciliarLote,
+  desconciliarMovimiento,
+  getBandejaConciliacion,
+} from '@/actions/bank';
 import { excluirMovimiento } from '@/actions/extractos';
 import { MesPicker } from '@/components/shared/mes-picker';
 import { CATEGORIA_MOVIMIENTO_LABEL } from '@/lib/clasificar-movimiento';
@@ -54,7 +58,13 @@ function mesAnterior(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function nombreComprobante(c: ComprobantePendiente): string {
+/** Pide lo mínimo: también nombra el comprobante de una conciliación hecha. */
+function nombreComprobante(c: {
+  tipoNombre: string | null;
+  tipo?: number;
+  puntoVenta: number;
+  numero: number;
+}): string {
   const nro = `${String(c.puntoVenta).padStart(4, '0')}-${String(c.numero).padStart(8, '0')}`;
   return `${c.tipoNombre ?? `Tipo ${c.tipo}`} ${nro}`;
 }
@@ -264,6 +274,9 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
   // Excluir saca plata de la comparación con facturación: se pregunta antes.
   const [aExcluir, setAExcluir] = useState<MovimientoPendiente | null>(null);
   const [verExcluidos, setVerExcluidos] = useState(false);
+  // El lote no se escribe sin que se vea qué se va a escribir.
+  const [revisandoLote, setRevisandoLote] = useState(false);
+  const [verConciliados, setVerConciliados] = useState(false);
 
   const { data, isFetching } = useQuery({
     queryKey: ['bandejaConciliacion', clienteId, periodo],
@@ -285,6 +298,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
     onSuccess: ({ conciliados, salteados }) => {
       invalidar();
       setMovElegido(null);
+      setRevisandoLote(false);
       toast.success(
         conciliados === 1
           ? 'Movimiento conciliado'
@@ -298,6 +312,16 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
     },
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : 'No se pudo conciliar'),
+  });
+
+  const desconciliar = useMutation({
+    mutationFn: (movimientoId: string) =>
+      desconciliarMovimiento({ data: { movimientoId } }),
+    onSuccess: () => {
+      invalidar();
+      toast.success('Conciliación deshecha: el movimiento vuelve a la bandeja');
+    },
+    onError: () => toast.error('No se pudo deshacer la conciliación'),
   });
 
   const excluir = useMutation({
@@ -398,7 +422,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
             {crucesExactos.length > 0 && (
               <button
                 type="button"
-                onClick={() => conciliar.mutate(crucesExactos)}
+                onClick={() => setRevisandoLote(true)}
                 disabled={conciliar.isPending}
                 className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[var(--arca-accent)] px-3 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
@@ -407,7 +431,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
                 ) : (
                   <Sparkles className="size-3.5" />
                 )}
-                Confirmar {crucesExactos.length} cruce
+                Revisar {crucesExactos.length} cruce
                 {crucesExactos.length === 1 ? '' : 's'} exacto
                 {crucesExactos.length === 1 ? '' : 's'}
               </button>
@@ -582,13 +606,28 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
 
       {/* Lo ya resuelto del mes, para saber que no se perdió */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[11.5px] text-[var(--arca-ink-3)]">
-        <span className="inline-flex items-center gap-1.5">
-          <CheckCircle2 className="size-3.5 text-[var(--arca-accent-pos)]" />
-          Conciliado en el mes{' '}
-          <span className="font-medium tabular-nums text-[var(--arca-ink)]">
-            {pesos(totales.conciliado)}
+        {data.conciliados.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => setVerConciliados((v) => !v)}
+            className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
+          >
+            <CheckCircle2 className="size-3.5 text-[var(--arca-accent-pos)]" />
+            {data.conciliados.length} conciliado
+            {data.conciliados.length === 1 ? '' : 's'} en el mes{' '}
+            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+              {pesos(totales.conciliado)}
+            </span>
+            <span className="underline">
+              {verConciliados ? 'ocultar' : 'ver y deshacer'}
+            </span>
+          </button>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
+            <CheckCircle2 className="size-3.5" />
+            nada conciliado todavía
           </span>
-        </span>
+        )}
         {data.excluidos.length > 0 ? (
           <button
             type="button"
@@ -617,6 +656,45 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
           {pesos(totales.facturado)}
         </span>
       </div>
+
+      {/* Lo conciliado, con su deshacer: confirmar no es definitivo */}
+      {verConciliados && data.conciliados.length > 0 && (
+        <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+          <div className="border-b border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]">
+            Movimientos con su factura asignada
+          </div>
+          {data.conciliados.map((m) => (
+            <div
+              key={m.id}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+            >
+              <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
+                {fecha(m.fecha)}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--arca-ink)]">
+                {m.descripcion ?? 'Sin descripción'}
+              </span>
+              <ArrowRight className="size-3 shrink-0 text-[var(--arca-ink-4)]" />
+              <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--arca-ink-2)]">
+                {m.comprobante
+                  ? `${nombreComprobante(m.comprobante)} · ${m.comprobante.contraparteNombre ?? 'sin contraparte'}`
+                  : 'comprobante no encontrado'}
+              </span>
+              <span className="shrink-0 text-[13px] font-semibold tabular-nums text-[var(--arca-accent-pos-fg)]">
+                {pesos(Number(m.importe))}
+              </span>
+              <button
+                type="button"
+                disabled={desconciliar.isPending}
+                onClick={() => desconciliar.mutate(m.id)}
+                className="shrink-0 rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+              >
+                Deshacer
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Los excluidos, con la puerta de vuelta */}
       {verExcluidos && data.excluidos.length > 0 && (
@@ -652,6 +730,99 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
           ))}
         </div>
       )}
+
+      {/* Revisión del lote: qué se va a conciliar, uno por uno, antes de
+          escribir nada. Confirmar de golpe sin ver el detalle deja al estudio
+          con conciliaciones que no eligió. */}
+      <AlertDialog open={revisandoLote} onOpenChange={setRevisandoLote}>
+        <AlertDialogContent className="!max-w-3xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Revisá los {crucesExactos.length} cruces antes de confirmar
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Cada movimiento coincide con una sola factura del mes en importe y
+              fecha. Si alguno no corresponde, cancelá y conciliá de a uno desde
+              la bandeja.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="max-h-[50vh] overflow-y-auto rounded-[10px] border border-[var(--arca-border)]">
+            {crucesExactos.map((par) => {
+              const mov = movimientos.find((m) => m.id === par.movimientoId);
+              const comp = comprobantePorId.get(par.comprobanteId);
+              if (!mov || !comp) return null;
+              return (
+                <div
+                  key={par.movimientoId}
+                  className="flex flex-col gap-1 border-t border-[var(--arca-border)] px-3.5 py-2.5 text-[12px] first:border-t-0"
+                >
+                  <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                    <span className="min-w-0">
+                      {/* La descripción va completa: el CUIT del ordenante
+                          suele estar acá y es lo que valida el cruce. */}
+                      <span className="block font-medium text-[var(--arca-ink)]">
+                        {mov.descripcion ?? 'Sin descripción'}
+                      </span>
+                      <span className="block text-[10.5px] text-[var(--arca-ink-4)]">
+                        {fecha(mov.fecha)} ·{' '}
+                        {mov.cuentaNumero ?? mov.cuentaBanco} ·{' '}
+                        {pesos(Number(mov.importe))}
+                      </span>
+                    </span>
+                    <ArrowRight className="size-3.5 text-[var(--arca-ink-4)]" />
+                    <span className="min-w-0 text-right">
+                      <span className="block font-medium text-[var(--arca-ink)]">
+                        {nombreComprobante(comp)}
+                      </span>
+                      <span className="block text-[10.5px] text-[var(--arca-ink-4)]">
+                        {fecha(comp.fechaEmision)} ·{' '}
+                        {comp.contraparteNombre ?? 'sin contraparte'} ·{' '}
+                        {pesos(Number(comp.total))}
+                      </span>
+                    </span>
+                  </div>
+                  <span className="text-[10.5px] text-[var(--arca-ink-3)]">
+                    {mov.candidatos[0]?.motivo}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+            Se van a conciliar{' '}
+            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+              {pesos(
+                crucesExactos.reduce((a, par) => {
+                  const mov = movimientos.find(
+                    (m) => m.id === par.movimientoId
+                  );
+                  return a + Number(mov?.importe ?? 0);
+                }, 0)
+              )}
+            </span>{' '}
+            en {crucesExactos.length} movimiento
+            {crucesExactos.length === 1 ? '' : 's'}. Se puede deshacer uno por
+            uno después.
+          </p>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                conciliar.mutate(crucesExactos);
+              }}
+              disabled={conciliar.isPending}
+            >
+              {conciliar.isPending
+                ? 'Conciliando…'
+                : `Conciliar los ${crucesExactos.length}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Confirmación de exclusión: es plata que sale de la comparación */}
       <AlertDialog

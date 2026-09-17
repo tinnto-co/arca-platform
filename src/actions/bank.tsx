@@ -760,6 +760,7 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
           total: comprobante.total,
           contraparteId: comprobante.contraparteId,
           contraparteNombre: contraparte.nombre,
+          contraparteDoc: contraparte.docNro,
           conciliacionId: conciliacionComprobante.id,
         })
         .from(comprobante)
@@ -803,14 +804,31 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
           const d = Math.round(dias(m.fecha, c.fechaEmision));
           const mismaContraparte =
             m.contraparteId != null && m.contraparteId === c.contraparteId;
+          // Los bancos meten el CUIT del ordenante en la descripción
+          // ("TRANSFERENCIA INMEDIATA COE 30718075099"): encontrarlo es la
+          // confirmación más fuerte que tenemos de que el cobro es de ese
+          // cliente, y no solo una coincidencia de importe.
+          const cuitEnDescripcion =
+            c.contraparteDoc != null &&
+            c.contraparteDoc.length >= 8 &&
+            (m.descripcion ?? '').replace(/\D/g, '').includes(c.contraparteDoc);
+
           return {
             comprobanteId: c.id,
-            confianza: mismaContraparte ? 0.95 : d === 0 ? 0.9 : 0.75,
-            motivo: mismaContraparte
-              ? 'Mismo importe y el mismo cliente'
-              : d === 0
-                ? 'Mismo importe, el mismo día'
-                : `Mismo importe, ${d} día${d === 1 ? '' : 's'} de diferencia`,
+            confianza: cuitEnDescripcion
+              ? 0.99
+              : mismaContraparte
+                ? 0.95
+                : d === 0
+                  ? 0.9
+                  : 0.75,
+            motivo: cuitEnDescripcion
+              ? 'Mismo importe y el CUIT del cliente en la descripción'
+              : mismaContraparte
+                ? 'Mismo importe y el mismo cliente'
+                : d === 0
+                  ? 'Mismo importe, el mismo día'
+                  : `Mismo importe, ${d} día${d === 1 ? '' : 's'} de diferencia`,
           };
         })
         .sort((a, b) => b.confianza - a.confianza)
@@ -882,7 +900,65 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
         importe: m.importe,
         cuentaNumero: m.cuentaNumero,
       })),
+      // Y lo ya conciliado, por el mismo motivo: tiene que poder deshacerse.
+      conciliados: conciliados.map((m) => {
+        const comp = comprobantes.find(
+          (c) => c.id === m.comprobanteConciliadoId
+        );
+        return {
+          id: m.id,
+          fecha: m.fecha,
+          descripcion: m.descripcion,
+          importe: m.importe,
+          estado: m.conciliacionEstado,
+          comprobante: comp
+            ? {
+                id: comp.id,
+                fechaEmision: comp.fechaEmision,
+                tipoNombre: comp.tipoNombre,
+                puntoVenta: comp.puntoVenta,
+                numero: comp.numero,
+                total: comp.total,
+                contraparteNombre: comp.contraparteNombre,
+              }
+            : null,
+        };
+      }),
     };
+  });
+
+/** Deshace la conciliación de un movimiento: vuelve a la bandeja. */
+export const desconciliarMovimiento = createServerFn({ method: 'POST' })
+  .validator(z.object({ movimientoId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    // El movimiento tiene que ser de una cuenta de la organización.
+    const [mov] = await db
+      .select({ id: movimientoBancario.id })
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(movimientoBancario.id, ctx.data.movimientoId),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      )
+      .limit(1);
+    if (!mov) throw new Error('Movimiento no encontrado o no autorizado');
+
+    const borradas = await db
+      .delete(conciliacionComprobante)
+      .where(
+        eq(conciliacionComprobante.movimientoBancarioId, ctx.data.movimientoId)
+      )
+      .returning({ id: conciliacionComprobante.id });
+
+    return { deshechas: borradas.length };
   });
 
 /**
