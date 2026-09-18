@@ -1,20 +1,22 @@
 /**
- * Extractos bancarios: PDF → extracción (Gemini) → cuadre → revisión →
+ * Extractos bancarios: PDF → cola → lectura en segundo plano → revisión →
  * movimientos persistidos (TIN-1634).
  *
- * Reemplaza al scanner suelto de /scan_pdf, que mostraba y no guardaba.
- * La IA solo LEE (banco, saldos y cada movimiento); el cuadre
- * (inicial + ingresos − egresos = final) es nuestro, y nada se guarda sin
- * que una persona confirme. El PDF queda en documento/R2 como respaldo.
+ * Subir y leer están separados a propósito. `subirExtracto` guarda el archivo
+ * y devuelve enseguida; la lectura la hace el worker de a varios en paralelo
+ * (`extractos-worker.ts`), así el estudio puede tirar veinte extractos e irse
+ * a hacer otra cosa. La extracción queda en `extracto_bancario`, no en la
+ * memoria del navegador, y por eso la revisión es después y desde donde sea.
  *
- * El cuadre además elige el modelo: se lee rápido y solo se relee con el
- * modelo lento cuando los saldos no cierran.
+ * La IA solo LEE (banco, saldos y cada movimiento); el cuadre
+ * (inicial + ingresos − egresos = final) es nuestro, y nada llega a
+ * `movimiento_bancario` sin que una persona confirme. El PDF queda en
+ * documento/R2 como respaldo.
  */
 import { randomUUID } from 'node:crypto';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
-import { FinishReason, GoogleGenAI, type Schema } from '@google/genai';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import * as r2 from '@/lib/r2';
 import {
@@ -22,6 +24,7 @@ import {
   clienteCredencial,
   cuentaBancaria,
   documento,
+  extractoBancario,
   movimientoBancario,
 } from '@/drizzle/schema';
 import {
@@ -33,264 +36,104 @@ import {
   cuadreExtracto,
   idExternoDeMovimiento,
   monedaIso,
-  type MovimientoExtraido,
+  type Cuadre,
 } from '@/lib/extracto-calc';
-import {
-  CATEGORIAS_MOVIMIENTO,
-  clasificarMovimiento,
-} from '@/lib/clasificar-movimiento';
+import { type LecturaGuardable } from '@/lib/extracto-lectura';
+import { despertarWorkerExtractos } from '@/lib/extractos-worker';
+import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
 
-const ai = new GoogleGenAI({
-  apiKey: (process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
-    process.env.GEMINI_API_KEY)!,
-});
-
+/** Tope de tamaño del archivo subido. */
 const MAX_BYTES = 20 * 1024 * 1024;
 
-/**
- * Error de lectura con un mensaje pensado para el usuario. Se distingue por
- * clase para que el `catch` de la extracción lo deje pasar en vez de
- * reemplazarlo por el mensaje genérico.
- */
-class ErrorDeLectura extends Error {
-  override name = 'ErrorDeLectura';
-}
-
-/* ───────────────────────── extracción con Gemini ───────────────────────── */
-
-interface CuentaExtraida {
+/** Una cuenta leída, ya emparejada con la cuenta bancaria del sistema. */
+export interface CuentaRevisable {
   numeroCuenta: string;
   cbu: string;
   tipo: string;
   moneda: string;
   saldoInicial: number;
   saldoFinal: number;
-  movimientos: MovimientoExtraido[];
+  cuadre: Cuadre;
+  cuentaExistenteId: string | null;
+  cuentaExistenteNombre: string | null;
+  movimientos: {
+    fecha: string;
+    descripcion: string;
+    importe: number;
+    direccion: 'ingreso' | 'egreso';
+    saldoPosterior?: number | null;
+    categoria: string;
+  }[];
 }
 
-interface ExtractoExtraido {
-  banco: string;
-  periodoDesde: string;
-  periodoHasta: string;
-  /** Un extracto consolidado trae varias; uno común, una sola. */
-  cuentas: CuentaExtraida[];
-  legible: boolean;
-}
-
-const movimientoSchema: Schema = {
-  type: 'OBJECT',
-  properties: {
-    fecha: { type: 'STRING', description: 'YYYY-MM-DD' },
-    descripcion: {
-      type: 'STRING',
-      description: 'Concepto tal como figura, en una línea.',
-    },
-    importe: { type: 'NUMBER', description: 'Siempre positivo.' },
-    direccion: {
-      type: 'STRING',
-      enum: ['ingreso', 'egreso'],
-      description:
-        'Visto desde el titular: ingreso = entró plata, egreso = salió.',
-    },
-    saldoPosterior: {
-      type: 'NUMBER',
-      description:
-        'Saldo después del movimiento si la columna existe; 0 si no.',
-    },
-  },
-  required: ['fecha', 'descripcion', 'importe', 'direccion', 'saldoPosterior'],
-} as Schema;
-
-const cuentaSchema: Schema = {
-  type: 'OBJECT',
-  properties: {
-    numeroCuenta: {
-      type: 'STRING',
-      description: 'Número de cuenta tal como figura, ej. "147-013617/6".',
-    },
-    cbu: {
-      type: 'STRING',
-      description: 'CBU o CVU sin espacios (22 dígitos); vacío si no figura.',
-    },
-    tipo: {
-      type: 'STRING',
-      enum: ['caja_ahorro', 'cuenta_corriente', 'otra'],
-      description:
-        '"Cta. Cte." / "Cuenta Corriente" = cuenta_corriente; "Caja de Ahorro" = caja_ahorro.',
-    },
-    moneda: { type: 'STRING', description: 'ARS, USD, etc.' },
-    saldoInicial: {
-      type: 'NUMBER',
-      description: 'El "SALDO ANTERIOR" de ESTA cuenta.',
-    },
-    saldoFinal: {
-      type: 'NUMBER',
-      description: 'El "SALDO AL <fecha>" de ESTA cuenta.',
-    },
-    movimientos: { type: 'ARRAY', items: movimientoSchema },
-  },
-  required: [
-    'numeroCuenta',
-    'cbu',
-    'tipo',
-    'moneda',
-    'saldoInicial',
-    'saldoFinal',
-    'movimientos',
-  ],
-} as Schema;
-
-const extractoSchema: Schema = {
-  type: 'OBJECT',
-  properties: {
-    banco: {
-      type: 'STRING',
-      description:
-        'Entidad emisora (BBVA, Galicia, Santander, ICBC, Macro, Coinag, Mercado Pago, etc.).',
-    },
-    periodoDesde: { type: 'STRING', description: 'YYYY-MM-DD' },
-    periodoHasta: { type: 'STRING', description: 'YYYY-MM-DD' },
-    cuentas: { type: 'ARRAY', items: cuentaSchema },
-    legible: {
-      type: 'BOOLEAN',
-      description: 'false si el documento no parece un extracto o es ilegible.',
-    },
-  },
-  required: ['banco', 'periodoDesde', 'periodoHasta', 'cuentas', 'legible'],
-} as Schema;
-
-const PROMPT = `Sos un extractor de EXTRACTOS BANCARIOS argentinos (bancos y billeteras: BBVA, Galicia, Santander, ICBC, Macro, Coinag, Mercado Pago, etc.).
-
-QUÉ EXTRAER:
-1. Banco/entidad y período del extracto.
-2. UNA ENTRADA POR CADA CUENTA del documento. Un extracto CONSOLIDADO trae
-   varias cuentas (ej. "CC $ 147-013617/6" y "CC $ 147-013618/3"), y cada una
-   tiene SU PROPIA tabla de movimientos más adelante en el PDF, con su propio
-   "SALDO ANTERIOR" y su propio "SALDO AL <fecha>". Recorré el documento
-   entero: las tablas de las cuentas siguientes suelen estar en las últimas
-   hojas, después de la primera. Por cada cuenta: número, CBU/CVU, tipo,
-   moneda, saldo inicial, saldo final y sus movimientos.
-3. De cada cuenta, TODOS los movimientos de SU tabla, uno por uno: fecha,
-   concepto/descripción, importe (siempre positivo) y si es ingreso o egreso
-   PARA EL TITULAR. No mezcles movimientos entre cuentas: cada movimiento va
-   en la cuenta cuya tabla lo contiene.
-
-CÓMO DISTINGUIR INGRESO DE EGRESO (cada banco lo marca distinto):
-- Columnas separadas "Crédito"/"Débito" (o "Depósitos"/"Extracciones"): crédito = ingreso, débito = egreso.
-- Una sola columna con signo: negativo o entre paréntesis = egreso.
-- Mercado Pago: "Te transfirieron"/"cobraste" = ingreso; "Transferiste"/"pagaste" = egreso.
-
-REGLAS:
-- Números argentinos: punto de miles, coma decimal ("1.234,56" = 1234.56).
-- NO saltees movimientos NI CUENTAS: el control de cuadre de cada cuenta (inicial + ingresos − egresos = final) delata cualquier faltante.
-- Si la tabla trae columna de saldo, completá saldoPosterior de cada fila; si no, 0.
-- Descripciones multilínea: unilas en una sola línea.
-- Si el documento NO es un extracto bancario o es ilegible, marcá legible=false.`;
+const soloDigitos = (v: string) => v.replace(/\D/g, '');
 
 /**
- * Una pasada de lectura. `pensar` prende el razonamiento del modelo: sin él
- * la misma tabla se lee en un sexto del tiempo (medido sobre un BBVA de un
- * mes: 31s contra 181s), y el control de cuadre nos dice si hizo falta.
+ * Empareja cada cuenta del PDF con las que la empresa ya tiene: por CBU, que
+ * es único, y si no por número, ignorando separadores —el PDF y la carga a
+ * mano nunca los escriben igual—. Lo que no matchea se crea al confirmar.
  */
-async function leerExtracto(
-  base64Data: string,
-  mimeType: string,
-  modelo: string,
-  pensar: boolean
-): Promise<ExtractoExtraido> {
-  const t0 = Date.now();
-  const response = await ai.models.generateContent({
-    model: modelo,
-    config: {
-      responseMimeType: 'application/json',
-      responseJsonSchema: extractoSchema,
-      // Un extracto trimestral son cientos de movimientos, y cada uno es un
-      // objeto JSON: con el techo por defecto la respuesta se corta al medio
-      // y el JSON no parsea.
-      maxOutputTokens: 65_536,
-      ...(pensar ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
-    },
-    contents: [
-      { text: PROMPT },
-      { inlineData: { mimeType, data: base64Data } },
-    ],
-  });
+async function reconocerCuentas(
+  cuentas: LecturaGuardable['extraccion']['cuentas'],
+  clienteId: string,
+  orgId: string
+): Promise<CuentaRevisable[]> {
+  const existentes = await db
+    .select({
+      id: cuentaBancaria.id,
+      banco: cuentaBancaria.banco,
+      numero: cuentaBancaria.numero,
+      cbu: cuentaBancaria.cbu,
+      alias: cuentaBancaria.alias,
+    })
+    .from(cuentaBancaria)
+    .where(
+      and(
+        eq(cuentaBancaria.orgId, orgId),
+        eq(cuentaBancaria.clienteId, clienteId),
+        eq(cuentaBancaria.activa, true)
+      )
+    );
 
-  const finish = response.candidates?.[0]?.finishReason;
-  const segundos = Math.round((Date.now() - t0) / 1000);
-  // Solo se loguea lo anómalo: una lectura que tardó de más o que no terminó
-  // sola es lo que sirve para diagnosticar después.
-  if (segundos > 90 || (finish && finish !== FinishReason.STOP)) {
-    console.warn('[extractos] lectura lenta o incompleta', {
-      modelo,
-      segundos,
-      finishReason: finish,
-      tokensSalida: response.usageMetadata?.candidatesTokenCount,
+  return cuentas.map((c) => {
+    const cbu = soloDigitos(c.cbu);
+    const numero = soloDigitos(c.numeroCuenta);
+    const match = existentes.find((e) => {
+      const mismoCbu =
+        cbu !== '' && e.cbu != null && soloDigitos(e.cbu) === cbu;
+      const mismoNumero =
+        numero !== '' && e.numero != null && soloDigitos(e.numero) === numero;
+      return mismoCbu || mismoNumero;
     });
-  }
 
-  const texto = response.text;
-  if (!texto) throw new Error('El modelo no devolvió datos');
-
-  // Respuesta cortada por el techo de tokens: el JSON viene incompleto, así
-  // que el error tiene que decir qué hacer y no «no se pudo leer».
-  if (finish === FinishReason.MAX_TOKENS) {
-    throw new ErrorDeLectura(
-      'El extracto es demasiado largo para leerlo de una vez. Subilo partido por mes y volvé a intentar.'
-    );
-  }
-
-  try {
-    return JSON.parse(texto) as ExtractoExtraido;
-  } catch {
-    throw new ErrorDeLectura(
-      'La lectura del extracto quedó incompleta. Probá de nuevo; si vuelve a pasar, subilo partido por mes.'
-    );
-  }
-}
-
-/**
- * Lee el extracto rápido y, si no cuadra, lo relee con el modelo que razona.
- *
- * El cuadre es el árbitro: cuando cierra, la lectura rápida está completa y
- * no hay nada que ganar esperando tres minutos. Cuando no cierra —o el
- * documento salió ilegible— vale la pena la segunda pasada, y si tampoco
- * cuadra se devuelve la del modelo más cuidadoso para que la persona decida
- * sobre la mejor lectura disponible.
- */
-async function extraerConGemini(
-  base64Data: string,
-  mimeType: string
-): Promise<ExtractoExtraido> {
-  const rapida = await leerExtracto(
-    base64Data,
-    mimeType,
-    'gemini-2.5-flash',
-    false
-  );
-  // Tienen que cerrar TODAS las cuentas: si una sola no cuadra, la lectura
-  // rápida se perdió algo y vale la pena releer.
-  const cuadra =
-    rapida.legible &&
-    rapida.cuentas.length > 0 &&
-    rapida.cuentas.every(
-      (c) =>
-        c.movimientos.length > 0 &&
-        cuadreExtracto(c.saldoInicial, c.saldoFinal, c.movimientos).cuadra
-    );
-  if (cuadra) return rapida;
-
-  console.warn('[extractos] la lectura rápida no cuadró, releyendo con pro');
-  return await leerExtracto(base64Data, mimeType, 'gemini-2.5-pro', true);
+    return {
+      numeroCuenta: c.numeroCuenta,
+      cbu: c.cbu,
+      tipo: c.tipo,
+      moneda: monedaIso(c.moneda),
+      saldoInicial: c.saldoInicial,
+      saldoFinal: c.saldoFinal,
+      cuadre: cuadreExtracto(c.saldoInicial, c.saldoFinal, c.movimientos),
+      cuentaExistenteId: match?.id ?? null,
+      cuentaExistenteNombre: match
+        ? `${match.banco}${match.alias ? ` · ${match.alias}` : ''}`
+        : null,
+      movimientos: c.movimientos,
+    };
+  });
 }
 
 /* ───────────────────────────── server fns ──────────────────────────────── */
 
 /**
- * Lee el PDF y devuelve la extracción CON el control de cuadre, sin guardar
- * nada: la persistencia recién ocurre en confirmarExtracto.
+ * Sube un PDF y lo encola. No lee nada: guarda el archivo en R2, crea el
+ * `documento` de respaldo y deja la fila en `pendiente`. Devuelve enseguida,
+ * así subir veinte extractos son veinte subidas rápidas y no veinte esperas
+ * de dos minutos.
+ *
+ * Al final despierta al worker, que procesa de a varios en paralelo.
  */
-export const extraerExtracto = createServerFn({ method: 'POST' })
+export const subirExtracto = createServerFn({ method: 'POST' })
   .validator(
     z.object({
       clienteId: z.string().uuid(),
@@ -319,87 +162,198 @@ export const extraerExtracto = createServerFn({ method: 'POST' })
       .limit(1);
     if (!cli) throw new Error('Empresa no encontrada');
 
-    let extracto: ExtractoExtraido;
+    const [rel] = await db
+      .select({ credencialId: clienteCredencial.credencialId })
+      .from(clienteCredencial)
+      .where(eq(clienteCredencial.clienteId, ctx.data.clienteId))
+      .limit(1);
+    if (!rel)
+      throw new Error('La empresa no tiene una credencial de ARCA asociada');
+
+    const documentoId = randomUUID();
+    const storageKey = r2.documentKey({
+      orgId,
+      clienteId: ctx.data.clienteId,
+      documentId: documentoId,
+      extension: r2.extensionFor(ctx.data.fileName, ctx.data.mimeType),
+    });
     try {
-      extracto = await extraerConGemini(ctx.data.base64Data, ctx.data.mimeType);
+      await r2.upload(storageKey, buffer, ctx.data.mimeType);
     } catch (error) {
-      console.error('[extractos] falló la extracción', { error });
-      // Los mensajes que escribimos a propósito ya explican qué hacer.
-      if (error instanceof ErrorDeLectura) throw error;
+      console.error('[extractos] falló la subida a R2', { storageKey, error });
       throw new Error(
-        'No se pudo leer el documento. Si es una foto, probá con una toma más nítida.'
-      );
-    }
-    const conMovimientos = extracto.cuentas.filter(
-      (c) => c.movimientos.length > 0
-    );
-    if (!extracto.legible || conMovimientos.length === 0) {
-      throw new Error(
-        'El documento no parece un extracto bancario legible. Si lo es y este banco no está soportado, avisá al equipo con el archivo.'
+        'No se pudo guardar el archivo. Probá de nuevo en unos minutos.'
       );
     }
 
-    // Las cuentas que la empresa ya tiene, para reconocer cuáles del PDF son
-    // nuevas sin que la persona tenga que elegirlas a mano.
-    const existentes = await db
-      .select({
-        id: cuentaBancaria.id,
-        banco: cuentaBancaria.banco,
-        numero: cuentaBancaria.numero,
-        cbu: cuentaBancaria.cbu,
-        alias: cuentaBancaria.alias,
-      })
-      .from(cuentaBancaria)
-      .where(
-        and(
-          eq(cuentaBancaria.orgId, orgId),
-          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
-          eq(cuentaBancaria.activa, true)
-        )
-      );
-
-    const soloDigitos = (s: string) => s.replace(/\D/g, '');
-
-    const cuentas = conMovimientos.map((c) => {
-      // Se reconoce por CBU (es único) y, si no lo hay, por número: los
-      // separadores varían entre el PDF y lo cargado a mano.
-      const cbu = soloDigitos(c.cbu);
-      const numero = soloDigitos(c.numeroCuenta);
-      const match = existentes.find((e) => {
-        const mismoCbu =
-          cbu !== '' && e.cbu != null && soloDigitos(e.cbu) === cbu;
-        const mismoNumero =
-          numero !== '' && e.numero != null && soloDigitos(e.numero) === numero;
-        return mismoCbu || mismoNumero;
-      });
-
-      return {
-        numeroCuenta: c.numeroCuenta,
-        cbu: c.cbu,
-        tipo: c.tipo,
-        moneda: monedaIso(c.moneda),
-        saldoInicial: c.saldoInicial,
-        saldoFinal: c.saldoFinal,
-        cuadre: cuadreExtracto(c.saldoInicial, c.saldoFinal, c.movimientos),
-        cuentaExistenteId: match?.id ?? null,
-        cuentaExistenteNombre: match
-          ? `${match.banco}${match.alias ? ` · ${match.alias}` : ''}`
-          : null,
-        // Categoría propuesta por el clasificador, para la revisión.
-        movimientos: c.movimientos.map((m) => ({
-          ...m,
-          importe: Math.abs(m.importe),
-          categoria: clasificarMovimiento(m.descripcion),
-        })),
-      };
+    await db.insert(documento).values({
+      id: documentoId,
+      orgId,
+      credencialId: rel.credencialId,
+      clienteId: ctx.data.clienteId,
+      nombre: ctx.data.fileName,
+      storageKey,
+      mimeType: ctx.data.mimeType,
+      tamanoBytes: buffer.length,
+      checksum: r2.checksum(buffer),
+      fuente: 'manual',
     });
 
-    return {
-      banco: extracto.banco,
-      periodoDesde: extracto.periodoDesde,
-      periodoHasta: extracto.periodoHasta,
-      cuentas,
-    };
+    const [fila] = await db
+      .insert(extractoBancario)
+      .values({
+        orgId,
+        clienteId: ctx.data.clienteId,
+        documentoId,
+        nombreArchivo: ctx.data.fileName,
+        estado: 'pendiente',
+      })
+      .returning({ id: extractoBancario.id });
+
+    // Fuera del await de la respuesta: la subida contesta ya y la lectura
+    // sigue en el servidor.
+    despertarWorkerExtractos();
+
+    return { id: fila.id, documentoId };
+  });
+
+/**
+ * La cola de un cliente: lo que falta leer, lo leído esperando revisión y lo
+ * que falló. La UI la repregunta mientras haya algo en curso.
+ *
+ * `extraccion` no viaja en esta lista —son cientos de movimientos por fila— y
+ * se pide aparte al abrir uno.
+ */
+export const listarExtractos = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clienteId: z.string().uuid(),
+      /** Por defecto no trae los ya resueltos, que son historial. */
+      incluirCerrados: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const abiertos = ['pendiente', 'procesando', 'extraido', 'error'] as const;
+
+    return await db
+      .select({
+        id: extractoBancario.id,
+        nombreArchivo: extractoBancario.nombreArchivo,
+        estado: extractoBancario.estado,
+        banco: extractoBancario.banco,
+        periodoDesde: extractoBancario.periodoDesde,
+        periodoHasta: extractoBancario.periodoHasta,
+        cuentasDetectadas: extractoBancario.cuentasDetectadas,
+        movimientosDetectados: extractoBancario.movimientosDetectados,
+        cuadra: extractoBancario.cuadra,
+        error: extractoBancario.error,
+        intentos: extractoBancario.intentos,
+        documentoId: extractoBancario.documentoId,
+        createdAt: extractoBancario.createdAt,
+      })
+      .from(extractoBancario)
+      .where(
+        and(
+          eq(extractoBancario.orgId, orgId),
+          eq(extractoBancario.clienteId, ctx.data.clienteId),
+          ctx.data.incluirCerrados
+            ? undefined
+            : inArray(extractoBancario.estado, [...abiertos])
+        )
+      )
+      .orderBy(desc(extractoBancario.createdAt));
+  });
+
+/**
+ * La lectura completa de un extracto de la cola, para revisarlo: las cuentas
+ * con sus movimientos, su cuadre y a qué cuenta bancaria del sistema
+ * corresponde cada una.
+ */
+export const getExtracto = createServerFn({ method: 'GET' })
+  .validator(z.object({ extractoId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const [fila] = await db
+      .select({
+        id: extractoBancario.id,
+        clienteId: extractoBancario.clienteId,
+        nombreArchivo: extractoBancario.nombreArchivo,
+        estado: extractoBancario.estado,
+        documentoId: extractoBancario.documentoId,
+        error: extractoBancario.error,
+        extraccion: sql<
+          LecturaGuardable['extraccion'] | null
+        >`${extractoBancario.extraccion}`,
+      })
+      .from(extractoBancario)
+      .where(
+        and(
+          eq(extractoBancario.id, ctx.data.extractoId),
+          eq(extractoBancario.orgId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!fila) throw new Error('Extracto no encontrado');
+    if (!fila.extraccion) {
+      return { ...fila, cuentas: [] as CuentaRevisable[] };
+    }
+
+    const cuentas = await reconocerCuentas(
+      fila.extraccion.cuentas,
+      fila.clienteId,
+      orgId
+    );
+    return { ...fila, cuentas };
+  });
+
+/** Vuelve a encolar una lectura que falló. */
+export const reintentarExtracto = createServerFn({ method: 'POST' })
+  .validator(z.object({ extractoId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const [fila] = await db
+      .update(extractoBancario)
+      .set({ estado: 'pendiente', intentos: 0, error: null })
+      .where(
+        and(
+          eq(extractoBancario.id, ctx.data.extractoId),
+          eq(extractoBancario.orgId, orgId),
+          inArray(extractoBancario.estado, ['error', 'extraido'])
+        )
+      )
+      .returning({ id: extractoBancario.id });
+
+    if (!fila) throw new Error('Extracto no encontrado o ya está en proceso');
+    despertarWorkerExtractos();
+    return { ok: true };
+  });
+
+/** Saca un extracto de la cola sin importarlo. El PDF queda en documentos. */
+export const descartarExtracto = createServerFn({ method: 'POST' })
+  .validator(z.object({ extractoId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const [fila] = await db
+      .update(extractoBancario)
+      .set({ estado: 'descartado' })
+      .where(
+        and(
+          eq(extractoBancario.id, ctx.data.extractoId),
+          eq(extractoBancario.orgId, orgId)
+        )
+      )
+      .returning({ id: extractoBancario.id });
+
+    if (!fila) throw new Error('Extracto no encontrado');
+    return { ok: true };
   });
 
 /**
@@ -413,10 +367,7 @@ export const extraerExtracto = createServerFn({ method: 'POST' })
 export const confirmarExtracto = createServerFn({ method: 'POST' })
   .validator(
     z.object({
-      clienteId: z.string().uuid(),
-      fileName: z.string().min(1),
-      mimeType: z.string().min(1),
-      base64Data: z.string().min(1),
+      extractoId: z.string().uuid(),
       banco: z.string().min(1),
       cuentas: z
         .array(
@@ -448,6 +399,31 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
 
+    // El PDF ya está en R2 y su `documento` creado desde la subida: acá solo
+    // se leen los movimientos que la persona revisó.
+    const [extracto] = await db
+      .select({
+        id: extractoBancario.id,
+        clienteId: extractoBancario.clienteId,
+        documentoId: extractoBancario.documentoId,
+        estado: extractoBancario.estado,
+      })
+      .from(extractoBancario)
+      .where(
+        and(
+          eq(extractoBancario.id, ctx.data.extractoId),
+          eq(extractoBancario.orgId, orgId)
+        )
+      )
+      .limit(1);
+
+    if (!extracto) throw new Error('Extracto no encontrado');
+    if (extracto.estado === 'confirmado')
+      throw new Error('Este extracto ya fue importado');
+
+    const clienteId = extracto.clienteId;
+    const documentoId = extracto.documentoId;
+
     // Las cuentas ya existentes tienen que ser de la org y de esta empresa.
     const idsElegidos = ctx.data.cuentas
       .map((c) => c.cuentaBancariaId)
@@ -459,51 +435,13 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
         .where(
           and(
             eq(cuentaBancaria.orgId, orgId),
-            eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+            eq(cuentaBancaria.clienteId, clienteId),
             inArray(cuentaBancaria.id, idsElegidos)
           )
         );
       if (propias.length !== new Set(idsElegidos).size)
         throw new Error('Alguna cuenta bancaria no corresponde a esta empresa');
     }
-
-    // El PDF de respaldo, como en despachos.
-    const buffer = Buffer.from(ctx.data.base64Data, 'base64');
-    const [rel] = await db
-      .select({ credencialId: clienteCredencial.credencialId })
-      .from(clienteCredencial)
-      .where(eq(clienteCredencial.clienteId, ctx.data.clienteId))
-      .limit(1);
-    if (!rel)
-      throw new Error('La empresa no tiene una credencial de ARCA asociada');
-
-    const documentoId = randomUUID();
-    const storageKey = r2.documentKey({
-      orgId,
-      clienteId: ctx.data.clienteId,
-      documentId: documentoId,
-      extension: r2.extensionFor(ctx.data.fileName, ctx.data.mimeType),
-    });
-    try {
-      await r2.upload(storageKey, buffer, ctx.data.mimeType);
-    } catch (error) {
-      console.error('[extractos] falló la subida a R2', { storageKey, error });
-      throw new Error(
-        'No se pudo guardar el archivo. Probá de nuevo en unos minutos.'
-      );
-    }
-    await db.insert(documento).values({
-      id: documentoId,
-      orgId,
-      credencialId: rel.credencialId,
-      clienteId: ctx.data.clienteId,
-      nombre: ctx.data.fileName,
-      storageKey,
-      mimeType: ctx.data.mimeType,
-      tamanoBytes: buffer.length,
-      checksum: r2.checksum(buffer),
-      fuente: 'manual',
-    });
 
     let importados = 0;
     let salteados = 0;
@@ -519,7 +457,7 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
             .insert(cuentaBancaria)
             .values({
               orgId,
-              clienteId: ctx.data.clienteId,
+              clienteId: clienteId,
               banco: ctx.data.banco,
               tipo: cta.tipo,
               numero: cta.numeroCuenta || null,
@@ -588,6 +526,12 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
       importados += nuevos.length;
       salteados += filas.length - nuevos.length;
     }
+
+    // La fila sale de la cola: ya no hay nada que revisar en ella.
+    await db
+      .update(extractoBancario)
+      .set({ estado: 'confirmado' })
+      .where(eq(extractoBancario.id, extracto.id));
 
     return {
       importados,

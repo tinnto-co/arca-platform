@@ -57,6 +57,7 @@ begin
     'cliente','cliente_cct',
     'cliente_concepto','comprobante','convenio','credencial_afip','cuenta',
     'cuenta_bancaria','despacho_importacion','deuda','documento','eecc','ejercicio','empleado','evento',
+    'extracto_bancario',
     'firmante','job','liquidacion_iibb','lsd_presentacion','notificacion',
     'organization_module','plantilla_informe_auditor','recibo','regla_mapeo',
     'solicitud','vencimiento'
