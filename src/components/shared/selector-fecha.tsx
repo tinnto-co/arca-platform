@@ -7,9 +7,13 @@
  *
  * Se puede **escribir** además de elegir en el calendario: para un empleado
  * dado de alta en 2010 hay que retroceder casi doscientos meses a mano, y el
- * estudio teclea la fecha más rápido de lo que navega. Acepta lo que la gente
- * escribe de verdad —`18/09/2026`, `18-9-26`, `18092026`— y lo normaliza a
- * DD/MM/YYYY al salir del campo.
+ * estudio teclea la fecha más rápido de lo que navega.
+ *
+ * El campo tiene máscara: se teclean solo dígitos y las barras aparecen solas
+ * (`18092026` → `18/09/2026`). Como la máscara es posicional, el día y el mes
+ * van con sus dos dígitos —`01032010`, no `1/3/2010`—, que es el precio de que
+ * el campo no acepte cualquier cosa. El año de dos cifras sí vale:
+ * `18/09/26` se guarda como 2026.
  *
  * Habla en `YYYY-MM-DD`, que es lo que ya guardan los formularios y viaja en
  * las URLs, así que reemplazar un input nativo es cambiar el elemento y nada
@@ -38,6 +42,21 @@ export function fechaDesdeIso(
 
 /** Date → `YYYY-MM-DD` en hora local. */
 export const isoDesdeFecha = (d: Date): string => format(d, 'yyyy-MM-dd');
+
+/**
+ * Máscara de DD/MM/AAAA: deja solo dígitos, corta en ocho y pone las barras
+ * sola. Es lo que hace que el campo no acepte un chorizo de números —
+ * `100000028889999` queda `10/00/0002`— y que no haya que escribir las barras.
+ *
+ * La barra recién aparece con el tercer dígito (y con el quinto), para que
+ * borrar con la tecla de retroceso no se pelee con la máscara.
+ */
+export function enmascararFecha(texto: string): string {
+  const d = texto.replace(/\D/g, '').slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
 
 /**
  * Interpreta lo tecleado. Tolera separadores (`/`, `-`, `.`), un solo dígito
@@ -174,10 +193,11 @@ export function SelectorFecha({
             value={textoMostrado}
             inputMode="numeric"
             autoComplete="off"
+            maxLength={10}
             placeholder={placeholder}
             onChange={(e) => {
               setEscribiendo(true);
-              setTexto(e.target.value);
+              setTexto(enmascararFecha(e.target.value));
             }}
             onBlur={confirmarTexto}
             onKeyDown={(e) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fechaDesdeTexto } from './selector-fecha';
+import { enmascararFecha, fechaDesdeTexto } from './selector-fecha';
 
 const iso = (d: Date | undefined) =>
   d
@@ -34,5 +34,26 @@ describe('fechaDesdeTexto', () => {
     expect(fechaDesdeTexto('   ')).toBeUndefined();
     expect(fechaDesdeTexto('ayer')).toBeUndefined();
     expect(fechaDesdeTexto('18/09')).toBeUndefined();
+  });
+});
+
+describe('enmascararFecha', () => {
+  it('pone las barras mientras se escribe', () => {
+    expect(enmascararFecha('1')).toBe('1');
+    expect(enmascararFecha('18')).toBe('18');
+    // La barra recién con el tercer dígito: así el retroceso no se traba.
+    expect(enmascararFecha('189')).toBe('18/9');
+    expect(enmascararFecha('1809')).toBe('18/09');
+    expect(enmascararFecha('180920')).toBe('18/09/20');
+    expect(enmascararFecha('18092026')).toBe('18/09/2026');
+  });
+
+  it('corta en ocho dígitos y descarta lo que no sea número', () => {
+    // El caso que reportó Gastón: un chorizo no puede entrar entero.
+    expect(enmascararFecha('100000028889999')).toBe('10/00/0002');
+    expect(enmascararFecha('18/09/2026')).toBe('18/09/2026');
+    expect(enmascararFecha('18-09-2026')).toBe('18/09/2026');
+    expect(enmascararFecha('hola')).toBe('');
+    expect(enmascararFecha('')).toBe('');
   });
 });
