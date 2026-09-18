@@ -22,6 +22,7 @@ import {
   tipoEmpresa,
   clienteCct,
   clienteCredencial,
+  credencialAfip,
   cct,
   empleado,
   recibo,
@@ -6945,8 +6946,13 @@ export const traerConveniosDeArca = createServerFn({ method: 'POST' })
       .select({
         credencialId: clienteCredencial.credencialId,
         delegaciones: clienteCredencial.delegacionesAfip,
+        estadoCredencial: credencialAfip.estado,
       })
       .from(clienteCredencial)
+      .innerJoin(
+        credencialAfip,
+        eq(credencialAfip.id, clienteCredencial.credencialId)
+      )
       .where(eq(clienteCredencial.clienteId, ctx.data.clientId))
       .orderBy(desc(clienteCredencial.preferida))
       .limit(1);
@@ -6954,6 +6960,20 @@ export const traerConveniosDeArca = createServerFn({ method: 'POST' })
     if (!rel) {
       throw new Error(
         'La empresa todavía no tiene una clave de ARCA asociada, así que no se pueden consultar sus convenios. Cargala en la ficha del cliente.'
+      );
+    }
+
+    // Con la clave marcada inválida el scrapeo muere en el login, y eso ya lo
+    // sabemos de antes: el caso de Toloki SA, que tiene clave cargada pero
+    // nunca logró un login. Se dice acá en vez de gastar el intento.
+    if (rel.estadoCredencial === 'clave_invalida') {
+      throw new Error(
+        'La clave de ARCA de esta empresa está marcada como inválida, así que no se puede consultar ARCA. Actualizala en la ficha del cliente y volvé a intentar.'
+      );
+    }
+    if (rel.estadoCredencial === 'bloqueada') {
+      throw new Error(
+        'La clave de ARCA de esta empresa está bloqueada. Hay que desbloquearla en ARCA antes de consultar los convenios.'
       );
     }
 

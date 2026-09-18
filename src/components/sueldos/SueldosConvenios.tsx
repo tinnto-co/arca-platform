@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Pencil,
   RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SelectorFecha } from '@/components/shared/selector-fecha';
@@ -132,11 +133,8 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
         );
       }
     },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : 'No se pudieron traer los convenios',
-        { duration: 9000 }
-      ),
+    // El error se muestra dentro del diálogo (ver más abajo): un toast se va
+    // solo y acá hace falta leerlo para decidir si reintentar.
   });
 
   const agregarDesdeAfip = useMutation({
@@ -198,6 +196,22 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
                   consultan en «Simplificación Registral - Empleadores», con la
                   clave fiscal del estudio.
                 </p>
+
+                {/* El error queda a la vista y no en un toast que se va: Mi
+                    Simplificación de ARCA es intermitente (en la prueba del
+                    scrapper, 7 de 10 corridas trajeron datos), así que
+                    reintentar es parte del uso normal, no una excepción. */}
+                {traerDeArca.isError && (
+                  <div className="flex items-start gap-2 rounded-lg border border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] px-3 py-2.5 text-xs leading-relaxed text-[var(--arca-accent-warn-fg)]">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                    <span>
+                      {traerDeArca.error instanceof Error
+                        ? traerDeArca.error.message
+                        : 'No se pudieron traer los convenios.'}
+                    </span>
+                  </div>
+                )}
+
                 <Button
                   className="gap-2"
                   disabled={traerDeArca.isPending}
@@ -210,7 +224,9 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
                   )}
                   {traerDeArca.isPending
                     ? 'Consultando ARCA…'
-                    : 'Buscar en ARCA'}
+                    : traerDeArca.isError
+                      ? 'Reintentar'
+                      : 'Buscar en ARCA'}
                 </Button>
                 {traerDeArca.isPending && (
                   <p className="text-xs text-muted-foreground">
