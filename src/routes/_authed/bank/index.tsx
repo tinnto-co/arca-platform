@@ -52,6 +52,7 @@ import {
   recategorizarMovimiento,
 } from '@/actions/extractos';
 import { ImportarExtractoDialog } from '@/components/banco/ImportarExtractoDialog';
+import { AvisoExtractosEnCurso } from '@/components/banco/AvisoExtractosEnCurso';
 import { BandejaConciliacion } from '@/components/banco/BandejaConciliacion';
 import {
   CATEGORIAS_MOVIMIENTO,
@@ -781,6 +782,10 @@ function BankPage() {
         subtitle="Conciliación bancaria"
         actions={<SelectorClienteGlobal />}
       />
+
+      {/* Lo que el servidor está leyendo ahora mismo. Va primero porque, si
+          hay extractos en curso, eso cambia lo que se puede conciliar. */}
+      {clienteId && <AvisoExtractosEnCurso clienteId={clienteId} />}
 
       {/* La bandeja ES la vista: el trabajo del mes, no el resumen de caja. */}
       {accounts.length > 0 && (
