@@ -561,11 +561,23 @@ function RevisionCargada({
 export function ImportarExtractoDialog({
   clienteId,
   children,
+  abierto,
+  onAbiertoChange,
 }: {
   clienteId: string;
-  children: React.ReactNode;
+  /** Disparador propio. Se puede omitir si lo abre otro control. */
+  children?: React.ReactNode;
+  /** Abierto desde afuera —la franja de la página, por ejemplo—. */
+  abierto?: boolean;
+  onAbiertoChange?: (abierto: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [abiertoPropio, setAbiertoPropio] = useState(false);
+  const controlado = abierto !== undefined;
+  const open = controlado ? abierto : abiertoPropio;
+  const setOpen = (o: boolean) => {
+    if (controlado) onAbiertoChange?.(o);
+    else setAbiertoPropio(o);
+  };
   const [revisando, setRevisando] = useState<string | null>(null);
 
   return (
@@ -576,7 +588,7 @@ export function ImportarExtractoDialog({
         if (!o) setRevisando(null);
       }}
     >
-      <DialogTrigger asChild>{children}</DialogTrigger>
+      {children && <DialogTrigger asChild>{children}</DialogTrigger>}
       <DialogContent className="!max-w-6xl w-[96vw] max-h-[88vh] overflow-y-auto">
         <ClienteIdContext.Provider value={clienteId}>
           <DialogHeader>

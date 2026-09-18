@@ -687,6 +687,9 @@ function BankPage() {
   const [showManualMovement, setShowManualMovement] = useState(false);
   // El registro completo arranca plegado: la vista es la conciliación.
   const [showRegistro, setShowRegistro] = useState(false);
+  // El importador se abre desde dos lados: el botón de Cuentas y la franja de
+  // extractos en curso, que si no anuncia trabajo pendiente sin dar la puerta.
+  const [importarAbierto, setImportarAbierto] = useState(false);
   const queryClient = useQueryClient();
 
   // Si la empresa cambia (desde acá o desde otra vista), el filtro de cuenta
@@ -785,7 +788,12 @@ function BankPage() {
 
       {/* Lo que el servidor está leyendo ahora mismo. Va primero porque, si
           hay extractos en curso, eso cambia lo que se puede conciliar. */}
-      {clienteId && <AvisoExtractosEnCurso clienteId={clienteId} />}
+      {clienteId && (
+        <AvisoExtractosEnCurso
+          clienteId={clienteId}
+          onAbrirCola={() => setImportarAbierto(true)}
+        />
+      )}
 
       {/* La bandeja ES la vista: el trabajo del mes, no el resumen de caja. */}
       {accounts.length > 0 && (
@@ -807,7 +815,11 @@ function BankPage() {
           <Plus className="w-3 h-3" strokeWidth={2} />
           Nueva cuenta
         </button>
-        <ImportarExtractoDialog clienteId={clienteId}>
+        <ImportarExtractoDialog
+          clienteId={clienteId}
+          abierto={importarAbierto}
+          onAbiertoChange={setImportarAbierto}
+        >
           <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity">
             <Upload className="w-3.5 h-3.5" strokeWidth={2} />
             Importar extracto

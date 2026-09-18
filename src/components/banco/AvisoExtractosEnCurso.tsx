@@ -101,7 +101,7 @@ export function AvisoExtractosEnCurso({
           onClick={onAbrirCola}
           className="ml-auto text-[11.5px] font-medium text-[var(--arca-ink-2)] underline hover:text-[var(--arca-ink)]"
         >
-          Ver la cola
+          {cargados > 0 ? 'Ir a extraer' : 'Ver la cola'}
         </button>
       )}
     </div>
