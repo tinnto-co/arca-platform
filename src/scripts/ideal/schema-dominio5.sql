@@ -9,7 +9,7 @@ create type cuenta_bancaria_tipo as enum ('caja_ahorro', 'cuenta_corriente', 'ot
 create type movimiento_direccion as enum ('ingreso', 'egreso');
 create type conciliacion_estado as enum ('sugerida', 'confirmada', 'rechazada');
 create type extracto_estado as enum (
-  'pendiente', 'procesando', 'extraido', 'error', 'confirmado', 'descartado'
+  'cargado', 'pendiente', 'procesando', 'extraido', 'error', 'confirmado', 'descartado'
 );
 
 -- ============================================================================
@@ -169,7 +169,7 @@ create trigger trg_set_updated_at before update on extracto_bancario for each ro
 comment on table extracto_bancario is
   'Un PDF de extracto subido, con su lectura y en qué punto de la cola está. Existe para que subir veinte extractos no obligue a esperar veinte lecturas con la pantalla abierta: se suben, se procesan en segundo plano de a varios, y se revisan cuando están.';
 comment on column extracto_bancario.estado is
-  'pendiente = subido, esperando turno. procesando = el modelo lo está leyendo. extraido = listo para que una persona lo revise. error = la lectura falló (el motivo está en `error`) y se puede reintentar. confirmado = sus movimientos ya se importaron. descartado = se decidió no importarlo.';
+  'cargado = subido, todavía sin pedir la lectura (el estudio junta la tanda y aprieta Extraer). pendiente = en cola, el worker lo va a tomar. procesando = el modelo lo está leyendo. extraido = listo para que una persona lo revise. error = la lectura falló (el motivo está en `error`) y se puede reintentar. confirmado = sus movimientos ya se importaron. descartado = se decidió no importarlo.';
 comment on column extracto_bancario.extraccion is
   'La lectura completa: { banco, periodoDesde, periodoHasta, cuentas: [{ numeroCuenta, cbu, tipo, moneda, saldoInicial, saldoFinal, movimientos: [...] }] }. Es la propuesta de la IA, no un dato confirmado: nada llega a movimiento_bancario sin que una persona confirme.';
 comment on column extracto_bancario.cuadra is

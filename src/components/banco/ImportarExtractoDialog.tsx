@@ -585,9 +585,10 @@ export function ImportarExtractoDialog({
               Extractos bancarios
             </DialogTitle>
             <DialogDescription>
-              Subí todos los extractos juntos: se leen en segundo plano, de a
-              varios a la vez, así que podés cerrar esto y seguir trabajando.
-              Cuando estén, se revisan y se importan.
+              Cargá todos los extractos —en una o varias tandas— y apretá
+              «Extraer». Se leen en segundo plano, de a varios a la vez, así que
+              podés cerrar esto y seguir trabajando; cuando estén, se revisan y
+              se importan.
             </DialogDescription>
           </DialogHeader>
 

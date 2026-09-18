@@ -21,11 +21,13 @@ import {
   Loader2,
   RotateCcw,
   Upload,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   descartarExtracto,
+  encolarExtractos,
   listarExtractos,
   reintentarExtracto,
   subirExtracto,
@@ -40,6 +42,11 @@ const ESTADO: Record<
   string,
   { label: string; clase: string; icono: typeof Clock }
 > = {
+  cargado: {
+    label: 'Sin extraer',
+    clase: 'text-[var(--arca-ink-4)]',
+    icono: FileText,
+  },
   pendiente: {
     label: 'En cola',
     clase: 'text-[var(--arca-ink-3)]',
@@ -101,6 +108,7 @@ export function ColaExtractos({
         : false,
   });
 
+  const cargados = cola.filter((e) => e.estado === 'cargado');
   const enCurso = cola.filter((e) =>
     (EN_CURSO as readonly string[]).includes(e.estado)
   ).length;
@@ -142,6 +150,25 @@ export function ColaExtractos({
     }
     avisado.current = { listos, conError, arrancado: true };
   }, [listos, conError, enCurso, cola.length]);
+
+  /** El botón "Extraer": manda a leer toda la tanda cargada. */
+  const extraer = useMutation({
+    mutationFn: () => encolarExtractos({ data: { clienteId } }),
+    onSuccess: ({ encolados }) => {
+      void queryClient.invalidateQueries({ queryKey: ['extractos'] });
+      toast.success(
+        encolados === 1
+          ? 'Extrayendo 1 extracto'
+          : `Extrayendo ${encolados} extractos`,
+        {
+          description:
+            'Se leen en segundo plano, de a tres a la vez: podés cerrar esto y seguir trabajando.',
+        }
+      );
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'No se pudo arrancar'),
+  });
 
   const reintentar = useMutation({
     mutationFn: (extractoId: string) =>
@@ -197,10 +224,13 @@ export function ColaExtractos({
     const ok = resultados.filter((r) => r.status === 'fulfilled').length;
     const fallaron = resultados.length - ok;
     if (ok > 0) {
-      toast.success(ok === 1 ? 'Extracto en cola' : `${ok} extractos en cola`, {
-        description:
-          'Se leen en segundo plano: podés seguir usando la plataforma y volver cuando estén.',
-      });
+      toast.success(
+        ok === 1 ? 'Extracto cargado' : `${ok} extractos cargados`,
+        {
+          description:
+            'Podés seguir agregando. Cuando estén todos, apretá «Extraer».',
+        }
+      );
     }
     if (fallaron > 0) {
       const primero = resultados.find((r) => r.status === 'rejected');
@@ -258,7 +288,8 @@ export function ColaExtractos({
               ? 'Soltá para subir'
               : 'Arrastrá todos los extractos juntos, o hacé click para elegirlos'}
             <span className="text-[11.5px] text-[var(--arca-ink-4)]">
-              PDF o imagen, hasta 20 MB cada uno. Se leen en segundo plano.
+              PDF o imagen, hasta 20 MB cada uno. Se cargan primero; la lectura
+              arranca cuando apretás «Extraer».
             </span>
           </>
         )}
@@ -274,6 +305,30 @@ export function ColaExtractos({
           e.target.value = '';
         }}
       />
+
+      {/* Lo cargado y sin extraer: el paso que dispara la lectura */}
+      {cargados.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-[12px] border border-[var(--arca-accent-ring)] bg-[var(--arca-accent-bg)] px-4 py-3">
+          <span className="text-[12.5px] text-[var(--arca-accent-fg)]">
+            {cargados.length} extracto{cargados.length === 1 ? '' : 's'} cargado
+            {cargados.length === 1 ? '' : 's'} sin extraer. Podés seguir
+            agregando antes de empezar.
+          </span>
+          <Button
+            className="ml-auto gap-2"
+            disabled={extraer.isPending}
+            onClick={() => extraer.mutate()}
+          >
+            {extraer.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="size-3.5" />
+            )}
+            Extraer{' '}
+            {cargados.length === 1 ? 'el extracto' : `los ${cargados.length}`}
+          </Button>
+        </div>
+      )}
 
       {/* Resumen de la cola */}
       {cola.length > 0 && (

@@ -74,7 +74,7 @@ if (!APPLY) {
 // transacción funciona, pero separarlo mantiene el paso reintentable.
 if (!antes.enum_estado) {
   await sql.unsafe(`create type extracto_estado as enum (
-    'pendiente', 'procesando', 'extraido', 'error', 'confirmado', 'descartado'
+    'cargado', 'pendiente', 'procesando', 'extraido', 'error', 'confirmado', 'descartado'
   )`);
   console.log('  → enum extracto_estado creado');
 }

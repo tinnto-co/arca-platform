@@ -126,12 +126,14 @@ async function reconocerCuentas(
 /* ───────────────────────────── server fns ──────────────────────────────── */
 
 /**
- * Sube un PDF y lo encola. No lee nada: guarda el archivo en R2, crea el
- * `documento` de respaldo y deja la fila en `pendiente`. Devuelve enseguida,
- * así subir veinte extractos son veinte subidas rápidas y no veinte esperas
- * de dos minutos.
+ * Sube un PDF y lo deja listo para extraer. No lee nada y no arranca nada:
+ * guarda el archivo en R2, crea el `documento` de respaldo y deja la fila en
+ * `cargado`. Devuelve enseguida, así subir veinte extractos son veinte
+ * subidas rápidas y no veinte esperas de dos minutos.
  *
- * Al final despierta al worker, que procesa de a varios en paralelo.
+ * La lectura la pide `encolarExtractos`: subir y extraer son dos pasos a
+ * propósito, para poder juntar la tanda en varias idas y venidas, revisarla y
+ * recién entonces disparar.
  */
 export const subirExtracto = createServerFn({ method: 'POST' })
   .validator(
@@ -206,15 +208,48 @@ export const subirExtracto = createServerFn({ method: 'POST' })
         clienteId: ctx.data.clienteId,
         documentoId,
         nombreArchivo: ctx.data.fileName,
-        estado: 'pendiente',
+        estado: 'cargado',
       })
       .returning({ id: extractoBancario.id });
 
-    // Fuera del await de la respuesta: la subida contesta ya y la lectura
-    // sigue en el servidor.
-    despertarWorkerExtractos();
-
     return { id: fila.id, documentoId };
+  });
+
+/**
+ * Manda a leer lo que está cargado: pasa las filas a `pendiente` —lo único
+ * que el worker toma— y lo despierta. Es el botón "Extraer".
+ *
+ * Sin `ids` manda toda la tanda cargada de la empresa, que es el caso normal;
+ * con `ids`, solo esos.
+ */
+export const encolarExtractos = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clienteId: z.string().uuid(),
+      ids: z.array(z.string().uuid()).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const filas = await db
+      .update(extractoBancario)
+      .set({ estado: 'pendiente', error: null })
+      .where(
+        and(
+          eq(extractoBancario.orgId, orgId),
+          eq(extractoBancario.clienteId, ctx.data.clienteId),
+          eq(extractoBancario.estado, 'cargado'),
+          ctx.data.ids?.length
+            ? inArray(extractoBancario.id, ctx.data.ids)
+            : undefined
+        )
+      )
+      .returning({ id: extractoBancario.id });
+
+    if (filas.length > 0) despertarWorkerExtractos();
+    return { encolados: filas.length };
   });
 
 /**
@@ -235,7 +270,13 @@ export const listarExtractos = createServerFn({ method: 'GET' })
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const abiertos = ['pendiente', 'procesando', 'extraido', 'error'] as const;
+    const abiertos = [
+      'cargado',
+      'pendiente',
+      'procesando',
+      'extraido',
+      'error',
+    ] as const;
 
     return await db
       .select({

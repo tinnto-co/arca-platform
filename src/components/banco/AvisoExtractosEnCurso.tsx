@@ -12,7 +12,7 @@
 import { useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileText, Loader2 } from 'lucide-react';
 import { listarExtractos } from '@/actions/extractos';
 
 const EN_CURSO = ['pendiente', 'procesando'];
@@ -35,6 +35,7 @@ export function AvisoExtractosEnCurso({
         : false,
   });
 
+  const cargados = cola.filter((e) => e.estado === 'cargado').length;
   const enCurso = cola.filter((e) => EN_CURSO.includes(e.estado)).length;
   const listos = cola.filter((e) => e.estado === 'extraido').length;
   const conError = cola.filter((e) => e.estado === 'error').length;
@@ -62,10 +63,20 @@ export function AvisoExtractosEnCurso({
     previo.current = { listos, arrancado: true };
   }, [listos, enCurso]);
 
-  if (enCurso === 0 && listos === 0 && conError === 0) return null;
+  if (enCurso === 0 && listos === 0 && conError === 0 && cargados === 0)
+    return null;
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-4 py-2.5 text-[12px]">
+      {/* Cargado y sin extraer es fácil de olvidar: la lectura no arranca
+          sola, así que hay que decirlo desde la página. */}
+      {cargados > 0 && (
+        <span className="inline-flex items-center gap-1.5 text-[var(--arca-accent-fg)]">
+          <FileText className="size-3.5" />
+          {cargados} extracto{cargados === 1 ? '' : 's'} cargado
+          {cargados === 1 ? '' : 's'} sin extraer
+        </span>
+      )}
       {enCurso > 0 && (
         <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-2)]">
           <Loader2 className="size-3.5 animate-spin" />
@@ -84,7 +95,7 @@ export function AvisoExtractosEnCurso({
           {conError} con error
         </span>
       )}
-      {onAbrirCola && (listos > 0 || conError > 0) && (
+      {onAbrirCola && (listos > 0 || conError > 0 || cargados > 0) && (
         <button
           type="button"
           onClick={onAbrirCola}
