@@ -3982,6 +3982,13 @@ const INVOICE_SELECT = {
  * Previsualiza las facturas contabilizables de una empresa: para cada una indica
  * qué regla matchearía, si ya está contabilizada y el estado de su período. (US 3.2.1/3.2.2)
  */
+/**
+ * Tope de comprobantes que trae la previsualización. Con el histórico 2025
+ * cargado hay empresas de más de 20.000, así que el tope se alcanza de verdad
+ * y la pantalla tiene que decirlo.
+ */
+const PREVIEW_LIMIT = 2000;
+
 export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
   .validator(
     z.object({
@@ -3999,7 +4006,8 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
       .select()
       .from(ejercicio)
       .where(eq(ejercicio.clienteId, clientId));
-    if (fys.length === 0) return { hasFiscalYear: false, invoices: [] };
+    if (fys.length === 0)
+      return { hasFiscalYear: false, invoices: [], truncado: false };
 
     // Las fechas de ejercicio son columnas `date` (strings YYYY-MM-DD): ordenan
     // lexicográficamente, así que el mínimo/máximo salen sin parsear.
@@ -4021,6 +4029,9 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
       periods.map((p) => [p.periodo.slice(0, 7), p.status])
     );
 
+    // El filtro de dirección va en el WHERE y no después del `limit`. Filtrando
+    // en memoria, una empresa con más comprobantes que el tope se quedaba sin
+    // compras enteras: las 2000 primeras por fecha podían ser todas ventas.
     const invs = await db
       .select(INVOICE_SELECT)
       .from(comprobante)
@@ -4030,11 +4041,19 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
         and(
           eq(comprobante.clienteId, clientId),
           gte(comprobante.fechaEmision, minStart),
-          lte(comprobante.fechaEmision, maxEnd)
+          lte(comprobante.fechaEmision, maxEnd),
+          ...(ctx.data.direction !== 'all'
+            ? [eq(comprobante.direccion, ctx.data.direction)]
+            : [])
         )
       )
       .orderBy(asc(comprobante.fechaEmision))
-      .limit(2000);
+      .limit(PREVIEW_LIMIT + 1);
+
+    // Se pidió una de más para saber si quedó afuera, y avisarlo en vez de
+    // recortar en silencio.
+    const truncado = invs.length > PREVIEW_LIMIT;
+    if (truncado) invs.length = PREVIEW_LIMIT;
 
     const rules = await loadActiveInvoiceRules(clientId);
 
@@ -4097,14 +4116,13 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
       };
     });
 
-    const filtered = rows.filter((r) => {
-      if (ctx.data.direction !== 'all' && r.direction !== ctx.data.direction)
-        return false;
-      if (!ctx.data.includePosted && r.posted) return false;
-      return true;
-    });
+    // La dirección ya la filtró la consulta; acá sólo queda lo contabilizado,
+    // que depende de los asientos y no se puede resolver en el mismo WHERE.
+    const filtered = ctx.data.includePosted
+      ? rows
+      : rows.filter((r) => !r.posted);
 
-    return { hasFiscalYear: true, invoices: filtered };
+    return { hasFiscalYear: true, invoices: filtered, truncado };
   });
 
 /** Genera los asientos automáticos de las facturas seleccionadas. (US 3.2.1/3.2.2) */

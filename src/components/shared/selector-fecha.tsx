@@ -5,11 +5,17 @@
  * operativo: cambia de aspecto según el navegador, no respeta los tokens ni el
  * castellano y en Safari directamente no muestra calendario.
  *
+ * Se puede **escribir** además de elegir en el calendario: para un empleado
+ * dado de alta en 2010 hay que retroceder casi doscientos meses a mano, y el
+ * estudio teclea la fecha más rápido de lo que navega. Acepta lo que la gente
+ * escribe de verdad —`18/09/2026`, `18-9-26`, `18092026`— y lo normaliza a
+ * DD/MM/YYYY al salir del campo.
+ *
  * Habla en `YYYY-MM-DD`, que es lo que ya guardan los formularios y viaja en
  * las URLs, así que reemplazar un input nativo es cambiar el elemento y nada
  * más.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { format, parse, isValid } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { CalendarIcon, X } from 'lucide-react';
@@ -33,10 +39,50 @@ export function fechaDesdeIso(
 /** Date → `YYYY-MM-DD` en hora local. */
 export const isoDesdeFecha = (d: Date): string => format(d, 'yyyy-MM-dd');
 
+/**
+ * Interpreta lo tecleado. Tolera separadores (`/`, `-`, `.`), un solo dígito
+ * en día y mes, y el año en dos cifras: 00–69 es 2000, 70–99 es 1900, que es
+ * el corte habitual y el que corresponde a fechas de alta de empleados.
+ */
+export function fechaDesdeTexto(texto: string): Date | undefined {
+  const limpio = texto.trim();
+  if (!limpio) return undefined;
+
+  const partes = limpio.split(/[/\-. ]+/).filter(Boolean);
+  let dia: number, mes: number, anio: number;
+
+  if (partes.length === 3) {
+    [dia, mes, anio] = partes.map(Number);
+  } else if (partes.length === 1 && /^\d{6,8}$/.test(limpio)) {
+    // Tecleado de corrido: ddmmyyyy o ddmmyy.
+    dia = Number(limpio.slice(0, 2));
+    mes = Number(limpio.slice(2, 4));
+    anio = Number(limpio.slice(4));
+  } else {
+    return undefined;
+  }
+
+  if (!Number.isFinite(dia) || !Number.isFinite(mes) || !Number.isFinite(anio))
+    return undefined;
+  if (anio < 100) anio += anio <= 69 ? 2000 : 1900;
+
+  const d = new Date(anio, mes - 1, dia);
+  // `new Date(2026, 1, 31)` no falla, se corre al 3 de marzo: hay que
+  // comprobar que la fecha construida sea la que se escribió.
+  if (
+    !isValid(d) ||
+    d.getDate() !== dia ||
+    d.getMonth() !== mes - 1 ||
+    d.getFullYear() !== anio
+  )
+    return undefined;
+  return d;
+}
+
 export function SelectorFecha({
   value,
   onChange,
-  placeholder = 'Elegir fecha',
+  placeholder = 'DD/MM/AAAA',
   disabled = false,
   /** Muestra una X para vaciar cuando hay fecha puesta. */
   limpiable = true,
@@ -63,28 +109,92 @@ export function SelectorFecha({
   'aria-label'?: string;
 }) {
   const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [escribiendo, setEscribiendo] = useState(false);
   const fecha = fechaDesdeIso(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Mientras se escribe manda lo tecleado; el resto del tiempo, el valor
+  // formateado. Derivado y no en un efecto: así el campo no se pelea con el
+  // valor que llega de afuera ni encadena renders.
+  const textoMostrado = escribiendo
+    ? texto
+    : fecha
+      ? format(fecha, 'dd/MM/yyyy')
+      : '';
+
+  const dentroDeRango = (d: Date) => {
+    const desde = fechaDesdeIso(min);
+    const hasta = fechaDesdeIso(max);
+    if (desde && d < desde) return false;
+    if (hasta && d > hasta) return false;
+    return true;
+  };
+
+  /** Al salir del campo: lo escrito se acepta, o se vuelve al valor previo. */
+  const confirmarTexto = () => {
+    if (!escribiendo) return; // no se tocó el campo: nada que interpretar
+    setEscribiendo(false);
+    if (texto.trim() === '') {
+      if (value) onChange('');
+      return;
+    }
+    const d = fechaDesdeTexto(texto);
+    if (d && dentroDeRango(d)) {
+      onChange(isoDesdeFecha(d));
+      setTexto(format(d, 'dd/MM/yyyy'));
+    }
+    // Si no se entiende lo escrito no se toca el valor: al dejar de escribir,
+    // el campo vuelve a mostrar la fecha que había.
+  };
 
   return (
     <div className={cn('relative', className)}>
       <Popover open={abierto} onOpenChange={setAbierto}>
-        <PopoverTrigger
-          id={id}
-          disabled={disabled}
-          aria-label={ariaLabel ?? placeholder}
+        <div
           className={cn(
-            'flex w-full items-center gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 text-[12.5px] transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] disabled:opacity-50',
+            'flex w-full items-center gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 transition-colors duration-[120ms] focus-within:border-[var(--arca-ink-3)]',
             size === 'sm' ? 'h-8' : 'h-9',
-            // Sitio para la X, así el texto no queda debajo.
-            limpiable && fecha ? 'pr-8' : '',
-            fecha ? 'text-[var(--arca-ink)]' : 'text-[var(--arca-ink-4)]'
+            disabled && 'opacity-50'
           )}
         >
-          <CalendarIcon className="size-3.5 shrink-0 text-[var(--arca-ink-4)]" />
-          <span className="truncate tabular-nums">
-            {fecha ? format(fecha, 'dd/MM/yyyy') : placeholder}
-          </span>
-        </PopoverTrigger>
+          {/* El ícono abre el calendario; el resto del campo es para teclear. */}
+          <PopoverTrigger
+            disabled={disabled}
+            aria-label="Abrir el calendario"
+            className="shrink-0 text-[var(--arca-ink-4)] transition-colors hover:text-[var(--arca-ink-2)]"
+          >
+            <CalendarIcon className="size-3.5" />
+          </PopoverTrigger>
+          <input
+            ref={inputRef}
+            id={id}
+            aria-label={ariaLabel ?? placeholder}
+            disabled={disabled}
+            value={textoMostrado}
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder={placeholder}
+            onChange={(e) => {
+              setEscribiendo(true);
+              setTexto(e.target.value);
+            }}
+            onBlur={confirmarTexto}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                confirmarTexto();
+                inputRef.current?.blur();
+              }
+              if (e.key === 'Escape' && escribiendo) setEscribiendo(false);
+            }}
+            className={cn(
+              'w-full min-w-0 bg-transparent text-[12.5px] tabular-nums outline-none placeholder:text-[var(--arca-ink-4)]',
+              limpiable && fecha ? 'pr-5' : ''
+            )}
+          />
+        </div>
+
         <PopoverContent align="start" className="w-auto p-0">
           <Calendar
             mode="single"
@@ -96,6 +206,7 @@ export function SelectorFecha({
               ...(fechaDesdeIso(max) ? [{ after: fechaDesdeIso(max)! }] : []),
             ]}
             onSelect={(d) => {
+              setEscribiendo(false);
               onChange(d ? isoDesdeFecha(d) : '');
               setAbierto(false);
             }}
@@ -103,13 +214,14 @@ export function SelectorFecha({
         </PopoverContent>
       </Popover>
 
-      {/* Fuera del trigger: adentro, el popover se abre en `pointerdown` y el
-          click de limpiar llega tarde. */}
       {limpiable && fecha && !disabled && (
         <button
           type="button"
           aria-label="Quitar la fecha"
-          onClick={() => onChange('')}
+          onClick={() => {
+            setEscribiendo(false);
+            onChange('');
+          }}
           className="absolute right-2 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded-full text-[var(--arca-ink-4)] hover:bg-[var(--arca-border)] hover:text-[var(--arca-ink)]"
         >
           <X className="size-3" />
