@@ -13,6 +13,7 @@ import {
   Loader2,
   CheckCircle2,
   Pencil,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SelectorFecha } from '@/components/shared/selector-fecha';
@@ -48,6 +49,7 @@ import {
   listCategoriasByConvenio,
   listEscalasByCategoria,
   listConveniosAfipEmpleadores,
+  traerConveniosDeArca,
   agregarConvenioDesdeAfipEmpleadores,
   createConvenio,
   updateConvenio,
@@ -106,6 +108,37 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
       (c) => c.nombre === cct || (c.cctCodigo ?? '') === cct
     );
 
+  /**
+   * Trae los CCT de ARCA para esta empresa. El diálogo antes decía "todavía
+   * no se trajeron" sin ofrecer forma de traerlos: para toda empresa dada de
+   * alta después de la carga inicial, era un callejón sin salida.
+   */
+  const traerDeArca = useMutation({
+    mutationFn: () => traerConveniosDeArca({ data: { clientId } }),
+    onSuccess: (r) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['convenios-afip-empleadores', clientId],
+      });
+      if (r.sinInformar) {
+        toast.info('ARCA no informa convenios para esta empresa', {
+          description:
+            'Cargalo a mano con «Nuevo convenio» si sabés cuál le corresponde.',
+        });
+      } else {
+        toast.success(
+          r.nuevos > 0
+            ? `${r.nuevos} convenio${r.nuevos === 1 ? '' : 's'} nuevo${r.nuevos === 1 ? '' : 's'} de ARCA`
+            : `${r.convenios} convenio${r.convenios === 1 ? '' : 's'} de ARCA, sin cambios`
+        );
+      }
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : 'No se pudieron traer los convenios',
+        { duration: 9000 }
+      ),
+  });
+
   const agregarDesdeAfip = useMutation({
     mutationFn: (afipConvenioId: string) =>
       agregarConvenioDesdeAfipEmpleadores({
@@ -159,9 +192,33 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
           </DialogHeader>
           <div className="grid gap-2 py-4">
             {conveniosAfip.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Todavía no se trajeron convenios de ARCA para este cliente.
-              </p>
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Para esta empresa no hay convenios traídos de ARCA. Se
+                  consultan en «Simplificación Registral - Empleadores», con la
+                  clave fiscal del estudio.
+                </p>
+                <Button
+                  className="gap-2"
+                  disabled={traerDeArca.isPending}
+                  onClick={() => traerDeArca.mutate()}
+                >
+                  {traerDeArca.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  {traerDeArca.isPending
+                    ? 'Consultando ARCA…'
+                    : 'Buscar en ARCA'}
+                </Button>
+                {traerDeArca.isPending && (
+                  <p className="text-xs text-muted-foreground">
+                    Entra a ARCA con la clave del estudio: puede tardar un par
+                    de minutos.
+                  </p>
+                )}
+              </div>
             ) : (
               conveniosAfip.map((c) => {
                 const yaTiene = convenioYaTieneCct(c.cct);

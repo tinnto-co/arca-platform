@@ -10,7 +10,11 @@ create type job_type as enum (
   'escalas',
   'tope_imponible',
   'monotributo',
-  'libro_iva'
+  'libro_iva',
+  -- CCT por empleador desde Mi Simplificación (Simplificación Registral -
+  -- Empleadores): llena `cliente_cct`, que es de donde la app ofrece los
+  -- convenios de una empresa. Ver tasks/handoff-job-convenios.md.
+  'convenios'
 );
 create type job_status as enum ('pending', 'running', 'failed', 'finished');
 create type job_log_level as enum ('debug', 'info', 'warn', 'error');
