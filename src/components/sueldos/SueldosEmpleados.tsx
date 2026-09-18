@@ -1767,26 +1767,17 @@ function NuevoEmpleadoDialog({
                 Atrás
               </Button>
             )}
+            {/* Se guarda solo al final: los datos obligatorios están repartidos
+                entre pestañas, así que un atajo a mitad de camino solo podía
+                terminar en el error de que falta el legajo. */}
             {esUltimaTab ? (
               <Button disabled={crear.isPending} onClick={handleSubmit}>
                 {crear.isPending ? 'Guardando…' : 'Guardar empleado'}
               </Button>
             ) : (
-              <>
-                <Button onClick={() => setTab(TABS_EMPLEADO[indiceTab + 1])}>
-                  Siguiente
-                </Button>
-                {/* Los códigos auxiliares y los datos de pago son opcionales:
-                    quien ya completó lo obligatorio puede guardar y seguir. */}
-                <Button
-                  variant="ghost"
-                  disabled={crear.isPending}
-                  onClick={handleSubmit}
-                  className="text-[12.5px]"
-                >
-                  Guardar ya
-                </Button>
-              </>
+              <Button onClick={() => setTab(TABS_EMPLEADO[indiceTab + 1])}>
+                Siguiente
+              </Button>
             )}
           </div>
         </div>

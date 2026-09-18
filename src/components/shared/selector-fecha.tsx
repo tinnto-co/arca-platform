@@ -31,6 +31,14 @@ import {
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
+/**
+ * Años que ofrece el desplegable cuando el campo no tiene topes propios.
+ * Hacia atrás alcanza para antigüedades laborales reales (un empleado con 40
+ * años de servicio) y hacia adelante para vencimientos y ejercicios futuros.
+ */
+const ANIO_MIN = new Date().getFullYear() - 60;
+const ANIO_MAX = new Date().getFullYear() + 10;
+
 /** `YYYY-MM-DD` → Date local. Sin `new Date(iso)`, que interpreta UTC y resta un día. */
 export function fechaDesdeIso(
   iso: string | null | undefined
@@ -221,6 +229,17 @@ export function SelectorFecha({
             locale={es}
             selected={fecha}
             defaultMonth={fecha ?? fechaDesdeIso(max) ?? fechaDesdeIso(min)}
+            // Mes y año como desplegables: una alta de 2010 estaba a casi
+            // doscientos clicks de flecha. El rango sale de los topes del
+            // campo cuando los tiene.
+            captionLayout="dropdown"
+            startMonth={fechaDesdeIso(min) ?? new Date(ANIO_MIN, 0, 1)}
+            endMonth={fechaDesdeIso(max) ?? new Date(ANIO_MAX, 11, 31)}
+            formatters={{
+              // Meses con su nombre completo en castellano; el default del
+              // Calendar los abrevia y en un desplegable no hace falta.
+              formatMonthDropdown: (d) => format(d, 'MMMM', { locale: es }),
+            }}
             disabled={[
               ...(fechaDesdeIso(min) ? [{ before: fechaDesdeIso(min)! }] : []),
               ...(fechaDesdeIso(max) ? [{ after: fechaDesdeIso(max)! }] : []),
