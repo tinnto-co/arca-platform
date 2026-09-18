@@ -198,9 +198,11 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
                 </p>
 
                 {/* El error queda a la vista y no en un toast que se va: Mi
-                    Simplificación de ARCA es intermitente (en la prueba del
-                    scrapper, 7 de 10 corridas trajeron datos), así que
-                    reintentar es parte del uso normal, no una excepción. */}
+                    Simplificación de ARCA es intermitente, así que reintentar
+                    es parte del uso normal y no una excepción. (El 7 de 10 que
+                    midió el scrapper es el peor caso: corridas seguidas sobre
+                    la misma clave, que además disparan el freno de AFIP. En
+                    uso real la tasa es mejor.) */}
                 {traerDeArca.isError && (
                   <div className="flex items-start gap-2 rounded-lg border border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] px-3 py-2.5 text-xs leading-relaxed text-[var(--arca-accent-warn-fg)]">
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -232,6 +234,15 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
                   <p className="text-xs text-muted-foreground">
                     Entra a ARCA con la clave del estudio: puede tardar un par
                     de minutos.
+                  </p>
+                )}
+                {/* Insistir empeora las cosas: ARCA frena la clave cuando se
+                    entra muchas veces seguidas, así que al segundo fallo
+                    conviene decirlo en vez de dejar que el usuario machaque. */}
+                {traerDeArca.isError && traerDeArca.failureCount > 1 && (
+                  <p className="text-xs text-muted-foreground">
+                    Si vuelve a fallar, esperá unos minutos antes de insistir:
+                    ARCA frena la clave cuando se entra muchas veces seguidas.
                   </p>
                 )}
               </div>
