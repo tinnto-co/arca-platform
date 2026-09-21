@@ -89,4 +89,13 @@ describe('idExternoDeMovimiento', () => {
     const m2 = mov('ingreso', 1500.5, 'transf recib CBU 123');
     expect(idExternoDeMovimiento(m, 0)).toBe(idExternoDeMovimiento(m2, 0));
   });
+
+  it('da igual si la IA escribió letras cirílicas que se ven latinas', () => {
+    // "СОЕ" con С, О y Е cirílicas, como en Gastrotecno, enero 2026.
+    const cirilico = mov('ingreso', 464563.17, 'TRANSFERENCIA INMEDIATA СОЕ 1');
+    const latino = mov('ingreso', 464563.17, 'TRANSFERENCIA INMEDIATA COE 1');
+    expect(idExternoDeMovimiento(cirilico, 0)).toBe(
+      idExternoDeMovimiento(latino, 0)
+    );
+  });
 });

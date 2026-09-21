@@ -6,6 +6,7 @@
  * la lectura perdió movimientos (o leyó mal un importe) y hay que revisar
  * antes de guardar. Nunca un descuadre silencioso.
  */
+import { aLatino } from './texto-latino';
 
 export interface MovimientoExtraido {
   fecha: string;
@@ -98,8 +99,10 @@ export function idExternoDeMovimiento(
   m: MovimientoExtraido,
   ocurrencia: number
 ): string {
+  // `aLatino`: la IA puede escribir la misma descripción con letras
+  // cirílicas que se ven latinas, y la huella tiene que salir igual.
   const limpio = (s: string) =>
-    s.toUpperCase().replace(/\s+/g, ' ').trim().slice(0, 60);
+    aLatino(s).toUpperCase().replace(/\s+/g, ' ').trim().slice(0, 60);
   return [
     'pdf',
     m.fecha,

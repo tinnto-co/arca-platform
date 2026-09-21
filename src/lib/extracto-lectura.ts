@@ -19,6 +19,7 @@ import {
   type MovimientoExtraido,
 } from '@/lib/extracto-calc';
 import { clasificarMovimiento } from '@/lib/clasificar-movimiento';
+import { aLatino } from '@/lib/texto-latino';
 
 const ai = new GoogleGenAI({
   apiKey: (process.env.GOOGLE_GENERATIVE_AI_API_KEY ??
@@ -334,11 +335,17 @@ export async function leerExtractoDeDocumento(
   const cuentas = conMovimientos.map((c) => ({
     ...c,
     moneda: monedaIso(c.moneda),
-    movimientos: c.movimientos.map((m) => ({
-      ...m,
-      importe: Math.abs(m.importe),
-      categoria: clasificarMovimiento(m.descripcion),
-    })),
+    movimientos: c.movimientos.map((m) => {
+      // La IA a veces devuelve letras cirílicas que se ven latinas ("СОЕ"):
+      // se corrigen antes de clasificar y guardar.
+      const descripcion = aLatino(m.descripcion);
+      return {
+        ...m,
+        descripcion,
+        importe: Math.abs(m.importe),
+        categoria: clasificarMovimiento(descripcion),
+      };
+    }),
   }));
 
   return {
