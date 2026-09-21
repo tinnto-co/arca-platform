@@ -23,7 +23,16 @@ import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { Paginador } from '@/components/shared/paginador';
 import { fechaLocal } from '@/components/inicio/compartido';
-import { LimpiarFiltros } from '@/components/shared/filtros';
+import {
+  ChevronChip,
+  LimpiarFiltros,
+  chipFiltro,
+} from '@/components/shared/filtros';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import {
   Tooltip,
@@ -90,6 +99,9 @@ const bankSearchSchema = z.object({
   /** Filtros del registro de movimientos. */
   categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
   estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+  /** Rango de importe en pesos, sin importar si entró o salió. */
+  min: z.number().nonnegative().optional(),
+  max: z.number().nonnegative().optional(),
 });
 type BankSearch = z.infer<typeof bankSearchSchema>;
 
@@ -170,6 +182,136 @@ const ESTADO_LABEL = {
   sugerido: 'Sugeridos',
   sin_conciliar: 'Sin conciliar',
 } as const;
+
+/** "1234,5" o "1.234,50" → 1234.5. Vacío o inválido → undefined. */
+function leerPesos(texto: string): number | undefined {
+  const limpio = texto
+    .replace(/\$/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim();
+  if (limpio === '') return undefined;
+  const n = Number(limpio);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
+
+/**
+ * Filtro por monto: "desde" y "hasta" en un popover, que se aplica al
+ * confirmar y no con cada tecla (cada cambio es un pedido al servidor).
+ */
+function FiltroMonto({
+  min,
+  max,
+  onAplicar,
+}: {
+  min: number | undefined;
+  max: number | undefined;
+  onAplicar: (rango: { min?: number; max?: number }) => void;
+}) {
+  const [abierto, setAbierto] = useState(false);
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
+  const activo = min != null || max != null;
+
+  const etiqueta = !activo
+    ? 'Monto'
+    : min != null && max != null
+      ? `Monto: ${fmtPesos(min)} – ${fmtPesos(max)}`
+      : min != null
+        ? `Monto: desde ${fmtPesos(min)}`
+        : `Monto: hasta ${fmtPesos(max ?? 0)}`;
+
+  const aplicar = () => {
+    let a = leerPesos(desde);
+    let b = leerPesos(hasta);
+    // Si los cargaron al revés, se ordenan en vez de devolver nada.
+    if (a != null && b != null && a > b) [a, b] = [b, a];
+    onAplicar({ min: a, max: b });
+    setAbierto(false);
+  };
+
+  return (
+    <Popover
+      open={abierto}
+      onOpenChange={(v) => {
+        // Al abrir, los campos muestran lo que está aplicado.
+        if (v) {
+          setDesde(min != null ? String(min).replace('.', ',') : '');
+          setHasta(max != null ? String(max).replace('.', ',') : '');
+        }
+        setAbierto(v);
+      }}
+    >
+      <PopoverTrigger className={chipFiltro(activo)}>
+        {etiqueta}
+        {!activo && <ChevronChip />}
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="flex w-[280px] flex-col gap-3 p-3"
+      >
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            aplicar();
+          }}
+        >
+          <span className="text-[12px] text-[var(--arca-ink-3)]">
+            Importe del movimiento, sin importar si entró o salió.
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1" htmlFor="filtro-monto-desde">
+              <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
+                Desde $
+              </span>
+              <input
+                id="filtro-monto-desde"
+                inputMode="decimal"
+                autoFocus
+                value={desde}
+                onChange={(e) => setDesde(e.target.value)}
+                placeholder="0"
+                className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-2 text-[12.5px] tabular-nums text-[var(--arca-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--arca-accent)]/30"
+              />
+            </label>
+            <label className="flex flex-col gap-1" htmlFor="filtro-monto-hasta">
+              <span className="text-[10.5px] font-semibold tracking-[0.06em] text-[var(--arca-ink-3)] uppercase">
+                Hasta $
+              </span>
+              <input
+                id="filtro-monto-hasta"
+                inputMode="decimal"
+                value={hasta}
+                onChange={(e) => setHasta(e.target.value)}
+                placeholder="Sin tope"
+                className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-2 text-[12.5px] tabular-nums text-[var(--arca-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--arca-accent)]/30"
+              />
+            </label>
+          </div>
+          <div className="flex items-center gap-2 border-t border-[var(--arca-border)] pt-2">
+            <button
+              type="submit"
+              className="rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] px-3 py-1 text-[12px] font-medium text-white hover:bg-[var(--arca-accent-hover)]"
+            >
+              Aplicar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onAplicar({});
+                setAbierto(false);
+              }}
+              className="rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] px-3 py-1 text-[12px] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)]"
+            >
+              Limpiar
+            </button>
+          </div>
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 /* ─── Transaction row ─── */
 function TransactionItem({
@@ -301,7 +443,8 @@ function TransactionItem({
       )}
 
       {/* Categoría (editable: el select pisa al clasificador) */}
-      <div className="w-[150px] shrink-0">
+      {/* 172px: entra "Comisiones bancarias", la categoría más larga. */}
+      <div className="w-[172px] shrink-0">
         <Select
           value={tx.categoria ?? 'varios'}
           onValueChange={(v) => recategorizar.mutate(v as CategoriaMovimiento)}
@@ -923,7 +1066,7 @@ function BankPage() {
   // mes vuelve a la primera página (ajuste durante el render, como el de
   // `prevCliente`).
   const [pagina, setPagina] = useState(1);
-  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}`;
+  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}|${search.min ?? ''}|${search.max ?? ''}`;
   const [prevLista, setPrevLista] = useState(claveLista);
   if (prevLista !== claveLista) {
     setPrevLista(claveLista);
@@ -940,6 +1083,8 @@ function BankPage() {
       search.mes,
       search.categoria,
       search.estado,
+      search.min,
+      search.max,
       pagina,
     ],
     queryFn: () =>
@@ -949,6 +1094,8 @@ function BankPage() {
           periodo: search.mes,
           categoria: search.categoria,
           estado: search.estado,
+          importeMin: search.min,
+          importeMax: search.max,
           pagina,
           porPagina: MOVIMIENTOS_POR_PAGINA,
         },
@@ -1266,7 +1413,18 @@ function BankPage() {
                 ).map((e) => ({ value: e, label: ESTADO_LABEL[e] })),
               ]}
             />
-            {(search.categoria ?? search.estado) && (
+            <FiltroMonto
+              min={search.min}
+              max={search.max}
+              onAplicar={({ min, max }) =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({ ...prev, min, max }),
+                })
+              }
+            />
+            {(search.categoria ?? search.estado ?? search.min ?? search.max) !=
+              null && (
               <LimpiarFiltros
                 onLimpiar={() =>
                   void navigate({
@@ -1275,6 +1433,8 @@ function BankPage() {
                       ...prev,
                       categoria: undefined,
                       estado: undefined,
+                      min: undefined,
+                      max: undefined,
                     }),
                   })
                 }
@@ -1296,7 +1456,7 @@ function BankPage() {
             <div className="w-[90px] shrink-0">Fecha</div>
             <div className="flex-1">Descripción / Contraparte</div>
             {!accountId && <div className="w-[120px] shrink-0">Cuenta</div>}
-            <div className="w-[150px] shrink-0">Categoría</div>
+            <div className="w-[172px] shrink-0">Categoría</div>
             <div className="w-[148px] shrink-0">Match</div>
             <div className="w-[130px] shrink-0 text-right">Importe</div>
             <div className="w-[14px] shrink-0" />

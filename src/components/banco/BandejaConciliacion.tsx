@@ -101,7 +101,13 @@ function Tramo({
 
 /* ─────────────────────────── progreso del mes ─────────────────────────── */
 
-function Progreso({ totales }: { totales: Bandeja['totales'] }) {
+function Progreso({
+  totales,
+  ultimaFacturaEmitida,
+}: {
+  totales: Bandeja['totales'];
+  ultimaFacturaEmitida: string | null;
+}) {
   const pctFacturado =
     totales.facturado > 0
       ? Math.min(100, (totales.facturadoConciliado / totales.facturado) * 100)
@@ -126,10 +132,23 @@ function Progreso({ totales }: { totales: Bandeja['totales'] }) {
           />
         </div>
         <span className="text-[11px] text-[var(--arca-ink-4)]">
-          {Math.round(pctFacturado)}% ·{' '}
-          {totales.comprobantesSinCobro === 0
-            ? 'todas las facturas del mes tienen su cobro'
-            : `quedan ${totales.comprobantesSinCobro} comprobante${totales.comprobantesSinCobro === 1 ? '' : 's'} sin cobro identificado`}
+          {totales.comprobantes === 0 ? (
+            // Sin facturas no hay nada conciliado: decir "todas tienen su
+            // cobro" hacía parecer terminado un mes al que le faltan datos.
+            <span className="text-[var(--arca-accent-warn-fg)]">
+              No hay facturas emitidas cargadas para este mes
+              {ultimaFacturaEmitida
+                ? ` · la última es del ${fecha(ultimaFacturaEmitida)}/${ultimaFacturaEmitida.slice(0, 4)}: revisá que ARCA esté sincronizado`
+                : ''}
+            </span>
+          ) : (
+            <>
+              {Math.round(pctFacturado)}% ·{' '}
+              {totales.comprobantesSinCobro === 0
+                ? 'todas las facturas del mes tienen su cobro'
+                : `quedan ${totales.comprobantesSinCobro} comprobante${totales.comprobantesSinCobro === 1 ? '' : 's'} sin cobro identificado`}
+            </>
+          )}
         </span>
       </div>
 
@@ -485,7 +504,10 @@ export function BandejaConciliacion({
           </div>
         </div>
 
-        <Progreso totales={totales} />
+        <Progreso
+          totales={totales}
+          ultimaFacturaEmitida={data.ultimaFacturaEmitida}
+        />
       </div>
 
       {/* El cruce propuesto para el movimiento elegido */}
@@ -617,7 +639,7 @@ export function BandejaConciliacion({
             {comprobantes.length === 0 ? (
               <p className="px-4 py-8 text-center text-[12.5px] text-[var(--arca-ink-3)]">
                 {totales.comprobantes === 0
-                  ? 'No hay comprobantes emitidos en este mes.'
+                  ? `No hay facturas emitidas cargadas en este mes.${data.ultimaFacturaEmitida ? ` La última que tiene la empresa es del ${fecha(data.ultimaFacturaEmitida)}/${data.ultimaFacturaEmitida.slice(0, 4)}.` : ''}`
                   : 'Todas las facturas del mes tienen su cobro identificado.'}
               </p>
             ) : (

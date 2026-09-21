@@ -28,7 +28,17 @@ import {
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import { eq, and, desc, gte, ne, sql, inArray, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  desc,
+  gte,
+  lte,
+  ne,
+  sql,
+  inArray,
+  type SQL,
+} from 'drizzle-orm';
 
 /** La cuenta, validando que sea de la organización activa. */
 async function getCuentaDeOrg(cuentaBancariaId: string, orgId: string) {
@@ -259,6 +269,9 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
         /** Estados excluyentes: con cruce confirmado, solo sugerido, o nada. */
         estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+        /** Rango de importe, en pesos, sin importar si entró o salió. */
+        importeMin: z.number().nonnegative().optional(),
+        importeMax: z.number().nonnegative().optional(),
         pagina: z.number().int().min(1).default(1),
         porPagina: z.number().int().min(1).max(200).default(50),
       })
@@ -326,6 +339,14 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     const sugerido = conCruce('sugerida');
     if (ctx.data.categoria)
       conditions.push(eq(movimientoBancario.categoria, ctx.data.categoria));
+    if (ctx.data.importeMin != null)
+      conditions.push(
+        gte(movimientoBancario.importe, ctx.data.importeMin.toFixed(2))
+      );
+    if (ctx.data.importeMax != null)
+      conditions.push(
+        lte(movimientoBancario.importe, ctx.data.importeMax.toFixed(2))
+      );
     if (ctx.data.estado === 'conciliado') conditions.push(conciliado);
     if (ctx.data.estado === 'sugerido')
       conditions.push(sql`${sugerido} and not ${conciliado}`);
@@ -1092,6 +1113,21 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
       .filter((c) => c.conciliacionId)
       .reduce((a, c) => a + Number(c.total), 0);
 
+    // La última factura emitida que tiene cargada la empresa: si el mes no
+    // tiene ninguna, sirve para avisar desde cuándo faltan datos de ARCA.
+    const [ultimaFactura] = await db
+      .select({
+        fecha: sql<string | null>`max(${comprobante.fechaEmision})::text`,
+      })
+      .from(comprobante)
+      .where(
+        and(
+          eq(comprobante.orgId, orgId),
+          eq(comprobante.clienteId, ctx.data.clienteId),
+          eq(comprobante.direccion, 'emitido')
+        )
+      );
+
     // El último mes con movimientos, para que la bandeja no abra en un mes
     // vacío: los extractos se cargan a mes vencido y con atraso.
     const [ultimo] = await db
@@ -1116,6 +1152,7 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
     return {
       periodo: ctx.data.periodo,
       ultimoPeriodoConDatos: ultimo?.periodo ?? null,
+      ultimaFacturaEmitida: ultimaFactura?.fecha ?? null,
       totales: {
         facturado,
         facturadoConciliado,
