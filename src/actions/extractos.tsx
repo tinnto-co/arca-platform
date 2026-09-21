@@ -41,6 +41,7 @@ import {
 import { type LecturaGuardable } from '@/lib/extracto-lectura';
 import { despertarWorkerExtractos } from '@/lib/extractos-worker';
 import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
+import { resolverContrapartesDeCliente } from '@/lib/contraparte-movimiento-db';
 
 /** Tope de tamaño del archivo subido. */
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -544,8 +545,20 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
       const nuevos = filas.filter((f) => !ya.has(f.idExterno));
 
       if (nuevos.length > 0) {
-        await db.insert(movimientoBancario).values(
+        // Con quién fue cada movimiento: el CUIT de la descripción se asigna,
+        // el importe exacto de una factura queda como sugerencia.
+        const contrapartes = await resolverContrapartesDeCliente(
+          clienteId,
           nuevos.map((m) => ({
+            descripcion: m.descripcion || null,
+            importe: m.importe,
+            fecha: m.fecha,
+            direccion: m.direccion,
+            categoria: m.categoria,
+          }))
+        );
+        await db.insert(movimientoBancario).values(
+          nuevos.map((m, i) => ({
             cuentaBancariaId: cuentaId,
             fecha: m.fecha,
             importe: m.importe.toFixed(2),
@@ -559,7 +572,14 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
             categoria: m.categoria,
             categoriaFuente: 'sistema',
             fuente: 'import' as const,
-            datosCrudos: { documentoId },
+            contraparteId: contrapartes[i].contraparteId,
+            contraparteTexto: contrapartes[i].contraparteTexto,
+            datosCrudos: {
+              documentoId,
+              ...(contrapartes[i].sugerida && {
+                contraparteSugerida: contrapartes[i].sugerida,
+              }),
+            },
           }))
         );
       }
