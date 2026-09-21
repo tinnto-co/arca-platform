@@ -905,6 +905,113 @@ export const confirmarSugerencias = createServerFn({ method: 'POST' })
   });
 
 /**
+ * Facturas para conciliar a mano un movimiento: del lado que corresponde
+ * (cobro → emitidas, pago → recibidas), de cualquier mes y buscando por
+ * número, contraparte, CUIT o importe. Sin texto, trae las más parecidas
+ * alrededor de la fecha del movimiento. Las que ya están conciliadas vienen
+ * marcadas, para que se vea por qué no se pueden elegir.
+ */
+export const buscarFacturasParaMovimiento = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      movimientoId: z.string().uuid(),
+      texto: z.string().max(80).optional(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const [mov] = await db
+      .select({
+        id: movimientoBancario.id,
+        fecha: movimientoBancario.fecha,
+        importe: movimientoBancario.importe,
+        direccion: movimientoBancario.direccion,
+        clienteId: cuentaBancaria.clienteId,
+      })
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(movimientoBancario.id, ctx.data.movimientoId),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      )
+      .limit(1);
+    if (!mov) throw new Error('Movimiento no encontrado');
+
+    const texto = ctx.data.texto?.trim() ?? '';
+    const digitos = texto.replace(/\D/g, '');
+    // "14.900" o "14900,50" se buscan como importe; el resto, como texto.
+    const comoImporte =
+      /^[\d.,$\s]+$/.test(texto) && digitos.length > 0
+        ? Number(texto.replace(/[$\s.]/g, '').replace(',', '.'))
+        : null;
+
+    const conditions: SQL[] = [
+      eq(comprobante.orgId, orgId),
+      eq(comprobante.clienteId, mov.clienteId),
+      eq(
+        comprobante.direccion,
+        mov.direccion === 'ingreso' ? 'emitido' : 'recibido'
+      ),
+      sql`coalesce(${comprobanteTipo.esNc}, false) = false`,
+    ];
+    if (texto === '') {
+      // Sin búsqueda: tres meses antes y uno después del movimiento.
+      conditions.push(
+        sql`${comprobante.fechaEmision} between (${mov.fecha}::date - 90) and (${mov.fecha}::date + 30)`
+      );
+    } else if (comoImporte !== null && Number.isFinite(comoImporte)) {
+      conditions.push(
+        sql`abs(${comprobante.total} - ${comoImporte.toFixed(2)}) < 1`
+      );
+    } else {
+      const patron = `%${texto}%`;
+      conditions.push(
+        sql`(${contraparte.nombre} ilike ${patron}
+          or ${contraparte.docNro} like ${`%${digitos || texto}%`}
+          or (${comprobante.puntoVenta}::text || '-' || ${comprobante.numero}::text) like ${`%${texto}%`}
+          or ${comprobante.numero}::text = ${digitos || '-'})`
+      );
+    }
+
+    return await db
+      .select({
+        id: comprobante.id,
+        tipoNombre: comprobanteTipo.descripcion,
+        puntoVenta: comprobante.puntoVenta,
+        numero: comprobante.numero,
+        fechaEmision: comprobante.fechaEmision,
+        total: comprobante.total,
+        contraparteNombre: contraparte.nombre,
+        contraparteDoc: contraparte.docNro,
+        // Si ya está conciliada, con qué movimiento: no se puede usar dos
+        // veces.
+        conciliadaConFecha: sql<string | null>`(
+          select mb.fecha::text from ${conciliacionComprobante} cc
+          join ${movimientoBancario} mb on mb.id = cc.movimiento_bancario_id
+          where cc.comprobante_id = ${comprobante.id}
+            and cc.estado = 'confirmada'
+          limit 1
+        )`,
+      })
+      .from(comprobante)
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
+      .where(and(...conditions))
+      // Primero las de importe más parecido, después las más cercanas.
+      .orderBy(
+        sql`abs(${comprobante.total} - ${mov.importe})`,
+        sql`abs(${comprobante.fechaEmision} - ${mov.fecha}::date)`
+      )
+      .limit(40);
+  });
+
+/**
  * Al confirmar un cruce, las sugerencias de OTROS movimientos para la misma
  * factura dejan de tener sentido: una factura se cobra (o se paga) una vez.
  */

@@ -635,6 +635,15 @@ export function BandejaConciliacion({
                   elegido
                 </span>
               )}
+              {/* Sin candidato no es un callejón sin salida: cualquier factura
+                  de la lista se puede conciliar a mano, y las de otros meses
+                  se buscan desde el registro. */}
+              {elegido && candidatosDelElegido.size === 0 && (
+                <span className="ml-auto text-[11px] text-[var(--arca-ink-3)]">
+                  Ninguna coincide sola: elegí una de la lista, o buscá en otros
+                  meses con «Elegir factura» en el registro
+                </span>
+              )}
             </div>
             {comprobantes.length === 0 ? (
               <p className="px-4 py-8 text-center text-[12.5px] text-[var(--arca-ink-3)]">

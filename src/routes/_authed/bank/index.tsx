@@ -36,6 +36,13 @@ import {
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -71,6 +78,8 @@ import {
   resolverSugerencia,
   listarSugerencias,
   confirmarSugerencias,
+  buscarFacturasParaMovimiento,
+  conciliarLote,
   createCuentaBancaria,
 } from '@/actions/bank';
 import {
@@ -537,6 +546,157 @@ function RevisarSugerencias({
   );
 }
 
+/**
+ * Conciliar a mano: para un movimiento sin cruce, elegir la factura que lo
+ * explica, de cualquier mes. Del lado que corresponde (cobro → emitidas,
+ * pago → recibidas); sin búsqueda trae las de importe más parecido cerca de
+ * la fecha. Confirma con las mismas reglas que la bandeja (`conciliarLote`):
+ * una factura no se concilia dos veces.
+ */
+function ElegirFactura({
+  tx,
+  abierto,
+  onAbiertoChange,
+}: {
+  tx: MovimientoRow;
+  abierto: boolean;
+  onAbiertoChange: (v: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [texto, setTexto] = useState('');
+  const [busqueda, setBusqueda] = useState('');
+
+  // Se busca cuando se deja de escribir, no con cada tecla.
+  useEffect(() => {
+    const t = setTimeout(() => setBusqueda(texto.trim()), 350);
+    return () => clearTimeout(t);
+  }, [texto]);
+
+  const { data: facturas = [], isFetching } = useQuery({
+    queryKey: ['facturasParaMovimiento', tx.id, busqueda],
+    queryFn: () =>
+      buscarFacturasParaMovimiento({
+        data: { movimientoId: tx.id, texto: busqueda || undefined },
+      }),
+    enabled: abierto,
+    placeholderData: (previo) => previo,
+  });
+
+  const conciliar = useMutation({
+    mutationFn: (comprobanteId: string) =>
+      conciliarLote({
+        data: { pares: [{ movimientoId: tx.id, comprobanteId }] },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
+      toast.success('Movimiento conciliado');
+      onAbiertoChange(false);
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'No se pudo conciliar'),
+  });
+
+  const esCobro = tx.direccion === 'ingreso';
+  const importe = parseFloat(tx.importe);
+
+  return (
+    <Dialog open={abierto} onOpenChange={onAbiertoChange}>
+      <DialogContent className="!max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Elegir la factura</DialogTitle>
+          <DialogDescription>
+            {fmtDate(tx.fecha)} · {tx.descripcion ?? 'Sin descripción'} ·{' '}
+            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+              {fmtAmount(tx.importe, tx.direccion)}
+            </span>
+            <br />
+            {esCobro
+              ? 'Es plata que entró: se busca entre las facturas que emitió la empresa.'
+              : 'Es plata que salió: se busca entre las facturas que recibió la empresa.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="relative">
+          <input
+            id={`buscar-factura-${tx.id}`}
+            autoFocus
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder="Buscar por número, cliente o proveedor, CUIT o importe"
+            className="h-9 w-full rounded-[var(--arca-r-md)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 text-[13px] text-[var(--arca-ink)] focus:outline-none focus:ring-2 focus:ring-[var(--arca-accent)]/30"
+          />
+          {isFetching && (
+            <Loader2 className="absolute right-3 top-2.5 w-4 h-4 animate-spin text-[var(--arca-ink-4)]" />
+          )}
+        </div>
+        <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+          {busqueda
+            ? `Resultados para "${busqueda}", de cualquier mes.`
+            : 'Las de importe más parecido, de tres meses antes a un mes después del movimiento.'}
+        </p>
+
+        <div className="max-h-[50vh] overflow-y-auto rounded-[10px] border border-[var(--arca-border)]">
+          {facturas.map((f) => {
+            const nro = `${String(f.puntoVenta).padStart(4, '0')}-${String(f.numero).padStart(8, '0')}`;
+            const total = Number(f.total);
+            const mismoImporte = Math.abs(total - importe) < 1;
+            const tomada = f.conciliadaConFecha !== null;
+            return (
+              <div
+                key={f.id}
+                className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0 ${
+                  tomada ? 'opacity-50' : 'hover:bg-[var(--arca-surface-2)]'
+                }`}
+              >
+                <span className="w-[82px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
+                  {fmtDate(f.fechaEmision)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12.5px] font-medium text-[var(--arca-ink)]">
+                    {f.tipoNombre ?? 'Comprobante'} {nro}
+                  </span>
+                  <span className="block truncate text-[10.5px] text-[var(--arca-ink-4)]">
+                    {f.contraparteNombre ?? 'Sin contraparte'}
+                    {tomada
+                      ? ` · ya conciliada con un movimiento del ${fmtDate(f.conciliadaConFecha!)}`
+                      : ''}
+                  </span>
+                </span>
+                <span
+                  className={`shrink-0 text-[13px] font-semibold tabular-nums ${
+                    mismoImporte
+                      ? 'text-[oklch(0.45_0.14_145)]'
+                      : 'text-[var(--arca-ink)]'
+                  }`}
+                >
+                  {fmtPesos(total)}
+                </span>
+                <button
+                  type="button"
+                  disabled={tomada || conciliar.isPending}
+                  onClick={() => conciliar.mutate(f.id)}
+                  className="shrink-0 rounded-[8px] bg-[var(--arca-accent)] px-2.5 py-1 text-[11.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  Conciliar
+                </button>
+              </div>
+            );
+          })}
+          {!isFetching && facturas.length === 0 && (
+            <p className="px-4 py-8 text-center text-[12.5px] text-[var(--arca-ink-3)]">
+              {busqueda
+                ? 'No hay facturas que coincidan con la búsqueda.'
+                : 'No hay facturas cerca de esta fecha. Probá buscar por número, nombre o importe.'}
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /* ─── Transaction row ─── */
 function TransactionItem({
   tx,
@@ -556,6 +716,7 @@ function TransactionItem({
     : null;
   const queryClient = useQueryClient();
   const [confirmarExcluir, setConfirmarExcluir] = useState(false);
+  const [eligiendoFactura, setEligiendoFactura] = useState(false);
 
   // Recategorizar a mano pisa lo del clasificador (queda marcado 'manual').
   const recategorizar = useMutation({
@@ -756,10 +917,29 @@ function TransactionItem({
               </button>
             </ConAyuda>
           </>
-        ) : (
+        ) : tx.excluido ? (
           <span className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full border border-[var(--arca-border)] text-[10.5px] font-medium text-[var(--arca-ink-4)]">
-            Sin match
+            Excluido
           </span>
+        ) : (
+          <>
+            <ConAyuda texto="Sin factura asignada. Elegí a mano la factura que explica este movimiento, de cualquier mes.">
+              <button
+                type="button"
+                onClick={() => setEligiendoFactura(true)}
+                className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full border border-dashed border-[var(--arca-border-strong)] text-[10.5px] font-medium text-[var(--arca-ink-3)] hover:border-[var(--arca-accent)] hover:text-[var(--arca-accent)] transition-colors"
+              >
+                Elegir factura
+              </button>
+            </ConAyuda>
+            {eligiendoFactura && (
+              <ElegirFactura
+                tx={tx}
+                abierto={eligiendoFactura}
+                onAbiertoChange={setEligiendoFactura}
+              />
+            )}
+          </>
         )}
       </div>
 
