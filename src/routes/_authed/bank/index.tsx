@@ -1,6 +1,7 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { listOrgModules } from '@/actions/admin';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { z } from 'zod';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Landmark,
@@ -15,11 +16,25 @@ import {
   EyeOff,
   Eye,
   Loader2,
+  Check,
+  X,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
+import { Paginador } from '@/components/shared/paginador';
+import { fechaLocal } from '@/components/inicio/compartido';
+import { LimpiarFiltros } from '@/components/shared/filtros';
+import { SearchableSelect } from '@/components/ui/searchable-select';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
-import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
+import {
+  guardarClienteSeleccionado,
+  useClienteSeleccionado,
+} from '@/lib/cliente-seleccionado';
 import {
   Select,
   SelectContent,
@@ -43,7 +58,7 @@ import {
   listCuentasConResumen,
   listMovimientos,
   autoConciliar,
-  getResumenConciliacion,
+  resolverSugerencia,
   createCuentaBancaria,
 } from '@/actions/bank';
 import {
@@ -61,7 +76,25 @@ import {
 } from '@/lib/clasificar-movimiento';
 import { toast } from 'sonner';
 
+/**
+ * La empresa y el mes van en la URL: recargar no pierde dónde estabas y el
+ * link se puede compartir. `mes` es 'YYYY-MM'; sin él, la bandeja arranca en
+ * el último mes con movimientos.
+ */
+const bankSearchSchema = z.object({
+  clientId: z.string().uuid().optional(),
+  mes: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+  /** Filtros del registro de movimientos. */
+  categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
+  estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+});
+type BankSearch = z.infer<typeof bankSearchSchema>;
+
 export const Route = createFileRoute('/_authed/bank/')({
+  validateSearch: bankSearchSchema,
   beforeLoad: async () => {
     const modules = await listOrgModules();
     const enabled = modules.find((m) => m.module === 'banco')?.enabled ?? false;
@@ -71,8 +104,13 @@ export const Route = createFileRoute('/_authed/bank/')({
   component: BankPage,
 });
 
+/** Filas por página del registro de movimientos. */
+const MOVIMIENTOS_POR_PAGINA = 50;
+
 /* ─── Types ─── */
-type MovimientoRow = Awaited<ReturnType<typeof listMovimientos>>[number];
+type MovimientoRow = Awaited<
+  ReturnType<typeof listMovimientos>
+>['filas'][number];
 type CuentaConResumen = Awaited<
   ReturnType<typeof listCuentasConResumen>
 >[number];
@@ -96,12 +134,42 @@ function fmtPesos(n: number) {
 }
 
 function fmtDate(d: string | Date) {
-  return new Date(d).toLocaleDateString('es-AR', {
+  // Un `date` de la base (YYYY-MM-DD) se lee como fecha local: con
+  // `new Date()` se toma como medianoche UTC y en Argentina se ve un día antes.
+  const fecha =
+    typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)
+      ? fechaLocal(d)
+      : new Date(d);
+  return fecha.toLocaleDateString('es-AR', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
   });
 }
+
+/** Tooltip del sistema alrededor de un elemento (en vez de `title`). */
+function ConAyuda({
+  texto,
+  children,
+}: {
+  texto: React.ReactNode;
+  children: React.ReactElement;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent className="max-w-[300px] text-[12px] leading-snug">
+        {texto}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+const ESTADO_LABEL = {
+  conciliado: 'Conciliados',
+  sugerido: 'Sugeridos',
+  sin_conciliar: 'Sin conciliar',
+} as const;
 
 /* ─── Transaction row ─── */
 function TransactionItem({
@@ -113,7 +181,13 @@ function TransactionItem({
   mostrarCuenta?: boolean;
 }) {
   const isIngreso = tx.direccion === 'ingreso';
-  const conciliacion = tx.conciliaciones[0];
+  // Lo confirmado manda; si no hay, la sugerencia del cálculo (si la hay).
+  const conciliacion =
+    tx.conciliaciones.find((c) => c.estado === 'confirmada') ??
+    tx.conciliaciones.find((c) => c.estado === 'sugerida');
+  const confianza = conciliacion?.confianza
+    ? Math.round(parseFloat(conciliacion.confianza) * 100)
+    : null;
   const queryClient = useQueryClient();
   const [confirmarExcluir, setConfirmarExcluir] = useState(false);
 
@@ -125,6 +199,22 @@ function TransactionItem({
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
     },
     onError: () => toast.error('No se pudo cambiar la categoría'),
+  });
+
+  // Una sugerencia de «Auto-conciliar» no cuenta hasta que alguien la
+  // confirma; descartarla evita que el cálculo la vuelva a proponer.
+  const resolver = useMutation({
+    mutationFn: (aceptar: boolean) =>
+      resolverSugerencia({ data: { movimientoId: tx.id, aceptar } }),
+    onSuccess: (_, aceptar) => {
+      void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      toast.success(aceptar ? 'Cruce confirmado' : 'Sugerencia descartada');
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : 'No se pudo resolver la sugerencia'
+      ),
   });
 
   // Excluir saca el movimiento de la comparación Banco vs Facturación
@@ -174,10 +264,29 @@ function TransactionItem({
         <div className="text-[13px] font-medium text-[var(--arca-ink)] truncate">
           {tx.descripcion ?? '—'}
         </div>
-        {tx.contraparteTexto && (
-          <div className="text-[11.5px] text-[var(--arca-ink-3)] truncate">
-            {tx.contraparteTexto}
-          </div>
+        {/* Con quién fue: asignada por el CUIT de la descripción, o solo
+            posible por el importe exacto de una factura. */}
+        {tx.contraparteId ? (
+          <ConAyuda texto="Con quién fue el movimiento. Sale del CUIT que el banco escribió en la descripción.">
+            <div className="text-[11.5px] text-[var(--arca-ink-3)] truncate">
+              {tx.contraparteTexto}
+            </div>
+          </ConAyuda>
+        ) : tx.contraparteSugerida ? (
+          <ConAyuda
+            texto={`Podría ser ${tx.contraparteSugerida.nombre ?? 'esta contraparte'}: ${tx.contraparteSugerida.comprobanteIds.length === 1 ? 'tiene una factura' : `tiene ${tx.contraparteSugerida.comprobanteIds.length} facturas`} con exactamente este importe. Es solo una pista: no se asigna sola.`}
+          >
+            <div className="text-[11.5px] italic text-[var(--arca-ink-4)] truncate">
+              Posible: {tx.contraparteSugerida.nombre ?? 'sin nombre'} · importe
+              exacto de una factura
+            </div>
+          </ConAyuda>
+        ) : (
+          tx.contraparteTexto && (
+            <div className="text-[11.5px] text-[var(--arca-ink-3)] truncate">
+              {tx.contraparteTexto}
+            </div>
+          )
         )}
       </div>
 
@@ -211,27 +320,81 @@ function TransactionItem({
         </Select>
       </div>
 
-      {/* Match type badge */}
-      {conciliacion && (
-        <span
-          className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10.5px] font-medium"
-          style={{
-            background:
+      {/* Match. La columna tiene ancho fijo y siempre se dibuja —con o sin
+          cruce— para que las filas no se corran respecto de los encabezados.
+          Una sugerencia del cálculo se ve distinta y se resuelve acá mismo. */}
+      <div className="w-[148px] shrink-0 flex items-center gap-1">
+        {conciliacion?.estado === 'confirmada' ? (
+          <ConAyuda
+            texto={
               conciliacion.fuente === 'manual'
-                ? 'var(--arca-accent-pos-bg, oklch(0.95 0.05 145))'
-                : 'var(--arca-surface-2)',
-            color:
-              conciliacion.fuente === 'manual'
-                ? 'oklch(0.45 0.14 145)'
-                : 'var(--arca-ink-3)',
-          }}
-        >
-          {conciliacion.fuente === 'manual' ? 'Manual' : 'Auto'}
-          {/* `confianza` viene 0–1 (numeric), no en porcentaje. */}
-          {conciliacion.confianza &&
-            ` ${Math.round(parseFloat(conciliacion.confianza) * 100)}%`}
-        </span>
-      )}
+                ? 'Conciliado a mano: alguien eligió la factura que explica este movimiento.'
+                : `Lo sugirió el sistema (${confianza}% de seguridad) y alguien lo confirmó.`
+            }
+          >
+            <span
+              className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full text-[10.5px] font-medium"
+              style={{
+                background: 'var(--arca-accent-pos-bg, oklch(0.95 0.05 145))',
+                color: 'oklch(0.45 0.14 145)',
+              }}
+            >
+              Conciliado
+            </span>
+          </ConAyuda>
+        ) : conciliacion?.estado === 'sugerida' ? (
+          <>
+            <ConAyuda
+              texto={
+                <div className="flex flex-col gap-1.5">
+                  <span>
+                    Hay una factura que podría explicar este movimiento. No
+                    cuenta como conciliado hasta que lo confirmes.
+                  </span>
+                  <span className="opacity-80">
+                    Cómo se calcula la seguridad:
+                    <br />· 50% porque el importe es igual
+                    <br />· +40% si es el mismo cliente o proveedor
+                    <br />· hasta +10% según lo cerca de las fechas (10% el
+                    mismo día)
+                  </span>
+                  <span className="font-semibold">Total: {confianza}%</span>
+                </div>
+              }
+            >
+              <span className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full text-[10.5px] font-medium bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                Sugerido {confianza}%
+              </span>
+            </ConAyuda>
+            <ConAyuda texto="Confirmar: esta factura explica el movimiento">
+              <button
+                type="button"
+                onClick={() => resolver.mutate(true)}
+                disabled={resolver.isPending}
+                aria-label="Confirmar el cruce"
+                className="shrink-0 rounded p-0.5 text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] hover:text-[oklch(0.45_0.14_145)] disabled:opacity-40"
+              >
+                <Check className="w-3.5 h-3.5" strokeWidth={2.2} />
+              </button>
+            </ConAyuda>
+            <ConAyuda texto="Descartar: no es esta factura. No se vuelve a sugerir.">
+              <button
+                type="button"
+                onClick={() => resolver.mutate(false)}
+                disabled={resolver.isPending}
+                aria-label="Descartar la sugerencia"
+                className="shrink-0 rounded p-0.5 text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-accent-neg,oklch(0.55_0.18_25))] disabled:opacity-40"
+              >
+                <X className="w-3.5 h-3.5" strokeWidth={2.2} />
+              </button>
+            </ConAyuda>
+          </>
+        ) : (
+          <span className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full border border-[var(--arca-border)] text-[10.5px] font-medium text-[var(--arca-ink-4)]">
+            Sin match
+          </span>
+        )}
+      </div>
 
       {/* Amount */}
       <div
@@ -248,27 +411,31 @@ function TransactionItem({
       {/* Excluir de la conciliación. Volver a incluir no pregunta: es la
           dirección segura. Excluir sí, porque saca plata de la comparación. */}
       {tx.excluido ? (
-        <button
-          type="button"
-          className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
-          title="Excluido de la conciliación — volver a incluir"
-          disabled={excluir.isPending}
-          onClick={() => excluir.mutate(false)}
-        >
-          <EyeOff className="w-3.5 h-3.5" strokeWidth={1.8} />
-        </button>
+        <ConAyuda texto="Excluido de la conciliación. Click para volver a incluirlo.">
+          <button
+            type="button"
+            className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
+            aria-label="Volver a incluir en la conciliación"
+            disabled={excluir.isPending}
+            onClick={() => excluir.mutate(false)}
+          >
+            <EyeOff className="w-3.5 h-3.5" strokeWidth={1.8} />
+          </button>
+        </ConAyuda>
       ) : (
         <AlertDialog open={confirmarExcluir} onOpenChange={setConfirmarExcluir}>
-          <AlertDialogTrigger asChild>
-            <button
-              type="button"
-              className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
-              title="Excluir de la conciliación (ej. transferencia entre cuentas propias)"
-              disabled={excluir.isPending}
-            >
-              <Eye className="w-3.5 h-3.5" strokeWidth={1.8} />
-            </button>
-          </AlertDialogTrigger>
+          <ConAyuda texto="Excluir de la conciliación: para lo que no es una venta ni una compra, como una transferencia entre cuentas propias.">
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                className="shrink-0 text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)] transition-colors"
+                aria-label="Excluir de la conciliación"
+                disabled={excluir.isPending}
+              >
+                <Eye className="w-3.5 h-3.5" strokeWidth={1.8} />
+              </button>
+            </AlertDialogTrigger>
+          </ConAyuda>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
@@ -678,9 +845,52 @@ function TarjetaCuenta({
 /* ─── Page ─── */
 function BankPage() {
   // La empresa es la global del header (store cliente-seleccionado): venir de
-  // otra vista con una empresa elegida abre Banco ya parado en ella.
+  // otra vista con una empresa elegida abre Banco ya parado en ella. La URL
+  // manda si la trae —un link compartido abre en la empresa del link— y el
+  // store la sigue, para que el selector del header muestre lo mismo.
+  // Empresa, mes y filtros viven en la URL, pero cambiarlos es moverse
+  // dentro de la misma pantalla: por eso cada `navigate` de acá lleva
+  // `resetScroll: false`, para no saltar al principio de la página.
+  const search: BankSearch = Route.useSearch();
+  const navigate = Route.useNavigate();
   const [clienteGlobal] = useClienteSeleccionado();
-  const clienteId = clienteGlobal ?? '';
+  const clienteId = search.clientId ?? clienteGlobal ?? '';
+
+  // URL → store. Sin `clientId` en la URL, se escribe el recordado.
+  useEffect(() => {
+    if (search.clientId) {
+      if (search.clientId !== clienteGlobal)
+        guardarClienteSeleccionado(search.clientId);
+    } else if (clienteGlobal) {
+      void navigate({
+        resetScroll: false,
+        search: (prev: BankSearch) => ({ ...prev, clientId: clienteGlobal }),
+        replace: true,
+      });
+    }
+    // Solo cuando cambia la URL: el cambio del store lo atiende el de abajo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search.clientId]);
+
+  // Store → URL: elegir otra empresa en el header. Se compara contra el valor
+  // anterior para no pisar la URL con el store viejo al montar. El mes se
+  // suelta: la bandeja vuelve a buscar el último mes con movimientos de la
+  // empresa nueva.
+  const clienteGlobalPrevio = useRef(clienteGlobal);
+  useEffect(() => {
+    if (clienteGlobalPrevio.current === clienteGlobal) return;
+    clienteGlobalPrevio.current = clienteGlobal;
+    if ((clienteGlobal ?? undefined) === search.clientId) return;
+    void navigate({
+      resetScroll: false,
+      search: (prev: BankSearch) => ({
+        ...prev,
+        clientId: clienteGlobal ?? undefined,
+        mes: undefined,
+      }),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteGlobal]);
   // Vacío = todas las cuentas. El registro arranca completo.
   const [accountId, setAccountId] = useState('');
   const [showCreateAccount, setShowCreateAccount] = useState(false);
@@ -709,56 +919,76 @@ function BankPage() {
     enabled: !!clienteId,
   });
 
-  /* Resumen de conciliación */
-  const { data: summary } = useQuery({
-    queryKey: ['bankSummary', clienteId],
-    queryFn: () => getResumenConciliacion({ data: { clienteId } }),
-    enabled: !!clienteId,
-  });
+  // El registro se pagina en el servidor. Cambiar de empresa, de cuenta o de
+  // mes vuelve a la primera página (ajuste durante el render, como el de
+  // `prevCliente`).
+  const [pagina, setPagina] = useState(1);
+  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}`;
+  const [prevLista, setPrevLista] = useState(claveLista);
+  if (prevLista !== claveLista) {
+    setPrevLista(claveLista);
+    setPagina(1);
+  }
 
-  /* Movimientos: de una cuenta o de todas */
-  const { data: transactions = [], isFetching: txsFetching } = useQuery({
+  /* Movimientos del mes de la bandeja, de una cuenta o de todas, con los
+     totales de todo lo filtrado (no solo de la página). */
+  const { data: listado, isFetching: txsFetching } = useQuery({
     queryKey: [
       'bankTransactions',
       accountId || clienteId,
       accountId ? 'cuenta' : 'todas',
+      search.mes,
+      search.categoria,
+      search.estado,
+      pagina,
     ],
     queryFn: () =>
       listMovimientos({
-        data: accountId
-          ? { cuentaBancariaId: accountId, limit: 500 }
-          : { clienteId, limit: 500 },
+        data: {
+          ...(accountId ? { cuentaBancariaId: accountId } : { clienteId }),
+          periodo: search.mes,
+          categoria: search.categoria,
+          estado: search.estado,
+          pagina,
+          porPagina: MOVIMIENTOS_POR_PAGINA,
+        },
       }),
-    enabled: !!clienteId,
+    // Espera al mes: la bandeja lo resuelve y lo escribe en la URL.
+    enabled: !!clienteId && !!search.mes,
     placeholderData: (previo) => previo,
   });
+  const transactions = listado?.filas ?? [];
+  const totalesRegistro = listado?.totales;
 
   /* Auto-conciliación: por cuenta, así que necesita una elegida */
   const autoMatchMutation = useMutation({
     mutationFn: () => autoConciliar({ data: { cuentaBancariaId: accountId } }),
-    onSuccess: ({ conciliados }) => {
+    onSuccess: ({ sugeridos }) => {
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
-      void queryClient.invalidateQueries({
-        queryKey: ['bankSummary', clienteId],
-      });
+      void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      // Solo propone: lo dice así para que nadie crea que ya quedó conciliado.
       toast.success(
-        `${conciliados} movimiento${conciliados !== 1 ? 's' : ''} conciliado${conciliados !== 1 ? 's' : ''} automáticamente`
+        sugeridos === 0
+          ? 'No se encontraron cruces nuevos'
+          : `${sugeridos} cruce${sugeridos !== 1 ? 's' : ''} sugerido${sugeridos !== 1 ? 's' : ''}: revisalos y confirmalos en la tabla`
       );
     },
     onError: () => toast.error('Error en la conciliación automática'),
   });
 
-  const unmatchedCount = transactions.filter((t) => !t.conciliado).length;
+  const movimientosFiltrados = totalesRegistro?.movimientos ?? 0;
+  const unmatchedCount = totalesRegistro?.sinConciliar ?? 0;
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(movimientosFiltrados / MOVIMIENTOS_POR_PAGINA)
+  );
   const cuentaElegida = accounts.find((a) => a.id === accountId);
-
-  // Los totales acompañan a lo que se está mirando: si hay una cuenta
-  // elegida, son los de esa cuenta.
-  const ingresos = accountId
-    ? parseFloat(cuentaElegida?.ingresos ?? '0')
-    : accounts.reduce((a, c) => a + parseFloat(c.ingresos), 0);
-  const egresos = accountId
-    ? parseFloat(cuentaElegida?.egresos ?? '0')
-    : accounts.reduce((a, c) => a + parseFloat(c.egresos), 0);
+  const mesLabel = search.mes
+    ? fechaLocal(`${search.mes}-15`).toLocaleDateString('es-AR', {
+        month: 'long',
+        year: 'numeric',
+      })
+    : 'todo el historial';
 
   if (!clienteId) {
     return (
@@ -798,7 +1028,17 @@ function BankPage() {
       {/* La bandeja ES la vista: el trabajo del mes, no el resumen de caja. */}
       {accounts.length > 0 && (
         <div className="mb-5">
-          <BandejaConciliacion clienteId={clienteId} />
+          <BandejaConciliacion
+            clienteId={clienteId}
+            periodo={search.mes}
+            onPeriodoChange={(mes, { reemplazar } = {}) =>
+              void navigate({
+                resetScroll: false,
+                search: (prev: BankSearch) => ({ ...prev, mes }),
+                replace: reemplazar,
+              })
+            }
+          />
         </div>
       )}
 
@@ -878,28 +1118,33 @@ function BankPage() {
           >
             {showRegistro
               ? 'Ocultar'
-              : `Ver los ${summary?.movimientos ?? 0} movimientos`}
+              : `Ver los ${movimientosFiltrados} movimientos de ${mesLabel}`}
           </button>
         </div>
       )}
 
       {accounts.length > 0 && showRegistro && (
         <div className="mb-4">
+          {/* Mismo filtro que la tabla: empresa, cuenta y mes. */}
           <TotalesDelPeriodo
-            ingresos={ingresos}
-            egresos={egresos}
-            movimientos={
-              accountId
-                ? (cuentaElegida?.movimientos ?? 0)
-                : (summary?.movimientos ?? 0)
+            ingresos={totalesRegistro?.ingresos ?? 0}
+            egresos={totalesRegistro?.egresos ?? 0}
+            movimientos={movimientosFiltrados}
+            conciliados={totalesRegistro?.conciliados ?? 0}
+            porcentaje={
+              movimientosFiltrados > 0
+                ? Math.round(
+                    ((totalesRegistro?.conciliados ?? 0) /
+                      movimientosFiltrados) *
+                      100
+                  )
+                : 0
             }
-            conciliados={summary?.conciliados ?? 0}
-            porcentaje={summary?.porcentajeConciliado ?? 0}
-            alcance={
+            alcance={`${mesLabel} · ${
               cuentaElegida
                 ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`.trim()
                 : `${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''}`
-            }
+            }`}
           />
         </div>
       )}
@@ -915,15 +1160,27 @@ function BankPage() {
                 ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`
                 : 'todas las cuentas'}
               {' · '}
-              {transactions.length} en pantalla · {unmatchedCount} sin conciliar
+              {mesLabel} · {movimientosFiltrados} movimientos ·{' '}
+              {totalesRegistro?.conciliados ?? 0} conciliados
+              {(totalesRegistro?.sugeridos ?? 0) > 0 && (
+                <span className="text-[var(--arca-accent-warn-fg)]">
+                  {' · '}
+                  {totalesRegistro?.sugeridos} sugerido
+                  {totalesRegistro?.sugeridos === 1 ? '' : 's'} para revisar
+                </span>
+              )}
+              {' · '}
+              {unmatchedCount} sin conciliar
             </span>
             {accountId && (
-              <button
-                onClick={() => setAccountId('')}
-                className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
-              >
-                Ver todas
-              </button>
+              <ConAyuda texto="Ahora ves solo esta cuenta porque hiciste click en su tarjeta. Esto vuelve a mostrar todas las cuentas de la empresa.">
+                <button
+                  onClick={() => setAccountId('')}
+                  className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
+                >
+                  ✕ Quitar filtro: ver todas las cuentas
+                </button>
+              </ConAyuda>
             )}
             {txsFetching && (
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--arca-ink-4)]" />
@@ -939,18 +1196,90 @@ function BankPage() {
                 </button>
               )}
               {accountId && (
-                <button
-                  onClick={() => autoMatchMutation.mutate()}
-                  disabled={autoMatchMutation.isPending || unmatchedCount === 0}
-                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 transition-colors"
-                >
-                  <Zap className="w-3 h-3" strokeWidth={2} />
-                  {autoMatchMutation.isPending
-                    ? 'Conciliando...'
-                    : `Auto-conciliar (${unmatchedCount})`}
-                </button>
+                <ConAyuda texto="Busca, para cada movimiento de esta cuenta, una factura con el mismo importe y fecha cercana (cobros contra facturas emitidas, pagos contra recibidas). Solo propone: cada sugerencia la confirmás o descartás en la tabla.">
+                  <button
+                    onClick={() => autoMatchMutation.mutate()}
+                    disabled={
+                      autoMatchMutation.isPending || unmatchedCount === 0
+                    }
+                    className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 transition-colors"
+                  >
+                    <Zap className="w-3 h-3" strokeWidth={2} />
+                    {autoMatchMutation.isPending
+                      ? 'Conciliando...'
+                      : `Auto-conciliar (${unmatchedCount})`}
+                  </button>
+                </ConAyuda>
               )}
             </div>
+          </div>
+
+          {/* Filtros de la tabla. Los totales de arriba los siguen: con
+              "Impuestos" elegido, "Salió" es lo que se fue en impuestos. */}
+          <div className="px-5 py-2.5 flex flex-wrap items-center gap-2 border-b border-[var(--arca-border)]">
+            <SearchableSelect
+              size="sm"
+              value={search.categoria ?? 'all'}
+              onValueChange={(v) =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({
+                    ...prev,
+                    categoria:
+                      v === 'all' ? undefined : (v as CategoriaMovimiento),
+                  }),
+                })
+              }
+              placeholder="Categoría"
+              searchPlaceholder="Buscar categoría..."
+              width={210}
+              options={[
+                { value: 'all', label: 'Todas las categorías' },
+                ...CATEGORIAS_MOVIMIENTO.map((c) => ({
+                  value: c,
+                  label: CATEGORIA_MOVIMIENTO_LABEL[c],
+                })),
+              ]}
+            />
+            <SearchableSelect
+              size="sm"
+              value={search.estado ?? 'all'}
+              onValueChange={(v) =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({
+                    ...prev,
+                    estado:
+                      v === 'all'
+                        ? undefined
+                        : (v as NonNullable<BankSearch['estado']>),
+                  }),
+                })
+              }
+              placeholder="Estado"
+              searchPlaceholder="Buscar estado..."
+              width={190}
+              options={[
+                { value: 'all', label: 'Todos los estados' },
+                ...(
+                  Object.keys(ESTADO_LABEL) as (keyof typeof ESTADO_LABEL)[]
+                ).map((e) => ({ value: e, label: ESTADO_LABEL[e] })),
+              ]}
+            />
+            {(search.categoria ?? search.estado) && (
+              <LimpiarFiltros
+                onLimpiar={() =>
+                  void navigate({
+                    resetScroll: false,
+                    search: (prev: BankSearch) => ({
+                      ...prev,
+                      categoria: undefined,
+                      estado: undefined,
+                    }),
+                  })
+                }
+              />
+            )}
           </div>
 
           {showManualMovement && accountId && (
@@ -968,8 +1297,8 @@ function BankPage() {
             <div className="flex-1">Descripción / Contraparte</div>
             {!accountId && <div className="w-[120px] shrink-0">Cuenta</div>}
             <div className="w-[150px] shrink-0">Categoría</div>
-            <div className="w-[60px]">Match</div>
-            <div className="w-[130px] text-right">Importe</div>
+            <div className="w-[148px] shrink-0">Match</div>
+            <div className="w-[130px] shrink-0 text-right">Importe</div>
             <div className="w-[14px] shrink-0" />
           </div>
 
@@ -989,15 +1318,25 @@ function BankPage() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-[var(--arca-border)]">
-              {transactions.map((tx) => (
-                <TransactionItem
-                  key={tx.id}
-                  tx={tx}
-                  mostrarCuenta={!accountId}
+            <>
+              <div className="divide-y divide-[var(--arca-border)]">
+                {transactions.map((tx) => (
+                  <TransactionItem
+                    key={tx.id}
+                    tx={tx}
+                    mostrarCuenta={!accountId}
+                  />
+                ))}
+              </div>
+              {totalPaginas > 1 && (
+                <Paginador
+                  pagina={pagina}
+                  totalPaginas={totalPaginas}
+                  onPagina={setPagina}
+                  className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
                 />
-              ))}
-            </div>
+              )}
+            </>
           )}
         </ArcaCard>
       )}

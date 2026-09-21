@@ -10,7 +10,7 @@
  * El criterio de cruce vive en el server (`getBandejaConciliacion`): mismo
  * importe con un peso de tolerancia y fecha cercana.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -39,6 +39,12 @@ import {
 } from '@/actions/bank';
 import { excluirMovimiento } from '@/actions/extractos';
 import { MesPicker } from '@/components/shared/mes-picker';
+import { fechaLocal } from '@/components/inicio/compartido';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { CATEGORIA_MOVIMIENTO_LABEL } from '@/lib/clasificar-movimiento';
 
 type Bandeja = Awaited<ReturnType<typeof getBandejaConciliacion>>;
@@ -48,8 +54,12 @@ type ComprobantePendiente = Bandeja['comprobantes'][number];
 const pesos = (n: number) =>
   `$${n.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
 
+/** `date` de la base leído como fecha local: por UTC se vería un día antes. */
 const fecha = (d: string) =>
-  new Date(d).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+  fechaLocal(d).toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+  });
 
 /** El mes anterior en 'YYYY-MM': los extractos llegan a mes vencido. */
 function mesAnterior(): string {
@@ -67,6 +77,26 @@ function nombreComprobante(c: {
 }): string {
   const nro = `${String(c.puntoVenta).padStart(4, '0')}-${String(c.numero).padStart(8, '0')}`;
   return `${c.tipoNombre ?? `Tipo ${c.tipo}`} ${nro}`;
+}
+
+/** Un tramo de la barra de progreso, con su explicación al pasar el mouse. */
+function Tramo({
+  clase,
+  ancho,
+  texto,
+}: {
+  clase: string;
+  ancho: number;
+  texto: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={`h-full ${clase}`} style={{ width: `${ancho}%` }} />
+      </TooltipTrigger>
+      <TooltipContent className="text-[12px]">{texto}</TooltipContent>
+    </Tooltip>
+  );
 }
 
 /* ─────────────────────────── progreso del mes ─────────────────────────── */
@@ -114,20 +144,20 @@ function Progreso({ totales }: { totales: Bandeja['totales'] }) {
         </div>
         {/* Una sola escala: lo que entró en el mes, partido en tres estados. */}
         <div className="flex h-[9px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
-          <span
-            className="h-full bg-[var(--arca-accent-pos)]"
-            style={{ width: `${(totales.conciliado / base) * 100}%` }}
-            title="Conciliado"
+          <Tramo
+            clase="bg-[var(--arca-accent-pos)]"
+            ancho={(totales.conciliado / base) * 100}
+            texto={`Conciliado: ${pesos(totales.conciliado)} ya tienen su factura`}
           />
-          <span
-            className="h-full bg-[var(--arca-ink-4)]"
-            style={{ width: `${(totales.excluido / base) * 100}%` }}
-            title="Excluido (transferencias entre cuentas propias)"
+          <Tramo
+            clase="bg-[var(--arca-ink-4)]"
+            ancho={(totales.excluido / base) * 100}
+            texto={`Excluido: ${pesos(totales.excluido)} que no son ventas (por ejemplo, transferencias entre cuentas propias)`}
           />
-          <span
-            className="h-full bg-[var(--arca-accent-warn)]"
-            style={{ width: `${(totales.sinExplicar / base) * 100}%` }}
-            title="Sin explicar"
+          <Tramo
+            clase="bg-[var(--arca-accent-warn)]"
+            ancho={(totales.sinExplicar / base) * 100}
+            texto={`Sin explicar: ${pesos(totales.sinExplicar)} que entraron y todavía no tienen factura`}
           />
         </div>
         <span className="text-[11px] text-[var(--arca-ink-4)]">
@@ -198,15 +228,23 @@ function FilaMovimiento({
           )}
         </span>
       </button>
-      <button
-        type="button"
-        onClick={onExcluir}
-        disabled={excluyendo}
-        title="No es una venta: excluir de la conciliación y de la comparación con facturación"
-        className="shrink-0 text-[var(--arca-ink-4)] transition-colors hover:text-[var(--arca-ink)]"
-      >
-        <EyeOff className="size-3.5" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onExcluir}
+            disabled={excluyendo}
+            aria-label="Excluir de la conciliación"
+            className="shrink-0 text-[var(--arca-ink-4)] transition-colors hover:text-[var(--arca-ink)]"
+          >
+            <EyeOff className="size-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[280px] text-[12px] leading-snug">
+          No es una venta: excluir de la conciliación y de la comparación con
+          facturación.
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -266,10 +304,18 @@ function FilaComprobante({
 
 /* ───────────────────────────────── bandeja ────────────────────────────── */
 
-export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
+export function BandejaConciliacion({
+  clienteId,
+  periodo: periodoElegido,
+  onPeriodoChange,
+}: {
+  clienteId: string;
+  /** 'YYYY-MM' que viene de la URL; sin él, se busca el mes que corresponde. */
+  periodo: string | undefined;
+  onPeriodoChange: (periodo: string, opts?: { reemplazar?: boolean }) => void;
+}) {
   const queryClient = useQueryClient();
-  const [periodo, setPeriodo] = useState(mesAnterior());
-  const [yaReubicada, setYaReubicada] = useState(false);
+  const periodo = periodoElegido ?? mesAnterior();
   const [movElegido, setMovElegido] = useState<string | null>(null);
   // Excluir saca plata de la comparación con facturación: se pregunta antes.
   const [aExcluir, setAExcluir] = useState<MovimientoPendiente | null>(null);
@@ -278,7 +324,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
   const [revisandoLote, setRevisandoLote] = useState(false);
   const [verConciliados, setVerConciliados] = useState(false);
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isPlaceholderData } = useQuery({
     queryKey: ['bandejaConciliacion', clienteId, periodo],
     queryFn: () => getBandejaConciliacion({ data: { clienteId, periodo } }),
     enabled: !!clienteId,
@@ -345,6 +391,19 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
     onError: () => toast.error('No se pudo actualizar el movimiento'),
   });
 
+  // Los extractos se cargan con atraso, así que el mes anterior suele estar
+  // vacío: sin mes en la URL, la bandeja se corre al último mes con
+  // movimientos y lo deja escrito, así recargar vuelve al mismo lugar. Con
+  // `replace`, para que el botón atrás no pase por el mes vacío.
+  useEffect(() => {
+    if (periodoElegido || !data || isPlaceholderData) return;
+    const destino =
+      data.totales.ingresos === 0 && data.ultimoPeriodoConDatos
+        ? data.ultimoPeriodoConDatos
+        : periodo;
+    onPeriodoChange(destino, { reemplazar: true });
+  }, [periodoElegido, data, isPlaceholderData, periodo, onPeriodoChange]);
+
   if (!data) {
     return (
       <div className="flex items-center gap-2 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-8 text-[12.5px] text-[var(--arca-ink-3)]">
@@ -352,19 +411,6 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
         Buscando lo que falta conciliar…
       </div>
     );
-  }
-
-  // Los extractos se cargan con atraso, así que el mes anterior suele estar
-  // vacío: la bandeja se corre sola —una sola vez— al último mes con
-  // movimientos. Durante el render, no en un efecto.
-  if (
-    !yaReubicada &&
-    data.totales.ingresos === 0 &&
-    data.ultimoPeriodoConDatos &&
-    data.ultimoPeriodoConDatos !== periodo
-  ) {
-    setYaReubicada(true);
-    setPeriodo(data.ultimoPeriodoConDatos);
   }
 
   const { totales, movimientos, comprobantes } = data;
@@ -415,7 +461,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
               mes={periodo.slice(5, 7)}
               maxPeriodo={mesAnterior()}
               onChange={(ano, mes) => {
-                setPeriodo(`${ano}-${mes}`);
+                onPeriodoChange(`${ano}-${mes}`);
                 setMovElegido(null);
               }}
             />

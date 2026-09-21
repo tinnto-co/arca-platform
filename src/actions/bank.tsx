@@ -21,12 +21,14 @@ import {
   cliente,
 } from '@/drizzle/schema';
 import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
+import { type ContraparteSugerida } from '@/lib/contraparte-movimiento';
+import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import { eq, and, desc, gte, lte, sql, inArray, type SQL } from 'drizzle-orm';
+import { eq, and, desc, gte, ne, sql, inArray, type SQL } from 'drizzle-orm';
 
 /** La cuenta, validando que sea de la organización activa. */
 async function getCuentaDeOrg(cuentaBancariaId: string, orgId: string) {
@@ -234,6 +236,14 @@ export const listCuentasConResumen = createServerFn({ method: 'GET' })
       .orderBy(cuentaBancaria.createdAt);
   });
 
+/**
+ * El registro de movimientos, paginado del lado del servidor.
+ *
+ * Devuelve la página pedida y, en la misma respuesta, los totales de TODO lo
+ * que cumple el filtro (no solo de la página): así lo que dice el resumen
+ * —entró, salió, cuántos, cuántos conciliados— es siempre sobre el mismo
+ * conjunto que se está paginando.
+ */
 export const listMovimientos = createServerFn({ method: 'GET' })
   .validator(
     z
@@ -241,9 +251,16 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         /** Una cuenta puntual, o todas las de la empresa con `clienteId`. */
         cuentaBancariaId: z.string().uuid().optional(),
         clienteId: z.string().uuid().optional(),
-        from: z.string().optional(),
-        to: z.string().optional(),
-        limit: z.number().int().min(1).max(500).default(100),
+        /** Mes 'YYYY-MM'. Sin él, todo el historial. */
+        periodo: z
+          .string()
+          .regex(/^\d{4}-\d{2}$/)
+          .optional(),
+        categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
+        /** Estados excluyentes: con cruce confirmado, solo sugerido, o nada. */
+        estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+        pagina: z.number().int().min(1).default(1),
+        porPagina: z.number().int().min(1).max(200).default(50),
       })
       .refine((v) => v.cuentaBancariaId ?? v.clienteId, {
         message: 'Falta indicar la cuenta o la empresa',
@@ -251,6 +268,21 @@ export const listMovimientos = createServerFn({ method: 'GET' })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
+    const { pagina, porPagina } = ctx.data;
+
+    const vacio = {
+      filas: [],
+      pagina,
+      porPagina,
+      totales: {
+        movimientos: 0,
+        ingresos: 0,
+        egresos: 0,
+        conciliados: 0,
+        sugeridos: 0,
+        sinConciliar: 0,
+      },
+    };
 
     // Sin cuenta puntual se listan todas las de la empresa: el registro se ve
     // completo sin tener que elegir una por una.
@@ -270,46 +302,86 @@ export const listMovimientos = createServerFn({ method: 'GET' })
           )
         );
       cuentaIds = cuentas.map((c) => c.id);
-      if (cuentaIds.length === 0) return [];
+      if (cuentaIds.length === 0) return vacio;
     }
 
     const conditions: SQL[] = [
       inArray(movimientoBancario.cuentaBancariaId, cuentaIds),
     ];
-    if (ctx.data.from)
-      conditions.push(gte(movimientoBancario.fecha, ctx.data.from));
-    if (ctx.data.to)
-      conditions.push(lte(movimientoBancario.fecha, ctx.data.to));
+    if (ctx.data.periodo) {
+      const desde = `${ctx.data.periodo}-01`;
+      conditions.push(gte(movimientoBancario.fecha, desde));
+      conditions.push(
+        sql`${movimientoBancario.fecha} < (${desde}::date + interval '1 month')`
+      );
+    }
+    // Conciliado = tiene un cruce confirmado; una sugerencia del cálculo no
+    // cuenta hasta que alguien la confirma. Mismo criterio que la fila.
+    const conCruce = (estado: 'confirmada' | 'sugerida') => sql`exists (
+      select 1 from ${conciliacionComprobante}
+      where ${conciliacionComprobante.movimientoBancarioId} = ${movimientoBancario.id}
+        and ${conciliacionComprobante.estado} = ${estado}
+    )`;
+    const conciliado = conCruce('confirmada');
+    const sugerido = conCruce('sugerida');
+    if (ctx.data.categoria)
+      conditions.push(eq(movimientoBancario.categoria, ctx.data.categoria));
+    if (ctx.data.estado === 'conciliado') conditions.push(conciliado);
+    if (ctx.data.estado === 'sugerido')
+      conditions.push(sql`${sugerido} and not ${conciliado}`);
+    if (ctx.data.estado === 'sin_conciliar')
+      conditions.push(sql`not ${conciliado} and not ${sugerido}`);
+    // Los totales usan este mismo filtro: con "Impuestos" elegido, "salió"
+    // es lo que se fue en impuestos.
+    const filtro = and(...conditions);
 
-    const movimientos = await db
-      .select({
-        id: movimientoBancario.id,
-        fecha: movimientoBancario.fecha,
-        direccion: movimientoBancario.direccion,
-        importe: movimientoBancario.importe,
-        descripcion: movimientoBancario.descripcion,
-        saldoPosterior: movimientoBancario.saldoPosterior,
-        contraparteId: movimientoBancario.contraparteId,
-        contraparteTexto: movimientoBancario.contraparteTexto,
-        idExterno: movimientoBancario.idExterno,
-        categoria: movimientoBancario.categoria,
-        categoriaFuente: movimientoBancario.categoriaFuente,
-        excluido: movimientoBancario.excluido,
-        fuente: movimientoBancario.fuente,
-        createdAt: movimientoBancario.createdAt,
-        cuentaBancariaId: movimientoBancario.cuentaBancariaId,
-        // De qué cuenta es la fila: se muestra cuando se ven todas juntas.
-        cuentaBanco: cuentaBancaria.banco,
-        cuentaNumero: cuentaBancaria.numero,
-      })
-      .from(movimientoBancario)
-      .innerJoin(
-        cuentaBancaria,
-        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
-      )
-      .where(and(...conditions))
-      .orderBy(desc(movimientoBancario.fecha))
-      .limit(ctx.data.limit);
+    const [[totales], movimientos] = await Promise.all([
+      db
+        .select({
+          movimientos: sql<number>`count(*)::int`,
+          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          conciliados: sql<number>`(count(*) filter (where ${conciliado}))::int`,
+          sugeridos: sql<number>`(count(*) filter (where ${sugerido} and not ${conciliado}))::int`,
+        })
+        .from(movimientoBancario)
+        .where(filtro),
+      db
+        .select({
+          id: movimientoBancario.id,
+          fecha: movimientoBancario.fecha,
+          direccion: movimientoBancario.direccion,
+          importe: movimientoBancario.importe,
+          descripcion: movimientoBancario.descripcion,
+          saldoPosterior: movimientoBancario.saldoPosterior,
+          contraparteId: movimientoBancario.contraparteId,
+          contraparteTexto: movimientoBancario.contraparteTexto,
+          // Por importe exacto de una factura: se muestra como posible, no
+          // se asigna (ver `contraparte-movimiento`).
+          contraparteSugerida: sql<ContraparteSugerida | null>`${movimientoBancario.datosCrudos}->'contraparteSugerida'`,
+          idExterno: movimientoBancario.idExterno,
+          categoria: movimientoBancario.categoria,
+          categoriaFuente: movimientoBancario.categoriaFuente,
+          excluido: movimientoBancario.excluido,
+          fuente: movimientoBancario.fuente,
+          createdAt: movimientoBancario.createdAt,
+          cuentaBancariaId: movimientoBancario.cuentaBancariaId,
+          // De qué cuenta es la fila: se muestra cuando se ven todas juntas.
+          cuentaBanco: cuentaBancaria.banco,
+          cuentaNumero: cuentaBancaria.numero,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(filtro)
+        // `id` desempata: sin un orden total, una fila puede repetirse o
+        // perderse entre dos páginas con la misma fecha.
+        .orderBy(desc(movimientoBancario.fecha), movimientoBancario.id)
+        .limit(porPagina)
+        .offset((pagina - 1) * porPagina),
+    ]);
 
     const ids = movimientos.map((m) => m.id);
     const conciliaciones =
@@ -326,7 +398,13 @@ export const listMovimientos = createServerFn({ method: 'GET' })
               confianza: conciliacionComprobante.confianza,
             })
             .from(conciliacionComprobante)
-            .where(inArray(conciliacionComprobante.movimientoBancarioId, ids))
+            .where(
+              and(
+                inArray(conciliacionComprobante.movimientoBancarioId, ids),
+                // Lo descartado no se muestra: es solo memoria del cálculo.
+                ne(conciliacionComprobante.estado, 'rechazada')
+              )
+            )
         : [];
 
     const porMovimiento = new Map<string, typeof conciliaciones>();
@@ -336,15 +414,43 @@ export const listMovimientos = createServerFn({ method: 'GET' })
       porMovimiento.set(c.movimientoBancarioId, lista);
     }
 
-    return movimientos.map((m) => ({
-      ...m,
-      conciliaciones: porMovimiento.get(m.id) ?? [],
-      conciliado: (porMovimiento.get(m.id) ?? []).length > 0,
-    }));
+    const total = Number(totales?.movimientos ?? 0);
+    const conciliados = Number(totales?.conciliados ?? 0);
+
+    return {
+      filas: movimientos.map((m) => ({
+        ...m,
+        conciliaciones: porMovimiento.get(m.id) ?? [],
+        conciliado: (porMovimiento.get(m.id) ?? []).some(
+          (c) => c.estado === 'confirmada'
+        ),
+      })),
+      pagina,
+      porPagina,
+      totales: {
+        movimientos: total,
+        ingresos: Number(totales?.ingresos ?? 0),
+        egresos: Number(totales?.egresos ?? 0),
+        conciliados,
+        sugeridos: Number(totales?.sugeridos ?? 0),
+        // Excluyente con los otros dos, igual que el filtro de estado.
+        sinConciliar: total - conciliados - Number(totales?.sugeridos ?? 0),
+      },
+    };
   });
 
 const DIAS_PROXIMIDAD = 5;
 
+/**
+ * Propone cruces para los movimientos de una cuenta. Solo propone: todo queda
+ * `sugerida` hasta que una persona lo confirma o lo descarta desde el
+ * registro (`resolverSugerencia`), y mientras tanto no cuenta como
+ * conciliado en ningún lado.
+ *
+ * Cobro contra factura emitida y pago contra factura recibida. No propone una
+ * factura que ya está conciliada, no usa la misma factura para dos
+ * movimientos y no repite un cruce que alguien ya descartó.
+ */
 export const autoConciliar = createServerFn({ method: 'POST' })
   .validator(z.object({ cuentaBancariaId: z.string().uuid() }))
   .handler(async (ctx) => {
@@ -358,42 +464,70 @@ export const autoConciliar = createServerFn({ method: 'POST' })
         id: movimientoBancario.id,
         fecha: movimientoBancario.fecha,
         importe: movimientoBancario.importe,
+        direccion: movimientoBancario.direccion,
         contraparteId: movimientoBancario.contraparteId,
       })
       .from(movimientoBancario)
       .where(
-        eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId)
+        and(
+          eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId),
+          eq(movimientoBancario.excluido, false)
+        )
       );
 
-    if (movimientos.length === 0) return { conciliados: 0 };
+    if (movimientos.length === 0) return { sugeridos: 0 };
 
-    const yaConciliados = new Set(
-      (
-        await db
-          .select({ id: conciliacionComprobante.movimientoBancarioId })
-          .from(conciliacionComprobante)
-          .where(
-            inArray(
-              conciliacionComprobante.movimientoBancarioId,
-              movimientos.map((m) => m.id)
-            )
-          )
-      ).map((c) => c.id)
+    const previas = await db
+      .select({
+        movimientoId: conciliacionComprobante.movimientoBancarioId,
+        comprobanteId: conciliacionComprobante.comprobanteId,
+        estado: conciliacionComprobante.estado,
+      })
+      .from(conciliacionComprobante)
+      .where(
+        inArray(
+          conciliacionComprobante.movimientoBancarioId,
+          movimientos.map((m) => m.id)
+        )
+      );
+    // Con un cruce vigente (confirmado o ya sugerido) no se propone otro.
+    const conCruce = new Set(
+      previas.filter((p) => p.estado !== 'rechazada').map((p) => p.movimientoId)
+    );
+    const descartados = new Set(
+      previas
+        .filter((p) => p.estado === 'rechazada')
+        .map((p) => `${p.movimientoId}|${p.comprobanteId}`)
     );
 
-    const pendientes = movimientos.filter((m) => !yaConciliados.has(m.id));
-    if (pendientes.length === 0) return { conciliados: 0 };
+    const pendientes = movimientos.filter((m) => !conCruce.has(m.id));
+    if (pendientes.length === 0) return { sugeridos: 0 };
 
     const comprobantes = await db
       .select({
         id: comprobante.id,
         total: comprobante.total,
         fechaEmision: comprobante.fechaEmision,
+        direccion: comprobante.direccion,
         contraparteId: comprobante.contraparteId,
       })
       .from(comprobante)
-      .where(eq(comprobante.clienteId, cuenta.clienteId));
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .where(
+        and(
+          eq(comprobante.clienteId, cuenta.clienteId),
+          // Una nota de crédito no se cobra ni se paga.
+          sql`coalesce(${comprobanteTipo.esNc}, false) = false`,
+          // Ni una factura que ya está conciliada con otro movimiento.
+          sql`not exists (
+            select 1 from ${conciliacionComprobante}
+            where ${conciliacionComprobante.comprobanteId} = ${comprobante.id}
+              and ${conciliacionComprobante.estado} = 'confirmada'
+          )`
+        )
+      );
 
+    const usados = new Set<string>();
     const aInsertar: {
       movimientoBancarioId: string;
       comprobanteId: string;
@@ -406,13 +540,15 @@ export const autoConciliar = createServerFn({ method: 'POST' })
     for (const mov of pendientes) {
       const importe = Number(mov.importe);
       const fecha = new Date(mov.fecha).getTime();
-
+      // Cobro contra factura emitida, pago contra factura recibida.
+      const direccion = mov.direccion === 'ingreso' ? 'emitido' : 'recibido';
       let mejor: { comprobanteId: string; confianza: number } | null = null;
 
       for (const comp of comprobantes) {
+        if (comp.direccion !== direccion || usados.has(comp.id)) continue;
+        if (descartados.has(`${mov.id}|${comp.id}`)) continue;
         // El importe tiene que coincidir con tolerancia de un peso.
         if (Math.abs(importe - Number(comp.total)) >= 1) continue;
-
         const dias =
           Math.abs(fecha - new Date(comp.fechaEmision).getTime()) /
           (1000 * 60 * 60 * 24);
@@ -431,11 +567,11 @@ export const autoConciliar = createServerFn({ method: 'POST' })
       }
 
       if (mejor) {
+        usados.add(mejor.comprobanteId);
         aInsertar.push({
           movimientoBancarioId: mov.id,
           comprobanteId: mejor.comprobanteId,
           importeConciliado: importe.toFixed(2),
-          // La sugiere el cálculo de la app: queda pendiente de que la confirme alguien.
           estado: 'sugerida',
           fuente: 'calculo',
           confianza: mejor.confianza.toFixed(4),
@@ -444,11 +580,103 @@ export const autoConciliar = createServerFn({ method: 'POST' })
     }
 
     if (aInsertar.length > 0) {
-      await db.insert(conciliacionComprobante).values(aInsertar);
+      await db
+        .insert(conciliacionComprobante)
+        .values(aInsertar)
+        .onConflictDoNothing();
     }
 
-    return { conciliados: aInsertar.length };
+    return { sugeridos: aInsertar.length };
   });
+
+/**
+ * Confirma o descarta la sugerencia de `autoConciliar` para un movimiento.
+ * Confirmar la vuelve una conciliación de verdad; descartar la deja
+ * `rechazada`, para que el cálculo no vuelva a proponer el mismo cruce.
+ */
+export const resolverSugerencia = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ movimientoId: z.string().uuid(), aceptar: z.boolean() })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const [sugerencia] = await db
+      .select({
+        id: conciliacionComprobante.id,
+        comprobanteId: conciliacionComprobante.comprobanteId,
+      })
+      .from(conciliacionComprobante)
+      .innerJoin(
+        movimientoBancario,
+        eq(movimientoBancario.id, conciliacionComprobante.movimientoBancarioId)
+      )
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(
+            conciliacionComprobante.movimientoBancarioId,
+            ctx.data.movimientoId
+          ),
+          eq(conciliacionComprobante.estado, 'sugerida'),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      )
+      .limit(1);
+    if (!sugerencia) throw new Error('Ese movimiento no tiene una sugerencia');
+
+    if (ctx.data.aceptar) {
+      // Si mientras tanto la factura se concilió con otro movimiento, no se
+      // puede cobrar (o pagar) dos veces.
+      const [tomada] = await db
+        .select({ id: conciliacionComprobante.id })
+        .from(conciliacionComprobante)
+        .where(
+          and(
+            eq(conciliacionComprobante.comprobanteId, sugerencia.comprobanteId),
+            eq(conciliacionComprobante.estado, 'confirmada')
+          )
+        )
+        .limit(1);
+      if (tomada)
+        throw new Error('Esa factura ya está conciliada con otro movimiento');
+    }
+
+    await db
+      .update(conciliacionComprobante)
+      .set({
+        estado: ctx.data.aceptar ? 'confirmada' : 'rechazada',
+        revisadoPor: userId,
+        revisadoAt: new Date(),
+      })
+      .where(eq(conciliacionComprobante.id, sugerencia.id));
+
+    if (ctx.data.aceptar) {
+      await descartarOtrasSugerencias([sugerencia.comprobanteId]);
+    }
+
+    return { ok: true };
+  });
+
+/**
+ * Al confirmar un cruce, las sugerencias de OTROS movimientos para la misma
+ * factura dejan de tener sentido: una factura se cobra (o se paga) una vez.
+ */
+async function descartarOtrasSugerencias(comprobanteIds: string[]) {
+  if (comprobanteIds.length === 0) return;
+  await db
+    .delete(conciliacionComprobante)
+    .where(
+      and(
+        inArray(conciliacionComprobante.comprobanteId, comprobanteIds),
+        eq(conciliacionComprobante.estado, 'sugerida')
+      )
+    );
+}
 
 export const conciliarManual = createServerFn({ method: 'POST' })
   .validator(
@@ -514,6 +742,7 @@ export const conciliarManual = createServerFn({ method: 'POST' })
         revisadoAt: new Date(),
       })
       .returning();
+    await descartarOtrasSugerencias([ctx.data.comprobanteId]);
 
     return conciliacion;
   });
@@ -566,7 +795,12 @@ export const getResumenConciliacion = createServerFn({ method: 'GET' })
         movimientoBancario,
         eq(conciliacionComprobante.movimientoBancarioId, movimientoBancario.id)
       )
-      .where(inArray(movimientoBancario.cuentaBancariaId, cuentaIds));
+      .where(
+        and(
+          inArray(movimientoBancario.cuentaBancariaId, cuentaIds),
+          eq(conciliacionComprobante.estado, 'confirmada')
+        )
+      );
 
     const total = Number(totales?.total ?? 0);
     const conciliado = Number(conciliados?.count ?? 0);
@@ -730,11 +964,15 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
           cuentaBancaria,
           eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
         )
+        // Solo lo confirmado: una sugerencia del cálculo sigue pendiente.
         .leftJoin(
           conciliacionComprobante,
-          eq(
-            conciliacionComprobante.movimientoBancarioId,
-            movimientoBancario.id
+          and(
+            eq(
+              conciliacionComprobante.movimientoBancarioId,
+              movimientoBancario.id
+            ),
+            eq(conciliacionComprobante.estado, 'confirmada')
           )
         )
         .where(
@@ -768,7 +1006,10 @@ export const getBandejaConciliacion = createServerFn({ method: 'GET' })
         .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
         .leftJoin(
           conciliacionComprobante,
-          eq(conciliacionComprobante.comprobanteId, comprobante.id)
+          and(
+            eq(conciliacionComprobante.comprobanteId, comprobante.id),
+            eq(conciliacionComprobante.estado, 'confirmada')
+          )
         )
         .where(
           and(
@@ -1024,7 +1265,12 @@ export const conciliarLote = createServerFn({ method: 'POST' })
         await db
           .select({ id: conciliacionComprobante.comprobanteId })
           .from(conciliacionComprobante)
-          .where(inArray(conciliacionComprobante.comprobanteId, compIds))
+          .where(
+            and(
+              inArray(conciliacionComprobante.comprobanteId, compIds),
+              eq(conciliacionComprobante.estado, 'confirmada')
+            )
+          )
       ).map((c) => c.id)
     );
 
@@ -1062,6 +1308,7 @@ export const conciliarLote = createServerFn({ method: 'POST' })
         revisadoAt: new Date(),
       }))
     );
+    await descartarOtrasSugerencias(validos.map((p) => p.comprobanteId));
 
     return {
       conciliados: validos.length,
