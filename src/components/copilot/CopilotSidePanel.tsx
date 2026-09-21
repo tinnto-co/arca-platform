@@ -215,7 +215,7 @@ export function CopilotSidePanel() {
             Asistente
           </div>
           <div className="truncate text-[11.5px] text-[var(--arca-ink-3)]">
-            {isLoading ? 'Pensando…' : 'Ordo · Suite Contable'}
+            {isLoading ? 'Pensando…' : 'Orddo · Suite Contable'}
           </div>
         </div>
         {/* Con el asistente en modo orbe, la barra de consulta queda sin puerta

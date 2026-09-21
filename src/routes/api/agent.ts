@@ -3,6 +3,7 @@ import {
   consumeStream,
   createAgentUIStreamResponse,
   createIdGenerator,
+  generateObject,
   stepCountIs,
   tool,
   ToolLoopAgent,
@@ -72,6 +73,63 @@ function dateAPeriodo(fecha: string): string {
 const googleAI = createGoogleGenerativeAI({
   apiKey: process.env.GEMINI_API_KEY!,
 });
+
+/**
+ * Etiquetas posibles de una conversación. Es un vocabulario cerrado y no texto
+ * libre: la etiqueta se muestra en el listado antes de la fecha, y con el
+ * modelo inventando sinónimos ("Clientes", "Cliente", "Contribuyentes") la
+ * columna deja de leerse de un vistazo.
+ */
+const ETIQUETAS = [
+  'Clientes',
+  'Vencimientos',
+  'Impuestos',
+  'Contabilidad',
+  'Sueldos',
+  'Facturas',
+  'Notificaciones',
+  'Bancos',
+  'General',
+] as const;
+
+/**
+ * Le pone nombre y etiqueta al hilo mirando el primer intercambio.
+ *
+ * Sin esto el título son los primeros 60 caracteres del mensaje del usuario,
+ * que en el listado se lee como "cuales de estos hace mas de 30 dias que…".
+ * Corre una sola vez por conversación —cuando todavía no hay etiqueta— y en un
+ * try/catch propio: que falle el resumen no puede costar la respuesta, que a
+ * esta altura ya se le entregó al usuario.
+ */
+async function resumirConversacion(
+  conversationId: string,
+  textoUsuario: string,
+  textoAsistente: string
+) {
+  const { object } = await generateObject({
+    model: googleAI('gemini-2.5-flash'),
+    schema: z.object({
+      titulo: z.string().max(60),
+      etiqueta: z.enum(ETIQUETAS),
+    }),
+    prompt: `Resumí este intercambio de un estudio contable argentino.
+
+titulo: de qué trata el hilo, en español rioplatense, máximo 60 caracteres, sin
+comillas ni punto final. Es un rótulo para una lista, no una oración: "Claves
+rechazadas · Admip y 3 más", no "El usuario pregunta por las claves".
+
+etiqueta: la sección de la plataforma a la que pertenece.
+
+Usuario: ${textoUsuario.slice(0, 1500)}
+
+Asistente: ${textoAsistente.slice(0, 2000)}`,
+  });
+
+  await db
+    .update(agentConversation)
+    .set({ titulo: object.titulo, etiqueta: object.etiqueta })
+    .where(eq(agentConversation.id, conversationId));
+}
 
 const buildSchema = (orgId: string) => `
 ═══════════════════════════════════════════════
@@ -452,7 +510,7 @@ export const Route = createFileRoute('/api/agent')({
 
         const agent = new ToolLoopAgent({
           model: googleAI('gemini-2.5-flash'),
-          instructions: `Sos Ordo, analista financiero virtual del estudio contable. Tenés acceso directo a la base de datos de la organización y podés ejecutar queries SQL para responder preguntas sobre clientes, facturas, deudas, vencimientos, nómina y posición IVA.
+          instructions: `Sos Orddo, analista financiero virtual del estudio contable. Tenés acceso directo a la base de datos de la organización y podés ejecutar queries SQL para responder preguntas sobre clientes, facturas, deudas, vencimientos, nómina y posición IVA.
 
 IDENTIDAD Y TONO
 - Contexto de sesión: trabajás para el estudio contable "${orgName}". Usá este dato cuando la pregunta se refiera al propio estudio/organización; no hace falta consultarlo en la DB.
@@ -923,6 +981,7 @@ HERRAMIENTAS DISPONIBLES
             });
           },
           onFinish: async ({ messages: finishedMessages }) => {
+            let assistantText = '';
             try {
               // El user message ya fue guardado ANTES de correr el agente (ver arriba).
               // Aquí solo guardamos la respuesta del asistente.
@@ -934,7 +993,7 @@ HERRAMIENTAS DISPONIBLES
                 historyUiMessages.length + 1
               );
 
-              const assistantText = newMessages
+              assistantText = newMessages
                 .filter((m) => m.role === 'assistant')
                 .flatMap((m) =>
                   (m.parts ?? [])
@@ -951,8 +1010,35 @@ HERRAMIENTAS DISPONIBLES
                   contenido: assistantText,
                 });
               }
+
+              // El listado agrupa por `updated_at`. Sin esto un hilo de hace
+              // una semana que se retoma hoy sigue apareciendo bajo "Más
+              // antiguo", porque la fecha era la de creación y nadie la tocaba.
+              await db
+                .update(agentConversation)
+                .set({ updatedAt: new Date() })
+                .where(eq(agentConversation.id, conversationId));
             } catch (err) {
               console.error('[agent] persist error:', err);
+            }
+
+            // El resumen va aparte: si falla, la respuesta ya está guardada y
+            // el hilo se queda con el título provisorio, que es recuperable.
+            try {
+              const [conv] = await db
+                .select({ etiqueta: agentConversation.etiqueta })
+                .from(agentConversation)
+                .where(eq(agentConversation.id, conversationId))
+                .limit(1);
+              if (conv && !conv.etiqueta && assistantText) {
+                await resumirConversacion(
+                  conversationId,
+                  userText,
+                  assistantText
+                );
+              }
+            } catch (err) {
+              console.error('[agent] resumen error:', err);
             }
           },
         });

@@ -113,6 +113,12 @@ export const agentConversation = pgTable("agent_conversation", {
 	userId: text("user_id").notNull(),
 	clienteId: uuid("cliente_id"),
 	titulo: text().default('Nueva conversación').notNull(),
+	/** Anclada arriba del listado por decisión del usuario. */
+	fijado: boolean().default(false).notNull(),
+	/** De qué habla, en una palabra. La escribe el agente al cerrar el primer turno. */
+	etiqueta: text(),
+	/** Legible por cualquier miembro de la misma organización, en solo lectura. */
+	compartido: boolean().default(false).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -3009,4 +3015,35 @@ export const extractoBancario = pgTable("extracto_bancario", {
 			name: "extracto_bancario_org_id_fkey"
 		}).onDelete("cascade"),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_app", "arca_agent"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
+/**
+ * Bitácora de accesos del superadmin a estudios que no son suyos.
+ *
+ * El acceso vive como una fila en `member` con rol 'superadmin', que se borra
+ * al salir; esta tabla es la que sobrevive y responde quién entró a qué
+ * estudio y cuándo, esté el acceso abierto o cerrado.
+ */
+export const superadminAcceso = pgTable("superadmin_acceso", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: text("user_id").notNull(),
+	organizationId: text("organization_id").notNull(),
+	entroAt: timestamp("entro_at", { withTimezone: true }).defaultNow().notNull(),
+	salioAt: timestamp("salio_at", { withTimezone: true }),
+	/** Para qué se entró. Es lo que convierte el registro en algo mostrable. */
+	motivo: text(),
+});
+
+/**
+ * Tutoriales que cada usuario ya terminó u omitió. Sin fila, el tutorial se
+ * abre solo la próxima vez que entra al módulo.
+ */
+export const usuarioTutorial = pgTable("usuario_tutorial", {
+	userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+	tutorial: text().notNull(),
+	estado: text().$type<'completado' | 'omitido'>().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.userId, table.tutorial], name: "usuario_tutorial_pkey" }),
+	check("usuario_tutorial_estado_check", sql`${table.estado} IN ('completado', 'omitido')`),
 ]);

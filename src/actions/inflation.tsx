@@ -38,6 +38,7 @@ import {
 } from '@/lib/accounting-inflation';
 import { depreciationCoefficients } from '@/lib/accounting-fixed-asset-inflation';
 import { nextEntryNumber } from '@/lib/accounting-posting-db';
+import { mandaEnElEstudio } from '@/lib/permissions';
 
 /** Código de la cuenta que absorbe la contrapartida del ajuste. */
 const RECPAM_CODE = '5.4.004';
@@ -49,7 +50,7 @@ const sourceSchema = z.enum(SOURCES).default('facpce_rt6');
 
 /** Solo el Owner administra la serie de índices y aplica el ajuste. */
 function assertOwner(role: string): void {
-  if (role !== 'owner') {
+  if (!mandaEnElEstudio(role)) {
     throw new Error('Solo el Owner del estudio puede realizar esta acción');
   }
 }

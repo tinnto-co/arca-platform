@@ -63,6 +63,7 @@ import {
   ne,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -89,9 +90,14 @@ import {
   type CashFlowActivity,
 } from '@/lib/accounting-cashflow';
 import {
+  analizarCuadreRegla,
   armarLineas,
   calcularImportes,
+  describirAlcanceRegla,
+  detectarReglasTapadas,
+  direccionDeCondicion,
   seleccionarRegla,
+  type EstadoCuadre,
   type ReglaLike,
   type LineaArmada,
 } from '@/lib/accounting-invoice-posting';
@@ -101,6 +107,7 @@ import {
 } from '@/lib/accounting-depreciation';
 import { parentCodeOf } from '@/lib/accounting-base-chart';
 import * as r2Storage from '@/lib/r2';
+import { mandaEnElEstudio } from '@/lib/permissions';
 import {
   planChartImport,
   type ExistingAccount,
@@ -190,7 +197,7 @@ function accountingEvent(args: {
 
 /** Solo el Owner del estudio configura el plan de cuentas. */
 function assertOwner(role: string): void {
-  if (role !== 'owner') {
+  if (!mandaEnElEstudio(role)) {
     throw new Error(
       'Solo el Owner del estudio puede modificar el plan de cuentas'
     );
@@ -3199,6 +3206,33 @@ function validateRuleLines(lines: RuleLineInput[]): void {
   }
 }
 
+/**
+ * Condición que se guarda para una regla. En facturas la dirección es
+ * obligatoria: sin ella una regla "de compras" también se lleva las ventas, y
+ * el nombre no filtra nada. Una default de facturas guarda sólo la dirección.
+ */
+function normalizeRuleCondition(
+  sourceModule: 'comprobante' | 'recibo' | 'movimiento_bancario',
+  ruleType: 'default' | 'condicional',
+  condition: unknown
+): RuleCondition {
+  const cond =
+    condition && typeof condition === 'object' && !Array.isArray(condition)
+      ? (condition as Record<string, JsonValue>)
+      : null;
+  if (sourceModule !== 'comprobante') {
+    return ruleType === 'condicional' ? cond : null;
+  }
+  const direccion = direccionDeCondicion(cond);
+  if (!direccion) {
+    throw new Error(
+      'Elegí si la regla es para ventas o para compras: sin eso se aplica a los dos'
+    );
+  }
+  if (ruleType === 'default') return { direccion };
+  return { ...cond, direccion };
+}
+
 const mappingLineSchema = z.object({
   accountId: z.string().uuid(),
   side: z.enum(['debe', 'haber']),
@@ -3232,6 +3266,13 @@ export interface MappingRuleListRow {
   priority: number;
   isActive: boolean;
   lineCount: number;
+  /** A qué comprobantes aplica, en palabras. Null fuera de facturas. */
+  scope: string | null;
+  /** Regla anterior que la tapa: esta nunca se aplica. */
+  shadowedBy: { id: string; name: string } | null;
+  /** Regla de facturas sin dirección: se aplica a ventas y a compras. */
+  missingDirection: boolean;
+  balance: { status: EstadoCuadre; message: string | null } | null;
 }
 
 /** Lista reglas de una empresa, ordenadas por prioridad. (US 3.1.2) */
@@ -3259,21 +3300,49 @@ export const listMappingRules = createServerFn({ method: 'GET' })
       .orderBy(asc(reglaMapeo.prioridad), asc(reglaMapeo.nombre));
 
     const ids = rules.map((r) => r.id);
-    const counts = new Map<string, number>();
+    const linesByRule = new Map<
+      string,
+      {
+        lado: 'debe' | 'haber';
+        base: (typeof reglaMapeoLinea.$inferSelect)['base'];
+      }[]
+    >();
     if (ids.length > 0) {
-      const cRows = await db
+      const lRows = await db
         .select({
           ruleId: reglaMapeoLinea.reglaId,
-          n: sql<number>`count(*)::int`,
+          lado: reglaMapeoLinea.lado,
+          base: reglaMapeoLinea.base,
         })
         .from(reglaMapeoLinea)
-        .where(inArray(reglaMapeoLinea.reglaId, ids))
-        .groupBy(reglaMapeoLinea.reglaId);
-      for (const c of cRows) counts.set(c.ruleId, c.n);
+        .where(inArray(reglaMapeoLinea.reglaId, ids));
+      for (const l of lRows) {
+        const list = linesByRule.get(l.ruleId) ?? [];
+        list.push(l);
+        linesByRule.set(l.ruleId, list);
+      }
     }
 
-    return rules.map(
-      (r): MappingRuleListRow => ({
+    // El solapamiento se calcula siempre sobre la cola completa de facturas,
+    // aunque el filtro de módulo esté puesto: la cola es la misma.
+    const invoiceRules = rules
+      .filter((r) => r.modulo === 'comprobante')
+      .map((r) => ({
+        id: r.id,
+        nombre: r.nombre,
+        tipo: r.tipo,
+        condicion: (r.condicion ?? null) as Record<string, unknown> | null,
+        activa: r.activa,
+      }));
+    const shadowed = detectarReglasTapadas(invoiceRules);
+
+    return rules.map((r): MappingRuleListRow => {
+      const cond = (r.condicion ?? null) as Record<string, unknown> | null;
+      const isInvoice = r.modulo === 'comprobante';
+      const lines = linesByRule.get(r.id) ?? [];
+      const tapa = shadowed.get(r.id);
+      const cuadre = isInvoice ? analizarCuadreRegla(lines) : null;
+      return {
         id: r.id,
         name: r.nombre,
         sourceModule: r.modulo,
@@ -3281,9 +3350,15 @@ export const listMappingRules = createServerFn({ method: 'GET' })
         condition: (r.condicion ?? null) as RuleCondition,
         priority: r.prioridad,
         isActive: r.activa,
-        lineCount: counts.get(r.id) ?? 0,
-      })
-    );
+        lineCount: lines.length,
+        scope: isInvoice ? describirAlcanceRegla(r.tipo, cond) : null,
+        shadowedBy: tapa ? { id: tapa.id, name: tapa.nombre } : null,
+        missingDirection: isInvoice && direccionDeCondicion(cond) === null,
+        balance: cuadre
+          ? { status: cuadre.estado, message: cuadre.mensaje }
+          : null,
+      };
+    });
   });
 
 /** Detalle de una regla con sus líneas + cuántos asientos del período abierto generó. */
@@ -3325,6 +3400,13 @@ export const getMappingRule = createServerFn({ method: 'GET' })
     // `condicion` es jsonb (tipo `unknown`): no serializa, se expone tipada
     // como `condition` y se saca del spread.
     const { condicion, ...ruleRest } = rule;
+    const isInvoice = rule.modulo === 'comprobante';
+    const cond = (condicion ?? null) as Record<string, unknown> | null;
+    const cuadre = isInvoice
+      ? analizarCuadreRegla(
+          lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
+        )
+      : null;
     return {
       rule: { ...ruleRest, condition: (condicion ?? null) as RuleCondition },
       lines: lines.map((l) => ({
@@ -3332,6 +3414,11 @@ export const getMappingRule = createServerFn({ method: 'GET' })
         fixedAmount: l.fixedAmount ? parseFloat(l.fixedAmount) : null,
       })),
       generatedOpenCount: gen?.n ?? 0,
+      scope: isInvoice ? describirAlcanceRegla(rule.tipo, cond) : null,
+      missingDirection: isInvoice && direccionDeCondicion(cond) === null,
+      balance: cuadre
+        ? { status: cuadre.estado, message: cuadre.mensaje }
+        : null,
     };
   });
 
@@ -3393,8 +3480,11 @@ export const createMappingRule = createServerFn({ method: 'POST' })
           nombre: d.name.trim(),
           modulo: d.sourceModule,
           tipo: d.ruleType,
-          condicion:
-            d.ruleType === 'condicional' ? (d.condition ?? null) : null,
+          condicion: normalizeRuleCondition(
+            d.sourceModule,
+            d.ruleType,
+            d.condition
+          ),
           prioridad:
             d.priority ??
             (await siguientePrioridad(orgId, d.clientId, d.sourceModule)),
@@ -3456,8 +3546,11 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
           nombre: d.name.trim(),
           modulo: d.sourceModule,
           tipo: d.ruleType,
-          condicion:
-            d.ruleType === 'condicional' ? (d.condition ?? null) : null,
+          condicion: normalizeRuleCondition(
+            d.sourceModule,
+            d.ruleType,
+            d.condition
+          ),
           ...(d.priority != null ? { prioridad: d.priority } : {}),
         })
         .where(eq(reglaMapeo.id, rule.id));
@@ -4061,7 +4154,13 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
     const invIds = invs.map((i) => i.id);
     const posted = new Map<
       string,
-      { id: string; number: number; edited: boolean }
+      {
+        id: string;
+        number: number;
+        edited: boolean;
+        ruleId: string | null;
+        ruleName: string | null;
+      }
     >();
     if (invIds.length > 0) {
       const entries = await db
@@ -4070,8 +4169,11 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
           number: asiento.numero,
           sourceId: asiento.origenId,
           edited: asiento.editadoPostGeneracion,
+          ruleId: asiento.reglaId,
+          ruleName: reglaMapeo.nombre,
         })
         .from(asiento)
+        .leftJoin(reglaMapeo, eq(reglaMapeo.id, asiento.reglaId))
         .where(
           and(
             eq(asiento.clienteId, clientId),
@@ -4086,6 +4188,8 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
             id: e.id,
             number: e.number,
             edited: e.edited,
+            ruleId: e.ruleId,
+            ruleName: e.ruleName,
           });
       }
     }
@@ -4095,6 +4199,11 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
       const rule = seleccionarRegla(rules, inv);
       const post = posted.get(inv.id) ?? null;
       const pStatus = periodStatus.get(inv.fechaEmision.slice(0, 7)) ?? null;
+      // Con la regla real: la heurística vieja sólo miraba si había percepciones
+      // y no avisaba de una regla que no cuadra.
+      const willUsePendingReview =
+        amounts.total > 0 &&
+        armarLineas(rule, amounts, 'pending-review').usoPendienteRevision;
       return {
         id: inv.id,
         emitionDate: inv.fechaEmision,
@@ -4107,11 +4216,17 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
         otherTaxes: amounts.otrosTributos,
         ruleId: rule?.id ?? null,
         ruleName: rule?.nombre ?? null,
-        willUsePendingReview: !rule || amounts.otrosTributos > 0.005,
+        willUsePendingReview,
         posted: !!post,
         entryId: post?.id ?? null,
         entryNumber: post?.number ?? null,
         entryEdited: post?.edited ?? false,
+        /** Regla con la que se generó el asiento vigente. */
+        appliedRuleName: post
+          ? (post.ruleName ?? (post.ruleId ? 'Regla eliminada' : null))
+          : null,
+        /** Regenerar lo contabilizaría con otra regla que la usada. */
+        ruleWouldChange: !!post && (post.ruleId ?? null) !== (rule?.id ?? null),
         periodStatus: pStatus,
       };
     });
@@ -4214,6 +4329,108 @@ export const generateInvoiceEntries = createServerFn({ method: 'POST' })
     return summary;
   });
 
+const PLAN_ERROR_MESSAGES: Record<
+  Extract<PlanResult, { ok: false }>['reason'],
+  string
+> = {
+  non_positive:
+    'El comprobante no tiene un total positivo (ej. nota de crédito)',
+  no_fy: 'No hay un ejercicio que cubra la fecha del comprobante',
+  cerrado: 'El período del comprobante está cerrado',
+  invalid_accounts: 'La regla referencia cuentas inválidas',
+};
+
+type RegenerateOutcome =
+  | { kind: 'done'; entryId: string; number: number }
+  | { kind: 'needs_confirmation'; entryNumber: number }
+  | { kind: 'error'; reason: string };
+
+/**
+ * Anula el asiento vigente de una factura (si hay) y crea uno nuevo con las
+ * reglas actuales. Un asiento editado a mano sólo se pisa con `force`.
+ */
+async function regenerateOneInvoice(params: {
+  inv: InvoiceRow;
+  clientId: string;
+  orgId: string;
+  userId: string | null;
+  rules: ReglaLike[];
+  prId: string;
+  force: boolean;
+  reason: string;
+}): Promise<RegenerateOutcome> {
+  const { inv, clientId, orgId, userId, rules, prId, force } = params;
+  const existing = await findAutoEntryForInvoice(clientId, inv.id);
+  if (existing) {
+    if (existing.isEditedPostGeneration && !force) {
+      return { kind: 'needs_confirmation', entryNumber: existing.number };
+    }
+    const { period } = await loadPeriodForOrg(existing.periodId, orgId);
+    if (period.estado === 'cerrado') {
+      return {
+        kind: 'error',
+        reason:
+          'El asiento actual está en un período cerrado. Reabrí el período o hacé un ajuste manual',
+      };
+    }
+  }
+
+  const plan = await planInvoiceEntry(inv, clientId, orgId, rules, prId);
+  if (!plan.ok) {
+    return {
+      kind: 'error',
+      reason:
+        plan.reason === 'invalid_accounts' && plan.detail
+          ? plan.detail
+          : PLAN_ERROR_MESSAGES[plan.reason],
+    };
+  }
+
+  const je = await db.transaction(async (tx) => {
+    if (existing) {
+      await tx
+        .update(asiento)
+        .set({
+          anulado: true,
+          anuladoAt: sql`now()`,
+          anuladoPor: userId,
+          motivoAnulacion: params.reason,
+        })
+        .where(eq(asiento.id, existing.id));
+      await tx.insert(evento).values(
+        accountingEvent({
+          orgId,
+          clientId,
+          fiscalYearId: plan.fyId,
+          eventType: 'journal_entry_voided',
+          entityId: existing.id,
+          data: {
+            entryId: existing.id,
+            number: existing.number,
+            auto: true,
+            reason: params.reason,
+          },
+          userId,
+        })
+      );
+    }
+    return insertAutoInvoiceEntry(tx, {
+      orgId,
+      clientId,
+      fyId: plan.fyId,
+      periodId: plan.periodId,
+      date: plan.date,
+      inv,
+      ruleId: plan.ruleId,
+      lines: plan.lines,
+      usedPendingReview: plan.usedPendingReview,
+      reason: plan.reason,
+      userId,
+    });
+  });
+  return { kind: 'done', entryId: je.id, number: je.numero };
+}
+
 /**
  * Regenera el asiento de una factura desde Contabilidad: anula el vigente y crea
  * uno nuevo con las reglas actuales. Si el asiento fue editado a mano, exige `force`.
@@ -4245,84 +4462,237 @@ export const regenerateInvoiceEntry = createServerFn({ method: 'POST' })
       .limit(1);
     if (!inv) throw new Error('Factura no encontrada o de otra empresa');
 
-    const existing = await findAutoEntryForInvoice(clientId, invoiceId);
-    if (existing) {
-      if (existing.isEditedPostGeneration && !ctx.data.force) {
-        return {
-          needsConfirmation: true as const,
-          entryNumber: existing.number,
-        };
-      }
-      const { period } = await loadPeriodForOrg(existing.periodId, orgId);
-      if (period.estado === 'cerrado') {
-        throw new Error(
-          'No se puede regenerar: el asiento actual está en un período cerrado. Reabrí el período o hacé un ajuste manual'
-        );
-      }
-    }
-
-    const prId = await loadPendingReviewAccountId(orgId);
-    const rules = await loadActiveInvoiceRules(clientId);
-    const plan = await planInvoiceEntry(inv, clientId, orgId, rules, prId);
-    if (!plan.ok) {
-      const msgs: Record<string, string> = {
-        non_positive:
-          'El comprobante no tiene un total positivo (ej. nota de crédito)',
-        no_fy: 'No hay un ejercicio que cubra la fecha del comprobante',
-        closed: 'El período del comprobante está cerrado',
-        invalid_accounts:
-          plan.detail ?? 'La regla referencia cuentas inválidas',
+    const out = await regenerateOneInvoice({
+      inv,
+      clientId,
+      orgId,
+      userId,
+      rules: await loadActiveInvoiceRules(clientId),
+      prId: await loadPendingReviewAccountId(orgId),
+      force: ctx.data.force,
+      reason: 'Regenerado desde el comprobante',
+    });
+    if (out.kind === 'error') throw new Error(out.reason);
+    if (out.kind === 'needs_confirmation') {
+      return {
+        needsConfirmation: true as const,
+        entryNumber: out.entryNumber,
       };
-      throw new Error(msgs[plan.reason]);
     }
+    return {
+      needsConfirmation: false as const,
+      entryId: out.entryId,
+      number: out.number,
+    };
+  });
 
-    const je = await db.transaction(async (tx) => {
-      if (existing) {
-        await tx
-          .update(asiento)
-          .set({
-            anulado: true,
-            anuladoAt: sql`now()`,
-            anuladoPor: userId,
-            motivoAnulacion: 'Regenerado desde el comprobante',
-          })
-          .where(eq(asiento.id, existing.id));
-        await tx.insert(evento).values(
+/**
+ * Regenera varios asientos de facturas de una vez, con las reglas actuales.
+ * Los editados a mano se saltean salvo `force`: pisarlos es una decisión por
+ * asiento que no conviene tomar en bloque sin avisar.
+ */
+export const regenerateInvoiceEntries = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      invoiceIds: z.array(z.string().uuid()).min(1).max(2000),
+      force: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const invs = await db
+      .select(INVOICE_SELECT)
+      .from(comprobante)
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
+      .where(
+        and(
+          eq(comprobante.clienteId, clientId),
+          inArray(comprobante.id, ctx.data.invoiceIds)
+        )
+      )
+      .orderBy(asc(comprobante.fechaEmision));
+
+    const rules = await loadActiveInvoiceRules(clientId);
+    const prId = await loadPendingReviewAccountId(orgId);
+
+    const summary = {
+      regenerated: 0,
+      skippedEdited: 0,
+      errors: [] as { invoiceId: string; reason: string }[],
+    };
+    for (const inv of invs) {
+      const out = await regenerateOneInvoice({
+        inv,
+        clientId,
+        orgId,
+        userId,
+        rules,
+        prId,
+        force: ctx.data.force,
+        reason: 'Regenerado en bloque desde Contabilizar',
+      });
+      if (out.kind === 'done') summary.regenerated++;
+      else if (out.kind === 'needs_confirmation') summary.skippedEdited++;
+      else summary.errors.push({ invoiceId: inv.id, reason: out.reason });
+    }
+    return summary;
+  });
+
+/**
+ * Anula varios asientos a la vez. Un anulado no suma en mayor, balance ni
+ * estados contables; sigue en el Libro Diario marcado como anulado.
+ */
+export const voidJournalEntries = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      ids: z.array(z.string().uuid()).min(1).max(2000),
+      reason: z.string().trim().min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    const { clientId, ids } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    return voidEntriesInOpenPeriods({
+      orgId,
+      clientId,
+      userId,
+      reason: ctx.data.reason.trim(),
+      where: inArray(asiento.id, ids),
+      includeEdited: true,
+    });
+  });
+
+/**
+ * Anula de una vez los asientos vigentes que cumplen `where` (siempre dentro
+ * de la empresa), salvo los de períodos cerrados. Con `dryRun` sólo cuenta.
+ */
+async function voidEntriesInOpenPeriods(params: {
+  orgId: string;
+  clientId: string;
+  userId: string | null;
+  reason: string;
+  where: SQL | undefined;
+  includeEdited: boolean;
+  dryRun?: boolean;
+}) {
+  const { orgId, clientId, userId, reason } = params;
+  const rows = await db
+    .select({
+      id: asiento.id,
+      number: asiento.numero,
+      fyId: asiento.ejercicioId,
+      edited: asiento.editadoPostGeneracion,
+      periodStatus: periodoContable.estado,
+    })
+    .from(asiento)
+    .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
+    .where(
+      and(
+        eq(asiento.orgId, orgId),
+        eq(asiento.clienteId, clientId),
+        eq(asiento.anulado, false),
+        params.where
+      )
+    );
+
+  const skippedClosed = rows.filter((r) => r.periodStatus === 'cerrado');
+  const open = rows.filter((r) => r.periodStatus !== 'cerrado');
+  const skippedEdited = params.includeEdited
+    ? []
+    : open.filter((r) => r.edited);
+  const toVoid = params.includeEdited ? open : open.filter((r) => !r.edited);
+
+  if (!params.dryRun && toVoid.length > 0) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(asiento)
+        .set({
+          anulado: true,
+          anuladoAt: sql`now()`,
+          anuladoPor: userId,
+          motivoAnulacion: reason,
+        })
+        .where(
+          inArray(
+            asiento.id,
+            toVoid.map((r) => r.id)
+          )
+        );
+      await tx.insert(evento).values(
+        toVoid.map((r) =>
           accountingEvent({
             orgId,
             clientId,
-            fiscalYearId: plan.fyId,
             eventType: 'journal_entry_voided',
-            entityId: existing.id,
-            data: {
-              entryId: existing.id,
-              number: existing.number,
-              auto: true,
-              reason: 'Regenerado desde el comprobante',
-            },
+            entityId: r.id,
+            fiscalYearId: r.fyId,
+            data: { entryId: r.id, number: r.number, reason, bulk: true },
             userId,
           })
-        );
-      }
-      return insertAutoInvoiceEntry(tx, {
-        orgId,
-        clientId,
-        fyId: plan.fyId,
-        periodId: plan.periodId,
-        date: plan.date,
-        inv,
-        ruleId: plan.ruleId,
-        lines: plan.lines,
-        usedPendingReview: plan.usedPendingReview,
-        reason: plan.reason,
-        userId,
-      });
+        )
+      );
     });
+  }
 
+  return {
+    voided: toVoid.length,
+    skippedClosed: skippedClosed.length,
+    skippedEdited: skippedEdited.length,
+  };
+}
+
+/**
+ * Reinicia la contabilización automática de facturas de un ejercicio: anula
+ * todos sus asientos generados desde comprobantes (los manuales no se tocan) y
+ * las facturas vuelven a quedar pendientes para generarlas con las reglas de
+ * hoy. Con `dryRun` sólo devuelve cuántos anularía.
+ */
+export const resetFiscalYearInvoiceEntries = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+      includeEdited: z.boolean().default(false),
+      dryRun: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await resolveFiscalYear(clientId, orgId, ctx.data.fiscalYearId);
+    if (fy?.clienteId !== clientId)
+      throw new Error('La empresa no tiene ese ejercicio contable');
+
+    const result = await voidEntriesInOpenPeriods({
+      orgId,
+      clientId,
+      userId,
+      reason: 'Reinicio de asientos automáticos del ejercicio',
+      where: and(
+        eq(asiento.ejercicioId, fy.id),
+        eq(asiento.origenTipo, 'comprobante')
+      ),
+      includeEdited: ctx.data.includeEdited,
+      dryRun: ctx.data.dryRun,
+    });
     return {
-      needsConfirmation: false as const,
-      entryId: je.id,
-      number: je.numero,
+      ...result,
+      fiscalYear: { id: fy.id, from: fy.fechaDesde, to: fy.fechaHasta },
     };
   });
 
