@@ -43,6 +43,10 @@ import { despertarWorkerExtractos } from '@/lib/extractos-worker';
 import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
 import { resolverContrapartesDeCliente } from '@/lib/contraparte-movimiento-db';
 import { aLatino } from '@/lib/texto-latino';
+import {
+  cuentasActivasDeCliente,
+  generarSugerencias,
+} from '@/lib/sugerencias-conciliacion';
 
 /** Tope de tamaño del archivo subido. */
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -691,8 +695,26 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
       );
     }
 
+    // Los movimientos nuevos llegan con sugerencias, sin que nadie tenga que
+    // apretar "Auto-conciliar". Solo propone, y si falla no deshace la
+    // importación: el botón sigue ahí para reintentarlo.
+    let sugeridos = 0;
+    if (resultado.importados > 0) {
+      try {
+        ({ sugeridos } = await generarSugerencias(
+          clienteId,
+          await cuentasActivasDeCliente(orgId, clienteId)
+        ));
+      } catch (error) {
+        console.error('[extractos] no se pudieron generar sugerencias', {
+          error,
+        });
+      }
+    }
+
     return {
       ...resultado,
+      sugeridos,
       cuentas: ctx.data.cuentas.length,
       documentoId,
     };

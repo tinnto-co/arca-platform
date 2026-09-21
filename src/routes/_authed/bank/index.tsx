@@ -80,6 +80,7 @@ import {
   confirmarSugerencias,
   buscarFacturasParaMovimiento,
   conciliarLote,
+  volverASugerir,
   createCuentaBancaria,
 } from '@/actions/bank';
 import {
@@ -354,6 +355,17 @@ function FiltroMonto({
   );
 }
 
+/** "Factura A 0002-00008198 · ANNONI PABLO ESTEBAN · $204.490 · 09/01/2026" */
+function describirFactura(c: MovimientoRow['conciliaciones'][number]): string {
+  const nro = `${String(c.comprobantePuntoVenta).padStart(4, '0')}-${String(c.comprobanteNumero).padStart(8, '0')}`;
+  return [
+    `${c.comprobanteTipo ?? 'Comprobante'} ${nro}`,
+    c.comprobanteContraparte ?? 'sin contraparte',
+    fmtPesos(Number(c.comprobanteTotal)),
+    fmtDate(c.comprobanteFecha),
+  ].join(' · ');
+}
+
 /** Desde qué seguridad una sugerencia viene marcada para confirmar. */
 const UMBRAL_PRESELECCION = 0.9;
 
@@ -586,10 +598,13 @@ function ElegirFactura({
   tx,
   abierto,
   onAbiertoChange,
+  descartada,
 }: {
   tx: MovimientoRow;
   abierto: boolean;
   onAbiertoChange: (v: boolean) => void;
+  /** La sugerencia que se descartó para este movimiento, si hubo una. */
+  descartada?: MovimientoRow['conciliaciones'][number];
 }) {
   const queryClient = useQueryClient();
   const [texto, setTexto] = useState('');
@@ -627,6 +642,21 @@ function ElegirFactura({
       toast.error(e instanceof Error ? e.message : 'No se pudo conciliar'),
   });
 
+  // Si el descarte fue un error, se deshace desde acá.
+  const reSugerir = useMutation({
+    mutationFn: () => volverASugerir({ data: { movimientoId: tx.id } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
+      toast.success('La factura volvió a quedar sugerida');
+      onAbiertoChange(false);
+    },
+    onError: (e) =>
+      toast.error(
+        e instanceof Error ? e.message : 'No se pudo volver a sugerir'
+      ),
+  });
+
   const esCobro = tx.direccion === 'ingreso';
   const importe = parseFloat(tx.importe);
 
@@ -646,6 +676,29 @@ function ElegirFactura({
               : 'Es plata que salió: se busca entre las facturas que recibió la empresa.'}
           </DialogDescription>
         </DialogHeader>
+
+        {descartada && (
+          <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--arca-accent-warn)]/40 bg-[var(--arca-accent-warn-bg)] px-3 py-2 text-[12px] text-[var(--arca-accent-warn-fg)]">
+            <span className="min-w-0 flex-1">
+              Descartaste la sugerencia{' '}
+              <span className="font-medium">
+                {describirFactura(descartada)}
+              </span>
+              {descartada.revisadoAt
+                ? ` el ${fmtDate(new Date(descartada.revisadoAt))}`
+                : ''}
+              . Si fue un error, podés volver a sugerirla o elegirla abajo.
+            </span>
+            <button
+              type="button"
+              onClick={() => reSugerir.mutate()}
+              disabled={reSugerir.isPending}
+              className="shrink-0 rounded-[6px] border border-current px-2 py-0.5 text-[11.5px] font-medium hover:bg-[var(--arca-surface)] disabled:opacity-50"
+            >
+              Volver a sugerirla
+            </button>
+          </div>
+        )}
 
         <div className="relative">
           <input
@@ -691,6 +744,12 @@ function ElegirFactura({
                     {tomada
                       ? ` · ya conciliada con un movimiento del ${fmtDate(f.conciliadaConFecha!)}`
                       : ''}
+                    {descartada?.comprobanteId === f.id && (
+                      <span className="text-[var(--arca-accent-warn-fg)]">
+                        {' '}
+                        · la descartaste, pero se puede elegir
+                      </span>
+                    )}
                   </span>
                 </span>
                 <span
@@ -743,6 +802,14 @@ function TransactionItem({
   const confianza = conciliacion?.confianza
     ? Math.round(parseFloat(conciliacion.confianza) * 100)
     : null;
+  // La última sugerencia descartada: se muestra para poder revertir un error.
+  const descartada = conciliacion
+    ? undefined
+    : tx.conciliaciones
+        .filter((c) => c.estado === 'rechazada')
+        .sort((a, b) =>
+          String(b.revisadoAt ?? '').localeCompare(String(a.revisadoAt ?? ''))
+        )[0];
   const queryClient = useQueryClient();
   const [confirmarExcluir, setConfirmarExcluir] = useState(false);
   const [eligiendoFactura, setEligiendoFactura] = useState(false);
@@ -885,8 +952,8 @@ function TransactionItem({
           <ConAyuda
             texto={
               conciliacion.fuente === 'manual'
-                ? 'Conciliado a mano: alguien eligió la factura que explica este movimiento.'
-                : `Lo sugirió el sistema (${confianza}% de seguridad) y alguien lo confirmó.`
+                ? `Conciliado a mano con ${describirFactura(conciliacion)}.`
+                : `Conciliado con ${describirFactura(conciliacion)}. Lo sugirió el sistema (${confianza}% de seguridad) y alguien lo confirmó.`
             }
           >
             <span
@@ -905,7 +972,7 @@ function TransactionItem({
               texto={
                 <div className="flex flex-col gap-1.5">
                   <span>
-                    Hay una factura que podría explicar este movimiento. No
+                    Podría ser <b>{describirFactura(conciliacion)}</b>. No
                     cuenta como conciliado hasta que lo confirmes.
                   </span>
                   <span className="opacity-80">
@@ -952,20 +1019,35 @@ function TransactionItem({
           </span>
         ) : (
           <>
-            <ConAyuda texto="Sin factura asignada. Elegí a mano la factura que explica este movimiento, de cualquier mes.">
-              <button
-                type="button"
-                onClick={() => setEligiendoFactura(true)}
-                className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full border border-dashed border-[var(--arca-border-strong)] text-[10.5px] font-medium text-[var(--arca-ink-3)] hover:border-[var(--arca-accent)] hover:text-[var(--arca-accent)] transition-colors"
+            {descartada ? (
+              <ConAyuda
+                texto={`Descartaste la sugerencia ${describirFactura(descartada)}. No se vuelve a sugerir sola. Si fue un error, abrí para volver a sugerirla o elegir cualquier factura.`}
               >
-                Elegir factura
-              </button>
-            </ConAyuda>
+                <button
+                  type="button"
+                  onClick={() => setEligiendoFactura(true)}
+                  className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full border border-dashed border-[var(--arca-accent-warn)] text-[10.5px] font-medium text-[var(--arca-accent-warn-fg)] hover:bg-[var(--arca-accent-warn-bg)] transition-colors"
+                >
+                  Descartado · elegir
+                </button>
+              </ConAyuda>
+            ) : (
+              <ConAyuda texto="Sin factura asignada. Elegí a mano la factura que explica este movimiento, de cualquier mes.">
+                <button
+                  type="button"
+                  onClick={() => setEligiendoFactura(true)}
+                  className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full border border-dashed border-[var(--arca-border-strong)] text-[10.5px] font-medium text-[var(--arca-ink-3)] hover:border-[var(--arca-accent)] hover:text-[var(--arca-accent)] transition-colors"
+                >
+                  Elegir factura
+                </button>
+              </ConAyuda>
+            )}
             {eligiendoFactura && (
               <ElegirFactura
                 tx={tx}
                 abierto={eligiendoFactura}
                 onAbiertoChange={setEligiendoFactura}
+                descartada={descartada}
               />
             )}
           </>

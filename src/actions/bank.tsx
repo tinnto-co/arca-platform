@@ -22,24 +22,18 @@ import {
 } from '@/drizzle/schema';
 import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
 import { type ContraparteSugerida } from '@/lib/contraparte-movimiento';
-import { asignarCruces, DIAS_PROXIMIDAD } from '@/lib/cruce-conciliacion';
+import { DIAS_PROXIMIDAD } from '@/lib/cruce-conciliacion';
+import {
+  cuentasActivasDeCliente,
+  generarSugerencias,
+} from '@/lib/sugerencias-conciliacion';
 import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import {
-  eq,
-  and,
-  desc,
-  gte,
-  lte,
-  ne,
-  sql,
-  inArray,
-  type SQL,
-} from 'drizzle-orm';
+import { eq, and, desc, gte, lte, sql, inArray, type SQL } from 'drizzle-orm';
 
 /** La cuenta, validando que sea de la organización activa. */
 async function getCuentaDeOrg(cuentaBancariaId: string, orgId: string) {
@@ -424,15 +418,30 @@ export const listMovimientos = createServerFn({ method: 'GET' })
               estado: conciliacionComprobante.estado,
               fuente: conciliacionComprobante.fuente,
               confianza: conciliacionComprobante.confianza,
+              revisadoAt: conciliacionComprobante.revisadoAt,
+              // Qué factura es, para decirlo en la fila (también la
+              // descartada: se muestra para poder revertir un error).
+              comprobanteTipo: comprobanteTipo.descripcion,
+              comprobantePuntoVenta: comprobante.puntoVenta,
+              comprobanteNumero: comprobante.numero,
+              comprobanteFecha: comprobante.fechaEmision,
+              comprobanteTotal: comprobante.total,
+              comprobanteContraparte: contraparte.nombre,
             })
             .from(conciliacionComprobante)
-            .where(
-              and(
-                inArray(conciliacionComprobante.movimientoBancarioId, ids),
-                // Lo descartado no se muestra: es solo memoria del cálculo.
-                ne(conciliacionComprobante.estado, 'rechazada')
-              )
+            .innerJoin(
+              comprobante,
+              eq(comprobante.id, conciliacionComprobante.comprobanteId)
             )
+            .leftJoin(
+              comprobanteTipo,
+              eq(comprobanteTipo.codigo, comprobante.tipo)
+            )
+            .leftJoin(
+              contraparte,
+              eq(contraparte.id, comprobante.contraparteId)
+            )
+            .where(inArray(conciliacionComprobante.movimientoBancarioId, ids))
         : [];
 
     const porMovimiento = new Map<string, typeof conciliaciones>();
@@ -501,172 +510,9 @@ export const autoConciliar = createServerFn({ method: 'POST' })
     } else {
       clienteId = ctx.data.clienteId!;
       await assertClienteDeOrg(clienteId, orgId);
-      cuentaIds = (
-        await db
-          .select({ id: cuentaBancaria.id })
-          .from(cuentaBancaria)
-          .where(
-            and(
-              eq(cuentaBancaria.orgId, orgId),
-              eq(cuentaBancaria.clienteId, clienteId),
-              eq(cuentaBancaria.activa, true)
-            )
-          )
-      ).map((c) => c.id);
+      cuentaIds = await cuentasActivasDeCliente(orgId, clienteId);
     }
-    if (cuentaIds.length === 0) return { sugeridos: 0, reasignados: 0 };
-
-    const movimientos = await db
-      .select({
-        id: movimientoBancario.id,
-        fecha: movimientoBancario.fecha,
-        importe: movimientoBancario.importe,
-        direccion: movimientoBancario.direccion,
-        contraparteId: movimientoBancario.contraparteId,
-      })
-      .from(movimientoBancario)
-      .where(
-        and(
-          inArray(movimientoBancario.cuentaBancariaId, cuentaIds),
-          eq(movimientoBancario.excluido, false)
-        )
-      );
-    if (movimientos.length === 0) return { sugeridos: 0, reasignados: 0 };
-
-    const previas = await db
-      .select({
-        movimientoId: conciliacionComprobante.movimientoBancarioId,
-        comprobanteId: conciliacionComprobante.comprobanteId,
-        estado: conciliacionComprobante.estado,
-        confianza: conciliacionComprobante.confianza,
-      })
-      .from(conciliacionComprobante)
-      .where(
-        inArray(
-          conciliacionComprobante.movimientoBancarioId,
-          movimientos.map((m) => m.id)
-        )
-      );
-    const confirmados = new Set(
-      previas
-        .filter((p) => p.estado === 'confirmada')
-        .map((p) => p.movimientoId)
-    );
-    const descartados = new Set(
-      previas
-        .filter((p) => p.estado === 'rechazada')
-        .map((p) => `${p.movimientoId}|${p.comprobanteId}`)
-    );
-    const antes = new Map(
-      previas
-        .filter((p) => p.estado === 'sugerida')
-        .map((p) => [p.movimientoId, p.comprobanteId])
-    );
-    const pendientes = movimientos.filter((m) => !confirmados.has(m.id));
-
-    const facturas = await db
-      .select({
-        id: comprobante.id,
-        total: comprobante.total,
-        fechaEmision: comprobante.fechaEmision,
-        direccion: comprobante.direccion,
-        contraparteId: comprobante.contraparteId,
-      })
-      .from(comprobante)
-      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
-      .where(
-        and(
-          eq(comprobante.clienteId, clienteId),
-          // Una nota de crédito no se cobra ni se paga.
-          sql`coalesce(${comprobanteTipo.esNc}, false) = false`,
-          // Ni una factura ya conciliada, ni una sugerida para un movimiento
-          // de FUERA de este alcance (otra cuenta): esas no se recalculan
-          // acá. Las sugeridas de este alcance sí vuelven a competir.
-          sql`not exists (
-            select 1 from ${conciliacionComprobante} cc
-            join ${movimientoBancario} mb on mb.id = cc.movimiento_bancario_id
-            where cc.comprobante_id = ${comprobante.id}
-              and (
-                cc.estado = 'confirmada'
-                or (cc.estado = 'sugerida'
-                    and mb.cuenta_bancaria_id not in (${sql.join(
-                      cuentaIds.map((id) => sql`${id}`),
-                      sql`, `
-                    )}))
-              )
-          )`
-        )
-      );
-
-    const cruces = asignarCruces(
-      pendientes.map((m) => ({
-        id: m.id,
-        fecha: m.fecha,
-        importe: Number(m.importe),
-        direccion: m.direccion,
-        contraparteId: m.contraparteId,
-      })),
-      facturas.map((f) => ({
-        id: f.id,
-        fechaEmision: f.fechaEmision,
-        total: Number(f.total),
-        direccion: f.direccion,
-        contraparteId: f.contraparteId,
-      })),
-      descartados
-    );
-
-    const importePorMov = new Map(movimientos.map((m) => [m.id, m.importe]));
-    // Reemplazar las sugerencias pendientes del alcance por las nuevas, todo
-    // junto: nunca queda un momento con sugerencias viejas y nuevas mezcladas.
-    await db.transaction(async (tx) => {
-      if (antes.size > 0) {
-        await tx
-          .delete(conciliacionComprobante)
-          .where(
-            and(
-              inArray(conciliacionComprobante.movimientoBancarioId, [
-                ...antes.keys(),
-              ]),
-              eq(conciliacionComprobante.estado, 'sugerida')
-            )
-          );
-      }
-      if (cruces.length > 0) {
-        await tx.insert(conciliacionComprobante).values(
-          cruces.map((c) => ({
-            movimientoBancarioId: c.movimientoId,
-            comprobanteId: c.comprobanteId,
-            importeConciliado: importePorMov.get(c.movimientoId)!,
-            estado: 'sugerida' as const,
-            fuente: 'calculo' as const,
-            confianza: c.confianza.toFixed(4),
-          }))
-        );
-      }
-    });
-
-    // Cuántas facturas pasaron a un movimiento que les corresponde MEJOR
-    // (más seguridad). Un intercambio entre opciones equivalentes —dos
-    // facturas iguales del mismo día, dos cobros iguales— no cuenta.
-    const sugeridaAntes = new Map(
-      previas
-        .filter((p) => p.estado === 'sugerida')
-        .map((p) => [
-          p.comprobanteId,
-          { movimientoId: p.movimientoId, confianza: Number(p.confianza) },
-        ])
-    );
-    const reasignados = cruces.filter((c) => {
-      const previa = sugeridaAntes.get(c.comprobanteId);
-      return (
-        previa !== undefined &&
-        previa.movimientoId !== c.movimientoId &&
-        c.confianza > previa.confianza + 1e-6
-      );
-    }).length;
-
-    return { sugeridos: cruces.length, reasignados };
+    return await generarSugerencias(clienteId, cuentaIds);
   });
 
 /**
@@ -1021,6 +867,74 @@ export const buscarFacturasParaMovimiento = createServerFn({ method: 'GET' })
         sql`abs(${comprobante.fechaEmision} - ${mov.fecha}::date)`
       )
       .limit(40);
+  });
+
+/**
+ * Deshace un descarte: la factura que se había descartado para un movimiento
+ * vuelve a quedar sugerida, por si descartarla fue un error. Solo si el
+ * movimiento no tiene otro cruce y la factura sigue libre.
+ */
+export const volverASugerir = createServerFn({ method: 'POST' })
+  .validator(z.object({ movimientoId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const filas = await db
+      .select({
+        id: conciliacionComprobante.id,
+        estado: conciliacionComprobante.estado,
+        comprobanteId: conciliacionComprobante.comprobanteId,
+        revisadoAt: conciliacionComprobante.revisadoAt,
+      })
+      .from(conciliacionComprobante)
+      .innerJoin(
+        movimientoBancario,
+        eq(movimientoBancario.id, conciliacionComprobante.movimientoBancarioId)
+      )
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(
+            conciliacionComprobante.movimientoBancarioId,
+            ctx.data.movimientoId
+          ),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      )
+      .orderBy(desc(conciliacionComprobante.revisadoAt));
+
+    if (filas.some((f) => f.estado !== 'rechazada'))
+      throw new Error('Este movimiento ya tiene un cruce');
+    const [descartada] = filas;
+    if (!descartada) throw new Error('Este movimiento no tiene un descarte');
+
+    const [ocupada] = await db
+      .select({ estado: conciliacionComprobante.estado })
+      .from(conciliacionComprobante)
+      .where(
+        and(
+          eq(conciliacionComprobante.comprobanteId, descartada.comprobanteId),
+          inArray(conciliacionComprobante.estado, ['confirmada', 'sugerida'])
+        )
+      )
+      .limit(1);
+    if (ocupada)
+      throw new Error(
+        ocupada.estado === 'confirmada'
+          ? 'Esa factura ya se concilió con otro movimiento'
+          : 'Esa factura está sugerida para otro movimiento'
+      );
+
+    await db
+      .update(conciliacionComprobante)
+      .set({ estado: 'sugerida', revisadoPor: null, revisadoAt: null })
+      .where(eq(conciliacionComprobante.id, descartada.id));
+
+    return { ok: true };
   });
 
 /**
