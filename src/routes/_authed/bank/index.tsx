@@ -34,6 +34,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Tooltip,
   TooltipContent,
@@ -68,6 +69,8 @@ import {
   listMovimientos,
   autoConciliar,
   resolverSugerencia,
+  listarSugerencias,
+  confirmarSugerencias,
   createCuentaBancaria,
 } from '@/actions/bank';
 import {
@@ -310,6 +313,227 @@ function FiltroMonto({
         </form>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Desde qué seguridad una sugerencia viene marcada para confirmar. */
+const UMBRAL_PRESELECCION = 0.9;
+
+/**
+ * Aprobación masiva de las sugerencias de «Auto-conciliar». Se revisa antes
+ * de escribir: cada una muestra el movimiento, la factura que propone y el
+ * %, y solo vienen marcadas las de 90% o más. Las de importe sin contraparte
+ * (ventas a consumidor final, 50–60%) hay que marcarlas a propósito.
+ */
+function RevisarSugerencias({
+  alcance,
+}: {
+  /** Empresa o cuenta, y el mes que se está mirando. */
+  alcance:
+    | { cuentaBancariaId: string; periodo?: string }
+    | { clienteId: string; periodo?: string };
+}) {
+  const queryClient = useQueryClient();
+  const [abierto, setAbierto] = useState(false);
+  const [elegidos, setElegidos] = useState<Set<string>>(new Set());
+
+  const { data: sugerencias = [], isFetching } = useQuery({
+    queryKey: ['sugerencias', alcance],
+    queryFn: () => listarSugerencias({ data: alcance }),
+    enabled: abierto,
+  });
+
+  // Al llegar la lista, se marcan las de alta seguridad (una vez por
+  // apertura: después manda lo que la persona toque).
+  const [preseleccionado, setPreseleccionado] = useState(false);
+  if (abierto && !preseleccionado && sugerencias.length > 0) {
+    setPreseleccionado(true);
+    setElegidos(
+      new Set(
+        sugerencias
+          .filter((s) => Number(s.confianza ?? 0) >= UMBRAL_PRESELECCION)
+          .map((s) => s.movimientoId)
+      )
+    );
+  }
+
+  const confirmar = useMutation({
+    mutationFn: () =>
+      confirmarSugerencias({ data: { movimientoIds: [...elegidos] } }),
+    onSuccess: ({ confirmados, salteados }) => {
+      void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
+      toast.success(
+        `${confirmados} cruce${confirmados === 1 ? '' : 's'} confirmado${confirmados === 1 ? '' : 's'}` +
+          (salteados > 0
+            ? ` · ${salteados} salteado${salteados === 1 ? '' : 's'}: la factura ya estaba conciliada`
+            : '')
+      );
+      setAbierto(false);
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'No se pudieron confirmar'),
+  });
+
+  const total = sugerencias
+    .filter((s) => elegidos.has(s.movimientoId))
+    .reduce((a, s) => a + Number(s.importe), 0);
+  const marcar = (ids: string[]) => setElegidos(new Set(ids));
+
+  return (
+    <AlertDialog
+      open={abierto}
+      onOpenChange={(v) => {
+        setAbierto(v);
+        if (!v) setPreseleccionado(false);
+      }}
+    >
+      <AlertDialogTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity"
+        >
+          <Check className="w-3 h-3" strokeWidth={2.4} />
+          Revisar sugeridos
+        </button>
+      </AlertDialogTrigger>
+      <AlertDialogContent className="!max-w-3xl">
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Confirmar sugerencias
+            {sugerencias.length > 0 ? ` (${sugerencias.length})` : ''}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            Cada fila une un movimiento del banco con la factura que lo
+            explicaría. Vienen marcadas las de 90% o más; las de menos coinciden
+            solo en el importe, así que conviene mirarlas una por una.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
+          <span className="text-[var(--arca-ink-3)]">Marcar:</span>
+          <button
+            type="button"
+            className="rounded-[6px] border border-[var(--arca-border)] px-2 py-0.5 hover:bg-[var(--arca-surface-2)]"
+            onClick={() => marcar(sugerencias.map((s) => s.movimientoId))}
+          >
+            Todas
+          </button>
+          <button
+            type="button"
+            className="rounded-[6px] border border-[var(--arca-border)] px-2 py-0.5 hover:bg-[var(--arca-surface-2)]"
+            onClick={() =>
+              marcar(
+                sugerencias
+                  .filter(
+                    (s) => Number(s.confianza ?? 0) >= UMBRAL_PRESELECCION
+                  )
+                  .map((s) => s.movimientoId)
+              )
+            }
+          >
+            90% o más
+          </button>
+          <button
+            type="button"
+            className="rounded-[6px] border border-[var(--arca-border)] px-2 py-0.5 hover:bg-[var(--arca-surface-2)]"
+            onClick={() => marcar([])}
+          >
+            Ninguna
+          </button>
+          {isFetching && (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--arca-ink-4)]" />
+          )}
+        </div>
+
+        <div className="max-h-[50vh] overflow-y-auto rounded-[10px] border border-[var(--arca-border)]">
+          {sugerencias.map((s) => {
+            const pct = Math.round(Number(s.confianza ?? 0) * 100);
+            const nro = `${String(s.comprobantePuntoVenta).padStart(4, '0')}-${String(s.comprobanteNumero).padStart(8, '0')}`;
+            const id = `sugerencia-${s.movimientoId}`;
+            return (
+              <label
+                key={s.movimientoId}
+                htmlFor={id}
+                className="grid cursor-pointer grid-cols-[auto_1fr_auto_1fr] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 text-[12px] first:border-t-0 hover:bg-[var(--arca-surface-2)]"
+              >
+                <Checkbox
+                  id={id}
+                  checked={elegidos.has(s.movimientoId)}
+                  onCheckedChange={(v) => {
+                    const nuevo = new Set(elegidos);
+                    if (v === true) nuevo.add(s.movimientoId);
+                    else nuevo.delete(s.movimientoId);
+                    setElegidos(nuevo);
+                  }}
+                />
+                <span className="min-w-0">
+                  <span className="block truncate font-medium text-[var(--arca-ink)]">
+                    {s.descripcion ?? 'Sin descripción'}
+                  </span>
+                  <span className="block text-[10.5px] text-[var(--arca-ink-4)]">
+                    {fmtDate(s.fecha)} · {fmtAmount(s.importe, s.direccion)}
+                    {s.contraparteTexto ? ` · ${s.contraparteTexto}` : ''}
+                  </span>
+                </span>
+                <span
+                  className={`inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px] font-medium ${
+                    pct >= UMBRAL_PRESELECCION * 100
+                      ? 'bg-[var(--arca-accent-pos-bg,oklch(0.95_0.05_145))] text-[oklch(0.45_0.14_145)]'
+                      : 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]'
+                  }`}
+                >
+                  {pct}%
+                </span>
+                <span className="min-w-0 text-right">
+                  <span className="block truncate font-medium text-[var(--arca-ink)]">
+                    {s.comprobanteTipo ?? 'Comprobante'} {nro}
+                  </span>
+                  <span className="block truncate text-[10.5px] text-[var(--arca-ink-4)]">
+                    {fmtDate(s.comprobanteFecha)} ·{' '}
+                    {s.comprobanteContraparte ?? 'sin contraparte'} ·{' '}
+                    {fmtPesos(Number(s.comprobanteTotal))}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+          {!isFetching && sugerencias.length === 0 && (
+            <p className="px-4 py-8 text-center text-[12.5px] text-[var(--arca-ink-3)]">
+              No hay sugerencias pendientes.
+            </p>
+          )}
+        </div>
+
+        <p className="text-[11.5px] text-[var(--arca-ink-3)]">
+          Se van a confirmar{' '}
+          <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+            {elegidos.size}
+          </span>{' '}
+          de {sugerencias.length}, por{' '}
+          <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+            {fmtPesos(total)}
+          </span>
+          . Se pueden deshacer una por una después.
+        </p>
+
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={elegidos.size === 0 || confirmar.isPending}
+            onClick={(e) => {
+              e.preventDefault();
+              confirmar.mutate();
+            }}
+          >
+            {confirmar.isPending
+              ? 'Confirmando…'
+              : `Confirmar ${elegidos.size} cruce${elegidos.size === 1 ? '' : 's'}`}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -1333,6 +1557,15 @@ function BankPage() {
               <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--arca-ink-4)]" />
             )}
             <div className="ml-auto flex items-center gap-3">
+              {(totalesRegistro?.sugeridos ?? 0) > 0 && (
+                <RevisarSugerencias
+                  alcance={
+                    accountId
+                      ? { cuentaBancariaId: accountId, periodo: search.mes }
+                      : { clienteId, periodo: search.mes }
+                  }
+                />
+              )}
               {accountId && (
                 <button
                   onClick={() => setShowManualMovement((v) => !v)}

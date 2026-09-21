@@ -539,11 +539,13 @@ export const autoConciliar = createServerFn({ method: 'POST' })
           eq(comprobante.clienteId, cuenta.clienteId),
           // Una nota de crédito no se cobra ni se paga.
           sql`coalesce(${comprobanteTipo.esNc}, false) = false`,
-          // Ni una factura que ya está conciliada con otro movimiento.
+          // Ni una factura ya conciliada, ni una que ya está sugerida para
+          // otro movimiento (de una pasada anterior): una factura se propone
+          // para un solo movimiento a la vez.
           sql`not exists (
             select 1 from ${conciliacionComprobante}
             where ${conciliacionComprobante.comprobanteId} = ${comprobante.id}
-              and ${conciliacionComprobante.estado} = 'confirmada'
+              and ${conciliacionComprobante.estado} in ('confirmada', 'sugerida')
           )`
         )
       );
@@ -681,6 +683,174 @@ export const resolverSugerencia = createServerFn({ method: 'POST' })
     }
 
     return { ok: true };
+  });
+
+/**
+ * Las sugerencias pendientes de una empresa (o de una cuenta), con la
+ * factura que proponen, para revisarlas y confirmarlas en bloque.
+ */
+export const listarSugerencias = createServerFn({ method: 'GET' })
+  .validator(
+    z
+      .object({
+        cuentaBancariaId: z.string().uuid().optional(),
+        clienteId: z.string().uuid().optional(),
+        periodo: z
+          .string()
+          .regex(/^\d{4}-\d{2}$/)
+          .optional(),
+      })
+      .refine((v) => v.cuentaBancariaId ?? v.clienteId, {
+        message: 'Falta indicar la cuenta o la empresa',
+      })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    const conditions: SQL[] = [
+      eq(cuentaBancaria.orgId, orgId),
+      eq(conciliacionComprobante.estado, 'sugerida'),
+      ctx.data.cuentaBancariaId
+        ? eq(cuentaBancaria.id, ctx.data.cuentaBancariaId)
+        : eq(cuentaBancaria.clienteId, ctx.data.clienteId!),
+    ];
+    if (ctx.data.periodo) {
+      const desde = `${ctx.data.periodo}-01`;
+      conditions.push(gte(movimientoBancario.fecha, desde));
+      conditions.push(
+        sql`${movimientoBancario.fecha} < (${desde}::date + interval '1 month')`
+      );
+    }
+
+    return await db
+      .select({
+        movimientoId: movimientoBancario.id,
+        fecha: movimientoBancario.fecha,
+        descripcion: movimientoBancario.descripcion,
+        importe: movimientoBancario.importe,
+        direccion: movimientoBancario.direccion,
+        contraparteTexto: movimientoBancario.contraparteTexto,
+        cuentaNumero: cuentaBancaria.numero,
+        confianza: conciliacionComprobante.confianza,
+        comprobanteId: comprobante.id,
+        comprobanteTipo: comprobanteTipo.descripcion,
+        comprobantePuntoVenta: comprobante.puntoVenta,
+        comprobanteNumero: comprobante.numero,
+        comprobanteFecha: comprobante.fechaEmision,
+        comprobanteTotal: comprobante.total,
+        comprobanteContraparte: contraparte.nombre,
+      })
+      .from(conciliacionComprobante)
+      .innerJoin(
+        movimientoBancario,
+        eq(movimientoBancario.id, conciliacionComprobante.movimientoBancarioId)
+      )
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .innerJoin(
+        comprobante,
+        eq(comprobante.id, conciliacionComprobante.comprobanteId)
+      )
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
+      .where(and(...conditions))
+      .orderBy(
+        desc(conciliacionComprobante.confianza),
+        movimientoBancario.fecha
+      );
+  });
+
+/**
+ * Confirma varias sugerencias de una vez (la aprobación masiva). Las revisa
+ * igual que una por una: si la factura ya se concilió con otro movimiento
+ * mientras tanto, esa se saltea y se informa.
+ */
+export const confirmarSugerencias = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      movimientoIds: z.array(z.string().uuid()).min(1).max(500),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const sugerencias = await db
+      .select({
+        id: conciliacionComprobante.id,
+        comprobanteId: conciliacionComprobante.comprobanteId,
+      })
+      .from(conciliacionComprobante)
+      .innerJoin(
+        movimientoBancario,
+        eq(movimientoBancario.id, conciliacionComprobante.movimientoBancarioId)
+      )
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          inArray(
+            conciliacionComprobante.movimientoBancarioId,
+            ctx.data.movimientoIds
+          ),
+          eq(conciliacionComprobante.estado, 'sugerida'),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      )
+      .orderBy(desc(conciliacionComprobante.confianza));
+
+    if (sugerencias.length === 0)
+      throw new Error('Esas sugerencias ya no están pendientes');
+
+    // Una factura se concilia una sola vez: las que ya están tomadas se
+    // saltean.
+    const tomadas = new Set(
+      (
+        await db
+          .select({ id: conciliacionComprobante.comprobanteId })
+          .from(conciliacionComprobante)
+          .where(
+            and(
+              inArray(
+                conciliacionComprobante.comprobanteId,
+                sugerencias.map((s) => s.comprobanteId)
+              ),
+              eq(conciliacionComprobante.estado, 'confirmada')
+            )
+          )
+      ).map((t) => t.id)
+    );
+    const aConfirmar = sugerencias.filter((s) => {
+      if (tomadas.has(s.comprobanteId)) return false;
+      tomadas.add(s.comprobanteId);
+      return true;
+    });
+
+    if (aConfirmar.length > 0) {
+      await db
+        .update(conciliacionComprobante)
+        .set({
+          estado: 'confirmada',
+          revisadoPor: userId,
+          revisadoAt: new Date(),
+        })
+        .where(
+          inArray(
+            conciliacionComprobante.id,
+            aConfirmar.map((s) => s.id)
+          )
+        );
+      await descartarOtrasSugerencias(aConfirmar.map((s) => s.comprobanteId));
+    }
+
+    return {
+      confirmados: aConfirmar.length,
+      salteados: ctx.data.movimientoIds.length - aConfirmar.length,
+    };
   });
 
 /**
