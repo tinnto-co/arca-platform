@@ -114,6 +114,8 @@ const bankSearchSchema = z.object({
   /** Rango de importe en pesos, sin importar si entró o salió. */
   min: z.number().nonnegative().optional(),
   max: z.number().nonnegative().optional(),
+  /** Cuánto abarca el registro: el mes de arriba (por defecto) o más. */
+  rango: z.enum(['mes', '3m', '12m', 'todo']).optional(),
 });
 type BankSearch = z.infer<typeof bankSearchSchema>;
 
@@ -127,6 +129,33 @@ export const Route = createFileRoute('/_authed/bank/')({
   },
   component: BankPage,
 });
+
+/** Los períodos que puede abarcar el registro. */
+const RANGO_LABEL = {
+  mes: 'El mes elegido arriba',
+  '3m': 'Últimos 3 meses',
+  '12m': 'Últimos 12 meses',
+  todo: 'Todo el historial',
+} as const;
+type Rango = keyof typeof RANGO_LABEL;
+
+/** 'YYYY-MM' menos `n` meses. */
+function mesMenos(mes: string, n: number): string {
+  const [y, m] = mes.split('-').map(Number);
+  const d = new Date(y, m - 1 - n, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Desde y hasta ('YYYY-MM') del registro, a partir del mes de arriba. */
+function periodoDelRango(
+  mes: string | undefined,
+  rango: Rango
+): { periodo?: string; hasta?: string } {
+  if (!mes || rango === 'todo') return {};
+  if (rango === '3m') return { periodo: mesMenos(mes, 2), hasta: mes };
+  if (rango === '12m') return { periodo: mesMenos(mes, 11), hasta: mes };
+  return { periodo: mes };
+}
 
 /** Filas por página del registro de movimientos. */
 const MOVIMIENTOS_POR_PAGINA = 50;
@@ -1470,15 +1499,19 @@ function BankPage() {
   // mes vuelve a la primera página (ajuste durante el render, como el de
   // `prevCliente`).
   const [pagina, setPagina] = useState(1);
-  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}|${search.min ?? ''}|${search.max ?? ''}`;
+  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}|${search.min ?? ''}|${search.max ?? ''}|${search.rango ?? ''}`;
   const [prevLista, setPrevLista] = useState(claveLista);
   if (prevLista !== claveLista) {
     setPrevLista(claveLista);
     setPagina(1);
   }
 
-  /* Movimientos del mes de la bandeja, de una cuenta o de todas, con los
-     totales de todo lo filtrado (no solo de la página). */
+  // El registro abarca el mes de arriba o un rango que termina en él.
+  const rango: Rango = search.rango ?? 'mes';
+  const periodoRegistro = periodoDelRango(search.mes, rango);
+
+  /* Movimientos del período, de una cuenta o de todas, con los totales de
+     todo lo filtrado (no solo de la página). */
   const { data: listado, isFetching: txsFetching } = useQuery({
     queryKey: [
       'bankTransactions',
@@ -1489,13 +1522,14 @@ function BankPage() {
       search.estado,
       search.min,
       search.max,
+      rango,
       pagina,
     ],
     queryFn: () =>
       listMovimientos({
         data: {
           ...(accountId ? { cuentaBancariaId: accountId } : { clienteId }),
-          periodo: search.mes,
+          ...periodoRegistro,
           categoria: search.categoria,
           estado: search.estado,
           importeMin: search.min,
@@ -1542,12 +1576,16 @@ function BankPage() {
     Math.ceil(movimientosFiltrados / MOVIMIENTOS_POR_PAGINA)
   );
   const cuentaElegida = accounts.find((a) => a.id === accountId);
-  const mesLabel = search.mes
-    ? fechaLocal(`${search.mes}-15`).toLocaleDateString('es-AR', {
-        month: 'long',
-        year: 'numeric',
-      })
-    : 'todo el historial';
+  const nombreMes = (mes: string) =>
+    fechaLocal(`${mes}-15`).toLocaleDateString('es-AR', {
+      month: 'long',
+      year: 'numeric',
+    });
+  const mesLabel = !periodoRegistro.periodo
+    ? 'todo el historial'
+    : periodoRegistro.hasta
+      ? `${nombreMes(periodoRegistro.periodo)} a ${nombreMes(periodoRegistro.hasta)}`
+      : nombreMes(periodoRegistro.periodo);
 
   if (!clienteId) {
     return (
@@ -1749,8 +1787,8 @@ function BankPage() {
                 <RevisarSugerencias
                   alcance={
                     accountId
-                      ? { cuentaBancariaId: accountId, periodo: search.mes }
-                      : { clienteId, periodo: search.mes }
+                      ? { cuentaBancariaId: accountId, ...periodoRegistro }
+                      : { clienteId, ...periodoRegistro }
                   }
                 />
               )}
@@ -1783,6 +1821,26 @@ function BankPage() {
           {/* Filtros de la tabla. Los totales de arriba los siguen: con
               "Impuestos" elegido, "Salió" es lo que se fue en impuestos. */}
           <div className="px-5 py-2.5 flex flex-wrap items-center gap-2 border-b border-[var(--arca-border)]">
+            <SearchableSelect
+              size="sm"
+              value={rango}
+              onValueChange={(v) =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({
+                    ...prev,
+                    rango: v === 'mes' ? undefined : (v as Rango),
+                  }),
+                })
+              }
+              placeholder="Período"
+              searchPlaceholder="Buscar período..."
+              width={190}
+              options={(Object.keys(RANGO_LABEL) as Rango[]).map((r) => ({
+                value: r,
+                label: RANGO_LABEL[r],
+              }))}
+            />
             <SearchableSelect
               size="sm"
               value={search.categoria ?? 'all'}
@@ -1842,8 +1900,11 @@ function BankPage() {
                 })
               }
             />
-            {(search.categoria ?? search.estado ?? search.min ?? search.max) !=
-              null && (
+            {(search.categoria ??
+              search.estado ??
+              search.min ??
+              search.max ??
+              search.rango) != null && (
               <LimpiarFiltros
                 onLimpiar={() =>
                   void navigate({
@@ -1854,6 +1915,7 @@ function BankPage() {
                       estado: undefined,
                       min: undefined,
                       max: undefined,
+                      rango: undefined,
                     }),
                   })
                 }

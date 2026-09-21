@@ -267,6 +267,11 @@ export const listMovimientos = createServerFn({ method: 'GET' })
           .string()
           .regex(/^\d{4}-\d{2}$/)
           .optional(),
+        /** Último mes del rango ('YYYY-MM'). Sin él, solo el mes `periodo`. */
+        hasta: z
+          .string()
+          .regex(/^\d{4}-\d{2}$/)
+          .optional(),
         categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
         /** Estados excluyentes: con cruce confirmado, solo sugerido, o nada. */
         estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
@@ -324,9 +329,10 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     ];
     if (ctx.data.periodo) {
       const desde = `${ctx.data.periodo}-01`;
+      const ultimoMes = `${ctx.data.hasta ?? ctx.data.periodo}-01`;
       conditions.push(gte(movimientoBancario.fecha, desde));
       conditions.push(
-        sql`${movimientoBancario.fecha} < (${desde}::date + interval '1 month')`
+        sql`${movimientoBancario.fecha} < (${ultimoMes}::date + interval '1 month')`
       );
     }
     // Conciliado = tiene un cruce confirmado; una sugerencia del cálculo no
@@ -750,6 +756,11 @@ export const listarSugerencias = createServerFn({ method: 'GET' })
           .string()
           .regex(/^\d{4}-\d{2}$/)
           .optional(),
+        /** Último mes del rango ('YYYY-MM'). Sin él, solo el mes `periodo`. */
+        hasta: z
+          .string()
+          .regex(/^\d{4}-\d{2}$/)
+          .optional(),
       })
       .refine((v) => v.cuentaBancariaId ?? v.clienteId, {
         message: 'Falta indicar la cuenta o la empresa',
@@ -767,9 +778,10 @@ export const listarSugerencias = createServerFn({ method: 'GET' })
     ];
     if (ctx.data.periodo) {
       const desde = `${ctx.data.periodo}-01`;
+      const ultimoMes = `${ctx.data.hasta ?? ctx.data.periodo}-01`;
       conditions.push(gte(movimientoBancario.fecha, desde));
       conditions.push(
-        sql`${movimientoBancario.fecha} < (${desde}::date + interval '1 month')`
+        sql`${movimientoBancario.fecha} < (${ultimoMes}::date + interval '1 month')`
       );
     }
 

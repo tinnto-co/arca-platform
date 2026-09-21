@@ -681,57 +681,94 @@ export function BandejaConciliacion({
         </div>
       )}
 
-      {/* Lo ya resuelto del mes, para saber que no se perdió */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[11.5px] text-[var(--arca-ink-3)]">
-        {data.conciliados.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => setVerConciliados((v) => !v)}
-            className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
-          >
-            <CheckCircle2 className="size-3.5 text-[var(--arca-accent-pos)]" />
-            {data.conciliados.length} conciliado
-            {data.conciliados.length === 1 ? '' : 's'} en el mes{' '}
-            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
-              {pesos(totales.conciliado)}
-            </span>
-            <span className="underline">
-              {verConciliados ? 'ocultar' : 'ver y deshacer'}
-            </span>
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
-            <CheckCircle2 className="size-3.5" />
-            nada conciliado todavía
+      {/* El pie, en dos bloques con el vocabulario de la barra de arriba: lo
+          que pasó en el banco (cobros) y lo que pasó en la facturación. Antes
+          iba todo en una línea y mezclaba movimientos con comprobantes. */}
+      <div className="grid gap-2 text-[11.5px] text-[var(--arca-ink-3)] sm:grid-cols-2">
+        <div className="flex flex-col gap-1 rounded-[10px] border border-[var(--arca-border)] px-3 py-2">
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Banco · cobros del mes
           </span>
-        )}
-        {data.excluidos.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => setVerExcluidos((v) => !v)}
-            className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
-          >
-            <EyeOff className="size-3.5 text-[var(--arca-ink-4)]" />
-            {data.excluidos.length} excluido
-            {data.excluidos.length === 1 ? '' : 's'} por no ser venta{' '}
-            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
-              {pesos(totales.excluido)}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {data.conciliados.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setVerConciliados((v) => !v)}
+                className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
+              >
+                <CheckCircle2 className="size-3.5 text-[var(--arca-accent-pos)]" />
+                {data.conciliados.length} conciliado
+                {data.conciliados.length === 1 ? '' : 's'}
+                <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                  {pesos(totales.conciliado)}
+                </span>
+                <span className="underline">
+                  {verConciliados ? 'ocultar' : 'ver y deshacer'}
+                </span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
+                <CheckCircle2 className="size-3.5" />
+                nada conciliado todavía
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5">
+              {totales.movimientosSinIdentificar} sin identificar
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.sinExplicar)}
+              </span>
             </span>
-            <span className="underline">
-              {verExcluidos ? 'ocultar' : 'ver y revertir'}
-            </span>
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
-            <EyeOff className="size-3.5" />
-            sin movimientos excluidos
+            {data.excluidos.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setVerExcluidos((v) => !v)}
+                className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
+              >
+                <EyeOff className="size-3.5 text-[var(--arca-ink-4)]" />
+                {data.excluidos.length} excluido
+                {data.excluidos.length === 1 ? '' : 's'}
+                <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                  {pesos(totales.excluido)}
+                </span>
+                <span className="underline">
+                  {verExcluidos ? 'ocultar' : 'ver y revertir'}
+                </span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
+                <EyeOff className="size-3.5" />
+                ninguno excluido
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 rounded-[10px] border border-[var(--arca-border)] px-3 py-2">
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Facturación del mes
           </span>
-        )}
-        <span className="text-[var(--arca-ink-4)]">
-          {totales.comprobantes} comprobante
-          {totales.comprobantes === 1 ? '' : 's'} emitidos por{' '}
-          {pesos(totales.facturado)}
-        </span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>
+              {totales.comprobantes} emitido
+              {totales.comprobantes === 1 ? '' : 's'}{' '}
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.facturado)}
+              </span>
+            </span>
+            <span>
+              con cobro identificado{' '}
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.facturadoConciliado)}
+              </span>
+            </span>
+            <span>
+              {totales.comprobantesSinCobro} sin cobro{' '}
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.facturadoSinCobro)}
+              </span>
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Lo conciliado, con su deshacer: confirmar no es definitivo */}
