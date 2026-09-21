@@ -1331,17 +1331,25 @@ function BankPage() {
   const transactions = listado?.filas ?? [];
   const totalesRegistro = listado?.totales;
 
-  /* Auto-conciliación: por cuenta, así que necesita una elegida */
+  /* Auto-conciliación: de la cuenta elegida, o de toda la empresa */
   const autoMatchMutation = useMutation({
-    mutationFn: () => autoConciliar({ data: { cuentaBancariaId: accountId } }),
-    onSuccess: ({ sugeridos }) => {
+    mutationFn: () =>
+      autoConciliar({
+        data: accountId ? { cuentaBancariaId: accountId } : { clienteId },
+      }),
+    onSuccess: ({ sugeridos, reasignados }) => {
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
       void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
       // Solo propone: lo dice así para que nadie crea que ya quedó conciliado.
       toast.success(
         sugeridos === 0
-          ? 'No se encontraron cruces nuevos'
-          : `${sugeridos} cruce${sugeridos !== 1 ? 's' : ''} sugerido${sugeridos !== 1 ? 's' : ''}: revisalos y confirmalos en la tabla`
+          ? 'No se encontraron cruces para sugerir'
+          : `${sugeridos} cruce${sugeridos !== 1 ? 's' : ''} sugerido${sugeridos !== 1 ? 's' : ''}` +
+              (reasignados > 0
+                ? ` · ${reasignados} pasaron a un movimiento que les corresponde mejor`
+                : '') +
+              ': revisalos y confirmalos en la tabla'
       );
     },
     onError: () => toast.error('Error en la conciliación automática'),
@@ -1575,22 +1583,20 @@ function BankPage() {
                   Movimiento manual
                 </button>
               )}
-              {accountId && (
-                <ConAyuda texto="Busca, para cada movimiento de esta cuenta, una factura con el mismo importe y fecha cercana (cobros contra facturas emitidas, pagos contra recibidas). Solo propone: cada sugerencia la confirmás o descartás en la tabla.">
-                  <button
-                    onClick={() => autoMatchMutation.mutate()}
-                    disabled={
-                      autoMatchMutation.isPending || unmatchedCount === 0
-                    }
-                    className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 transition-colors"
-                  >
-                    <Zap className="w-3 h-3" strokeWidth={2} />
-                    {autoMatchMutation.isPending
-                      ? 'Conciliando...'
-                      : `Auto-conciliar (${unmatchedCount})`}
-                  </button>
-                </ConAyuda>
-              )}
+              <ConAyuda
+                texto={`Busca, para cada movimiento ${accountId ? 'de esta cuenta' : 'de todas las cuentas de la empresa'} y de todos los meses, una factura con el mismo importe y fecha cercana (cobros contra emitidas, pagos contra recibidas). Si varios movimientos pueden ser la misma factura, se la da al que mejor corresponde: misma contraparte, después la fecha más cercana. Cada vez recalcula las sugerencias pendientes; lo confirmado y lo descartado no se toca.`}
+              >
+                <button
+                  onClick={() => autoMatchMutation.mutate()}
+                  disabled={autoMatchMutation.isPending}
+                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 transition-colors"
+                >
+                  <Zap className="w-3 h-3" strokeWidth={2} />
+                  {autoMatchMutation.isPending
+                    ? 'Buscando cruces…'
+                    : 'Auto-conciliar'}
+                </button>
+              </ConAyuda>
             </div>
           </div>
 

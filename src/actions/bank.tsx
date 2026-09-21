@@ -22,6 +22,7 @@ import {
 } from '@/drizzle/schema';
 import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
 import { type ContraparteSugerida } from '@/lib/contraparte-movimiento';
+import { asignarCruces, DIAS_PROXIMIDAD } from '@/lib/cruce-conciliacion';
 import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
 import {
   getSessionWithOrg,
@@ -460,25 +461,54 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     };
   });
 
-const DIAS_PROXIMIDAD = 5;
-
 /**
- * Propone cruces para los movimientos de una cuenta. Solo propone: todo queda
- * `sugerida` hasta que una persona lo confirma o lo descarta desde el
- * registro (`resolverSugerencia`), y mientras tanto no cuenta como
- * conciliado en ningún lado.
+ * Propone cruces para los movimientos de una cuenta, o de toda la empresa.
+ * Solo propone: todo queda `sugerida` hasta que una persona lo confirma o lo
+ * descarta, y mientras tanto no cuenta como conciliado en ningún lado.
  *
- * Cobro contra factura emitida y pago contra factura recibida. No propone una
- * factura que ya está conciliada, no usa la misma factura para dos
- * movimientos y no repite un cruce que alguien ya descartó.
+ * Cada vez recalcula las sugerencias pendientes del alcance: si apareció un
+ * movimiento que le corresponde mejor a una factura (misma contraparte, fecha
+ * más cercana), la sugerencia pasa a ese. Lo confirmado y lo descartado no
+ * se toca. Qué factura va con qué movimiento lo decide `asignarCruces`.
  */
 export const autoConciliar = createServerFn({ method: 'POST' })
-  .validator(z.object({ cuentaBancariaId: z.string().uuid() }))
+  .validator(
+    z
+      .object({
+        cuentaBancariaId: z.string().uuid().optional(),
+        clienteId: z.string().uuid().optional(),
+      })
+      .refine((v) => v.cuentaBancariaId ?? v.clienteId, {
+        message: 'Falta indicar la cuenta o la empresa',
+      })
+  )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     assertCanWrite(await getMemberRole());
 
-    const cuenta = await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
+    let clienteId: string;
+    let cuentaIds: string[];
+    if (ctx.data.cuentaBancariaId) {
+      const cuenta = await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
+      clienteId = cuenta.clienteId;
+      cuentaIds = [cuenta.id];
+    } else {
+      clienteId = ctx.data.clienteId!;
+      await assertClienteDeOrg(clienteId, orgId);
+      cuentaIds = (
+        await db
+          .select({ id: cuentaBancaria.id })
+          .from(cuentaBancaria)
+          .where(
+            and(
+              eq(cuentaBancaria.orgId, orgId),
+              eq(cuentaBancaria.clienteId, clienteId),
+              eq(cuentaBancaria.activa, true)
+            )
+          )
+      ).map((c) => c.id);
+    }
+    if (cuentaIds.length === 0) return { sugeridos: 0, reasignados: 0 };
 
     const movimientos = await db
       .select({
@@ -491,18 +521,18 @@ export const autoConciliar = createServerFn({ method: 'POST' })
       .from(movimientoBancario)
       .where(
         and(
-          eq(movimientoBancario.cuentaBancariaId, ctx.data.cuentaBancariaId),
+          inArray(movimientoBancario.cuentaBancariaId, cuentaIds),
           eq(movimientoBancario.excluido, false)
         )
       );
-
-    if (movimientos.length === 0) return { sugeridos: 0 };
+    if (movimientos.length === 0) return { sugeridos: 0, reasignados: 0 };
 
     const previas = await db
       .select({
         movimientoId: conciliacionComprobante.movimientoBancarioId,
         comprobanteId: conciliacionComprobante.comprobanteId,
         estado: conciliacionComprobante.estado,
+        confianza: conciliacionComprobante.confianza,
       })
       .from(conciliacionComprobante)
       .where(
@@ -511,20 +541,24 @@ export const autoConciliar = createServerFn({ method: 'POST' })
           movimientos.map((m) => m.id)
         )
       );
-    // Con un cruce vigente (confirmado o ya sugerido) no se propone otro.
-    const conCruce = new Set(
-      previas.filter((p) => p.estado !== 'rechazada').map((p) => p.movimientoId)
+    const confirmados = new Set(
+      previas
+        .filter((p) => p.estado === 'confirmada')
+        .map((p) => p.movimientoId)
     );
     const descartados = new Set(
       previas
         .filter((p) => p.estado === 'rechazada')
         .map((p) => `${p.movimientoId}|${p.comprobanteId}`)
     );
+    const antes = new Map(
+      previas
+        .filter((p) => p.estado === 'sugerida')
+        .map((p) => [p.movimientoId, p.comprobanteId])
+    );
+    const pendientes = movimientos.filter((m) => !confirmados.has(m.id));
 
-    const pendientes = movimientos.filter((m) => !conCruce.has(m.id));
-    if (pendientes.length === 0) return { sugeridos: 0 };
-
-    const comprobantes = await db
+    const facturas = await db
       .select({
         id: comprobante.id,
         total: comprobante.total,
@@ -536,80 +570,97 @@ export const autoConciliar = createServerFn({ method: 'POST' })
       .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
       .where(
         and(
-          eq(comprobante.clienteId, cuenta.clienteId),
+          eq(comprobante.clienteId, clienteId),
           // Una nota de crédito no se cobra ni se paga.
           sql`coalesce(${comprobanteTipo.esNc}, false) = false`,
-          // Ni una factura ya conciliada, ni una que ya está sugerida para
-          // otro movimiento (de una pasada anterior): una factura se propone
-          // para un solo movimiento a la vez.
+          // Ni una factura ya conciliada, ni una sugerida para un movimiento
+          // de FUERA de este alcance (otra cuenta): esas no se recalculan
+          // acá. Las sugeridas de este alcance sí vuelven a competir.
           sql`not exists (
-            select 1 from ${conciliacionComprobante}
-            where ${conciliacionComprobante.comprobanteId} = ${comprobante.id}
-              and ${conciliacionComprobante.estado} in ('confirmada', 'sugerida')
+            select 1 from ${conciliacionComprobante} cc
+            join ${movimientoBancario} mb on mb.id = cc.movimiento_bancario_id
+            where cc.comprobante_id = ${comprobante.id}
+              and (
+                cc.estado = 'confirmada'
+                or (cc.estado = 'sugerida'
+                    and mb.cuenta_bancaria_id not in (${sql.join(
+                      cuentaIds.map((id) => sql`${id}`),
+                      sql`, `
+                    )}))
+              )
           )`
         )
       );
 
-    const usados = new Set<string>();
-    const aInsertar: {
-      movimientoBancarioId: string;
-      comprobanteId: string;
-      importeConciliado: string;
-      estado: 'sugerida';
-      fuente: 'calculo';
-      confianza: string;
-    }[] = [];
+    const cruces = asignarCruces(
+      pendientes.map((m) => ({
+        id: m.id,
+        fecha: m.fecha,
+        importe: Number(m.importe),
+        direccion: m.direccion,
+        contraparteId: m.contraparteId,
+      })),
+      facturas.map((f) => ({
+        id: f.id,
+        fechaEmision: f.fechaEmision,
+        total: Number(f.total),
+        direccion: f.direccion,
+        contraparteId: f.contraparteId,
+      })),
+      descartados
+    );
 
-    for (const mov of pendientes) {
-      const importe = Number(mov.importe);
-      const fecha = new Date(mov.fecha).getTime();
-      // Cobro contra factura emitida, pago contra factura recibida.
-      const direccion = mov.direccion === 'ingreso' ? 'emitido' : 'recibido';
-      let mejor: { comprobanteId: string; confianza: number } | null = null;
-
-      for (const comp of comprobantes) {
-        if (comp.direccion !== direccion || usados.has(comp.id)) continue;
-        if (descartados.has(`${mov.id}|${comp.id}`)) continue;
-        // El importe tiene que coincidir con tolerancia de un peso.
-        if (Math.abs(importe - Number(comp.total)) >= 1) continue;
-        const dias =
-          Math.abs(fecha - new Date(comp.fechaEmision).getTime()) /
-          (1000 * 60 * 60 * 24);
-        if (dias > DIAS_PROXIMIDAD) continue;
-
-        // Base: importe + fecha. Bonus si además coincide la contraparte.
-        let confianza = 0.5;
-        if (mov.contraparteId && mov.contraparteId === comp.contraparteId) {
-          confianza += 0.4;
-        }
-        confianza += (1 - dias / DIAS_PROXIMIDAD) * 0.1;
-
-        if (!mejor || confianza > mejor.confianza) {
-          mejor = { comprobanteId: comp.id, confianza };
-        }
+    const importePorMov = new Map(movimientos.map((m) => [m.id, m.importe]));
+    // Reemplazar las sugerencias pendientes del alcance por las nuevas, todo
+    // junto: nunca queda un momento con sugerencias viejas y nuevas mezcladas.
+    await db.transaction(async (tx) => {
+      if (antes.size > 0) {
+        await tx
+          .delete(conciliacionComprobante)
+          .where(
+            and(
+              inArray(conciliacionComprobante.movimientoBancarioId, [
+                ...antes.keys(),
+              ]),
+              eq(conciliacionComprobante.estado, 'sugerida')
+            )
+          );
       }
-
-      if (mejor) {
-        usados.add(mejor.comprobanteId);
-        aInsertar.push({
-          movimientoBancarioId: mov.id,
-          comprobanteId: mejor.comprobanteId,
-          importeConciliado: importe.toFixed(2),
-          estado: 'sugerida',
-          fuente: 'calculo',
-          confianza: mejor.confianza.toFixed(4),
-        });
+      if (cruces.length > 0) {
+        await tx.insert(conciliacionComprobante).values(
+          cruces.map((c) => ({
+            movimientoBancarioId: c.movimientoId,
+            comprobanteId: c.comprobanteId,
+            importeConciliado: importePorMov.get(c.movimientoId)!,
+            estado: 'sugerida' as const,
+            fuente: 'calculo' as const,
+            confianza: c.confianza.toFixed(4),
+          }))
+        );
       }
-    }
+    });
 
-    if (aInsertar.length > 0) {
-      await db
-        .insert(conciliacionComprobante)
-        .values(aInsertar)
-        .onConflictDoNothing();
-    }
+    // Cuántas facturas pasaron a un movimiento que les corresponde MEJOR
+    // (más seguridad). Un intercambio entre opciones equivalentes —dos
+    // facturas iguales del mismo día, dos cobros iguales— no cuenta.
+    const sugeridaAntes = new Map(
+      previas
+        .filter((p) => p.estado === 'sugerida')
+        .map((p) => [
+          p.comprobanteId,
+          { movimientoId: p.movimientoId, confianza: Number(p.confianza) },
+        ])
+    );
+    const reasignados = cruces.filter((c) => {
+      const previa = sugeridaAntes.get(c.comprobanteId);
+      return (
+        previa !== undefined &&
+        previa.movimientoId !== c.movimientoId &&
+        c.confianza > previa.confianza + 1e-6
+      );
+    }).length;
 
-    return { sugeridos: aInsertar.length };
+    return { sugeridos: cruces.length, reasignados };
   });
 
 /**
