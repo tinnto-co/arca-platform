@@ -124,7 +124,7 @@ function palabrasPropias(texto: string | null): Set<string> {
  * aunque el importe coincida. Si no nombra a nadie ("TRANSFERENCIA
  * 0000123"), el importe queda como única pista.
  */
-function nombreCompatible(
+export function nombreCompatible(
   descripcion: string | null,
   nombre: string | null
 ): boolean {

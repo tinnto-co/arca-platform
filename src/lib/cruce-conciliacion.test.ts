@@ -131,4 +131,112 @@ describe('asignarCruces', () => {
       )
     ).toEqual([expect.objectContaining({ movimientoId: 'b' })]);
   });
+
+  describe('parejas que no tienen sentido aunque el importe coincida (casos reales de Admip, mayo 2025)', () => {
+    const pago = (
+      id: string,
+      descripcion: string,
+      extra: Partial<MovimientoACruzar> = {}
+    ): MovimientoACruzar =>
+      cobro(id, '2025-05-20', {
+        direccion: 'egreso',
+        importe: 700000,
+        descripcion,
+        categoria: 'transferencias',
+        ...extra,
+      });
+    const alquiler = factura('dermerdjian', '2025-05-19', {
+      direccion: 'recibido',
+      total: 700000,
+      contraparteId: 'ct-dermerdjian',
+      contraparteNombre: 'DERMERDJIAN LIDIA BEATRIZ',
+    });
+
+    it('no sugiere si la descripción nombra a otra persona', () => {
+      expect(
+        asignarCruces(
+          [
+            pago(
+              'a',
+              'Transferencia realizada A montenegro horacio anto / var'
+            ),
+          ],
+          [alquiler]
+        )
+      ).toEqual([]);
+    });
+
+    it('no sugiere un retiro de efectivo', () => {
+      expect(
+        asignarCruces(
+          [
+            pago('a', 'Retiro en efvo por caja suc san cristobal', {
+              categoria: 'varios',
+            }),
+            pago('b', 'EXTRACCION CAJERO 1234', { categoria: 'varios' }),
+            pago('c', 'Movimiento', { categoria: 'efectivo' }),
+          ],
+          [alquiler]
+        )
+      ).toEqual([]);
+    });
+
+    it('sí sugiere si la descripción nombra a la misma persona', () => {
+      expect(
+        asignarCruces(
+          [pago('a', 'Transferencia realizada A dermerdjian lidia / var')],
+          [alquiler]
+        )
+      ).toHaveLength(1);
+    });
+
+    it('sí sugiere si la contraparte coincide, aunque el texto no la nombre', () => {
+      expect(
+        asignarCruces(
+          [
+            pago('a', 'Transferencia realizada A otra persona', {
+              contraparteId: 'ct-dermerdjian',
+            }),
+          ],
+          [alquiler]
+        )
+      ).toHaveLength(1);
+    });
+
+    it('sí sugiere si la descripción no nombra a nadie', () => {
+      expect(
+        asignarCruces([pago('a', 'TRANSFERENCIA 000123')], [alquiler])
+      ).toHaveLength(1);
+    });
+
+    it('en compras no se exige el nombre: la descripción nombra el producto', () => {
+      for (const descripcion of [
+        'Compra con tarjeta de debito Merpago*shellbox - tarj nr',
+        'Compra de Escalera Madera T /pintor 5 Escalones',
+        'Pago de suscripción Universal Plus',
+      ]) {
+        expect(
+          asignarCruces([pago('a', descripcion)], [alquiler]),
+          descripcion
+        ).toHaveLength(1);
+      }
+    });
+
+    it('a consumidor final no se exige el nombre (la factura no lo dice)', () => {
+      expect(
+        asignarCruces(
+          [
+            cobro('a', '2026-01-02', {
+              descripcion: 'Transferencia recibida OMAR ALBERTO, DAVID',
+            }),
+          ],
+          [
+            factura('f', '2026-01-02', {
+              contraparteNombre: 'Consumidor final',
+            }),
+          ]
+        )
+      ).toHaveLength(1);
+    });
+  });
 });

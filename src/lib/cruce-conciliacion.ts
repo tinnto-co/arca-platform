@@ -13,9 +13,19 @@
  * 4. Si todavía empatan, lo más temprano, para que el resultado sea siempre
  *    el mismo.
  *
+ * Y no se propone una pareja que no tiene sentido aunque el importe coincida:
+ * - un retiro de efectivo no se paga contra una factura;
+ * - si la descripción nombra a alguien ("Transferencia realizada A montenegro
+ *   horacio"), tiene que ser el de la factura. No se exige cuando la
+ *   contraparte ya coincide por CUIT —es más fuerte que el nombre—, cuando la
+ *   factura es a consumidor final, que no dice a quién se le vendió, ni en
+ *   compras, donde la descripción nombra el producto y no a quien factura.
+ *
  * Solo lectura de datos: quien llama trae los movimientos, las facturas
  * disponibles y lo descartado, y guarda el resultado.
  */
+
+import { nombreCompatible } from './contraparte-movimiento';
 
 /** Cuántos días de diferencia puede haber entre movimiento y factura. */
 export const DIAS_PROXIMIDAD = 5;
@@ -27,6 +37,8 @@ export interface MovimientoACruzar {
   importe: number;
   direccion: 'ingreso' | 'egreso';
   contraparteId: string | null;
+  descripcion?: string | null;
+  categoria?: string | null;
 }
 
 export interface FacturaDisponible {
@@ -36,6 +48,7 @@ export interface FacturaDisponible {
   total: number;
   direccion: 'emitido' | 'recibido';
   contraparteId: string | null;
+  contraparteNombre?: string | null;
 }
 
 export interface Cruce {
@@ -43,6 +56,26 @@ export interface Cruce {
   comprobanteId: string;
   /** 0–1: 50% importe, +40% misma contraparte, hasta +10% por fecha. */
   confianza: number;
+}
+
+/** Retiros de efectivo: plata que sale a caja, nunca el pago de una factura. */
+const RETIRO = /\b(retiro|extracci[oó]n|extraccion)\b/i;
+
+function esRetiro(mov: MovimientoACruzar): boolean {
+  return mov.categoria === 'efectivo' || RETIRO.test(mov.descripcion ?? '');
+}
+
+/**
+ * Compras y suscripciones: la descripción nombra el producto o la marca
+ * ("Compra de Escalera Madera…", "Merpago*shellbox", "Pago de suscripción
+ * Universal Plus"), no la razón social que factura. Ahí el nombre no sirve
+ * para descartar.
+ */
+const COMPRA = /^\s*(compra\b|pago de suscripci)/i;
+
+/** La factura no dice a quién se le vendió: no hay nombre contra el cual comparar. */
+function sinNombreUtil(nombre: string | null | undefined): boolean {
+  return !nombre || /consumidor\s+final/i.test(nombre);
 }
 
 function dias(a: string, b: string): number {
@@ -72,6 +105,7 @@ export function asignarCruces(
   }[] = [];
 
   for (const mov of movimientos) {
+    if (esRetiro(mov)) continue;
     // Cobro contra factura emitida, pago contra factura recibida.
     const direccion = mov.direccion === 'ingreso' ? 'emitido' : 'recibido';
     for (const fac of facturas) {
@@ -81,11 +115,23 @@ export function asignarCruces(
       if (Math.abs(mov.importe - fac.total) >= 1) continue;
       const diferencia = dias(mov.fecha, fac.fechaEmision);
       if (Math.abs(diferencia) > DIAS_PROXIMIDAD) continue;
+      const mismaContraparte =
+        mov.contraparteId !== null && mov.contraparteId === fac.contraparteId;
+      // Si la descripción nombra a otra persona, no es esta factura.
+      if (
+        !mismaContraparte &&
+        !sinNombreUtil(fac.contraparteNombre) &&
+        !COMPRA.test(mov.descripcion ?? '') &&
+        !nombreCompatible(
+          mov.descripcion ?? null,
+          fac.contraparteNombre ?? null
+        )
+      )
+        continue;
       candidatos.push({
         mov,
         fac,
-        mismaContraparte:
-          mov.contraparteId !== null && mov.contraparteId === fac.contraparteId,
+        mismaContraparte,
         distancia: Math.abs(diferencia),
         posterior: diferencia >= 0,
       });

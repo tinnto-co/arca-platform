@@ -18,6 +18,7 @@ import {
   comprobante,
   comprobanteTipo,
   conciliacionComprobante,
+  contraparte,
   cuentaBancaria,
   movimientoBancario,
 } from '@/drizzle/schema';
@@ -55,6 +56,8 @@ export async function generarSugerencias(
       importe: movimientoBancario.importe,
       direccion: movimientoBancario.direccion,
       contraparteId: movimientoBancario.contraparteId,
+      descripcion: movimientoBancario.descripcion,
+      categoria: movimientoBancario.categoria,
     })
     .from(movimientoBancario)
     .where(
@@ -101,9 +104,11 @@ export async function generarSugerencias(
       fechaEmision: comprobante.fechaEmision,
       direccion: comprobante.direccion,
       contraparteId: comprobante.contraparteId,
+      contraparteNombre: contraparte.nombre,
     })
     .from(comprobante)
     .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+    .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
     .where(
       and(
         eq(comprobante.clienteId, clienteId),
@@ -135,6 +140,8 @@ export async function generarSugerencias(
       importe: Number(m.importe),
       direccion: m.direccion,
       contraparteId: m.contraparteId,
+      descripcion: m.descripcion,
+      categoria: m.categoria,
     })),
     facturas.map((f) => ({
       id: f.id,
@@ -142,6 +149,7 @@ export async function generarSugerencias(
       total: Number(f.total),
       direccion: f.direccion,
       contraparteId: f.contraparteId,
+      contraparteNombre: f.contraparteNombre,
     })),
     descartados
   );
