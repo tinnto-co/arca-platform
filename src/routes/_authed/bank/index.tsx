@@ -980,7 +980,10 @@ function TransactionItem({
                     <br />· 50% porque el importe es igual
                     <br />· +40% si es el mismo cliente o proveedor
                     <br />· hasta +10% según lo cerca de las fechas (10% el
-                    mismo día)
+                    mismo día, hasta 5 días)
+                    <br />· si la factura es de 6 a 30 días antes, no suma por
+                    fecha y resta hasta 5% (solo se sugiere si es el mismo
+                    cliente o proveedor, o la única factura posible)
                   </span>
                   <span className="font-semibold">Total: {confianza}%</span>
                 </div>
@@ -1884,7 +1887,7 @@ function BankPage() {
                 </button>
               )}
               <ConAyuda
-                texto={`Busca, para cada movimiento ${accountId ? 'de esta cuenta' : 'de todas las cuentas de la empresa'} y de todos los meses, una factura con el mismo importe y fecha cercana (cobros contra emitidas, pagos contra recibidas). Si varios movimientos pueden ser la misma factura, se la da al que mejor corresponde: misma contraparte, después la fecha más cercana. Cada vez recalcula las sugerencias pendientes; lo confirmado y lo descartado no se toca.`}
+                texto={`Busca, para cada movimiento ${accountId ? 'de esta cuenta' : 'de todas las cuentas de la empresa'} y de todos los meses, una factura con el mismo importe (cobros contra emitidas, pagos contra recibidas): hasta 5 días de diferencia, o hasta 30 días antes si es el mismo cliente o proveedor o la única factura posible. Si varios movimientos pueden ser la misma factura, se la da al que mejor corresponde: misma contraparte, después la fecha más cercana. Cada vez recalcula las sugerencias pendientes; lo confirmado y lo descartado no se toca.`}
               >
                 <button
                   onClick={() => autoMatchMutation.mutate()}

@@ -120,7 +120,7 @@ describe('asignarCruces', () => {
       )
     ).toEqual([]);
     expect(
-      asignarCruces([cobro('a', '2026-01-20')], [factura('f', '2026-01-06')])
+      asignarCruces([cobro('a', '2026-02-20')], [factura('f', '2026-01-06')])
     ).toEqual([]);
     // Descartado a → f: pasa al siguiente candidato.
     expect(
@@ -237,6 +237,84 @@ describe('asignarCruces', () => {
           ]
         )
       ).toHaveLength(1);
+    });
+  });
+
+  describe('facturas de 6 a 30 días antes', () => {
+    const pagoJalil = cobro('jalil', '2025-05-22', {
+      direccion: 'egreso',
+      importe: 1500000,
+      descripcion: 'Debito transf. online banking',
+    });
+    const facturaJalil = factura('5-10', '2025-05-12', {
+      direccion: 'recibido',
+      total: 1500000,
+      contraparteId: 'ct-jalil',
+      contraparteNombre: 'JALIL DANIEL OMAR',
+    });
+
+    it('la sugiere si es la única factura posible (caso real JALIL, 10 días)', () => {
+      const [c] = asignarCruces([pagoJalil], [facturaJalil]);
+      expect(c).toMatchObject({ movimientoId: 'jalil', comprobanteId: '5-10' });
+      // Sin contraparte y lejos: seguridad baja (50% − 1% por los 10 días).
+      expect(c.confianza).toBeCloseTo(0.49);
+    });
+
+    it('no la sugiere si hay varias posibles con ese importe', () => {
+      expect(
+        asignarCruces(
+          [pagoJalil],
+          [
+            facturaJalil,
+            factura('otra', '2025-05-02', {
+              ...facturaJalil,
+              id: 'otra',
+              fechaEmision: '2025-05-02',
+              contraparteId: 'ct-otro',
+              contraparteNombre: 'OTRO PROVEEDOR',
+            }),
+          ]
+        )
+      ).toEqual([]);
+    });
+
+    it('con la misma contraparte la sugiere aunque haya varias, y elige la más cercana', () => {
+      const conContraparte = { ...pagoJalil, contraparteId: 'ct-jalil' };
+      const [c] = asignarCruces(
+        [conContraparte],
+        [
+          facturaJalil,
+          { ...facturaJalil, id: 'vieja', fechaEmision: '2025-04-30' },
+        ]
+      );
+      expect(c.comprobanteId).toBe('5-10');
+      expect(c.confianza).toBeCloseTo(0.89);
+    });
+
+    it('no busca más de 30 días, ni facturas posteriores al movimiento', () => {
+      expect(
+        asignarCruces(
+          [pagoJalil],
+          [{ ...facturaJalil, fechaEmision: '2025-04-15' }]
+        )
+      ).toEqual([]);
+      expect(
+        asignarCruces(
+          [pagoJalil],
+          [{ ...facturaJalil, fechaEmision: '2025-06-05' }]
+        )
+      ).toEqual([]);
+    });
+
+    it('si hay una cerca, no se usa la lejana', () => {
+      const [c] = asignarCruces(
+        [pagoJalil],
+        [
+          facturaJalil,
+          { ...facturaJalil, id: 'cerca', fechaEmision: '2025-05-20' },
+        ]
+      );
+      expect(c.comprobanteId).toBe('cerca');
     });
   });
 });

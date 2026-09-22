@@ -13,6 +13,13 @@
  * 4. Si todavía empatan, lo más temprano, para que el resultado sea siempre
  *    el mismo.
  *
+ * La fecha, en dos niveles:
+ * - hasta 5 días de diferencia (para cualquier lado), alcanza con el importe;
+ * - si la factura es de 6 a 30 días ANTERIOR al movimiento (se cobró o se pagó
+ *   más tarde), solo si es la misma contraparte o si es la única factura
+ *   posible con ese importe: con varias, adivinar sería peligroso. Estas
+ *   salen con menos seguridad (no suman por cercanía de fecha).
+ *
  * Y no se propone una pareja que no tiene sentido aunque el importe coincida:
  * - un retiro de efectivo no se paga contra una factura;
  * - si la descripción nombra a alguien ("Transferencia realizada A montenegro
@@ -27,8 +34,14 @@
 
 import { nombreCompatible } from './contraparte-movimiento';
 
-/** Cuántos días de diferencia puede haber entre movimiento y factura. */
+/** Cuántos días de diferencia alcanzan con el importe exacto. */
 export const DIAS_PROXIMIDAD = 5;
+
+/**
+ * Hasta cuántos días antes del movimiento se busca la factura cuando no está
+ * cerca: solo con la misma contraparte o si es la única posible.
+ */
+export const DIAS_EXTENDIDO = 30;
 
 export interface MovimientoACruzar {
   id: string;
@@ -108,13 +121,20 @@ export function asignarCruces(
     if (esRetiro(mov)) continue;
     // Cobro contra factura emitida, pago contra factura recibida.
     const direccion = mov.direccion === 'ingreso' ? 'emitido' : 'recibido';
+    const cercanos: typeof candidatos = [];
+    const lejanos: typeof candidatos = [];
     for (const fac of facturas) {
       if (fac.direccion !== direccion) continue;
       if (descartados.has(`${mov.id}|${fac.id}`)) continue;
       // El importe tiene que coincidir con tolerancia de un peso.
       if (Math.abs(mov.importe - fac.total) >= 1) continue;
       const diferencia = dias(mov.fecha, fac.fechaEmision);
-      if (Math.abs(diferencia) > DIAS_PROXIMIDAD) continue;
+      const cerca = Math.abs(diferencia) <= DIAS_PROXIMIDAD;
+      // Más lejos, solo facturas anteriores al movimiento: se factura y
+      // después se cobra o se paga, no al revés.
+      const lejos =
+        diferencia > DIAS_PROXIMIDAD && diferencia <= DIAS_EXTENDIDO;
+      if (!cerca && !lejos) continue;
       const mismaContraparte =
         mov.contraparteId !== null && mov.contraparteId === fac.contraparteId;
       // Si la descripción nombra a otra persona, no es esta factura.
@@ -128,7 +148,7 @@ export function asignarCruces(
         )
       )
         continue;
-      candidatos.push({
+      (cerca ? cercanos : lejanos).push({
         mov,
         fac,
         mismaContraparte,
@@ -136,6 +156,11 @@ export function asignarCruces(
         posterior: diferencia >= 0,
       });
     }
+    candidatos.push(...cercanos);
+    // Lejos: con la misma contraparte siempre; sin ella, solo si no hay
+    // ninguna cerca y es la única posible.
+    const unica = cercanos.length === 0 && lejanos.length === 1;
+    candidatos.push(...lejanos.filter((c) => c.mismaContraparte || unica));
   }
 
   candidatos.sort(
@@ -163,7 +188,12 @@ export function asignarCruces(
       confianza:
         0.5 +
         (c.mismaContraparte ? 0.4 : 0) +
-        (1 - c.distancia / DIAS_PROXIMIDAD) * 0.1,
+        (c.distancia <= DIAS_PROXIMIDAD
+          ? // Cerca: hasta +10% por cercanía de fecha.
+            (1 - c.distancia / DIAS_PROXIMIDAD) * 0.1
+          : // Lejos: nada por fecha, y hasta −5% cuanto más lejos.
+            (-0.05 * (c.distancia - DIAS_PROXIMIDAD)) /
+            (DIAS_EXTENDIDO - DIAS_PROXIMIDAD)),
     });
   }
   return cruces;
