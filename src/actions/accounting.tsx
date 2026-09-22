@@ -3538,6 +3538,15 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
       d.lines.map((l) => l.accountId)
     );
 
+    // Si cambió de módulo, la prioridad vieja es de otra cola: la regla va al
+    // final de la nueva, como una recién creada. Si no, se queda donde está.
+    const cambioDeModulo = d.sourceModule !== rule.modulo;
+    const prioridad =
+      d.priority ??
+      (cambioDeModulo
+        ? await siguientePrioridad(orgId, rule.clienteId, d.sourceModule)
+        : null);
+
     await db.transaction(async (tx) => {
       await tx
         .update(reglaMapeo)
@@ -3550,7 +3559,7 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
             d.ruleType,
             d.condition
           ),
-          ...(d.priority != null ? { prioridad: d.priority } : {}),
+          ...(prioridad != null ? { prioridad } : {}),
         })
         .where(eq(reglaMapeo.id, rule.id));
       await tx
