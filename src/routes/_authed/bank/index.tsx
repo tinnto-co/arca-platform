@@ -82,6 +82,7 @@ import {
   buscarFacturasParaMovimiento,
   conciliarLote,
   volverASugerir,
+  desconciliarMovimiento,
   createCuentaBancaria,
 } from '@/actions/bank';
 import {
@@ -615,12 +616,15 @@ function ElegirFactura({
   abierto,
   onAbiertoChange,
   descartada,
+  actual,
 }: {
   tx: MovimientoRow;
   abierto: boolean;
   onAbiertoChange: (v: boolean) => void;
   /** La sugerencia que se descartó para este movimiento, si hubo una. */
   descartada?: MovimientoRow['conciliaciones'][number];
+  /** La factura con la que ya está conciliado: se puede cambiar o deshacer. */
+  actual?: MovimientoRow['conciliaciones'][number];
 }) {
   const queryClient = useQueryClient();
   const [texto, setTexto] = useState('');
@@ -651,11 +655,26 @@ function ElegirFactura({
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
       void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
       void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
-      toast.success('Movimiento conciliado');
+      toast.success(actual ? 'Factura cambiada' : 'Movimiento conciliado');
       onAbiertoChange(false);
     },
     onError: (e) =>
       toast.error(e instanceof Error ? e.message : 'No se pudo conciliar'),
+  });
+
+  // Deshacer la conciliación: el movimiento vuelve a quedar sin factura y la
+  // factura, libre para otro movimiento.
+  const deshacer = useMutation({
+    mutationFn: () => desconciliarMovimiento({ data: { movimientoId: tx.id } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
+      toast.success('Conciliación deshecha');
+      onAbiertoChange(false);
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : 'No se pudo deshacer'),
   });
 
   // Si el descarte fue un error, se deshace desde acá.
@@ -680,7 +699,11 @@ function ElegirFactura({
     <Dialog open={abierto} onOpenChange={onAbiertoChange}>
       <DialogContent className="!max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Elegir la factura</DialogTitle>
+          <DialogTitle>
+            {actual
+              ? 'Cambiar o deshacer la conciliación'
+              : 'Elegir la factura'}
+          </DialogTitle>
           <DialogDescription>
             {fmtDate(tx.fecha)} · {tx.descripcion ?? 'Sin descripción'} ·{' '}
             <span className="font-medium tabular-nums text-[var(--arca-ink)]">
@@ -692,6 +715,25 @@ function ElegirFactura({
               : 'Es plata que salió: se busca entre las facturas que recibió la empresa.'}
           </DialogDescription>
         </DialogHeader>
+
+        {actual && (
+          <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[oklch(0.45_0.14_145)]/30 bg-[var(--arca-accent-pos-bg,oklch(0.95_0.05_145))] px-3 py-2 text-[12px] text-[oklch(0.35_0.1_145)]">
+            <span className="min-w-0 flex-1">
+              Hoy está conciliado con{' '}
+              <span className="font-medium">{describirFactura(actual)}</span>.
+              Elegí otra factura abajo para cambiarla, o deshacé la
+              conciliación.
+            </span>
+            <button
+              type="button"
+              onClick={() => deshacer.mutate()}
+              disabled={deshacer.isPending}
+              className="shrink-0 rounded-[6px] border border-current px-2 py-0.5 text-[11.5px] font-medium hover:bg-[var(--arca-surface)] disabled:opacity-50"
+            >
+              Deshacer conciliación
+            </button>
+          </div>
+        )}
 
         {descartada && (
           <div className="flex flex-wrap items-center gap-2 rounded-[8px] border border-[var(--arca-accent-warn)]/40 bg-[var(--arca-accent-warn-bg)] px-3 py-2 text-[12px] text-[var(--arca-accent-warn-fg)]">
@@ -740,7 +782,8 @@ function ElegirFactura({
             const nro = `${String(f.puntoVenta).padStart(4, '0')}-${String(f.numero).padStart(8, '0')}`;
             const total = Number(f.total);
             const mismoImporte = Math.abs(total - importe) < 1;
-            const tomada = f.conciliadaConFecha !== null;
+            const esLaActual = actual?.comprobanteId === f.id;
+            const tomada = f.conciliadaConFecha !== null && !esLaActual;
             return (
               <div
                 key={f.id}
@@ -760,6 +803,12 @@ function ElegirFactura({
                     {tomada
                       ? ` · ya conciliada con un movimiento del ${fmtDate(f.conciliadaConFecha!)}`
                       : ''}
+                    {esLaActual && (
+                      <span className="font-medium text-[oklch(0.45_0.14_145)]">
+                        {' '}
+                        · es la factura actual
+                      </span>
+                    )}
                     {descartada?.comprobanteId === f.id && (
                       <span className="text-[var(--arca-accent-warn-fg)]">
                         {' '}
@@ -779,7 +828,7 @@ function ElegirFactura({
                 </span>
                 <button
                   type="button"
-                  disabled={tomada || conciliar.isPending}
+                  disabled={tomada || esLaActual || conciliar.isPending}
                   onClick={() => conciliar.mutate(f.id)}
                   className="shrink-0 rounded-[8px] bg-[var(--arca-accent)] px-2.5 py-1 text-[11.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
@@ -973,21 +1022,23 @@ function TransactionItem({
       <div className="w-[148px] shrink-0 flex items-center gap-1">
         {conciliacion?.estado === 'confirmada' ? (
           <ConAyuda
-            texto={
+            texto={`${
               conciliacion.fuente === 'manual'
                 ? `Conciliado a mano con ${describirFactura(conciliacion)}.`
                 : `Conciliado con ${describirFactura(conciliacion)}. Lo sugirió el sistema (${confianza}% de seguridad) y alguien lo confirmó.`
-            }
+            } Click para cambiar la factura o deshacer.`}
           >
-            <span
-              className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full text-[10.5px] font-medium"
+            <button
+              type="button"
+              onClick={() => setEligiendoFactura(true)}
+              className="inline-flex items-center whitespace-nowrap px-1.5 py-0.5 rounded-full text-[10.5px] font-medium hover:ring-1 hover:ring-[oklch(0.45_0.14_145)] transition-shadow"
               style={{
                 background: 'var(--arca-accent-pos-bg, oklch(0.95 0.05 145))',
                 color: 'oklch(0.45 0.14 145)',
               }}
             >
               Conciliado
-            </span>
+            </button>
           </ConAyuda>
         ) : conciliacion?.estado === 'sugerida' ? (
           <>
@@ -1076,15 +1127,19 @@ function TransactionItem({
                 </button>
               </ConAyuda>
             )}
-            {eligiendoFactura && (
-              <ElegirFactura
-                tx={tx}
-                abierto={eligiendoFactura}
-                onAbiertoChange={setEligiendoFactura}
-                descartada={descartada}
-              />
-            )}
           </>
+        )}
+        {/* Una sola ventana para elegir, cambiar o deshacer la factura. */}
+        {eligiendoFactura && (
+          <ElegirFactura
+            tx={tx}
+            abierto={eligiendoFactura}
+            onAbiertoChange={setEligiendoFactura}
+            descartada={descartada}
+            actual={
+              conciliacion?.estado === 'confirmada' ? conciliacion : undefined
+            }
+          />
         )}
       </div>
 
