@@ -70,6 +70,7 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   lte,
@@ -4505,6 +4506,85 @@ export const regenerateInvoiceEntries = createServerFn({ method: 'POST' })
         prId,
         force: ctx.data.force,
         reason: 'Regenerado en bloque desde Contabilizar',
+      });
+      if (out.kind === 'done') summary.regenerated++;
+      else if (out.kind === 'needs_confirmation') summary.skippedEdited++;
+      else summary.errors.push({ invoiceId: inv.id, reason: out.reason });
+    }
+    return summary;
+  });
+
+/**
+ * Rehace los asientos del período abierto que generó una regla, después de
+ * editarla. Antes solo se avisaba que habían quedado con la versión anterior
+ * y había que buscarlos a mano en Contabilizar.
+ *
+ * Solo facturas: un asiento de sueldos agrupa el período entero y se rehace
+ * volviendo a cerrar el período. Los asientos editados a mano se conservan
+ * salvo que se pida `force`.
+ */
+export const regenerateEntriesForRule = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ ruleId: z.string().uuid(), force: z.boolean().default(false) })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const rule = await loadMappingRuleForOrg(ctx.data.ruleId, orgId);
+    if (rule.modulo !== 'comprobante') {
+      throw new Error(
+        'Los asientos de sueldos se rehacen volviendo a cerrar el período'
+      );
+    }
+    const clientId = rule.clienteId;
+
+    // Las facturas cuyo asiento vigente salió de esta regla, en un período
+    // que todavía se puede tocar.
+    const conAsiento = await db
+      .select({ invoiceId: asiento.origenId })
+      .from(asiento)
+      .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
+      .where(
+        and(
+          eq(asiento.reglaId, rule.id),
+          eq(asiento.origenTipo, 'comprobante'),
+          eq(asiento.anulado, false),
+          eq(periodoContable.estado, 'abierto'),
+          isNotNull(asiento.origenId)
+        )
+      );
+    const ids = [...new Set(conAsiento.map((r) => r.invoiceId!))];
+    if (ids.length === 0)
+      return { regenerated: 0, skippedEdited: 0, errors: [] };
+
+    const invs = await db
+      .select(INVOICE_SELECT)
+      .from(comprobante)
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
+      .where(inArray(comprobante.id, ids))
+      .orderBy(asc(comprobante.fechaEmision));
+
+    const rules = await loadActiveInvoiceRules(clientId);
+    const prId = await loadPendingReviewAccountId(orgId);
+
+    const summary = {
+      regenerated: 0,
+      skippedEdited: 0,
+      errors: [] as { invoiceId: string; reason: string }[],
+    };
+    for (const inv of invs) {
+      const out = await regenerateOneInvoice({
+        inv,
+        clientId,
+        orgId,
+        userId,
+        rules,
+        prId,
+        force: ctx.data.force,
+        reason: `Regenerado al editar la regla «${rule.nombre}»`,
       });
       if (out.kind === 'done') summary.regenerated++;
       else if (out.kind === 'needs_confirmation') summary.skippedEdited++;

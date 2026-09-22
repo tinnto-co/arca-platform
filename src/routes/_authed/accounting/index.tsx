@@ -193,6 +193,7 @@ import {
   type MappingRuleListRow,
   getInvoicePostingPreview,
   generateInvoiceEntries,
+  regenerateEntriesForRule,
   regenerateInvoiceEntry,
   regenerateInvoiceEntries,
   getPendingReviewEntries,
@@ -7148,6 +7149,7 @@ function RuleEditorDialog({
   onSaved: () => void;
 }) {
   const isEdit = state.mode === 'edit';
+  const qc = useQueryClient();
   const { data: postable = [] } = useQuery({
     queryKey: ['accounting', 'postable', clientId],
     queryFn: () => getPostableAccounts({ data: { clientId } }),
@@ -7314,8 +7316,39 @@ function RuleEditorDialog({
       }
     },
     onSuccess: () => {
-      toast.success(isEdit ? 'Regla actualizada' : 'Regla creada');
+      const generados = isEdit ? (existing?.generatedOpenCount ?? 0) : 0;
+      // Editar la regla no rehace lo ya contabilizado: se ofrece hacerlo acá
+      // mismo, que antes había que buscarlo a mano en Contabilizar.
+      if (generados > 0 && sourceModule === 'comprobante') {
+        toast.success('Regla actualizada', {
+          description: `${generados} asiento(s) del período abierto se generaron con la versión anterior.`,
+          action: {
+            label: 'Regenerarlos',
+            onClick: () => regenerarMut.mutate(),
+          },
+          duration: 10000,
+        });
+      } else {
+        toast.success(isEdit ? 'Regla actualizada' : 'Regla creada');
+      }
       onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const regenerarMut = useMutation({
+    mutationFn: () =>
+      regenerateEntriesForRule({
+        data: { ruleId: (state as { ruleId: string }).ruleId },
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        `${r.regenerated} asiento(s) regenerado(s)` +
+          (r.skippedEdited > 0
+            ? ` · ${r.skippedEdited} editado(s) a mano se conservan`
+            : '')
+      );
+      void qc.invalidateQueries({ queryKey: ['accounting'] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -7370,8 +7403,8 @@ function RuleEditorDialog({
             }}
           >
             ⚠ {existing.generatedOpenCount} asiento(s) del período abierto se
-            generaron con la versión anterior. No se regenerarán
-            automáticamente.
+            generaron con la versión anterior. Al guardar te ofrecemos
+            regenerarlos.
           </div>
         )}
 
