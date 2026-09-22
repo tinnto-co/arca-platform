@@ -36,6 +36,7 @@ import {
 import { user } from '@/drizzle/auth';
 import {
   assertPostableAccounts,
+  insertarAsientoConLineas,
   loadActiveMappingRules,
   loadPendingReviewAccountId,
   nextEntryNumber,
@@ -3826,45 +3827,22 @@ async function insertAutoInvoiceEntry(
     userId,
   } = params;
 
-  const [{ maxNum }] = await tx
-    .select({
-      maxNum: sql<number>`coalesce(max(${asiento.numero}),0)::int`,
-    })
-    .from(asiento)
-    .where(and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fyId)));
-  const number = (maxNum ?? 0) + 1;
-
   const label = inv.direccion === 'recibido' ? 'Compra' : 'Venta';
-  const description =
-    `${label} ${inv.letra ?? inv.tipo} — ${inv.contraparte ?? ''}`.trim();
-
-  const [je] = await tx
-    .insert(asiento)
-    .values({
-      orgId,
-      clienteId: clientId,
-      ejercicioId: fyId,
-      periodoId: periodId,
-      numero: number,
-      fecha: date,
-      descripcion: description,
-      origenTipo: 'comprobante',
-      origenId: inv.id,
-      reglaId: ruleId,
-      creadoPor: userId,
-    })
-    .returning();
-
-  await tx.insert(asientoLinea).values(
-    lines.map((l, i) => ({
-      asientoId: je.id,
-      cuentaId: l.cuentaId,
-      debe: String(l.debe),
-      haber: String(l.haber),
-      descripcion: l.descripcion,
-      orden: i,
-    }))
-  );
+  const je = await insertarAsientoConLineas(tx, {
+    orgId,
+    clienteId: clientId,
+    ejercicioId: fyId,
+    periodoId: periodId,
+    fecha: date,
+    descripcion:
+      `${label} ${inv.letra ?? inv.tipo} — ${inv.contraparte ?? ''}`.trim(),
+    origenTipo: 'comprobante',
+    origenId: inv.id,
+    reglaId: ruleId,
+    lineas: lines,
+    creadoPor: userId,
+  });
+  const number = je.numero;
 
   await tx.insert(evento).values(
     accountingEvent({

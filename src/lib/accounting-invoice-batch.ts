@@ -13,7 +13,6 @@
 import { db } from '@/lib/db';
 import {
   asiento,
-  asientoLinea,
   cliente,
   comprobante,
   comprobanteTipo,
@@ -30,9 +29,9 @@ import {
 } from '@/lib/accounting-invoice-posting';
 import {
   assertPostableAccounts,
+  insertarAsientoConLineas,
   loadActiveMappingRules,
   loadPendingReviewAccountId,
-  nextEntryNumber,
   resolvePeriodForDate,
 } from '@/lib/accounting-posting-db';
 
@@ -117,43 +116,23 @@ async function insertAutoInvoiceEntry(params: {
     motivo,
   } = params;
   await db.transaction(async (tx) => {
-    const numero = await nextEntryNumber(
-      tx,
-      params.clienteId,
-      params.ejercicioId
-    );
     const etiqueta = comp.direccion === 'recibido' ? 'Compra' : 'Venta';
-    const descripcion =
-      `${etiqueta} ${comp.letra ?? comp.tipo} — ${comp.contraparteNombre ?? 's/d'}`.trim();
-
-    const [asi] = await tx
-      .insert(asiento)
-      .values({
-        orgId,
-        clienteId,
-        ejercicioId,
-        periodoId,
-        numero,
-        fecha: comp.fechaEmision,
-        descripcion,
-        origenTipo: 'comprobante',
-        origenId: comp.id,
-        reglaId,
-        fuente: 'import',
-        creadoPor: null,
-      })
-      .returning();
-
-    await tx.insert(asientoLinea).values(
-      lineas.map((l, i) => ({
-        asientoId: asi.id,
-        cuentaId: l.cuentaId,
-        debe: String(l.debe),
-        haber: String(l.haber),
-        descripcion: l.descripcion,
-        orden: i,
-      }))
-    );
+    const asi = await insertarAsientoConLineas(tx, {
+      orgId,
+      clienteId,
+      ejercicioId,
+      periodoId,
+      fecha: comp.fechaEmision,
+      descripcion:
+        `${etiqueta} ${comp.letra ?? comp.tipo} — ${comp.contraparteNombre ?? 's/d'}`.trim(),
+      origenTipo: 'comprobante',
+      origenId: comp.id,
+      reglaId,
+      lineas,
+      fuente: 'import',
+      creadoPor: null,
+    });
+    const numero = asi.numero;
 
     await tx.insert(evento).values({
       orgId,
