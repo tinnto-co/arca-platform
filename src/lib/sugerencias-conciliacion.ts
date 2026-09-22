@@ -46,8 +46,14 @@ export async function cuentasActivasDeCliente(
 export async function generarSugerencias(
   clienteId: string,
   cuentaIds: string[]
-): Promise<{ sugeridos: number; reasignados: number }> {
-  if (cuentaIds.length === 0) return { sugeridos: 0, reasignados: 0 };
+): Promise<{
+  sugeridos: number;
+  reasignados: number;
+  /** Cuántas sugerencias quedaron en cada mes ('YYYY-MM'). */
+  porMes: Record<string, number>;
+}> {
+  if (cuentaIds.length === 0)
+    return { sugeridos: 0, reasignados: 0, porMes: {} };
 
   const movimientos = await db
     .select({
@@ -66,7 +72,8 @@ export async function generarSugerencias(
         eq(movimientoBancario.excluido, false)
       )
     );
-  if (movimientos.length === 0) return { sugeridos: 0, reasignados: 0 };
+  if (movimientos.length === 0)
+    return { sugeridos: 0, reasignados: 0, porMes: {} };
 
   const previas = await db
     .select({
@@ -204,5 +211,14 @@ export async function generarSugerencias(
     );
   }).length;
 
-  return { sugeridos: cruces.length, reasignados };
+  // Por mes, para que el aviso diga cuántas son del mes que se está mirando:
+  // el cálculo abarca todos los meses de la empresa.
+  const fechaPorMov = new Map(movimientos.map((m) => [m.id, m.fecha]));
+  const porMes: Record<string, number> = {};
+  for (const c of cruces) {
+    const mes = String(fechaPorMov.get(c.movimientoId)).slice(0, 7);
+    porMes[mes] = (porMes[mes] ?? 0) + 1;
+  }
+
+  return { sugeridos: cruces.length, reasignados, porMes };
 }

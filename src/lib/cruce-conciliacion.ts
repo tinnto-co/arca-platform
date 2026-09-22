@@ -20,13 +20,17 @@
  *   posible con ese importe: con varias, adivinar sería peligroso. Estas
  *   salen con menos seguridad (no suman por cercanía de fecha).
  *
- * Y no se propone una pareja que no tiene sentido aunque el importe coincida:
- * - un retiro de efectivo no se paga contra una factura;
- * - si la descripción nombra a alguien ("Transferencia realizada A montenegro
- *   horacio"), tiene que ser el de la factura. No se exige cuando la
- *   contraparte ya coincide por CUIT —es más fuerte que el nombre—, cuando la
- *   factura es a consumidor final, que no dice a quién se le vendió, ni en
- *   compras, donde la descripción nombra el producto y no a quien factura.
+ * Un retiro de efectivo no se propone nunca: no se paga contra una factura.
+ *
+ * Si la descripción nombra a otra persona que la de la factura ("Transferencia
+ * realizada A montenegro horacio" contra una factura de DERMERDJIAN), se
+ * propone igual pero con baja seguridad (−20%) y detrás de cualquier otra
+ * factura cuyo nombre sí coincida: quien cobra no siempre es quien factura
+ * (un cónyuge, un administrador), y eso lo decide una persona. De 6 a 30 días
+ * con nombre distinto y sin la misma contraparte no se propone: son dos dudas
+ * juntas. El nombre no se mira cuando la contraparte ya coincide por CUIT, si
+ * la factura es a consumidor final (no dice a quién se le vendió) ni en
+ * compras, donde la descripción nombra el producto y no a quien factura.
  *
  * Solo lectura de datos: quien llama trae los movimientos, las facturas
  * disponibles y lo descartado, y guarda el resultado.
@@ -100,6 +104,24 @@ function dias(a: string, b: string): number {
 }
 
 /**
+ * Si la descripción del banco nombra a otra persona que la de la factura.
+ * Lo usa el cálculo (para bajar la seguridad) y la pantalla (para avisarlo).
+ */
+export function nombreDistinto(
+  descripcion: string | null | undefined,
+  contraparteNombre: string | null | undefined
+): boolean {
+  return (
+    !sinNombreUtil(contraparteNombre) &&
+    !COMPRA.test(descripcion ?? '') &&
+    !nombreCompatible(descripcion ?? null, contraparteNombre ?? null)
+  );
+}
+
+/** Cuánto baja la seguridad cuando el banco nombra a otra persona. */
+const PENALIDAD_NOMBRE = 0.2;
+
+/**
  * Las parejas movimiento ↔ factura, una factura por movimiento y viceversa.
  * `descartados` son pares "movimientoId|comprobanteId" que alguien rechazó y
  * no se vuelven a proponer.
@@ -113,6 +135,7 @@ export function asignarCruces(
     mov: MovimientoACruzar;
     fac: FacturaDisponible;
     mismaContraparte: boolean;
+    otroNombre: boolean;
     distancia: number;
     posterior: boolean;
   }[] = [];
@@ -137,21 +160,17 @@ export function asignarCruces(
       if (!cerca && !lejos) continue;
       const mismaContraparte =
         mov.contraparteId !== null && mov.contraparteId === fac.contraparteId;
-      // Si la descripción nombra a otra persona, no es esta factura.
-      if (
+      // Si el banco nombra a otra persona: cerca, se propone con baja
+      // seguridad; lejos, no (son dos dudas juntas).
+      const otroNombre =
         !mismaContraparte &&
-        !sinNombreUtil(fac.contraparteNombre) &&
-        !COMPRA.test(mov.descripcion ?? '') &&
-        !nombreCompatible(
-          mov.descripcion ?? null,
-          fac.contraparteNombre ?? null
-        )
-      )
-        continue;
+        nombreDistinto(mov.descripcion, fac.contraparteNombre);
+      if (otroNombre && !cerca) continue;
       (cerca ? cercanos : lejanos).push({
         mov,
         fac,
         mismaContraparte,
+        otroNombre,
         distancia: Math.abs(diferencia),
         posterior: diferencia >= 0,
       });
@@ -166,6 +185,7 @@ export function asignarCruces(
   candidatos.sort(
     (a, b) =>
       Number(b.mismaContraparte) - Number(a.mismaContraparte) ||
+      Number(a.otroNombre) - Number(b.otroNombre) ||
       a.distancia - b.distancia ||
       Number(b.posterior) - Number(a.posterior) ||
       a.mov.fecha.localeCompare(b.mov.fecha) ||
@@ -187,7 +207,8 @@ export function asignarCruces(
       comprobanteId: c.fac.id,
       confianza:
         0.5 +
-        (c.mismaContraparte ? 0.4 : 0) +
+        (c.mismaContraparte ? 0.4 : 0) -
+        (c.otroNombre ? PENALIDAD_NOMBRE : 0) +
         (c.distancia <= DIAS_PROXIMIDAD
           ? // Cerca: hasta +10% por cercanía de fecha.
             (1 - c.distancia / DIAS_PROXIMIDAD) * 0.1

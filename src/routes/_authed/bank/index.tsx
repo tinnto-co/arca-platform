@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/popover';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { nombreDistinto } from '@/lib/cruce-conciliacion';
 import {
   Dialog,
   DialogContent,
@@ -139,6 +140,14 @@ const RANGO_LABEL = {
   todo: 'Todo el historial',
 } as const;
 type Rango = keyof typeof RANGO_LABEL;
+
+/** 'YYYY-MM' → "enero de 2026". */
+function nombreMes(mes: string): string {
+  return fechaLocal(`${mes}-15`).toLocaleDateString('es-AR', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
 /** 'YYYY-MM' menos `n` meses. */
 function mesMenos(mes: string, n: number): string {
@@ -526,6 +535,13 @@ function RevisarSugerencias({
                     {fmtDate(s.fecha)} · {fmtAmount(s.importe, s.direccion)}
                     {s.contraparteTexto ? ` · ${s.contraparteTexto}` : ''}
                   </span>
+                  {(s.contraparteId === null ||
+                    s.contraparteId !== s.comprobanteContraparteId) &&
+                    nombreDistinto(s.descripcion, s.comprobanteContraparte) && (
+                      <span className="block text-[10.5px] font-medium text-[var(--arca-accent-warn-fg)]">
+                        Ojo: el banco nombra a otra persona que la de la factura
+                      </span>
+                    )}
                 </span>
                 <span
                   className={`inline-flex items-center whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10.5px] font-medium ${
@@ -802,6 +818,13 @@ function TransactionItem({
   const confianza = conciliacion?.confianza
     ? Math.round(parseFloat(conciliacion.confianza) * 100)
     : null;
+  // El banco nombra a otra persona que la de la factura: se sugiere igual
+  // (quien cobra no siempre es quien factura), pero se avisa.
+  const avisoOtroNombre =
+    conciliacion?.estado === 'sugerida' &&
+    (tx.contraparteId === null ||
+      tx.contraparteId !== conciliacion.comprobanteContraparteId) &&
+    nombreDistinto(tx.descripcion, conciliacion.comprobanteContraparte);
   // La última sugerencia descartada: se muestra para poder revertir un error.
   const descartada = conciliacion
     ? undefined
@@ -986,6 +1009,14 @@ function TransactionItem({
                     cliente o proveedor, o la única factura posible)
                   </span>
                   <span className="font-semibold">Total: {confianza}%</span>
+                  {avisoOtroNombre && (
+                    <span className="rounded-[6px] bg-[var(--arca-accent-warn-bg)] px-2 py-1 text-[var(--arca-accent-warn-fg)]">
+                      Ojo: el banco nombra a otra persona y la factura es de{' '}
+                      {conciliacion.comprobanteContraparte}. Puede estar bien
+                      (un administrador, un cónyuge), pero revisalo. Por eso
+                      resta 20%.
+                    </span>
+                  )}
                 </div>
               }
             >
@@ -1636,19 +1667,26 @@ function BankPage() {
       autoConciliar({
         data: accountId ? { cuentaBancariaId: accountId } : { clienteId },
       }),
-    onSuccess: ({ sugeridos, reasignados }) => {
+    onSuccess: ({ sugeridos, reasignados, porMes }) => {
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
       void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
       void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
+      // El cálculo abarca todos los meses: se dice cuántas son del mes que
+      // se está mirando, para que el número coincida con la tabla.
+      const enEsteMes = search.mes ? (porMes[search.mes] ?? 0) : sugeridos;
+      const desglose =
+        search.mes && enEsteMes !== sugeridos
+          ? `: ${enEsteMes} en ${nombreMes(search.mes)} y ${sugeridos - enEsteMes} en otros meses`
+          : '';
       // Solo propone: lo dice así para que nadie crea que ya quedó conciliado.
       toast.success(
         sugeridos === 0
           ? 'No se encontraron cruces para sugerir'
-          : `${sugeridos} cruce${sugeridos !== 1 ? 's' : ''} sugerido${sugeridos !== 1 ? 's' : ''}` +
+          : `${sugeridos} cruce${sugeridos !== 1 ? 's' : ''} sugerido${sugeridos !== 1 ? 's' : ''}${desglose}` +
               (reasignados > 0
                 ? ` · ${reasignados} pasaron a un movimiento que les corresponde mejor`
                 : '') +
-              ': revisalos y confirmalos en la tabla'
+              '. Revisalos y confirmalos en la tabla.'
       );
     },
     onError: () => toast.error('Error en la conciliación automática'),
@@ -1661,11 +1699,7 @@ function BankPage() {
     Math.ceil(movimientosFiltrados / MOVIMIENTOS_POR_PAGINA)
   );
   const cuentaElegida = accounts.find((a) => a.id === accountId);
-  const nombreMes = (mes: string) =>
-    fechaLocal(`${mes}-15`).toLocaleDateString('es-AR', {
-      month: 'long',
-      year: 'numeric',
-    });
+
   const mesLabel = !periodoRegistro.periodo
     ? 'todo el historial'
     : periodoRegistro.hasta

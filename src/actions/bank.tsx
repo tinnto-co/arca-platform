@@ -427,6 +427,7 @@ export const listMovimientos = createServerFn({ method: 'GET' })
               comprobanteFecha: comprobante.fechaEmision,
               comprobanteTotal: comprobante.total,
               comprobanteContraparte: contraparte.nombre,
+              comprobanteContraparteId: comprobante.contraparteId,
             })
             .from(conciliacionComprobante)
             .innerJoin(
@@ -639,6 +640,7 @@ export const listarSugerencias = createServerFn({ method: 'GET' })
         importe: movimientoBancario.importe,
         direccion: movimientoBancario.direccion,
         contraparteTexto: movimientoBancario.contraparteTexto,
+        contraparteId: movimientoBancario.contraparteId,
         cuentaNumero: cuentaBancaria.numero,
         confianza: conciliacionComprobante.confianza,
         comprobanteId: comprobante.id,
@@ -648,6 +650,7 @@ export const listarSugerencias = createServerFn({ method: 'GET' })
         comprobanteFecha: comprobante.fechaEmision,
         comprobanteTotal: comprobante.total,
         comprobanteContraparte: contraparte.nombre,
+        comprobanteContraparteId: comprobante.contraparteId,
       })
       .from(conciliacionComprobante)
       .innerJoin(

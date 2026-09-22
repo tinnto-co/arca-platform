@@ -152,13 +152,45 @@ describe('asignarCruces', () => {
       contraparteNombre: 'DERMERDJIAN LIDIA BEATRIZ',
     });
 
-    it('no sugiere si la descripción nombra a otra persona', () => {
+    it('si el banco nombra a otra persona, la sugiere con baja seguridad (caso real: alquiler pagado a Montenegro)', () => {
+      const [c] = asignarCruces(
+        [pago('a', 'Transferencia realizada A montenegro horacio anto / var')],
+        [alquiler]
+      );
+      expect(c).toMatchObject({
+        movimientoId: 'a',
+        comprobanteId: 'dermerdjian',
+      });
+      // 50% − 20% por el nombre + 8% por 1 día de diferencia.
+      expect(c.confianza).toBeCloseTo(0.38);
+    });
+
+    it('si hay otra factura del mismo importe con el nombre que coincide, gana esa', () => {
+      const [c] = asignarCruces(
+        [pago('a', 'Transferencia realizada A montenegro horacio anto / var')],
+        [
+          alquiler,
+          factura('montenegro', '2025-05-18', {
+            direccion: 'recibido',
+            total: 700000,
+            contraparteId: 'ct-montenegro',
+            contraparteNombre: 'MONTENEGRO HORACIO ANTONIO',
+          }),
+        ]
+      );
+      expect(c.comprobanteId).toBe('montenegro');
+    });
+
+    it('de 6 a 30 días con otro nombre no la sugiere (dos dudas juntas)', () => {
       expect(
         asignarCruces(
           [
             pago(
               'a',
-              'Transferencia realizada A montenegro horacio anto / var'
+              'Transferencia realizada A montenegro horacio anto / var',
+              {
+                fecha: '2025-06-05',
+              }
             ),
           ],
           [alquiler]
