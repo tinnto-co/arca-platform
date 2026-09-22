@@ -48,6 +48,8 @@ export interface LineaArmada {
   debe: number;
   haber: number;
   descripcion: string | null;
+  /** Regla que generó la línea; null en las de "Pendiente de revisión". */
+  reglaId?: string | null;
 }
 
 export interface AsientoArmado {
@@ -181,6 +183,9 @@ export function cerrarPorDiferencia(
     debe: residuo > 0 ? 0 : -residuo,
     haber: residuo > 0 ? residuo : 0,
     descripcion: textos.descripcion,
+    // La diferencia no sale de ninguna regla: justamente es lo que ninguna
+    // cubrió.
+    reglaId: null,
   });
   return { cerro: true, motivo: textos.motivo };
 }

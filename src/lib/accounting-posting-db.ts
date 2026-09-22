@@ -211,6 +211,8 @@ export interface LineaParaAsiento {
   debe: number;
   haber: number;
   descripcion: string | null;
+  /** Regla que generó esta línea, si salió de una. */
+  reglaId?: string | null;
 }
 
 /**
@@ -274,6 +276,11 @@ export async function insertarAsientoConLineas(
       haber: String(l.haber),
       descripcion: l.descripcion,
       orden: i,
+      // La cabecera guarda una sola regla; en sueldos el asiento agrupa
+      // varias, así que cada línea lleva la suya. `null` explícito es "esta
+      // línea no salió de ninguna regla" (la diferencia a Pendiente de
+      // revisión) y no hay que caer a la de la cabecera.
+      reglaId: l.reglaId === undefined ? params.reglaId : l.reglaId,
     }))
   );
 

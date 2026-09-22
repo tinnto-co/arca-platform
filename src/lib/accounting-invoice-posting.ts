@@ -343,6 +343,7 @@ export function armarLineas(
       debe: rl.lado === 'debe' ? importe : 0,
       haber: rl.lado === 'haber' ? importe : 0,
       descripcion: rl.descripcion ?? null,
+      reglaId: regla.id,
     });
   }
 

@@ -231,6 +231,8 @@ export function armarLineasSueldos(
       lado: Lado;
       importe: number;
       descripcion: string | null;
+      /** Null si a esa cuenta llegaron conceptos de reglas distintas. */
+      reglaId: string | null;
     }
   >();
   const mapeos: MapeoConcepto[] = [];
@@ -242,14 +244,25 @@ export function armarLineasSueldos(
     cuentaId: string,
     lado: Lado,
     importe: number,
-    descripcion: string | null
+    descripcion: string | null,
+    reglaId: string | null
   ) => {
     if (Math.abs(importe) <= TOLERANCIA) return;
     const key = claveLinea(cuentaId, lado);
     const prev = acc.get(key);
-    if (prev) prev.importe = round2(prev.importe + importe);
-    else
-      acc.set(key, { cuentaId, lado, importe: round2(importe), descripcion });
+    if (prev) {
+      prev.importe = round2(prev.importe + importe);
+      // Varias reglas en la misma cuenta: ninguna explica sola la línea.
+      if (prev.reglaId !== reglaId) prev.reglaId = null;
+    } else {
+      acc.set(key, {
+        cuentaId,
+        lado,
+        importe: round2(importe),
+        descripcion,
+        reglaId,
+      });
+    }
   };
 
   for (const c of concepts) {
@@ -266,7 +279,8 @@ export function armarLineasSueldos(
         cuentaPendienteRevisionId,
         c.monto >= 0 ? 'debe' : 'haber',
         Math.abs(c.monto),
-        'Conceptos de sueldos sin regla aplicable'
+        'Conceptos de sueldos sin regla aplicable',
+        null
       );
       mapeos.push({
         codigo: c.codigo,
@@ -294,7 +308,7 @@ export function armarLineasSueldos(
       // Un concepto negativo (ajuste en contra) invierte el lado de la línea.
       const lado: Lado =
         amt >= 0 ? rl.lado : rl.lado === 'debe' ? 'haber' : 'debe';
-      add(rl.cuentaId, lado, Math.abs(amt), rl.descripcion ?? null);
+      add(rl.cuentaId, lado, Math.abs(amt), rl.descripcion ?? null, rule.id);
     }
 
     mapeos.push({
@@ -312,6 +326,7 @@ export function armarLineasSueldos(
     debe: l.lado === 'debe' ? l.importe : 0,
     haber: l.lado === 'haber' ? l.importe : 0,
     descripcion: l.descripcion,
+    reglaId: l.reglaId,
   }));
 
   let usoPendienteRevision = totalSinRegla !== 0;
