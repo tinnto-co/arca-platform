@@ -51,7 +51,7 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
   ],
   [
     'comisiones',
-    /comisi[oó]n|com\.\s|mantenimiento|cargo\s|gastos?\s+(de\s+)?(mantenim|servicio|admin)|costo\s+paquete|seguro\s+de\s+vida/i,
+    /comisi[oó]n|com\.\s|^\s*com\s|mantenimiento|cargo\s|gastos?\s+(de\s+)?(mantenim|servicio|admin)|costo\s+paquete|seguro\s+de\s+vida/i,
   ],
   [
     'cobros_tarjeta',
@@ -64,7 +64,7 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
   ['cheques', /cheque|ch\.\s*\d|valores?\s+al\s+cobro|clearing|echeq/i],
   [
     'efectivo',
-    /extracci[oó]n|dep[oó]sito\s+(en\s+)?efectivo|cajero|atm|extracautom|dep\.?\s*efvo/i,
+    /extracci[oó]n|retiro|efectivo|efvo|dep[oó]sito\s+(en\s+)?efectivo|cajero|atm|extracautom|dep\.?\s*efvo/i,
   ],
   [
     'intereses',
