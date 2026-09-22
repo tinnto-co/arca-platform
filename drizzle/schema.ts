@@ -29,6 +29,8 @@ export const bienUsoMetodo = pgEnum("bien_uso_metodo", ['lineal'])
 export const bienUsoMotivoBaja = pgEnum("bien_uso_motivo_baja", ['venta', 'desuso', 'destruccion'])
 export const clienteEstado = pgEnum("cliente_estado", ['activo', 'pausado', 'baja'])
 export const estadoAfipCliente = pgEnum("estado_afip_cliente", ['ok', 'irregularidades'])
+export const despachoTipo = pgEnum("despacho_tipo", ['importacion_directa', 'destinacion_simplificada'])
+export const despachoEstado = pgEnum("despacho_estado", ['extraido', 'revision', 'confirmado', 'descartado'])
 export const comprobanteClase = pgEnum("comprobante_clase", ['factura', 'nota_credito', 'nota_debito', 'recibo', 'tique'])
 export const comprobanteDireccion = pgEnum("comprobante_direccion", ['emitido', 'recibido'])
 export const conceptoModoCalculo = pgEnum("concepto_modo_calculo", ['importe_manual', 'pct_sobre_base', 'pct_sobre_concepto', 'sueldo_basico', 'valor_hora', 'sac', 'sac_proporcional', 'dia_vacaciones', 'promedio_anual_concepto'])
@@ -57,7 +59,8 @@ export const impuesto = pgEnum("impuesto", ['iva', 'ganancias', 'ingresos_brutos
 export const indiceInflacionFuente = pgEnum("indice_inflacion_fuente", ['facpce_rt6', 'indec_ipc', 'manual'])
 export const jobLogLevel = pgEnum("job_log_level", ['debug', 'info', 'warn', 'error'])
 export const jobStatus = pgEnum("job_status", ['pending', 'running', 'failed', 'finished'])
-export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas', 'tope_imponible', 'monotributo', 'libro_iva'])
+export const extractoEstado = pgEnum("extracto_estado", ['cargado', 'pendiente', 'procesando', 'extraido', 'error', 'confirmado', 'descartado'])
+export const jobType = pgEnum("job_type", ['iva', 'comprobantes', 'comprobantes_full', 'notificaciones', 'deuda', 'vencimientos', 'batch', 'escalas', 'tope_imponible', 'monotributo', 'libro_iva', 'convenios'])
 export const marcoContable = pgEnum("marco_contable", ['rt54', 'rt6'])
 export const movimientoDireccion = pgEnum("movimiento_direccion", ['ingreso', 'egreso'])
 export const notificacionSeveridad = pgEnum("notificacion_severidad", ['sin_clasificar', 'informativa', 'accion_requerida', 'urgente'])
@@ -145,6 +148,7 @@ export const clienteCredencial = pgTable("cliente_credencial", {
 	credencialId: uuid("credencial_id").notNull(),
 	fuente: relacionFuente().default('manual').notNull(),
 	afipContribuyenteId: integer("afip_contribuyente_id"),
+	delegacionesAfip: jsonb("delegaciones_afip").default({}).notNull(),
 	preferida: boolean().default(true).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2658,6 +2662,9 @@ export const movimientoBancario = pgTable("movimiento_bancario", {
 	contraparteTexto: text("contraparte_texto"),
 	idExterno: text("id_externo"),
 	datosCrudos: jsonb("datos_crudos"),
+	categoria: text(),
+	categoriaFuente: text("categoria_fuente"),
+	excluido: boolean().default(false).notNull(),
 	fuente: datoFuente().default('import').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2908,6 +2915,107 @@ export const baseCalculoConcepto = pgTable("base_calculo_concepto", {
 	primaryKey({ columns: [table.baseCalculoId, table.conceptoId], name: "base_calculo_concepto_pkey"}),
 ]);
 
+
+export const despachoImportacion = pgTable("despacho_importacion", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	clienteId: uuid("cliente_id").notNull(),
+	documentoId: uuid("documento_id").notNull(),
+	tipo: despachoTipo().notNull(),
+	numero: text().notNull(),
+	fecha: date(),
+	alicuota: numeric({ precision: 5, scale: 2 }).notNull(),
+	ivaUsd: numeric("iva_usd", { precision: 15, scale: 2 }).notNull(),
+	tipoCambio: numeric("tipo_cambio", { precision: 15, scale: 6 }).notNull(),
+	ivaPesos: numeric("iva_pesos", { precision: 15, scale: 2 }).notNull(),
+	netoGravado: numeric("neto_gravado", { precision: 15, scale: 2 }).notNull(),
+	total: numeric({ precision: 15, scale: 2 }).notNull(),
+	estado: despachoEstado().default('extraido').notNull(),
+	comprobanteId: uuid("comprobante_id"),
+	extraccion: jsonb(),
+	creadoPor: text("creado_por"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_despacho_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
+	index("idx_despacho_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "despacho_importacion_org_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.clienteId],
+			foreignColumns: [cliente.id],
+			name: "despacho_importacion_cliente_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.documentoId],
+			foreignColumns: [documento.id],
+			name: "despacho_importacion_documento_id_fkey"
+		}),
+	foreignKey({
+			columns: [table.comprobanteId],
+			foreignColumns: [comprobante.id],
+			name: "despacho_importacion_comprobante_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.creadoPor],
+			foreignColumns: [user.id],
+			name: "despacho_importacion_creado_por_fkey"
+		}).onDelete("set null"),
+	unique("despacho_importacion_cliente_id_tipo_numero_key").on(table.clienteId, table.tipo, table.numero),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+	check("despacho_confirmado_con_comprobante", sql`(estado = 'confirmado'::despacho_estado) = (comprobante_id IS NOT NULL)`),
+]);
+
+/**
+ * Cola de extractos bancarios subidos, con su lectura.
+ *
+ * La extracción vive acá y no en la memoria del navegador: subir veinte
+ * extractos y esperar veinte lecturas con la pantalla abierta no es un flujo.
+ * Se suben, un worker los procesa de a varios en segundo plano, y se revisan
+ * cuando están.
+ */
+export const extractoBancario = pgTable("extracto_bancario", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	clienteId: uuid("cliente_id").notNull(),
+	documentoId: uuid("documento_id"),
+	nombreArchivo: text("nombre_archivo").notNull(),
+	estado: extractoEstado().default('pendiente').notNull(),
+	extraccion: jsonb(),
+	banco: text(),
+	periodoDesde: date("periodo_desde"),
+	periodoHasta: date("periodo_hasta"),
+	cuentasDetectadas: integer("cuentas_detectadas"),
+	movimientosDetectados: integer("movimientos_detectados"),
+	cuadra: boolean(),
+	error: text(),
+	intentos: integer().default(0).notNull(),
+	procesadoAt: timestamp("procesado_at", { withTimezone: true }),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_extracto_cliente").using("btree", table.clienteId.asc().nullsLast().op("uuid_ops")),
+	index("idx_extracto_org").using("btree", table.orgId.asc().nullsLast().op("text_ops")),
+	foreignKey({
+			columns: [table.clienteId],
+			foreignColumns: [cliente.id],
+			name: "extracto_bancario_cliente_id_fkey"
+		}).onDelete("cascade"),
+	foreignKey({
+			columns: [table.documentoId],
+			foreignColumns: [documento.id],
+			name: "extracto_bancario_documento_id_fkey"
+		}).onDelete("set null"),
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "extracto_bancario_org_id_fkey"
+		}).onDelete("cascade"),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_app", "arca_agent"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
 
 /**
  * Bitácora de accesos del superadmin a estudios que no son suyos.

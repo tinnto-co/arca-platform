@@ -21,6 +21,8 @@ import {
   provincia,
   tipoEmpresa,
   clienteCct,
+  clienteCredencial,
+  credencialAfip,
   cct,
   empleado,
   recibo,
@@ -62,6 +64,8 @@ import {
   totalesReciboSosDesdeMontos,
 } from '@/lib/sos-recibo-totales';
 import { normalizeLegajo } from '@/lib/legajo';
+import { despacharJobYEsperar } from '@/lib/scrapper-jobs';
+import { SERVICIO_CONVENIOS } from '@/lib/delegaciones-afip';
 import { periodoADate, dateAPeriodo, rangoAnio } from '@/lib/periodo';
 
 /** Alias: varias funciones reciben un parámetro llamado igual que la tabla. */
@@ -304,7 +308,7 @@ async function upsertLiquidacionEmpleadoForPayrollRow(input: {
 
 function extractCctCodigo(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const match = raw.match(/\b(\d{2,4})\/(\d{2,4})\b/);
+  const match = /\b(\d{2,4})\/(\d{2,4})\b/.exec(raw);
   if (!match) return null;
   const izquierda = String(parseInt(match[1], 10));
   const derecha = String(parseInt(match[2], 10)).padStart(2, '0');
@@ -1129,7 +1133,7 @@ async function resolveConvenioIdParaEmpleado(
     .select({ id: convenio.id })
     .from(convenio)
     .where(eq(convenio.clienteId, profileId));
-  if (convenios.length === 1) return convenios[0]!.id;
+  if (convenios.length === 1) return convenios[0].id;
   return null;
 }
 
@@ -1359,9 +1363,7 @@ export const getBasicoParaEmpleadoPeriodo = createServerFn({ method: 'GET' })
         fechaIngreso: legajo.fechaAlta ? legajo.fechaAlta : null,
         // Última corrección de la escala usada: si es anterior al período
         // liquidado, el básico puede estar viejo (TIN-1301).
-        escalaActualizadaAt: escalaPeriodo.updatedAt.toISOString() as
-          | string
-          | null,
+        escalaActualizadaAt: escalaPeriodo.updatedAt.toISOString(),
       };
     }
 
@@ -1772,7 +1774,7 @@ function canonicalizeCat(value: string): string {
 
 function extractCct(raw: string | null | undefined): string | null {
   if (!raw) return null;
-  const match = raw.match(/\b(\d{2,4})\/(\d{2,4})\b/);
+  const match = /\b(\d{2,4})\/(\d{2,4})\b/.exec(raw);
   if (!match) return null;
   return `${parseInt(match[1], 10)}/${String(parseInt(match[2], 10)).padStart(2, '0')}`;
 }
@@ -1846,7 +1848,7 @@ export const sincronizarConveniosEmpleados = createServerFn({ method: 'POST' })
     // 3. Categorías de cada convenio
     const catsByConvenio = new Map<
       string,
-      Array<{ id: string; codigo: string; nombre: string }>
+      { id: string; codigo: string; nombre: string }[]
     >();
     for (const conv of conveniosFiltrados) {
       const cats = await db
@@ -2325,8 +2327,7 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
         monto: null as string | null,
         cantidad: ref?.cantidad ?? null,
         porcentaje:
-          ref?.porcentaje ??
-          ((r.pctFijo != null ? String(r.pctFijo) : null) as string | null),
+          ref?.porcentaje ?? (r.pctFijo != null ? String(r.pctFijo) : null),
         importeConceptoNumero: ref?.importeConceptoNumero ?? null,
         // El importe fijo configurado para el cliente pre-carga el campo importe
         // (sin % el importe ES el monto; con % actúa de base del cálculo).
@@ -3439,7 +3440,7 @@ export const deleteEmpleado = createServerFn({ method: 'POST' })
 
 // ---------- Cálculo y liquidación ----------
 
-type DetalleResult = {
+interface DetalleResult {
   detalleId?: string;
   conceptoId: string;
   monto: number;
@@ -3455,7 +3456,7 @@ type DetalleResult = {
   pctUsado?: number;
   calcError?: string;
   montoSource: 'calculo' | 'importe_fijo' | 'override' | 'sos_override';
-};
+}
 
 /** Lógica interna: calcula y persiste una liquidación (empleadoId + periodo, clientId ya autorizado) */
 async function calcularUnaLiquidacion(
@@ -3575,7 +3576,7 @@ async function calcularUnaLiquidacion(
   }
 
   // Leer inputs existentes del recibo (si ya fue calculado antes)
-  type InputRow = {
+  interface InputRow {
     id: string;
     conceptoId: string;
     cantidad: string | null;
@@ -3587,7 +3588,7 @@ async function calcularUnaLiquidacion(
     importeMax: string | null;
     activo: boolean;
     memo: string | null;
-  };
+  }
   let inputsPrevios: InputRow[] = [];
   let liqExistente: typeof recibo.$inferSelect | null = null;
 
@@ -3941,7 +3942,7 @@ async function calcularUnaLiquidacion(
       .limit(1);
 
     return {
-      liquidacion: liq!,
+      liquidacion: liq,
       detalles,
       totalRemunerativo,
       totalNoRemunerativo,
@@ -3990,7 +3991,7 @@ async function calcularUnaLiquidacion(
       .limit(1);
 
     return {
-      liquidacion: liq!,
+      liquidacion: liq,
       detalles,
       totalRemunerativo,
       totalNoRemunerativo,
@@ -4824,7 +4825,7 @@ function tipoColumnaDesdeCodigoAfip(
  * Fila cruda del detalle: `recibo_concepto` + el concepto del catálogo global
  * (FK real) + la configuración propia del cliente, si la tiene.
  */
-type DetalleReciboRaw = {
+interface DetalleReciboRaw {
   detalle: typeof reciboConcepto.$inferSelect;
   numeroSos: number;
   nombreSos: string;
@@ -4834,14 +4835,14 @@ type DetalleReciboRaw = {
   nombrePropio: string | null;
   tipoPropio: TipoColumnaRecibo | null;
   conceptoAfip: typeof conceptoAfip.$inferSelect | null;
-};
+}
 
 /**
  * Forma que consume el recibo (pantalla y PDF). Se mantiene el shape histórico
  * — `detalle.codigo` / `conceptoSos` — aunque ahora salga todo del catálogo
  * global vía la FK `recibo_concepto.concepto_id`.
  */
-type DetalleReciboRow = {
+interface DetalleReciboRow {
   detalle: typeof reciboConcepto.$inferSelect & { codigo: string };
   concepto: {
     codigo: string | null;
@@ -4850,7 +4851,7 @@ type DetalleReciboRow = {
   } | null;
   conceptoAfip: typeof conceptoAfip.$inferSelect | null;
   conceptoSos: { codigo: string; nombre: string } | null;
-};
+}
 
 /**
  * Columna para el recibo: prioriza reglas SOS (n° concepto / ARCA); si no
@@ -5575,13 +5576,13 @@ export const updateReciboLsdOverrides = createServerFn({ method: 'POST' })
 // Cargas Sociales — Validación pre-descarga
 // ─────────────────────────────────────────────────────────────────────────────
 
-type LsdIssue = {
+interface LsdIssue {
   tipo: 'error' | 'warning';
   codigo: string;
   mensaje: string;
   empleadoCuil?: string;
   empleadoNombre?: string;
-};
+}
 
 /**
  * Valida que el período esté listo para generar el LSD.
@@ -6265,7 +6266,7 @@ export const generarConceptosLsd = createServerFn({ method: 'GET' })
     const lines = rows
       .filter((r) => r.codigoAfip && r.numeroSos != null)
       .map((r) => {
-        const afip6 = r.codigoAfip!.padEnd(6, '0').slice(0, 6);
+        const afip6 = r.codigoAfip.padEnd(6, '0').slice(0, 6);
         const tipoPrefijo = afip6.slice(0, 2);
         const sosPadded = String(r.numeroSos).padStart(4, '0');
         const nombreNorm = normalizarNombreLsd(r.nombre)
@@ -6365,9 +6366,7 @@ export const getSacPreview = createServerFn({ method: 'GET' })
     return empleados
       .map((emp) => {
         const total = totalByEmp.get(emp.id) ?? 0;
-        const fechaAltaDate = emp.fechaAlta
-          ? new Date(emp.fechaAlta as unknown as string)
-          : null;
+        const fechaAltaDate = emp.fechaAlta ? new Date(emp.fechaAlta) : null;
         const antiguedadAnios =
           fechaAltaDate && !isNaN(fechaAltaDate.getTime())
             ? Math.floor(
@@ -6918,4 +6917,98 @@ export const toggleLiquidaSueldos = createServerFn({ method: 'POST' })
       });
 
     return { ok: true };
+  });
+
+/* ───────────── CCT desde ARCA (job `convenios`, TIN-1634 sueldos) ────────── */
+
+/**
+ * Trae los CCT que ARCA declara para la empresa y los deja en `cliente_cct`,
+ * que es de donde el diálogo "Seleccionar convenio" ofrece los convenios.
+ *
+ * Hasta acá esa tabla solo tenía una carga manual de marzo de 2026, así que
+ * toda empresa dada de alta después aparecía sin convenios y sin forma de
+ * traerlos. El scrapeo (Mi Simplificación → Convenios) lo hace el scrapper
+ * como job `convenios`; esta función lo dispara y espera, igual que los
+ * botones de actualizar de la ficha.
+ *
+ * Los tres finales que no son "salió bien" se distinguen a propósito, porque
+ * cada uno se arregla distinto: sin credencial de ARCA cargada, servicio sin
+ * delegar, o ARCA que no informa ningún convenio para esa empresa.
+ */
+export const traerConveniosDeArca = createServerFn({ method: 'POST' })
+  .validator(z.object({ clientId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [rel] = await db
+      .select({
+        credencialId: clienteCredencial.credencialId,
+        delegaciones: clienteCredencial.delegacionesAfip,
+        estadoCredencial: credencialAfip.estado,
+      })
+      .from(clienteCredencial)
+      .innerJoin(
+        credencialAfip,
+        eq(credencialAfip.id, clienteCredencial.credencialId)
+      )
+      .where(eq(clienteCredencial.clienteId, ctx.data.clientId))
+      .orderBy(desc(clienteCredencial.preferida))
+      .limit(1);
+
+    if (!rel) {
+      throw new Error(
+        'La empresa todavía no tiene una clave de ARCA asociada, así que no se pueden consultar sus convenios. Cargala en la ficha del cliente.'
+      );
+    }
+
+    // Con la clave marcada inválida el scrapeo muere en el login, y eso ya lo
+    // sabemos de antes: el caso de Toloki SA, que tiene clave cargada pero
+    // nunca logró un login. Se dice acá en vez de gastar el intento.
+    if (rel.estadoCredencial === 'clave_invalida') {
+      throw new Error(
+        'La clave de ARCA de esta empresa está marcada como inválida, así que no se puede consultar ARCA. Actualizala en la ficha del cliente y volvé a intentar.'
+      );
+    }
+    if (rel.estadoCredencial === 'bloqueada') {
+      throw new Error(
+        'La clave de ARCA de esta empresa está bloqueada. Hay que desbloquearla en ARCA antes de consultar los convenios.'
+      );
+    }
+
+    // Si ya sabemos que el servicio no está delegado, decirlo antes de gastar
+    // un scrapeo que va a volver vacío.
+    const delegaciones = (rel.delegaciones ?? {}) as Record<
+      string,
+      { estado?: string } | undefined
+    >;
+    if (delegaciones[SERVICIO_CONVENIOS]?.estado === 'sin_delegacion') {
+      throw new Error(
+        'La clave de ARCA no tiene delegado el servicio «Simplificación Registral - Empleadores» para esta empresa, que es donde figuran sus convenios. Hay que delegarlo desde ARCA.'
+      );
+    }
+
+    const antes = await db
+      .select({ id: clienteCct.id })
+      .from(clienteCct)
+      .where(eq(clienteCct.clienteId, ctx.data.clientId));
+
+    await despacharJobYEsperar('convenios', rel.credencialId, orgId);
+
+    const despues = await db
+      .select({
+        cct: clienteCct.cctCodigo,
+        actividad: clienteCct.actividad,
+      })
+      .from(clienteCct)
+      .where(eq(clienteCct.clienteId, ctx.data.clientId));
+
+    return {
+      convenios: despues.length,
+      nuevos: Math.max(0, despues.length - antes.length),
+      // Que el job haya terminado bien y no haya traído nada no es un error:
+      // hay empresas sin convenio colectivo informado en ARCA.
+      sinInformar: despues.length === 0,
+    };
   });

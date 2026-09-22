@@ -34,6 +34,7 @@ grant select, insert, update, delete on
   comprobante, comprobante_alicuota,   -- comprobantes + su desglose por alícuota
   iva_declaracion,                     -- F2051
   libro_iva,                           -- Libro de IVA Digital (job libro_iva)
+  cliente_cct,                         -- CCT declarados por empleador (job convenios)
   deuda, vencimiento,                  -- CCMA y calendario de AFIP
   notificacion, notificacion_adjunto,  -- e-Ventanilla
   documento,                           -- adjuntos (el binario va a R2)
@@ -51,7 +52,7 @@ grant update (nombre, email, telefono, estado, ultimo_login_ok) on credencial_af
 -- Del vínculo cliente↔credencial solo cachea el índice posicional de AFIP.
 -- No puede crear vínculos: un CUIT desconocido va a `evento`, nunca a una fila acá.
 grant select on cliente_credencial to arca_scrapper;
-grant update (afip_contribuyente_id) on cliente_credencial to arca_scrapper;
+grant update (afip_contribuyente_id, delegaciones_afip) on cliente_credencial to arca_scrapper;
 
 -- Del cliente solo marca el estado del servicio ante AFIP (irregularidades/ok),
 -- que detecta el processor de comprobantes. El resto del cliente es del estudio.
@@ -94,6 +95,7 @@ begin
     'evento','job','notificacion','vencimiento',
     -- org vía cliente
     'cliente_credencial','iva_declaracion','libro_iva','cliente_monotributo',
+    'cliente_cct',
     -- hijas, heredan del padre
     'comprobante_alicuota','job_log','notificacion_adjunto',
     -- escalas salariales: convenio tiene org_id, categoria y escala cuelgan de él

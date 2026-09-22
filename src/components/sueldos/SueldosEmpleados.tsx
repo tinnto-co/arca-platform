@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SelectorFecha } from '@/components/shared/selector-fecha';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -167,6 +168,16 @@ function tipoJornadaLabel(v: string | null | undefined): string {
   if (v === 'reducida') return 'Reducida';
   return v ?? '—';
 }
+
+/** Las cuatro pestañas del alta, en el orden en que se completan. */
+const TABS_EMPLEADO = ['persona', 'laboral', 'pago', 'codigos'] as const;
+type TabEmpleado = (typeof TABS_EMPLEADO)[number];
+const TAB_LABEL: Record<TabEmpleado, string> = {
+  persona: 'Persona',
+  laboral: 'Laboral',
+  pago: 'Pago',
+  codigos: 'Códigos',
+};
 
 function formaPagoLabel(v: string | null | undefined): string {
   if (!v) return '—';
@@ -977,139 +988,123 @@ function EmpleadoDetalleDialog({
                   <>
                     <div className="space-y-1">
                       <Label>Modalidad contratación</Label>
-                      <Select
+                      <SearchableSelect
+                        width="100%"
                         value={modalidadContratacionId || '_ninguna'}
                         onValueChange={(v) =>
                           setModalidadContratacionId(v === '_ninguna' ? '' : v)
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sin modalidad" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">
-                            Sin modalidad
-                          </SelectItem>
-                          {catalogModalidades.map((m) => (
-                            <SelectItem key={m.id} value={m.id}>
-                              {m.codigo} — {m.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Sin modalidad"
+                        searchPlaceholder="Buscar por código o nombre…"
+                        emptyMessage="Sin opciones"
+                        options={[
+                          { value: '_ninguna', label: 'Sin modalidad' },
+                          ...catalogModalidades.map((m) => ({
+                            value: m.id,
+                            label: `${m.codigo} — ${m.nombre}`,
+                          })),
+                        ]}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Situación</Label>
-                      <Select
+                      <SearchableSelect
+                        width="100%"
                         value={situacionId || '_ninguna'}
                         onValueChange={(v) =>
                           setSituacionId(v === '_ninguna' ? '' : v)
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sin situación" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">
-                            Sin situación
-                          </SelectItem>
-                          {catalogSituaciones.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.codigo} — {s.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Sin situación"
+                        searchPlaceholder="Buscar por código o nombre…"
+                        emptyMessage="Sin opciones"
+                        options={[
+                          { value: '_ninguna', label: 'Sin situación' },
+                          ...catalogSituaciones.map((s) => ({
+                            value: s.id,
+                            label: `${s.codigo} — ${s.nombre}`,
+                          })),
+                        ]}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Zona</Label>
-                      <Select
+                      <SearchableSelect
+                        width="100%"
                         value={zonaId || '_ninguna'}
                         onValueChange={(v) =>
                           setZonaId(v === '_ninguna' ? '' : v)
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sin zona" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">Sin zona</SelectItem>
-                          {catalogZonas.map((z) => (
-                            <SelectItem key={z.id} value={z.id}>
-                              {z.codigo} — {z.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Sin zona"
+                        searchPlaceholder="Buscar por código o nombre…"
+                        emptyMessage="Sin opciones"
+                        options={[
+                          { value: '_ninguna', label: 'Sin zona' },
+                          ...catalogZonas.map((z) => ({
+                            value: z.id,
+                            label: `${z.codigo} — ${z.nombre}`,
+                          })),
+                        ]}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Condición</Label>
-                      <Select
+                      <SearchableSelect
+                        width="100%"
                         value={condicionId || '_ninguna'}
                         onValueChange={(v) =>
                           setCondicionId(v === '_ninguna' ? '' : v)
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sin condición" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">
-                            Sin condición
-                          </SelectItem>
-                          {catalogCondiciones.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.codigo} — {c.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Sin condición"
+                        searchPlaceholder="Buscar por código o nombre…"
+                        emptyMessage="Sin opciones"
+                        options={[
+                          { value: '_ninguna', label: 'Sin condición' },
+                          ...catalogCondiciones.map((c) => ({
+                            value: c.id,
+                            label: `${c.codigo} — ${c.nombre}`,
+                          })),
+                        ]}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Actividad</Label>
-                      <Select
+                      <SearchableSelect
+                        width="100%"
                         value={actividadId || '_ninguna'}
                         onValueChange={(v) =>
                           setActividadId(v === '_ninguna' ? '' : v)
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sin actividad" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">
-                            Sin actividad
-                          </SelectItem>
-                          {catalogActividades.map((a) => (
-                            <SelectItem key={a.id} value={a.id}>
-                              {a.codigo} — {a.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Sin actividad"
+                        searchPlaceholder="Buscar por código o nombre…"
+                        emptyMessage="Sin opciones"
+                        options={[
+                          { value: '_ninguna', label: 'Sin actividad' },
+                          ...catalogActividades.map((a) => ({
+                            value: a.id,
+                            label: `${a.codigo} — ${a.nombre}`,
+                          })),
+                        ]}
+                      />
                     </div>
                     <div className="space-y-1">
                       <Label>Siniestrado</Label>
-                      <Select
+                      <SearchableSelect
+                        width="100%"
                         value={siniestradoId || '_ninguna'}
                         onValueChange={(v) =>
                           setSiniestradoId(v === '_ninguna' ? '' : v)
                         }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Sin siniestrado" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-[240px]">
-                          <SelectItem value="_ninguna">
-                            Sin siniestrado
-                          </SelectItem>
-                          {catalogSiniestrados.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.codigo} — {s.nombre}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                        placeholder="Sin siniestrado"
+                        searchPlaceholder="Buscar por código o nombre…"
+                        emptyMessage="Sin opciones"
+                        options={[
+                          { value: '_ninguna', label: 'Sin siniestrado' },
+                          ...catalogSiniestrados.map((s) => ({
+                            value: s.id,
+                            label: `${s.codigo} — ${s.nombre}`,
+                          })),
+                        ]}
+                      />
                     </div>
                   </>
                 ) : (
@@ -1187,6 +1182,9 @@ function NuevoEmpleadoDialog({
   const [convenioId, setConvenioId] = useState('');
   const [categoriaId, setCategoriaId] = useState('');
   const [legajo, setLegajo] = useState('');
+  const [tab, setTab] = useState<TabEmpleado>('persona');
+  const indiceTab = TABS_EMPLEADO.indexOf(tab);
+  const esUltimaTab = indiceTab === TABS_EMPLEADO.length - 1;
   const [formaPago, setFormaPago] =
     useState<(typeof FORMAS_PAGO)[number]['value']>('efectivo');
   const [banco, setBanco] = useState('_otro banco');
@@ -1333,9 +1331,26 @@ function NuevoEmpleadoDialog({
       toast.error(err instanceof Error ? err.message : 'Error al crear'),
   });
 
+  /**
+   * Los tres datos obligatorios viven en dos pestañas distintas, así que un
+   * "faltan datos" a secas deja al usuario buscándolos: el aviso nombra el
+   * campo y la vista salta a su pestaña.
+   */
   const handleSubmit = () => {
-    if (!cuil.trim() || !legajo.trim() || !nombre.trim()) {
-      toast.error('CUIL, legajo y nombre son requeridos');
+    const faltan: { campo: string; tab: TabEmpleado }[] = [];
+    if (!cuil.trim()) faltan.push({ campo: 'CUIL', tab: 'persona' });
+    if (!nombre.trim())
+      faltan.push({ campo: 'Nombre completo', tab: 'persona' });
+    if (!legajo.trim()) faltan.push({ campo: 'Legajo', tab: 'laboral' });
+
+    if (faltan.length > 0) {
+      const primero = faltan[0];
+      setTab(primero.tab);
+      toast.error(
+        faltan.length === 1
+          ? `Falta completar ${primero.campo} (pestaña ${TAB_LABEL[primero.tab]})`
+          : `Faltan completar ${faltan.map((f) => f.campo).join(', ')}`
+      );
       return;
     }
     crear.mutate();
@@ -1353,12 +1368,17 @@ function NuevoEmpleadoDialog({
           <DialogTitle>Nuevo empleado</DialogTitle>
         </DialogHeader>
 
-        <Tabs defaultValue="persona" className="flex flex-col min-h-0 flex-1">
+        <Tabs
+          value={tab}
+          onValueChange={(v) => setTab(v as TabEmpleado)}
+          className="flex flex-col min-h-0 flex-1"
+        >
           <TabsList className="shrink-0 grid w-full grid-cols-4">
-            <TabsTrigger value="persona">Persona</TabsTrigger>
-            <TabsTrigger value="laboral">Laboral</TabsTrigger>
-            <TabsTrigger value="pago">Pago</TabsTrigger>
-            <TabsTrigger value="codigos">Códigos</TabsTrigger>
+            {TABS_EMPLEADO.map((t) => (
+              <TabsTrigger key={t} value={t}>
+                {TAB_LABEL[t]}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           <div className="overflow-y-auto flex-1 pt-4">
@@ -1392,24 +1412,23 @@ function NuevoEmpleadoDialog({
                 </div>
                 <div className="space-y-1">
                   <Label>Provincia</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={provinciaId || '_ninguna'}
                     onValueChange={(v) =>
                       setProvinciaId(v === '_ninguna' ? '' : v)
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin provincia" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin provincia</SelectItem>
-                      {catalogProvinciasCreate.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin provincia"
+                    searchPlaceholder="Buscar provincia…"
+                    emptyMessage="Sin provincias"
+                    options={[
+                      { value: '_ninguna', label: 'Sin provincia' },
+                      ...catalogProvinciasCreate.map((p) => ({
+                        value: p.id,
+                        label: p.nombre,
+                      })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Código postal</Label>
@@ -1533,62 +1552,49 @@ function NuevoEmpleadoDialog({
               <Seccion title="Obra social">
                 <div className="col-span-full space-y-1">
                   <Label>Obra social</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={obraSocialId || '_ninguna'}
                     onValueChange={(v) =>
                       setObraSocialId(v === '_ninguna' ? '' : v)
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin obra social" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin obra social</SelectItem>
-                      {obrasSocialesCreate.map((os) => (
-                        <SelectItem key={os.id} value={os.id}>
-                          {os.codigo} — {os.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin obra social"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyMessage="Sin obras sociales"
+                    options={[
+                      { value: '_ninguna', label: 'Sin obra social' },
+                      ...obrasSocialesCreate.map((os) => ({
+                        value: os.id,
+                        label: `${os.codigo} — ${os.nombre}`,
+                      })),
+                    ]}
+                  />
                 </div>
               </Seccion>
               <Seccion title="Datos de pago">
                 <div className="space-y-1">
                   <Label>Forma de pago</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={formaPago}
                     onValueChange={(v) => setFormaPago(v as typeof formaPago)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FORMAS_PAGO.map((f) => (
-                        <SelectItem key={f.value} value={f.value}>
-                          {f.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    searchPlaceholder="Buscar forma de pago…"
+                    options={FORMAS_PAGO.map((f) => ({
+                      value: f.value,
+                      label: f.label,
+                    }))}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Banco</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={banco || '_otro banco'}
                     onValueChange={setBanco}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      {BANCOS.map((b) => (
-                        <SelectItem key={b} value={b}>
-                          {b}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    searchPlaceholder="Buscar banco…"
+                    emptyMessage="Sin bancos"
+                    options={BANCOS.map((b) => ({ value: b, label: b }))}
+                  />
                 </div>
                 {(formaPago === 'deposito' ||
                   formaPago === 'transferencia') && (
@@ -1611,127 +1617,121 @@ function NuevoEmpleadoDialog({
               <Seccion title="Códigos auxiliares" cols={2}>
                 <div className="space-y-1">
                   <Label>Modalidad contratación</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={modalidadContratacionId || '_ninguna'}
                     onValueChange={(v) =>
                       setModalidadContratacionId(v === '_ninguna' ? '' : v)
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin modalidad" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin modalidad</SelectItem>
-                      {catalogModalidadesCreate.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          {m.codigo} — {m.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin modalidad"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyMessage="Sin opciones"
+                    options={[
+                      { value: '_ninguna', label: 'Sin modalidad' },
+                      ...catalogModalidadesCreate.map((m) => ({
+                        value: m.id,
+                        label: `${m.codigo} — ${m.nombre}`,
+                      })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Situación</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={situacionId || '_ninguna'}
                     onValueChange={(v) =>
                       setSituacionId(v === '_ninguna' ? '' : v)
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin situación" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin situación</SelectItem>
-                      {catalogSituacionesCreate.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.codigo} — {s.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin situación"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyMessage="Sin opciones"
+                    options={[
+                      { value: '_ninguna', label: 'Sin situación' },
+                      ...catalogSituacionesCreate.map((s) => ({
+                        value: s.id,
+                        label: `${s.codigo} — ${s.nombre}`,
+                      })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Zona</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={zonaId || '_ninguna'}
                     onValueChange={(v) => setZonaId(v === '_ninguna' ? '' : v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin zona" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin zona</SelectItem>
-                      {catalogZonasCreate.map((z) => (
-                        <SelectItem key={z.id} value={z.id}>
-                          {z.codigo} — {z.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin zona"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyMessage="Sin opciones"
+                    options={[
+                      { value: '_ninguna', label: 'Sin zona' },
+                      ...catalogZonasCreate.map((z) => ({
+                        value: z.id,
+                        label: `${z.codigo} — ${z.nombre}`,
+                      })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Condición</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={condicionId || '_ninguna'}
                     onValueChange={(v) =>
                       setCondicionId(v === '_ninguna' ? '' : v)
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin condición" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin condición</SelectItem>
-                      {catalogCondicionesCreate.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.codigo} — {c.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin condición"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyMessage="Sin opciones"
+                    options={[
+                      { value: '_ninguna', label: 'Sin condición' },
+                      ...catalogCondicionesCreate.map((c) => ({
+                        value: c.id,
+                        label: `${c.codigo} — ${c.nombre}`,
+                      })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Actividad</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={actividadId || '_ninguna'}
                     onValueChange={(v) =>
                       setActividadId(v === '_ninguna' ? '' : v)
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin actividad" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin actividad</SelectItem>
-                      {catalogActividadesCreate.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.codigo} — {a.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin actividad"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyMessage="Sin opciones"
+                    options={[
+                      { value: '_ninguna', label: 'Sin actividad' },
+                      ...catalogActividadesCreate.map((a) => ({
+                        value: a.id,
+                        label: `${a.codigo} — ${a.nombre}`,
+                      })),
+                    ]}
+                  />
                 </div>
                 <div className="space-y-1">
                   <Label>Siniestrado</Label>
-                  <Select
+                  <SearchableSelect
+                    width="100%"
                     value={siniestradoId || '_ninguna'}
                     onValueChange={(v) =>
                       setSiniestradoId(v === '_ninguna' ? '' : v)
                     }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sin siniestrado" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[240px]">
-                      <SelectItem value="_ninguna">Sin siniestrado</SelectItem>
-                      {catalogSiniestradosCreate.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.codigo} — {s.nombre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    placeholder="Sin siniestrado"
+                    searchPlaceholder="Buscar por código o nombre…"
+                    emptyMessage="Sin opciones"
+                    options={[
+                      { value: '_ninguna', label: 'Sin siniestrado' },
+                      ...catalogSiniestradosCreate.map((s) => ({
+                        value: s.id,
+                        label: `${s.codigo} — ${s.nombre}`,
+                      })),
+                    ]}
+                  />
                 </div>
               </Seccion>
               <Seccion title="Observaciones">
@@ -1748,13 +1748,38 @@ function NuevoEmpleadoDialog({
           </div>
         </Tabs>
 
-        <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
-          <Button variant="outline" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button disabled={crear.isPending} onClick={handleSubmit}>
-            {crear.isPending ? 'Guardando…' : 'Guardar'}
-          </Button>
+        {/* El alta se completa en cuatro pestañas: el botón principal avanza
+            y recién guarda en la última. Antes decía "Guardar" en todas y
+            fallaba pidiendo el legajo, que está en otra pestaña. */}
+        <div className="flex items-center gap-2 pt-4 border-t shrink-0">
+          <span className="text-[11.5px] text-[var(--arca-ink-4)]">
+            Paso {indiceTab + 1} de {TABS_EMPLEADO.length} · {TAB_LABEL[tab]}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            {indiceTab > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => setTab(TABS_EMPLEADO[indiceTab - 1])}
+              >
+                Atrás
+              </Button>
+            )}
+            {/* Se guarda solo al final: los datos obligatorios están repartidos
+                entre pestañas, así que un atajo a mitad de camino solo podía
+                terminar en el error de que falta el legajo. */}
+            {esUltimaTab ? (
+              <Button disabled={crear.isPending} onClick={handleSubmit}>
+                {crear.isPending ? 'Guardando…' : 'Guardar empleado'}
+              </Button>
+            ) : (
+              <Button onClick={() => setTab(TABS_EMPLEADO[indiceTab + 1])}>
+                Siguiente
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -8,6 +8,9 @@
 create type cuenta_bancaria_tipo as enum ('caja_ahorro', 'cuenta_corriente', 'otra');
 create type movimiento_direccion as enum ('ingreso', 'egreso');
 create type conciliacion_estado as enum ('sugerida', 'confirmada', 'rechazada');
+create type extracto_estado as enum (
+  'cargado', 'pendiente', 'procesando', 'extraido', 'error', 'confirmado', 'descartado'
+);
 
 -- ============================================================================
 -- CUENTAS BANCARIAS
@@ -57,6 +60,9 @@ create table movimiento_bancario (
   contraparte_texto text,
   id_externo text,
   datos_crudos jsonb,
+  categoria text,
+  categoria_fuente text check (categoria_fuente in ('sistema', 'manual')),
+  excluido boolean not null default false,
   fuente dato_fuente not null default 'import',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -84,6 +90,12 @@ comment on column movimiento_bancario.id_externo is
   'Identificador del movimiento en el banco. Es la clave de deduplicación: reimportar el mismo extracto no duplica movimientos.';
 comment on column movimiento_bancario.datos_crudos is
   'Fila original del extracto (CSV/API) sin procesar. Se conserva para poder reinterpretar sin volver a pedirle el archivo al cliente.';
+comment on column movimiento_bancario.categoria is
+  'Agrupación del movimiento (transferencias, impuestos, comisiones, ..., varios). La asigna el clasificador por palabras clave al importar; una persona puede pisarla.';
+comment on column movimiento_bancario.categoria_fuente is
+  'sistema = la puso el clasificador; manual = la corrigió una persona (y el clasificador no la vuelve a tocar).';
+comment on column movimiento_bancario.excluido is
+  'Excluido de la comparación Banco vs Facturación (ej. transferencia entre cuentas propias). Ajuste manual del estudio; el movimiento sigue existiendo.';
 
 -- ============================================================================
 -- CONCILIACIÓN
@@ -116,3 +128,51 @@ comment on column conciliacion_comprobante.estado is
   'sugerida = la propuso el sistema o la IA y falta que un humano la mire. confirmada = validada. rechazada = se descartó (se guarda para no volver a proponerla).';
 comment on column conciliacion_comprobante.confianza is
   'Puntaje 0..1 de la sugerencia automática. Null cuando la conciliación la hizo una persona.';
+
+
+-- ============================================================================
+-- EXTRACTOS BANCARIOS EN COLA
+-- ============================================================================
+
+create table extracto_bancario (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references organization(id) on delete cascade,
+  cliente_id uuid not null references cliente(id) on delete cascade,
+  documento_id uuid references documento(id) on delete set null,
+  nombre_archivo text not null,
+  estado extracto_estado not null default 'pendiente',
+  -- Lo que leyó el modelo: banco, período y una entrada por cuenta con sus
+  -- saldos y sus movimientos. Se guarda para poder revisarlo más tarde: la
+  -- lectura tarda minutos y el estudio no se queda mirando la pantalla.
+  extraccion jsonb,
+  -- Resumen desnormalizado para la lista de la cola, y así no hay que abrir
+  -- el jsonb de cada fila para pintarla.
+  banco text,
+  periodo_desde date,
+  periodo_hasta date,
+  cuentas_detectadas integer,
+  movimientos_detectados integer,
+  cuadra boolean,
+  error text,
+  intentos integer not null default 0,
+  procesado_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index idx_extracto_cliente on extracto_bancario(cliente_id);
+create index idx_extracto_org on extracto_bancario(org_id);
+-- El worker busca lo que falta procesar por estado y orden de llegada.
+create index idx_extracto_pendientes on extracto_bancario(estado, created_at)
+  where estado in ('pendiente', 'procesando');
+create trigger trg_set_updated_at before update on extracto_bancario for each row execute function set_updated_at();
+
+comment on table extracto_bancario is
+  'Un PDF de extracto subido, con su lectura y en qué punto de la cola está. Existe para que subir veinte extractos no obligue a esperar veinte lecturas con la pantalla abierta: se suben, se procesan en segundo plano de a varios, y se revisan cuando están.';
+comment on column extracto_bancario.estado is
+  'cargado = subido, todavía sin pedir la lectura (el estudio junta la tanda y aprieta Extraer). pendiente = en cola, el worker lo va a tomar. procesando = el modelo lo está leyendo. extraido = listo para que una persona lo revise. error = la lectura falló (el motivo está en `error`) y se puede reintentar. confirmado = sus movimientos ya se importaron. descartado = se decidió no importarlo.';
+comment on column extracto_bancario.extraccion is
+  'La lectura completa: { banco, periodoDesde, periodoHasta, cuentas: [{ numeroCuenta, cbu, tipo, moneda, saldoInicial, saldoFinal, movimientos: [...] }] }. Es la propuesta de la IA, no un dato confirmado: nada llega a movimiento_bancario sin que una persona confirme.';
+comment on column extracto_bancario.cuadra is
+  'Si TODAS las cuentas del extracto cierran (saldo inicial + ingresos - egresos = saldo final). Se guarda para poder ordenar la cola por lo que necesita atención.';
+comment on column extracto_bancario.intentos is
+  'Cuántas veces se intentó leer. Con el tope, un PDF que el modelo no puede leer no se reintenta para siempre.';

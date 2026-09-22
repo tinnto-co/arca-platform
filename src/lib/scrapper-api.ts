@@ -38,8 +38,20 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       typeof body === 'object' && body !== null
         ? (body as { error?: unknown }).error
         : undefined;
+    // Candado global del scrapper (SCRAPING_PAUSED): el 503 se traduce acá,
+    // una sola vez, así CUALQUIER botón de actualizar muestra el mismo aviso
+    // aunque el estado haya cambiado entre el load y el click.
+    const pausado =
+      res.status === 503 &&
+      typeof body === 'object' &&
+      body !== null &&
+      (body as { scrapingPaused?: unknown }).scrapingPaused === true;
     throw new ScrapperError(
-      typeof error === 'string' ? error : `${res.status} ${res.statusText}`,
+      pausado
+        ? 'Actualizaciones en pausa temporal — reintentá más tarde'
+        : typeof error === 'string'
+          ? error
+          : `${res.status} ${res.statusText}`,
       res.status,
       body
     );

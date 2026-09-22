@@ -49,6 +49,7 @@ import {
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
+import { BancoVsFacturacionCard } from '@/components/banco/BancoVsFacturacionCard';
 import { PanelLectura } from '@/components/notificaciones/PanelLectura';
 import { CrearTareaDesdeNotificacion } from '@/components/notificaciones/CrearTareaDesdeNotificacion';
 import {
@@ -66,6 +67,12 @@ import {
   markNotificationOpened,
 } from '@/actions/notification';
 import { scrapSingleJob, updateDeudaEstado } from '@/actions/client';
+import { getLibroIvaPeriodo } from '@/actions/iva';
+import { SERVICIO_AFIP_LABEL } from '@/lib/delegaciones-afip';
+import {
+  AVISO_SCRAPING_PAUSADO,
+  useScrapingPausado,
+} from '@/hooks/use-scraping-status';
 import {
   listSolicitudes,
   createSolicitud,
@@ -170,6 +177,48 @@ interface RepresentativeDetailPageProps {
 }
 
 /** Fecha y hora para el texto "Ult. actualización" en pestañas de scrape (Deudas, Vencimientos, etc.). */
+/** Estado de delegación por servicio de AFIP (lo escribe el scraper). */
+type DelegacionesAfip = Record<
+  string,
+  { estado: 'ok' | 'sin_delegacion'; at: string }
+> | null;
+
+function sinDelegacion(
+  delegaciones: DelegacionesAfip | undefined,
+  servicio: string
+): boolean {
+  return delegaciones?.[servicio]?.estado === 'sin_delegacion';
+}
+
+/**
+ * La solapa no está vacía porque no haya datos: AFIP no le muestra la empresa
+ * a esta credencial para ese servicio. Sin este aviso, el estudio reporta
+ * «no aparece nada» (caso KASUR).
+ */
+function AvisoSinDelegacion({
+  servicio,
+  credencialNombre,
+}: {
+  servicio: string;
+  credencialNombre: string | null;
+}) {
+  return (
+    <div className="flex items-start gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--arca-accent-warn-fg)]">
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        <span className="font-semibold">
+          Esta empresa no está conectada en AFIP para{' '}
+          {SERVICIO_AFIP_LABEL[servicio] ?? servicio}
+        </span>{' '}
+        con la credencial{credencialNombre ? ` de ${credencialNombre}` : ''}:
+        AFIP no la lista, así que no hay datos para traer. Se resuelve delegando
+        el servicio en «Administrador de Relaciones de Clave Fiscal» — la
+        plataforma lo detecta sola en la próxima actualización.
+      </span>
+    </div>
+  );
+}
+
 const formatLastUpdateAt = (iso: string | Date) =>
   new Date(iso).toLocaleString('es-AR', {
     day: '2-digit',
@@ -771,6 +820,8 @@ export function RepresentativeDetailPage({
     return new Date(b.createdAt) > new Date(a.createdAt) ? b : a;
   })();
 
+  const scrapingPausado = useScrapingPausado();
+
   const { data: lastIvaJob } = useQuery({
     queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
@@ -778,6 +829,20 @@ export function RepresentativeDetailPage({
         data: { credencialId: representativeId, jobType: 'iva' },
       }),
     enabled: !!representativeId,
+  });
+
+  // Frescura del dato de la pestaña IVA (misma query que la ficha del
+  // resumen: comparte cache por queryKey).
+  const { data: frescuraIva } = useQuery({
+    queryKey: ['libro-iva', selectedClientId, periodUsedForResumen],
+    queryFn: () =>
+      getLibroIvaPeriodo({
+        data: {
+          clienteId: selectedClientId!,
+          periodo: periodUsedForResumen!,
+        },
+      }),
+    enabled: !!selectedClientId && !!periodUsedForResumen,
   });
 
   const { data: lastNotificacionesJob } = useQuery({
@@ -1781,6 +1846,23 @@ export function RepresentativeDetailPage({
                       Clave de AFIP desactualizada
                     </span>
                   )}
+                  {(() => {
+                    const faltantes = Object.entries(
+                      selectedProfile?.delegacionesAfip ?? {}
+                    )
+                      .filter(([, v]) => v?.estado === 'sin_delegacion')
+                      .map(([k]) => SERVICIO_AFIP_LABEL[k] ?? k);
+                    if (faltantes.length === 0) return null;
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
+                        title={`AFIP no le muestra esta empresa a la credencial para: ${faltantes.join(', ')}. Se resuelve delegando el servicio en «Administrador de Relaciones de Clave Fiscal»; la plataforma lo detecta sola en la próxima actualización.`}
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        No conectada en AFIP · {faltantes.join(' · ')}
+                      </span>
+                    );
+                  })()}
                   {selectedProfile?.estadoAfip === 'irregularidades' && (
                     <span
                       className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
@@ -1849,10 +1931,23 @@ export function RepresentativeDetailPage({
               </div>
               {/* Actions */}
               <div className="flex items-center gap-1.5 shrink-0">
+                {scrapingPausado && (
+                  <span
+                    className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]"
+                    title="El servicio de actualización está pausado; se reanuda pronto."
+                  >
+                    Actualizaciones en pausa temporal
+                  </span>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={scrapingAll || !!scrapingSection}
+                  disabled={scrapingAll || !!scrapingSection || scrapingPausado}
+                  title={
+                    scrapingPausado
+                      ? AVISO_SCRAPING_PAUSADO
+                      : 'Traer de ARCA todo: deudas, vencimientos, IVA, notificaciones y facturas'
+                  }
                   onClick={async () => {
                     setScrapingAll(true);
                     toast('Iniciando la actualización');
@@ -1893,7 +1988,6 @@ export function RepresentativeDetailPage({
                       setScrapingAll(false);
                     }
                   }}
-                  title="Traer de ARCA todo: deudas, vencimientos, IVA, notificaciones y facturas"
                 >
                   {scrapingAll ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -2422,6 +2516,14 @@ export function RepresentativeDetailPage({
               `representative_balance_config` no existe en el modelo nuevo.
             */}
 
+            {/* Banco vs Facturación (TIN-1634): el semáforo del mes pasado.
+                Solo aparece si la empresa tiene cuentas bancarias cargadas. */}
+            {selectedClientId && (
+              <div className="max-w-[560px]">
+                <BancoVsFacturacionCard clienteId={selectedClientId} compacto />
+              </div>
+            )}
+
             {/* Datos fiscales para el módulo de Balances (norma RT 54/RT 6,
                 actividad e inscripción). Por empresa seleccionada. */}
             {selectedClientId && (
@@ -2493,6 +2595,12 @@ export function RepresentativeDetailPage({
 
           {/* Deudas Tab */}
           <TabsContent value="deudas" className="space-y-[14px]">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'ctacte') && (
+              <AvisoSinDelegacion
+                servicio="ctacte"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Resumen. La forma la pone `CardsResumen`; acá sólo qué
                 significa cada cifra y con qué acento se lee. */}
             {!loadingDebts && debts.length > 0 && (
@@ -2564,7 +2672,8 @@ export function RepresentativeDetailPage({
                 <div className="flex-1" />
                 <Button
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('deudas');
                     try {
@@ -2997,6 +3106,12 @@ export function RepresentativeDetailPage({
 
           {/* Vencimientos Tab */}
           <TabsContent value="vencimientos" className="space-y-[14px]">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'ctacte') && (
+              <AvisoSinDelegacion
+                servicio="ctacte"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Resumen, con la misma banda que Deudas. Los acentos los
                 elige el significado: rojo lo vencido, ámbar lo que se viene,
                 acento lo informativo. */}
@@ -3080,7 +3195,8 @@ export function RepresentativeDetailPage({
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('vencimientos');
                     try {
@@ -3219,6 +3335,15 @@ export function RepresentativeDetailPage({
 
           {/* Notificaciones Tab - mismo formato que la vista del navbar */}
           <TabsContent value="notificaciones" className="mt-2 space-y-[14px]">
+            {sinDelegacion(
+              selectedProfile?.delegacionesAfip,
+              'domicilio_fiscal'
+            ) && (
+              <AvisoSinDelegacion
+                servicio="domicilio_fiscal"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Misma franja de actualización que Deudas y Vencimientos. */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3262,7 +3387,8 @@ export function RepresentativeDetailPage({
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('notificaciones');
                     try {
@@ -3321,11 +3447,21 @@ export function RepresentativeDetailPage({
 
           {/* Facturas Tab */}
           <TabsContent value="facturas" className="space-y-[14px]">
+            {sinDelegacion(
+              selectedProfile?.delegacionesAfip,
+              'mis_comprobantes'
+            ) && (
+              <AvisoSinDelegacion
+                servicio="mis_comprobantes"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* <div className="flex justify-end">
             <Button
               variant="default"
               size="sm"
-              disabled={!!scrapingSection}
+              disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
               onClick={async () => {
                 setScrapingSection("facturas");
                 try {
@@ -3600,7 +3736,8 @@ export function RepresentativeDetailPage({
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('facturas');
                     try {
@@ -4236,25 +4373,32 @@ export function RepresentativeDetailPage({
 
           {/* IVA Tab */}
           <TabsContent value="iva" className="">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'portal_iva') && (
+              <AvisoSinDelegacion
+                servicio="portal_iva"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* Misma franja de actualización que el resto de las pestañas. */}
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
+                  {/* La frescura de la pestaña es la de los COMPROBANTES (la
+                      fuente del estimado), no la del job del Portal IVA: son
+                      pipelines distintos y el rojo global mentía cuando el
+                      Portal fallaba con los comprobantes al día. */}
                   <p className="text-[11.5px] text-[var(--arca-ink-4)]">
-                    Últ. actualización{' '}
-                    {lastIvaJob?.createdAt ? (
-                      <span
-                        className={
-                          lastIvaJob.success
-                            ? 'text-[var(--arca-accent-pos-fg)] font-medium'
-                            : 'text-destructive'
-                        }
-                        title={
-                          friendlyFailedReason(lastIvaJob.failedReason) ??
-                          undefined
-                        }
-                      >
-                        {formatLastUpdateAt(lastIvaJob.createdAt)}
+                    Comprobantes al día al{' '}
+                    {frescuraIva?.ultimaEmision ? (
+                      <span className="text-[var(--arca-accent-pos-fg)] font-medium">
+                        {new Date(frescuraIva.ultimaEmision).toLocaleDateString(
+                          'es-AR',
+                          {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          }
+                        )}
                       </span>
                     ) : (
                       '—'
@@ -4263,7 +4407,9 @@ export function RepresentativeDetailPage({
                   {lastIvaJob &&
                     !lastIvaJob.success &&
                     lastIvaJob.failedReason && (
-                      <p className="text-[11px] text-destructive max-w-md">
+                      <p className="text-[11px] max-w-md text-[var(--arca-accent-warn-fg)]">
+                        El último intento de traer la DDJJ del Portal IVA (
+                        {formatLastUpdateAt(lastIvaJob.createdAt)}) falló:{' '}
                         {friendlyFailedReason(lastIvaJob.failedReason)}
                       </p>
                     )}
@@ -4291,7 +4437,10 @@ export function RepresentativeDetailPage({
                         <Button
                           variant="default"
                           size="sm"
-                          disabled={!!scrapingSection}
+                          disabled={!!scrapingSection || scrapingPausado}
+                          title={
+                            scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined
+                          }
                         >
                           Actualizar IVA
                         </Button>

@@ -21,6 +21,10 @@ import { PageShell } from '@/components/shared/page-shell';
 import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 import { dispatchAllJobs } from '@/actions/job';
 import {
+  AVISO_SCRAPING_PAUSADO,
+  useScrapingPausado,
+} from '@/hooks/use-scraping-status';
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -36,6 +40,7 @@ export const Route = createFileRoute('/_authed/clients/')({
 
 function UpdateAllButton() {
   const [open, setOpen] = useState(false);
+  const scrapingPausado = useScrapingPausado();
   const queryClient = useQueryClient();
 
   const dispatchMutation = useMutation({
@@ -68,13 +73,20 @@ function UpdateAllButton() {
       <Tooltip>
         <DialogTrigger asChild>
           <TooltipTrigger asChild>
-            <Button variant="outline" size="icon" aria-label="Actualizar todos">
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={scrapingPausado}
+              aria-label="Actualizar todos"
+            >
               <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} />
             </Button>
           </TooltipTrigger>
         </DialogTrigger>
         <TooltipContent>
-          Traer de ARCA los datos de todos los clientes
+          {scrapingPausado
+            ? AVISO_SCRAPING_PAUSADO
+            : 'Traer de ARCA los datos de todos los clientes'}
         </TooltipContent>
       </Tooltip>
       <DialogContent>

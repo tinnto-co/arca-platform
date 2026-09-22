@@ -8108,6 +8108,8 @@ function Contabilizar({
 
   const invoices = data?.invoices ?? [];
   const hasFy = data?.hasFiscalYear ?? true;
+  /** El backend cortó la lista: hay más comprobantes que el tope que trae. */
+  const truncado = data?.truncado ?? false;
 
   // Se marca cualquier factura de un período abierto: las pendientes para
   // generar, las contabilizadas para regenerar o anular.
@@ -8231,6 +8233,16 @@ function Contabilizar({
 
   return (
     <div className="space-y-4">
+      {truncado && (
+        <ArcaCard>
+          <div className="px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-2)]">
+            Esta empresa tiene más comprobantes de los que entran en la
+            previsualización: se muestran los más antiguos del ejercicio.
+            Contabilizá por tandas, o acotá con el filtro de ventas y compras.
+          </div>
+        </ArcaCard>
+      )}
+
       {/* Los filtros afuera de la tabla y la explicación detrás del botón de
         ayuda: eran cuatro renglones fijos arriba de todo. */}
       <div className="flex flex-wrap items-center gap-2">

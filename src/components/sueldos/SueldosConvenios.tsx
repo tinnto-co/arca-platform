@@ -13,6 +13,8 @@ import {
   Loader2,
   CheckCircle2,
   Pencil,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { SelectorFecha } from '@/components/shared/selector-fecha';
@@ -48,6 +50,7 @@ import {
   listCategoriasByConvenio,
   listEscalasByCategoria,
   listConveniosAfipEmpleadores,
+  traerConveniosDeArca,
   agregarConvenioDesdeAfipEmpleadores,
   createConvenio,
   updateConvenio,
@@ -106,6 +109,34 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
       (c) => c.nombre === cct || (c.cctCodigo ?? '') === cct
     );
 
+  /**
+   * Trae los CCT de ARCA para esta empresa. El diálogo antes decía "todavía
+   * no se trajeron" sin ofrecer forma de traerlos: para toda empresa dada de
+   * alta después de la carga inicial, era un callejón sin salida.
+   */
+  const traerDeArca = useMutation({
+    mutationFn: () => traerConveniosDeArca({ data: { clientId } }),
+    onSuccess: (r) => {
+      void queryClient.invalidateQueries({
+        queryKey: ['convenios-afip-empleadores', clientId],
+      });
+      if (r.sinInformar) {
+        toast.info('ARCA no informa convenios para esta empresa', {
+          description:
+            'Cargalo a mano con «Nuevo convenio» si sabés cuál le corresponde.',
+        });
+      } else {
+        toast.success(
+          r.nuevos > 0
+            ? `${r.nuevos} convenio${r.nuevos === 1 ? '' : 's'} nuevo${r.nuevos === 1 ? '' : 's'} de ARCA`
+            : `${r.convenios} convenio${r.convenios === 1 ? '' : 's'} de ARCA, sin cambios`
+        );
+      }
+    },
+    // El error se muestra dentro del diálogo (ver más abajo): un toast se va
+    // solo y acá hace falta leerlo para decidir si reintentar.
+  });
+
   const agregarDesdeAfip = useMutation({
     mutationFn: (afipConvenioId: string) =>
       agregarConvenioDesdeAfipEmpleadores({
@@ -159,9 +190,62 @@ export function SueldosConvenios({ clientId }: SueldosConveniosProps) {
           </DialogHeader>
           <div className="grid gap-2 py-4">
             {conveniosAfip.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Todavía no se trajeron convenios de ARCA para este cliente.
-              </p>
+              <div className="flex flex-col items-start gap-3">
+                <p className="text-sm text-muted-foreground">
+                  Para esta empresa no hay convenios traídos de ARCA. Se
+                  consultan en «Simplificación Registral - Empleadores», con la
+                  clave fiscal del estudio.
+                </p>
+
+                {/* El error queda a la vista y no en un toast que se va: Mi
+                    Simplificación de ARCA es intermitente, así que reintentar
+                    es parte del uso normal y no una excepción. (El 7 de 10 que
+                    midió el scrapper es el peor caso: corridas seguidas sobre
+                    la misma clave, que además disparan el freno de AFIP. En
+                    uso real la tasa es mejor.) */}
+                {traerDeArca.isError && (
+                  <div className="flex items-start gap-2 rounded-lg border border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] px-3 py-2.5 text-xs leading-relaxed text-[var(--arca-accent-warn-fg)]">
+                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                    <span>
+                      {traerDeArca.error instanceof Error
+                        ? traerDeArca.error.message
+                        : 'No se pudieron traer los convenios.'}
+                    </span>
+                  </div>
+                )}
+
+                <Button
+                  className="gap-2"
+                  disabled={traerDeArca.isPending}
+                  onClick={() => traerDeArca.mutate()}
+                >
+                  {traerDeArca.isPending ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-4" />
+                  )}
+                  {traerDeArca.isPending
+                    ? 'Consultando ARCA…'
+                    : traerDeArca.isError
+                      ? 'Reintentar'
+                      : 'Buscar en ARCA'}
+                </Button>
+                {traerDeArca.isPending && (
+                  <p className="text-xs text-muted-foreground">
+                    Entra a ARCA con la clave del estudio: puede tardar un par
+                    de minutos.
+                  </p>
+                )}
+                {/* Insistir empeora las cosas: ARCA frena la clave cuando se
+                    entra muchas veces seguidas, así que al segundo fallo
+                    conviene decirlo en vez de dejar que el usuario machaque. */}
+                {traerDeArca.isError && traerDeArca.failureCount > 1 && (
+                  <p className="text-xs text-muted-foreground">
+                    Si vuelve a fallar, esperá unos minutos antes de insistir:
+                    ARCA frena la clave cuando se entra muchas veces seguidas.
+                  </p>
+                )}
+              </div>
             ) : (
               conveniosAfip.map((c) => {
                 const yaTiene = convenioYaTieneCct(c.cct);

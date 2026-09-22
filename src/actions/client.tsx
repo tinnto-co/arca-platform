@@ -455,7 +455,16 @@ export const getCredencialClientes = createServerFn({
     const { orgId } = await getSessionWithOrg();
 
     return await db
-      .select(clienteBaseSelect)
+      .select({
+        ...clienteBaseSelect,
+        // Por servicio de AFIP, si ESTA credencial ve a la empresa (lo
+        // escribe el scraper): la ficha avisa «no conectada» por solapa.
+        // El cast tipa el jsonb — `unknown` rompe la serialización del fn.
+        delegacionesAfip: sql<Record<
+          string,
+          { estado: 'ok' | 'sin_delegacion'; at: string }
+        > | null>`${clienteCredencial.delegacionesAfip}`,
+      })
       .from(clienteCredencial)
       .innerJoin(cliente, eq(cliente.id, clienteCredencial.clienteId))
       .where(

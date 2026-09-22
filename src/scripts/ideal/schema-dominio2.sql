@@ -51,6 +51,9 @@ insert into comprobante_tipo (codigo, descripcion, letra, clase, es_nc, discrimi
   (52,  'Nota de Débito M',                   'M', 'nota_debito',  false, true),
   (53,  'Nota de Crédito M',                  'M', 'nota_credito', true,  true),
   (54,  'Recibo M',                           'M', 'recibo',       false, true),
+  -- El despacho de importación entra al libro de COMPRAS: el IVA aduanero del
+  -- Concepto 415 es crédito fiscal. Sin letra: no participa del desglose A/B.
+  (66,  'Despacho de importación',           null,'factura',      false, true),
   -- Liquidaciones y cuentas de venta. Aparecen en el libro de COMPRAS (agro,
   -- consignaciones). Faltaban: un ZIP de recibidos con un código 63 abortaba la
   -- importación entera del perfil y dejaba las compras en cero — con la posición
@@ -355,3 +358,53 @@ create trigger trg_set_updated_at before update on liquidacion_iibb for each row
 comment on table liquidacion_iibb is
   'Datos que carga el estudio para liquidar Ingresos Brutos de un cliente en un período y una provincia. La base imponible sale de los comprobantes; acá van la alícuota y los créditos (retenciones, percepciones, saldo a favor).';
 comment on column liquidacion_iibb.alicuota is 'Alícuota de la jurisdicción como fracción (0.030000 = 3%).';
+
+-- ============================================================================
+-- DESPACHOS DE IMPORTACIÓN (IVA aduanero, Concepto 415)
+-- ============================================================================
+-- El IVA aduanero no figura en los registros estándar de ARCA: llega en PDFs
+-- de despacho (Importación Directa) o del courier (Destinación Simplificada).
+-- Esta tabla guarda la EXTRACCIÓN (IA + revisión humana); al confirmarse se
+-- genera la compra como `comprobante` tipo 66 y el crédito fiscal entra solo
+-- al estimado de IVA y a balances. El PDF queda en `documento` como respaldo.
+
+create type despacho_tipo as enum ('importacion_directa', 'destinacion_simplificada');
+create type despacho_estado as enum ('extraido', 'revision', 'confirmado', 'descartado');
+
+create table despacho_importacion (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references organization(id) on delete cascade,
+  cliente_id uuid not null references cliente(id) on delete cascade,
+  documento_id uuid not null references documento(id),
+  tipo despacho_tipo not null,
+  numero text not null,
+  fecha date,
+  -- Los 3 datos extraídos del documento, crudos:
+  alicuota numeric(5, 2) not null,
+  iva_usd numeric(15, 2) not null,
+  tipo_cambio numeric(15, 6) not null,
+  -- Los derivados, GUARDADOS al confirmar (iva_usd × tc; neto = iva/alícuota):
+  iva_pesos numeric(15, 2) not null,
+  neto_gravado numeric(15, 2) not null,
+  total numeric(15, 2) not null,
+  estado despacho_estado not null default 'extraido',
+  comprobante_id uuid references comprobante(id) on delete set null,
+  extraccion jsonb,
+  creado_por text references "user"(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (cliente_id, tipo, numero),
+  constraint despacho_confirmado_con_comprobante check (
+    (estado = 'confirmado') = (comprobante_id is not null)
+  )
+);
+create index idx_despacho_org on despacho_importacion(org_id);
+create index idx_despacho_cliente on despacho_importacion(cliente_id);
+create trigger trg_set_updated_at before update on despacho_importacion for each row execute function set_updated_at();
+
+comment on table despacho_importacion is
+  'Despacho de importación extraído de un PDF (IA propone, una persona confirma). Al confirmar se crea la compra (`comprobante` tipo 66) y comprobante_id la referencia; `revision` es para alícuotas fuera de 21/10,5 u otra extracción dudosa — nunca un cálculo erróneo silencioso.';
+comment on column despacho_importacion.numero is
+  'Identidad real del documento: N° de despacho (Importación Directa) o N° de manifiesto (Destinación Simplificada). El `numero` del comprobante generado es un hash numérico estable de este texto.';
+comment on column despacho_importacion.extraccion is
+  'Respuesta cruda del modelo, para auditar qué leyó la IA antes de cualquier edición humana.';
