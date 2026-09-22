@@ -3677,6 +3677,14 @@ export const reorderMappingRules = createServerFn({ method: 'POST' })
  * Copia las reglas de una empresa a otra (isActive=false). Resuelve las cuentas
  * por código en la empresa destino; salta reglas con cuentas que no existen allí. (US 3.1.5)
  */
+/** Una regla que no se copió, con el porqué, para avisarlo en la pantalla. */
+export interface ReglaOmitida {
+  nombre: string;
+  motivo: 'ya_existe' | 'sin_lineas' | 'cuentas_faltantes';
+  /** Códigos de cuenta que la empresa destino no tiene. */
+  cuentas?: string[];
+}
+
 export const importMappingRules = createServerFn({ method: 'POST' })
   .validator(
     z.object({ fromClientId: z.string().uuid(), toClientId: z.string().uuid() })
@@ -3696,7 +3704,31 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       .from(reglaMapeo)
       .where(eq(reglaMapeo.clienteId, fromClientId))
       .orderBy(asc(reglaMapeo.prioridad));
-    if (srcRules.length === 0) return { created: 0, skipped: [] as string[] };
+    if (srcRules.length === 0)
+      return { created: 0, skipped: [] as ReglaOmitida[] };
+
+    // Lo que la empresa destino ya tiene: una regla con el mismo nombre y
+    // módulo no se copia de nuevo. Antes, importar dos veces las duplicaba.
+    const yaTiene = await db
+      .select({
+        nombre: reglaMapeo.nombre,
+        modulo: reglaMapeo.modulo,
+        prioridad: reglaMapeo.prioridad,
+      })
+      .from(reglaMapeo)
+      .where(eq(reglaMapeo.clienteId, toClientId));
+    const existentes = new Set(
+      yaTiene.map((r) => `${r.modulo}|${r.nombre.trim().toLowerCase()}`)
+    );
+    // Las copias van al final de la cola de su módulo, no intercaladas con las
+    // reglas propias por conservar la prioridad de la empresa de origen.
+    const ultimaPrioridad = new Map<string, number>();
+    for (const r of yaTiene) {
+      ultimaPrioridad.set(
+        r.modulo,
+        Math.max(ultimaPrioridad.get(r.modulo) ?? 0, r.prioridad)
+      );
+    }
 
     const srcLines = await db
       .select({
@@ -3738,17 +3770,34 @@ export const importMappingRules = createServerFn({ method: 'POST' })
     }
 
     let created = 0;
-    const skipped: string[] = [];
+    const skipped: ReglaOmitida[] = [];
     for (const r of srcRules) {
       const lines = linesByRule.get(r.id) ?? [];
       const resolved = lines.map((l) => ({
         ...l,
         targetId: codeToId.get(l.code),
       }));
-      if (lines.length < 2 || resolved.some((l) => !l.targetId)) {
-        skipped.push(r.nombre);
+      if (existentes.has(`${r.modulo}|${r.nombre.trim().toLowerCase()}`)) {
+        skipped.push({ nombre: r.nombre, motivo: 'ya_existe' });
         continue;
       }
+      if (lines.length < 2) {
+        skipped.push({ nombre: r.nombre, motivo: 'sin_lineas' });
+        continue;
+      }
+      const faltantes = [
+        ...new Set(resolved.filter((l) => !l.targetId).map((l) => l.code)),
+      ];
+      if (faltantes.length > 0) {
+        skipped.push({
+          nombre: r.nombre,
+          motivo: 'cuentas_faltantes',
+          cuentas: faltantes,
+        });
+        continue;
+      }
+      const prioridad = (ultimaPrioridad.get(r.modulo) ?? 0) + 10;
+      ultimaPrioridad.set(r.modulo, prioridad);
       await db.transaction(async (tx) => {
         const [nr] = await tx
           .insert(reglaMapeo)
@@ -3759,7 +3808,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
             modulo: r.modulo,
             tipo: r.tipo,
             condicion: r.condicion,
-            prioridad: r.prioridad,
+            prioridad,
             activa: false,
           })
           .returning();

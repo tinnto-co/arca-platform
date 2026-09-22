@@ -7960,8 +7960,19 @@ function ImportRulesDialog({
       }),
     onSuccess: (res) => {
       toast.success(
-        `${res.created} regla(s) importada(s) (inactivas)${res.skipped.length ? ` · ${res.skipped.length} omitida(s) por cuentas faltantes` : ''}`
+        `${res.created} regla(s) importada(s), inactivas y al final de la cola`
       );
+      // Antes solo se decía cuántas quedaron afuera y siempre por el mismo
+      // motivo. Ahora cada una dice el suyo, con las cuentas que faltan.
+      for (const r of res.skipped) {
+        const motivo =
+          r.motivo === 'ya_existe'
+            ? 'la empresa ya tiene una regla con ese nombre'
+            : r.motivo === 'sin_lineas'
+              ? 'la regla de origen no tiene líneas suficientes'
+              : `faltan cuentas en el plan: ${(r.cuentas ?? []).join(', ')}`;
+        toast.warning(`«${r.nombre}» no se importó: ${motivo}`);
+      }
       onDone();
     },
     onError: (e: Error) => toast.error(e.message),
