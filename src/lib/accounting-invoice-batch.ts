@@ -20,7 +20,7 @@ import {
   evento,
   organizationModule,
 } from '@/drizzle/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   armarLineas,
   calcularImportes,
@@ -208,9 +208,26 @@ export async function runPendingInvoiceBatch(opts?: {
               AND a.origen_tipo = 'comprobante'
               AND a.origen_id = ${comprobante.id}
               AND a.anulado = false
+          )`,
+          // Solo los que hoy se pueden contabilizar: con ejercicio que cubra
+          // la fecha y período abierto. Sin esto, los que el job saltea
+          // (histórico sin ejercicio, períodos cerrados) volvían en cada
+          // corrida y con el tope de 50 podían ocupar todos los lugares, así
+          // que las facturas nuevas no se contabilizaban nunca.
+          sql`EXISTS (
+            SELECT 1 FROM ejercicio e
+            JOIN periodo_contable p
+              ON p.ejercicio_id = e.id
+             AND p.periodo = date_trunc('month', ${comprobante.fechaEmision}::date)::date
+            WHERE e.cliente_id = ${comprobante.clienteId}
+              AND ${comprobante.fechaEmision} BETWEEN e.fecha_desde AND e.fecha_hasta
+              AND p.estado <> 'cerrado'
           )`
         )
       )
+      // Orden estable y del más viejo al más nuevo: el asiento se numera en
+      // el orden en que ocurrieron las cosas.
+      .orderBy(asc(comprobante.fechaEmision), asc(comprobante.id))
       .limit(batchSize);
 
     if (pendientes.length === 0) continue;
