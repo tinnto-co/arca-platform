@@ -7253,14 +7253,19 @@ function RuleEditorDialog({
       (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
     );
   const needsDirection = sourceModule === 'comprobante';
-  const canSave =
-    !!name.trim() && linesOk && (!needsDirection || condDirection !== '');
   const cuadre =
     sourceModule === 'comprobante'
       ? analizarCuadreRegla(
           lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
         )
       : null;
+  // Una regla que no cuadra manda la diferencia a "Pendiente de revisión" y
+  // traba el cierre del período: no se guarda.
+  const canSave =
+    !!name.trim() &&
+    linesOk &&
+    (!needsDirection || condDirection !== '') &&
+    cuadre?.estado !== 'descuadra';
 
   const onNameChange = (v: string) => {
     setName(v);

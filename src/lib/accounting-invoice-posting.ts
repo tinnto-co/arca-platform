@@ -12,8 +12,8 @@
 import type { comprobanteDireccion } from '@/drizzle/schema';
 import {
   cerrarPorDiferencia,
+  detectarTapadas,
   num,
-  ordenDeEvaluacion,
   round2,
   seleccionarPorPrioridad,
   type AsientoArmado,
@@ -225,15 +225,7 @@ export function detectarReglasTapadas(
     activa: boolean;
   })[]
 ): Map<string, { id: string; nombre: string }> {
-  const out = new Map<string, { id: string; nombre: string }>();
-  // Se mira en el orden en que el motor las prueba, no en el de la lista: una
-  // default ya no tapa a una condicional que esté más abajo.
-  const activas = ordenDeEvaluacion(reglas.filter((r) => r.activa));
-  activas.forEach((b, i) => {
-    const tapa = activas.slice(0, i).find((a) => reglaCubre(a, b));
-    if (tapa) out.set(b.id, { id: tapa.id, nombre: tapa.nombre });
-  });
-  return out;
+  return detectarTapadas(reglas, reglaCubre);
 }
 
 export type EstadoCuadre =

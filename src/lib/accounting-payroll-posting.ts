@@ -168,6 +168,22 @@ export function seleccionarReglaConcepto(
   return seleccionarPorPrioridad(rules, concept, reglaMatcheaConcepto);
 }
 
+/**
+ * ¿Todo lo que matchea `b` ya se lo lleva `a`? En sueldos alcanza con el caso
+ * grande: una regla por defecto, o una condicional sin condición, agarra
+ * cualquier concepto y deja sin efecto a todo lo que venga después. Comparar
+ * códigos y rangos entre sí queda para cuando haga falta: ante la duda no se
+ * avisa nada.
+ */
+export function reglaCubreConcepto(
+  a: Pick<ReglaLike, 'tipo' | 'condicion'>,
+  _b: Pick<ReglaLike, 'tipo' | 'condicion'>
+): boolean {
+  if (a.tipo === 'default') return true;
+  const cond = a.condicion;
+  return !cond || typeof cond !== 'object' || Object.keys(cond).length === 0;
+}
+
 /** Trazabilidad concepto → regla, para el log y la UI de revisión. */
 export interface MapeoConcepto {
   codigo: string;

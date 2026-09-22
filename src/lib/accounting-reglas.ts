@@ -128,6 +128,28 @@ export function seleccionarPorPrioridad<T>(
   return null;
 }
 
+/**
+ * Para cada regla activa que nunca se va a aplicar, la primera anterior que la
+ * tapa. Se mira en el orden en que el motor las prueba. `cubre(a, b)` lo pone
+ * cada módulo: sabe si todo lo que matchea `b` ya lo agarró `a`.
+ */
+export function detectarTapadas<
+  T extends Pick<ReglaLike, 'id' | 'nombre' | 'tipo' | 'condicion'> & {
+    activa: boolean;
+  },
+>(
+  reglas: T[],
+  cubre: (a: T, b: T) => boolean
+): Map<string, { id: string; nombre: string }> {
+  const out = new Map<string, { id: string; nombre: string }>();
+  const activas = ordenDeEvaluacion(reglas.filter((r) => r.activa));
+  activas.forEach((b, i) => {
+    const tapa = activas.slice(0, i).find((a) => cubre(a, b));
+    if (tapa) out.set(b.id, { id: tapa.id, nombre: tapa.nombre });
+  });
+  return out;
+}
+
 /** Suma del Debe y del Haber de un conjunto de líneas. */
 export function totalesDeLineas(lineas: LineaArmada[]): {
   debe: number;

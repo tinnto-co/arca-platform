@@ -34,6 +34,13 @@ import {
   asientoTemplate,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
+import { reglaCubreConcepto } from '@/lib/accounting-payroll-posting';
+import {
+  BASES_POR_MODULO,
+  detectarTapadas,
+  type Base as BaseRegla,
+  type ModuloRegla,
+} from '@/lib/accounting-reglas';
 import {
   assertPostableAccounts,
   insertarAsientoConLineas,
@@ -85,6 +92,7 @@ import {
   EXPENSE_FUNCTION_LABELS,
   type AccountGroup,
   CASH_FLOW_ACTIVITY_FROM_DB,
+  MAPPING_AMOUNT_BASIS_LABELS,
   type AccountingFramework,
 } from '@/lib/accounting-labels';
 import {
@@ -3147,10 +3155,13 @@ async function loadMappingRuleForOrg(
 
 interface RuleLineInput {
   side: 'debe' | 'haber';
-  amountBasis: string;
+  amountBasis: BaseRegla;
   fixedAmount?: number | null;
 }
-function validateRuleLines(lines: RuleLineInput[]): void {
+function validateRuleLines(
+  lines: RuleLineInput[],
+  sourceModule: ModuloRegla
+): void {
   if (lines.length < 2)
     throw new Error('La regla debe tener al menos 2 líneas');
   const hasDebit = lines.some((l) => l.side === 'debe');
@@ -3160,7 +3171,13 @@ function validateRuleLines(lines: RuleLineInput[]): void {
       'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
     );
   }
+  const bases = BASES_POR_MODULO[sourceModule];
   for (const l of lines) {
+    if (!bases.includes(l.amountBasis)) {
+      throw new Error(
+        `La base "${MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}" no aplica a este módulo`
+      );
+    }
     if (
       l.amountBasis === 'fijo' &&
       (l.fixedAmount == null || l.fixedAmount <= 0)
@@ -3169,6 +3186,17 @@ function validateRuleLines(lines: RuleLineInput[]): void {
         'Las líneas con base "monto fijo" requieren un importe mayor a 0'
       );
     }
+  }
+  // Un asiento que no cuadra manda la diferencia a "Pendiente de revisión" y
+  // bloquea el cierre del período. Antes se avisaba y se guardaba igual.
+  const cuadre = analizarCuadreRegla(
+    lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
+  );
+  if (cuadre.estado === 'descuadra') {
+    throw new Error(
+      cuadre.mensaje ??
+        'Las líneas de la regla no cuadran: el Debe y el Haber no suman lo mismo'
+    );
   }
 }
 
@@ -3289,18 +3317,23 @@ export const listMappingRules = createServerFn({ method: 'GET' })
       }
     }
 
-    // El solapamiento se calcula siempre sobre la cola completa de facturas,
-    // aunque el filtro de módulo esté puesto: la cola es la misma.
-    const invoiceRules = rules
-      .filter((r) => r.modulo === 'comprobante')
-      .map((r) => ({
-        id: r.id,
-        nombre: r.nombre,
-        tipo: r.tipo,
-        condicion: (r.condicion ?? null) as Record<string, unknown> | null,
-        activa: r.activa,
-      }));
-    const shadowed = detectarReglasTapadas(invoiceRules);
+    // El solapamiento se calcula sobre la cola completa de cada módulo, aunque
+    // el filtro esté puesto: la cola es la misma. Sueldos también se revisa,
+    // con su propia idea de qué regla tapa a cuál.
+    const deLaCola = (modulo: 'comprobante' | 'recibo') =>
+      rules
+        .filter((r) => r.modulo === modulo)
+        .map((r) => ({
+          id: r.id,
+          nombre: r.nombre,
+          tipo: r.tipo,
+          condicion: (r.condicion ?? null) as Record<string, unknown> | null,
+          activa: r.activa,
+        }));
+    const shadowed = new Map([
+      ...detectarReglasTapadas(deLaCola('comprobante')),
+      ...detectarTapadas(deLaCola('recibo'), reglaCubreConcepto),
+    ]);
 
     return rules.map((r): MappingRuleListRow => {
       const cond = (r.condicion ?? null) as Record<string, unknown> | null;
@@ -3430,7 +3463,7 @@ export const createMappingRule = createServerFn({ method: 'POST' })
     assertOwner(role);
     const d = ctx.data;
     await ensureClientBelongsToOrg(d.clientId, orgId);
-    validateRuleLines(d.lines);
+    validateRuleLines(d.lines, d.sourceModule);
     await assertPostableAccounts(
       d.clientId,
       orgId,
@@ -3498,7 +3531,7 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
     assertOwner(role);
     const d = ctx.data;
     const rule = await loadMappingRuleForOrg(d.id, orgId);
-    validateRuleLines(d.lines);
+    validateRuleLines(d.lines, d.sourceModule);
     await assertPostableAccounts(
       rule.clienteId,
       orgId,
