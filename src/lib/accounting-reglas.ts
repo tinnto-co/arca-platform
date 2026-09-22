@@ -95,7 +95,26 @@ export const CLAVES_CONDICION_POR_MODULO: Record<
 };
 
 /**
- * La primera regla que matchea, por el orden en que vienen (prioridad asc).
+ * El orden real en que se prueban las reglas: primero las condicionales, en el
+ * orden de la cola, y al final las "por defecto".
+ *
+ * La pantalla siempre dijo que una regla por defecto se usa "cuando ninguna
+ * otra aplica", pero el motor iba solo por prioridad: una default creada
+ * primero tapaba a todas las condicionales de abajo, y las reglas nuevas se
+ * agregan al final de la cola. Entre condicionales, y entre defaults, sigue
+ * mandando la prioridad.
+ */
+export function ordenDeEvaluacion<T extends Pick<ReglaLike, 'tipo'>>(
+  reglas: T[]
+): T[] {
+  return [
+    ...reglas.filter((r) => r.tipo !== 'default'),
+    ...reglas.filter((r) => r.tipo === 'default'),
+  ];
+}
+
+/**
+ * La primera regla que matchea, en el orden de evaluación.
  * Cada módulo pone su propia forma de matchear.
  */
 export function seleccionarPorPrioridad<T>(
@@ -103,7 +122,7 @@ export function seleccionarPorPrioridad<T>(
   item: T,
   matchea: (regla: ReglaLike, item: T) => boolean
 ): ReglaLike | null {
-  for (const r of reglas) {
+  for (const r of ordenDeEvaluacion(reglas)) {
     if (matchea(r, item)) return r;
   }
   return null;
