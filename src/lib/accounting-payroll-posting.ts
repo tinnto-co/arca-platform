@@ -19,12 +19,17 @@ import {
   tipoConceptoDesdeCodigoSos,
   type TipoConceptoSos,
 } from './sos-recibo-totales';
-import type {
-  AsientoArmado,
-  LineaArmada,
-  Lado,
-  ReglaLike,
-} from './accounting-invoice-posting';
+import {
+  cerrarPorDiferencia,
+  num,
+  round2,
+  seleccionarPorPrioridad,
+  TOLERANCIA,
+  type AsientoArmado,
+  type Lado,
+  type LineaArmada,
+  type ReglaLike,
+} from './accounting-reglas';
 
 /** Un concepto liquidado, tal como sale de `liquidacion_import_concepto_valor`. */
 export interface ConceptoLiquidadoLike {
@@ -43,13 +48,6 @@ export interface ConceptoAgregado {
   /** Suma del concepto sobre todos los recibos del período. */
   monto: number;
 }
-
-const num = (v: string | number | null | undefined): number => {
-  const x = typeof v === 'number' ? v : parseFloat(v ?? '0');
-  return isNaN(x) ? 0 : x;
-};
-const round2 = (x: number): number =>
-  Math.round((x + Number.EPSILON) * 100) / 100;
 
 const TIPOS_VALIDOS: readonly string[] = [
   'remunerativo',
@@ -167,10 +165,7 @@ export function seleccionarReglaConcepto(
   rules: ReglaLike[],
   concept: ConceptoAgregado
 ): ReglaLike | null {
-  for (const r of rules) {
-    if (reglaMatcheaConcepto(r, concept)) return r;
-  }
-  return null;
+  return seleccionarPorPrioridad(rules, concept, reglaMatcheaConcepto);
 }
 
 /** Trazabilidad concepto → regla, para el log y la UI de revisión. */
@@ -233,7 +228,7 @@ export function armarLineasSueldos(
     importe: number,
     descripcion: string | null
   ) => {
-    if (Math.abs(importe) <= 0.005) return;
+    if (Math.abs(importe) <= TOLERANCIA) return;
     const key = claveLinea(cuentaId, lado);
     const prev = acc.get(key);
     if (prev) prev.importe = round2(prev.importe + importe);
@@ -319,21 +314,15 @@ export function armarLineasSueldos(
     };
   }
 
-  // Cierre por residuo: garantiza que el asiento balancee siempre.
-  const sumD = round2(lineas.reduce((s, l) => s + l.debe, 0));
-  const sumC = round2(lineas.reduce((s, l) => s + l.haber, 0));
-  const residual = round2(sumD - sumC);
-  if (Math.abs(residual) > 0.005) {
-    lineas.push({
-      cuentaId: cuentaPendienteRevisionId,
-      debe: residual > 0 ? 0 : -residual,
-      haber: residual > 0 ? residual : 0,
-      descripcion: 'Diferencia a imputar (redondeo / regla incompleta)',
-    });
+  // Cierre por diferencia: garantiza que el asiento balancee siempre.
+  const cierre = cerrarPorDiferencia(lineas, cuentaPendienteRevisionId, {
+    descripcion: 'Diferencia a imputar (redondeo / regla incompleta)',
+    motivo:
+      'Las reglas no cubren el total del período (diferencia a pending_review)',
+  });
+  if (cierre.cerro) {
     usoPendienteRevision = true;
-    motivo =
-      motivo ??
-      'Las reglas no cubren el total del período (diferencia a pending_review)';
+    motivo = motivo ?? cierre.motivo;
   }
 
   return {

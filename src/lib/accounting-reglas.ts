@@ -1,0 +1,145 @@
+/**
+ * Núcleo común de las reglas de mapeo (asientos automáticos).
+ *
+ * Una regla dice a qué cuentas va cada cosa y con qué importe. Hoy hay dos
+ * módulos que las usan —facturas (`comprobante`) y sueldos (`recibo`)— y viene
+ * un tercero, los movimientos del banco. Lo que es igual en todos vive acá:
+ * la forma de la regla y de sus líneas, la elección por prioridad, el cierre
+ * por diferencia contra "Pendiente de revisión" y qué bases y qué condiciones
+ * tienen sentido en cada módulo.
+ *
+ * Lo propio de cada módulo —qué condición se entiende y de dónde sale el
+ * importe— queda en su motor: `accounting-invoice-posting.ts` para facturas y
+ * `accounting-payroll-posting.ts` para sueldos.
+ *
+ * Funciones puras: no tocan la base.
+ */
+import type {
+  asientoLineaLado,
+  reglaMapeoBase,
+  reglaMapeoModulo,
+  reglaMapeoTipo,
+} from '@/drizzle/schema';
+
+export type Lado = (typeof asientoLineaLado.enumValues)[number];
+export type Base = (typeof reglaMapeoBase.enumValues)[number];
+export type ReglaTipo = (typeof reglaMapeoTipo.enumValues)[number];
+export type ModuloRegla = (typeof reglaMapeoModulo.enumValues)[number];
+
+export interface ReglaLineaLike {
+  cuentaId: string;
+  lado: Lado;
+  base: Base;
+  importeFijo?: number | string | null;
+  descripcion?: string | null;
+}
+
+export interface ReglaLike {
+  id: string;
+  nombre: string;
+  tipo: ReglaTipo;
+  condicion: Record<string, unknown> | null;
+  prioridad: number;
+  lineas: ReglaLineaLike[];
+}
+
+export interface LineaArmada {
+  cuentaId: string;
+  debe: number;
+  haber: number;
+  descripcion: string | null;
+}
+
+export interface AsientoArmado {
+  lineas: LineaArmada[];
+  usoPendienteRevision: boolean;
+  /** Motivo por el que cayó (parcial o total) a pendiente de revisión, si aplica. */
+  motivo: string | null;
+}
+
+export const num = (v: string | number | null | undefined): number => {
+  const x = typeof v === 'number' ? v : parseFloat(v ?? '0');
+  return isNaN(x) ? 0 : x;
+};
+
+export const round2 = (x: number): number =>
+  Math.round((x + Number.EPSILON) * 100) / 100;
+
+/** Menos que esto es redondeo, no una diferencia real. */
+export const TOLERANCIA = 0.005;
+
+/**
+ * Bases que tienen sentido en cada módulo. Una factura tiene total, neto, IVA
+ * y otros tributos; un concepto de sueldos, su propio valor; un movimiento del
+ * banco, su importe (que se guarda como `total`). El importe fijo sirve en
+ * todos.
+ */
+export const BASES_POR_MODULO: Record<ModuloRegla, readonly Base[]> = {
+  comprobante: ['total', 'neto', 'iva', 'otros_tributos', 'fijo'],
+  recibo: ['valor_concepto', 'fijo'],
+  movimiento_bancario: ['total', 'fijo'],
+};
+
+/**
+ * Qué puede filtrar la condición de cada módulo. Una clave que no esté acá
+ * hace que la regla no matchee: es preferible caer a "Pendiente de revisión"
+ * que imputar a una cuenta equivocada.
+ */
+export const CLAVES_CONDICION_POR_MODULO: Record<
+  ModuloRegla,
+  readonly string[]
+> = {
+  comprobante: ['direccion', 'letra'],
+  recibo: ['soscode', 'codigo', 'tipo', 'soscodefrom', 'soscodeto'],
+  movimiento_bancario: ['categoria', 'direccion', 'cuenta_bancaria_id'],
+};
+
+/**
+ * La primera regla que matchea, por el orden en que vienen (prioridad asc).
+ * Cada módulo pone su propia forma de matchear.
+ */
+export function seleccionarPorPrioridad<T>(
+  reglas: ReglaLike[],
+  item: T,
+  matchea: (regla: ReglaLike, item: T) => boolean
+): ReglaLike | null {
+  for (const r of reglas) {
+    if (matchea(r, item)) return r;
+  }
+  return null;
+}
+
+/** Suma del Debe y del Haber de un conjunto de líneas. */
+export function totalesDeLineas(lineas: LineaArmada[]): {
+  debe: number;
+  haber: number;
+  residuo: number;
+} {
+  const debe = round2(lineas.reduce((s, l) => s + l.debe, 0));
+  const haber = round2(lineas.reduce((s, l) => s + l.haber, 0));
+  return { debe, haber, residuo: round2(debe - haber) };
+}
+
+/**
+ * Si las líneas no cierran, agrega la diferencia contra "Pendiente de
+ * revisión" y devuelve el motivo. Es la garantía de que el asiento siempre
+ * balancea: la diferencia queda a la vista y bloquea el cierre del período
+ * hasta que alguien la corrija.
+ *
+ * Muta `lineas` a propósito: los motores la llaman con su propio arreglo.
+ */
+export function cerrarPorDiferencia(
+  lineas: LineaArmada[],
+  cuentaPendienteRevisionId: string,
+  textos: { descripcion: string; motivo: string }
+): { cerro: boolean; motivo: string | null } {
+  const { residuo } = totalesDeLineas(lineas);
+  if (Math.abs(residuo) <= TOLERANCIA) return { cerro: false, motivo: null };
+  lineas.push({
+    cuentaId: cuentaPendienteRevisionId,
+    debe: residuo > 0 ? 0 : -residuo,
+    haber: residuo > 0 ? residuo : 0,
+    descripcion: textos.descripcion,
+  });
+  return { cerro: true, motivo: textos.motivo };
+}

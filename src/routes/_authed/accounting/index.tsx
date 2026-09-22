@@ -139,6 +139,7 @@ import {
   analizarCuadreRegla,
   direccionSugeridaPorNombre,
 } from '@/lib/accounting-invoice-posting';
+import { BASES_POR_MODULO, type ModuloRegla } from '@/lib/accounting-reglas';
 import {
   variablesDelBalance,
   missingVars,
@@ -6637,14 +6638,20 @@ type RuleAmountBasis =
   | 'valor_concepto'
   | 'fijo';
 
-const AMOUNT_BASES: RuleAmountBasis[] = [
-  'total',
-  'neto',
-  'iva',
-  'otros_tributos',
-  'valor_concepto',
-  'fijo',
-];
+/**
+ * Las bases se ofrecen según el módulo: una factura tiene total, neto, IVA y
+ * otros tributos; un concepto de sueldos, su propio valor. Antes se ofrecían
+ * las seis en todos, y elegir una que no aplica dejaba la línea en cero.
+ */
+const basesDelModulo = (modulo: ModuloRegla): RuleAmountBasis[] =>
+  BASES_POR_MODULO[modulo] as RuleAmountBasis[];
+
+/** La base que queda al cambiar de módulo, si la elegida ya no aplica. */
+const baseValidaEnModulo = (
+  base: RuleAmountBasis,
+  modulo: ModuloRegla
+): RuleAmountBasis =>
+  basesDelModulo(modulo).includes(base) ? base : basesDelModulo(modulo)[0];
 
 /** Letras de comprobante soportadas por la condición (clave "type"). */
 const INVOICE_TYPE_OPTIONS = ['A', 'B', 'C', 'M', 'E'];
@@ -6676,8 +6683,6 @@ function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
     description: '',
   };
 }
-
-type ModuloRegla = 'comprobante' | 'recibo' | 'movimiento_bancario';
 
 /** Aviso sobre cómo se va a comportar una regla (solapada, sin cuadre…). */
 function AvisoRegla({
@@ -7385,11 +7390,18 @@ function RuleEditorDialog({
           >
             <Select
               value={sourceModule}
-              onValueChange={(v) =>
-                setSourceModule(
-                  v as 'comprobante' | 'recibo' | 'movimiento_bancario'
-                )
-              }
+              onValueChange={(v) => {
+                const modulo = v as ModuloRegla;
+                setSourceModule(modulo);
+                // Las bases cambian con el módulo: "Total del comprobante" no
+                // existe en sueldos. Sin esto, la línea quedaba sin base.
+                setLines((prev) =>
+                  prev.map((l) => ({
+                    ...l,
+                    amountBasis: baseValidaEnModulo(l.amountBasis, modulo),
+                  }))
+                );
+              }}
             >
               <SelectTrigger className="w-full text-[12.5px]">
                 <SelectValue />
@@ -7691,7 +7703,7 @@ function RuleEditorDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {AMOUNT_BASES.map((b) => (
+                  {basesDelModulo(sourceModule).map((b) => (
                     <SelectItem key={b} value={b}>
                       {MAPPING_AMOUNT_BASIS_LABELS[b]}
                     </SelectItem>
