@@ -34,7 +34,12 @@ import {
   asientoTemplate,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
-import { nextEntryNumber } from '@/lib/accounting-posting-db';
+import {
+  assertPostableAccounts,
+  loadActiveMappingRules,
+  loadPendingReviewAccountId,
+  nextEntryNumber,
+} from '@/lib/accounting-posting-db';
 import type { LayoutEntry } from '@/lib/accounting-document';
 import {
   buildClosingEntries,
@@ -2012,46 +2017,6 @@ function validateLineAmounts(lines: { debit: number; credit: number }[]) {
   return { totalDebit: td, totalCredit: tc };
 }
 
-/** Valida que las cuentas de las líneas sean imputables y activas para la empresa. */
-async function assertPostableAccounts(
-  clientId: string,
-  orgId: string,
-  accountIds: string[]
-) {
-  const ids = [...new Set(accountIds)];
-  const accs = await db
-    .select()
-    .from(cuenta)
-    .where(and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ids)));
-  const overrides = await db
-    .select()
-    .from(clienteCuenta)
-    .where(
-      and(
-        eq(clienteCuenta.clienteId, clientId),
-        inArray(clienteCuenta.cuentaId, ids)
-      )
-    );
-  const ovMap = new Map(overrides.map((o) => [o.cuentaId, o]));
-  const byId = new Map(accs.map((a) => [a.id, a]));
-  for (const id of ids) {
-    const a = byId.get(id);
-    if (!a)
-      throw new Error('Una de las cuentas no existe o no pertenece al estudio');
-    if (a.alcance === 'propia' && a.clienteId !== clientId) {
-      throw new Error('Una de las cuentas es custom de otra empresa');
-    }
-    if (a.tipo !== 'imputable') {
-      throw new Error(
-        `La cuenta ${a.codigo} es de agrupación; solo se imputan cuentas imputables`
-      );
-    }
-    const active = ovMap.get(id)?.activa ?? a.activa;
-    if (!active)
-      throw new Error(`La cuenta ${a.codigo} está inactiva para esta empresa`);
-  }
-}
-
 /** Cuentas imputables y activas de la empresa, para el selector de líneas del asiento. */
 export const getPostableAccounts = createServerFn({ method: 'GET' })
   .validator(z.object({ clientId: z.string().uuid() }))
@@ -3784,76 +3749,9 @@ export const importMappingRules = createServerFn({ method: 'POST' })
 
 /* ════════════ Asientos automáticos desde facturas (US 3.2.x) ════════════ */
 
-/** Cuenta de sistema pending_review (base, a nivel estudio). Lanza si falta. */
-async function loadPendingReviewAccountId(orgId: string): Promise<string> {
-  const [acc] = await db
-    .select({ id: cuenta.id })
-    .from(cuenta)
-    .where(
-      and(
-        eq(cuenta.orgId, orgId),
-        eq(cuenta.alcance, 'base'),
-        eq(cuenta.codigo, PENDING_REVIEW_CODE)
-      )
-    )
-    .limit(1);
-  if (!acc) {
-    throw new Error(
-      'Falta la cuenta de sistema "Pendiente de revisión". Re-sembrá el plan base'
-    );
-  }
-  return acc.id;
-}
-
-/** Reglas de facturas activas de una empresa, con sus líneas, ordenadas por prioridad. */
-async function loadActiveInvoiceRules(clientId: string): Promise<ReglaLike[]> {
-  const rules = await db
-    .select()
-    .from(reglaMapeo)
-    .where(
-      and(
-        eq(reglaMapeo.clienteId, clientId),
-        eq(reglaMapeo.modulo, 'comprobante'),
-        eq(reglaMapeo.activa, true)
-      )
-    )
-    .orderBy(asc(reglaMapeo.prioridad), asc(reglaMapeo.nombre));
-  if (rules.length === 0) return [];
-
-  const lines = await db
-    .select()
-    .from(reglaMapeoLinea)
-    .where(
-      inArray(
-        reglaMapeoLinea.reglaId,
-        rules.map((r) => r.id)
-      )
-    )
-    .orderBy(asc(reglaMapeoLinea.orden));
-  const byRule = new Map<string, typeof lines>();
-  for (const l of lines) {
-    const arr = byRule.get(l.reglaId) ?? [];
-    arr.push(l);
-    byRule.set(l.reglaId, arr);
-  }
-
-  return rules.map(
-    (r): ReglaLike => ({
-      id: r.id,
-      nombre: r.nombre,
-      tipo: r.tipo,
-      condicion: (r.condicion ?? null) as Record<string, unknown> | null,
-      prioridad: r.prioridad,
-      lineas: (byRule.get(r.id) ?? []).map((l) => ({
-        cuentaId: l.cuentaId,
-        lado: l.lado,
-        base: l.base,
-        importeFijo: l.importeFijo,
-        descripcion: l.descripcion,
-      })),
-    })
-  );
-}
+/** Reglas de facturas activas de la empresa, con sus líneas, por prioridad. */
+const loadActiveInvoiceRules = (clientId: string): Promise<ReglaLike[]> =>
+  loadActiveMappingRules(clientId, 'comprobante');
 
 /** Asiento auto vigente (no anulado) de una factura, si existe. */
 async function findAutoEntryForInvoice(clientId: string, invoiceId: string) {
