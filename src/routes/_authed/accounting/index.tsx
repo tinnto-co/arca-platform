@@ -139,6 +139,7 @@ import {
   analizarCuadreRegla,
   direccionSugeridaPorNombre,
 } from '@/lib/accounting-invoice-posting';
+import { BASES_POR_MODULO, type ModuloRegla } from '@/lib/accounting-reglas';
 import {
   variablesDelBalance,
   missingVars,
@@ -192,6 +193,7 @@ import {
   type MappingRuleListRow,
   getInvoicePostingPreview,
   generateInvoiceEntries,
+  regenerateEntriesForRule,
   regenerateInvoiceEntry,
   regenerateInvoiceEntries,
   getPendingReviewEntries,
@@ -6637,14 +6639,20 @@ type RuleAmountBasis =
   | 'valor_concepto'
   | 'fijo';
 
-const AMOUNT_BASES: RuleAmountBasis[] = [
-  'total',
-  'neto',
-  'iva',
-  'otros_tributos',
-  'valor_concepto',
-  'fijo',
-];
+/**
+ * Las bases se ofrecen según el módulo: una factura tiene total, neto, IVA y
+ * otros tributos; un concepto de sueldos, su propio valor. Antes se ofrecían
+ * las seis en todos, y elegir una que no aplica dejaba la línea en cero.
+ */
+const basesDelModulo = (modulo: ModuloRegla): RuleAmountBasis[] =>
+  BASES_POR_MODULO[modulo] as RuleAmountBasis[];
+
+/** La base que queda al cambiar de módulo, si la elegida ya no aplica. */
+const baseValidaEnModulo = (
+  base: RuleAmountBasis,
+  modulo: ModuloRegla
+): RuleAmountBasis =>
+  basesDelModulo(modulo).includes(base) ? base : basesDelModulo(modulo)[0];
 
 /** Letras de comprobante soportadas por la condición (clave "type"). */
 const INVOICE_TYPE_OPTIONS = ['A', 'B', 'C', 'M', 'E'];
@@ -6676,8 +6684,6 @@ function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
     description: '',
   };
 }
-
-type ModuloRegla = 'comprobante' | 'recibo' | 'movimiento_bancario';
 
 /** Aviso sobre cómo se va a comportar una regla (solapada, sin cuadre…). */
 function AvisoRegla({
@@ -7143,6 +7149,7 @@ function RuleEditorDialog({
   onSaved: () => void;
 }) {
   const isEdit = state.mode === 'edit';
+  const qc = useQueryClient();
   const { data: postable = [] } = useQuery({
     queryKey: ['accounting', 'postable', clientId],
     queryFn: () => getPostableAccounts({ data: { clientId } }),
@@ -7248,14 +7255,19 @@ function RuleEditorDialog({
       (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
     );
   const needsDirection = sourceModule === 'comprobante';
-  const canSave =
-    !!name.trim() && linesOk && (!needsDirection || condDirection !== '');
   const cuadre =
     sourceModule === 'comprobante'
       ? analizarCuadreRegla(
           lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
         )
       : null;
+  // Una regla que no cuadra manda la diferencia a "Pendiente de revisión" y
+  // traba el cierre del período: no se guarda.
+  const canSave =
+    !!name.trim() &&
+    linesOk &&
+    (!needsDirection || condDirection !== '') &&
+    cuadre?.estado !== 'descuadra';
 
   const onNameChange = (v: string) => {
     setName(v);
@@ -7304,8 +7316,39 @@ function RuleEditorDialog({
       }
     },
     onSuccess: () => {
-      toast.success(isEdit ? 'Regla actualizada' : 'Regla creada');
+      const generados = isEdit ? (existing?.generatedOpenCount ?? 0) : 0;
+      // Editar la regla no rehace lo ya contabilizado: se ofrece hacerlo acá
+      // mismo, que antes había que buscarlo a mano en Contabilizar.
+      if (generados > 0 && sourceModule === 'comprobante') {
+        toast.success('Regla actualizada', {
+          description: `${generados} asiento(s) del período abierto se generaron con la versión anterior.`,
+          action: {
+            label: 'Regenerarlos',
+            onClick: () => regenerarMut.mutate(),
+          },
+          duration: 10000,
+        });
+      } else {
+        toast.success(isEdit ? 'Regla actualizada' : 'Regla creada');
+      }
       onSaved();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const regenerarMut = useMutation({
+    mutationFn: () =>
+      regenerateEntriesForRule({
+        data: { ruleId: (state as { ruleId: string }).ruleId },
+      }),
+    onSuccess: (r) => {
+      toast.success(
+        `${r.regenerated} asiento(s) regenerado(s)` +
+          (r.skippedEdited > 0
+            ? ` · ${r.skippedEdited} editado(s) a mano se conservan`
+            : '')
+      );
+      void qc.invalidateQueries({ queryKey: ['accounting'] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -7360,8 +7403,8 @@ function RuleEditorDialog({
             }}
           >
             ⚠ {existing.generatedOpenCount} asiento(s) del período abierto se
-            generaron con la versión anterior. No se regenerarán
-            automáticamente.
+            generaron con la versión anterior. Al guardar te ofrecemos
+            regenerarlos.
           </div>
         )}
 
@@ -7385,11 +7428,18 @@ function RuleEditorDialog({
           >
             <Select
               value={sourceModule}
-              onValueChange={(v) =>
-                setSourceModule(
-                  v as 'comprobante' | 'recibo' | 'movimiento_bancario'
-                )
-              }
+              onValueChange={(v) => {
+                const modulo = v as ModuloRegla;
+                setSourceModule(modulo);
+                // Las bases cambian con el módulo: "Total del comprobante" no
+                // existe en sueldos. Sin esto, la línea quedaba sin base.
+                setLines((prev) =>
+                  prev.map((l) => ({
+                    ...l,
+                    amountBasis: baseValidaEnModulo(l.amountBasis, modulo),
+                  }))
+                );
+              }}
             >
               <SelectTrigger className="w-full text-[12.5px]">
                 <SelectValue />
@@ -7691,7 +7741,7 @@ function RuleEditorDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {AMOUNT_BASES.map((b) => (
+                  {basesDelModulo(sourceModule).map((b) => (
                     <SelectItem key={b} value={b}>
                       {MAPPING_AMOUNT_BASIS_LABELS[b]}
                     </SelectItem>
@@ -7943,8 +7993,19 @@ function ImportRulesDialog({
       }),
     onSuccess: (res) => {
       toast.success(
-        `${res.created} regla(s) importada(s) (inactivas)${res.skipped.length ? ` · ${res.skipped.length} omitida(s) por cuentas faltantes` : ''}`
+        `${res.created} regla(s) importada(s), inactivas y al final de la cola`
       );
+      // Antes solo se decía cuántas quedaron afuera y siempre por el mismo
+      // motivo. Ahora cada una dice el suyo, con las cuentas que faltan.
+      for (const r of res.skipped) {
+        const motivo =
+          r.motivo === 'ya_existe'
+            ? 'la empresa ya tiene una regla con ese nombre'
+            : r.motivo === 'sin_lineas'
+              ? 'la regla de origen no tiene líneas suficientes'
+              : `faltan cuentas en el plan: ${(r.cuentas ?? []).join(', ')}`;
+        toast.warning(`«${r.nombre}» no se importó: ${motivo}`);
+      }
       onDone();
     },
     onError: (e: Error) => toast.error(e.message),

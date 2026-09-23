@@ -86,6 +86,54 @@ describe('reglaMatchea / seleccionarRegla', () => {
   });
 });
 
+describe('las reglas por defecto se prueban al final', () => {
+  // La pantalla dice que la default se usa "cuando ninguna otra aplica", y las
+  // reglas nuevas se agregan al final de la cola: antes, una default creada
+  // primero se quedaba con todo.
+  const defaultVentas = regla({
+    id: 'default-ventas',
+    tipo: 'default',
+    condicion: { direccion: 'emitido' },
+    prioridad: 10,
+  });
+  const ventasA = regla({
+    id: 'ventas-a',
+    condicion: { direccion: 'emitido', letra: ['A'] },
+    prioridad: 90,
+  });
+
+  it('gana la condicional aunque la default esté antes en la cola', () => {
+    expect(
+      seleccionarRegla([defaultVentas, ventasA], comp({ letra: 'A' }))?.id
+    ).toBe('ventas-a');
+  });
+
+  it('la default sigue aplicando a lo que ninguna condicional cubre', () => {
+    expect(
+      seleccionarRegla([defaultVentas, ventasA], comp({ letra: 'C' }))?.id
+    ).toBe('default-ventas');
+  });
+
+  it('entre condicionales manda la prioridad', () => {
+    const otra = regla({
+      id: 'ventas-ab',
+      condicion: { direccion: 'emitido', letra: ['A', 'B'] },
+      prioridad: 20,
+    });
+    expect(seleccionarRegla([otra, ventasA], comp({ letra: 'A' }))?.id).toBe(
+      'ventas-ab'
+    );
+  });
+
+  it('una default arriba ya no figura como que tapa a una condicional', () => {
+    const tapadas = detectarReglasTapadas([
+      { ...defaultVentas, activa: true },
+      { ...ventasA, activa: true },
+    ]);
+    expect(tapadas.has('ventas-a')).toBe(false);
+  });
+});
+
 describe('reglaCubre / detectarReglasTapadas', () => {
   it('dos reglas con la misma condición: la segunda queda tapada', () => {
     const tapadas = detectarReglasTapadas([

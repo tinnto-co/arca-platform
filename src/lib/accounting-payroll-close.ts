@@ -13,7 +13,6 @@
 import { db } from '@/lib/db';
 import {
   asiento,
-  asientoLinea,
   cierreSueldos,
   concepto,
   evento,
@@ -31,7 +30,7 @@ import {
   loadAccountLabels,
   loadActiveMappingRules,
   loadPendingReviewAccountId,
-  nextEntryNumber,
+  insertarAsientoConLineas,
   resolvePeriodForDate,
 } from '@/lib/accounting-posting-db';
 import { normalizarPeriodoYYYYMM } from '@/lib/payroll-period-rules';
@@ -227,8 +226,6 @@ export async function closePayrollPeriod(
 
   // 6. Persistencia atómica: cierre + asiento + líneas + evento.
   return await db.transaction(async (tx) => {
-    const number = await nextEntryNumber(tx, clientId, resolved.fy.id);
-
     const [cierre] = await tx
       .insert(cierreSueldos)
       .values({
@@ -241,35 +238,22 @@ export async function closePayrollPeriod(
       })
       .returning();
 
-    const [je] = await tx
-      .insert(asiento)
-      .values({
-        orgId,
-        clienteId: clientId,
-        ejercicioId: resolved.fy.id,
-        periodoId: resolved.period.id,
-        numero: number,
-        fecha: fechaAsientoPeriodo(periodoNorm),
-        descripcion: `Sueldos y jornales devengados ${periodoNorm}`,
-        origenTipo: 'recibo',
-        origenId: cierre.id,
-        // Un asiento agrupa varias reglas; se guarda la primera como referencia.
-        reglaId: built.reglasUsadasIds[0] ?? null,
-        fuente: 'calculo',
-        creadoPor: userId,
-      })
-      .returning();
-
-    await tx.insert(asientoLinea).values(
-      built.lineas.map((l, i) => ({
-        asientoId: je.id,
-        cuentaId: l.cuentaId,
-        debe: String(l.debe),
-        haber: String(l.haber),
-        descripcion: l.descripcion,
-        orden: i,
-      }))
-    );
+    const je = await insertarAsientoConLineas(tx, {
+      orgId,
+      clienteId: clientId,
+      ejercicioId: resolved.fy.id,
+      periodoId: resolved.period.id,
+      fecha: fechaAsientoPeriodo(periodoNorm),
+      descripcion: `Sueldos y jornales devengados ${periodoNorm}`,
+      origenTipo: 'recibo',
+      origenId: cierre.id,
+      // Un asiento agrupa varias reglas; se guarda la primera como referencia.
+      reglaId: built.reglasUsadasIds[0] ?? null,
+      lineas: built.lineas,
+      fuente: 'calculo',
+      creadoPor: userId,
+    });
+    const number = je.numero;
 
     await tx
       .update(cierreSueldos)

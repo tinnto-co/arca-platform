@@ -380,3 +380,68 @@ describe('armarLineasSueldos', () => {
     expect(built.motivo).toBe('El período no tiene conceptos con importe');
   });
 });
+
+describe('cada línea recuerda de qué regla salió', () => {
+  it('guarda la regla por línea, y null cuando se mezclan o es la diferencia', () => {
+    const reglaBasico: ReglaLike = {
+      id: 'r-basico',
+      nombre: 'Sueldos básicos',
+      tipo: 'condicional',
+      condicion: { sosCode: ['101'] },
+      prioridad: 10,
+      lineas: [
+        {
+          cuentaId: 'gasto-sueldos',
+          lado: 'debe',
+          base: 'valor_concepto',
+        },
+        { cuentaId: 'a-pagar', lado: 'haber', base: 'valor_concepto' },
+      ],
+    };
+    const reglaPresentismo: ReglaLike = {
+      ...reglaBasico,
+      id: 'r-presentismo',
+      nombre: 'Presentismo',
+      condicion: { sosCode: ['110'] },
+      prioridad: 20,
+      lineas: [
+        { cuentaId: 'gasto-sueldos', lado: 'debe', base: 'valor_concepto' },
+        { cuentaId: 'a-pagar', lado: 'haber', base: 'valor_concepto' },
+      ],
+    };
+    const { lineas } = armarLineasSueldos(
+      [
+        { codigo: '101', tipo: 'remunerativo', monto: 1000 },
+        { codigo: '110', tipo: 'remunerativo', monto: 200 },
+        // Sin regla: va a pendiente de revisión, sin regla que lo explique.
+        { codigo: '999', tipo: 'descuento', monto: -50 },
+      ],
+      [reglaBasico, reglaPresentismo],
+      'pendiente'
+    );
+    const porCuenta = new Map(lineas.map((l) => [l.cuentaId, l]));
+    // Dos reglas cayeron en la misma cuenta: ninguna la explica sola.
+    expect(porCuenta.get('gasto-sueldos')?.reglaId).toBeNull();
+    expect(porCuenta.get('pendiente')?.reglaId).toBeNull();
+  });
+
+  it('una sola regla en la cuenta queda anotada en la línea', () => {
+    const regla: ReglaLike = {
+      id: 'r-basico',
+      nombre: 'Sueldos básicos',
+      tipo: 'default',
+      condicion: null,
+      prioridad: 10,
+      lineas: [
+        { cuentaId: 'gasto-sueldos', lado: 'debe', base: 'valor_concepto' },
+        { cuentaId: 'a-pagar', lado: 'haber', base: 'valor_concepto' },
+      ],
+    };
+    const { lineas } = armarLineasSueldos(
+      [{ codigo: '101', tipo: 'remunerativo', monto: 1000 }],
+      [regla],
+      'pendiente'
+    );
+    expect(lineas.every((l) => l.reglaId === 'r-basico')).toBe(true);
+  });
+});

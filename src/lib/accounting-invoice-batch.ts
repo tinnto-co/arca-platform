@@ -13,7 +13,6 @@
 import { db } from '@/lib/db';
 import {
   asiento,
-  asientoLinea,
   cliente,
   comprobante,
   comprobanteTipo,
@@ -21,7 +20,7 @@ import {
   evento,
   organizationModule,
 } from '@/drizzle/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import {
   armarLineas,
   calcularImportes,
@@ -30,9 +29,9 @@ import {
 } from '@/lib/accounting-invoice-posting';
 import {
   assertPostableAccounts,
+  insertarAsientoConLineas,
   loadActiveMappingRules,
   loadPendingReviewAccountId,
-  nextEntryNumber,
   resolvePeriodForDate,
 } from '@/lib/accounting-posting-db';
 
@@ -117,43 +116,23 @@ async function insertAutoInvoiceEntry(params: {
     motivo,
   } = params;
   await db.transaction(async (tx) => {
-    const numero = await nextEntryNumber(
-      tx,
-      params.clienteId,
-      params.ejercicioId
-    );
     const etiqueta = comp.direccion === 'recibido' ? 'Compra' : 'Venta';
-    const descripcion =
-      `${etiqueta} ${comp.letra ?? comp.tipo} — ${comp.contraparteNombre ?? 's/d'}`.trim();
-
-    const [asi] = await tx
-      .insert(asiento)
-      .values({
-        orgId,
-        clienteId,
-        ejercicioId,
-        periodoId,
-        numero,
-        fecha: comp.fechaEmision,
-        descripcion,
-        origenTipo: 'comprobante',
-        origenId: comp.id,
-        reglaId,
-        fuente: 'import',
-        creadoPor: null,
-      })
-      .returning();
-
-    await tx.insert(asientoLinea).values(
-      lineas.map((l, i) => ({
-        asientoId: asi.id,
-        cuentaId: l.cuentaId,
-        debe: String(l.debe),
-        haber: String(l.haber),
-        descripcion: l.descripcion,
-        orden: i,
-      }))
-    );
+    const asi = await insertarAsientoConLineas(tx, {
+      orgId,
+      clienteId,
+      ejercicioId,
+      periodoId,
+      fecha: comp.fechaEmision,
+      descripcion:
+        `${etiqueta} ${comp.letra ?? comp.tipo} — ${comp.contraparteNombre ?? 's/d'}`.trim(),
+      origenTipo: 'comprobante',
+      origenId: comp.id,
+      reglaId,
+      lineas,
+      fuente: 'import',
+      creadoPor: null,
+    });
+    const numero = asi.numero;
 
     await tx.insert(evento).values({
       orgId,
@@ -229,9 +208,26 @@ export async function runPendingInvoiceBatch(opts?: {
               AND a.origen_tipo = 'comprobante'
               AND a.origen_id = ${comprobante.id}
               AND a.anulado = false
+          )`,
+          // Solo los que hoy se pueden contabilizar: con ejercicio que cubra
+          // la fecha y período abierto. Sin esto, los que el job saltea
+          // (histórico sin ejercicio, períodos cerrados) volvían en cada
+          // corrida y con el tope de 50 podían ocupar todos los lugares, así
+          // que las facturas nuevas no se contabilizaban nunca.
+          sql`EXISTS (
+            SELECT 1 FROM ejercicio e
+            JOIN periodo_contable p
+              ON p.ejercicio_id = e.id
+             AND p.periodo = date_trunc('month', ${comprobante.fechaEmision}::date)::date
+            WHERE e.cliente_id = ${comprobante.clienteId}
+              AND ${comprobante.fechaEmision} BETWEEN e.fecha_desde AND e.fecha_hasta
+              AND p.estado <> 'cerrado'
           )`
         )
       )
+      // Orden estable y del más viejo al más nuevo: el asiento se numera en
+      // el orden en que ocurrieron las cosas.
+      .orderBy(asc(comprobante.fechaEmision), asc(comprobante.id))
       .limit(batchSize);
 
     if (pendientes.length === 0) continue;

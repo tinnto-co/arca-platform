@@ -28,7 +28,7 @@ create type cuenta_flujo_efectivo as enum ('operativa', 'inversion', 'financiaci
 create type ejercicio_estado as enum ('abierto', 'en_cierre', 'cerrado');
 create type periodo_estado as enum ('abierto', 'cerrado');
 
-create type asiento_origen_tipo as enum ('manual', 'comprobante', 'recibo', 'movimiento_bancario', 'cierre', 'apertura', 'import');
+create type asiento_origen_tipo as enum ('manual', 'comprobante', 'recibo', 'movimiento_bancario', 'cierre', 'apertura', 'import', 'ajuste_inflacion');
 create type asiento_linea_lado as enum ('debe', 'haber');
 
 create type regla_mapeo_modulo as enum ('comprobante', 'recibo', 'movimiento_bancario');

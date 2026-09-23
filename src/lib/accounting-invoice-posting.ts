@@ -9,17 +9,34 @@
  * imputa a la cuenta de sistema `pendiente de revisión`, que bloquea el cierre
  * del período hasta que el contador la corrija.
  */
-import type {
-  asientoLineaLado,
-  comprobanteDireccion,
-  reglaMapeoBase,
-  reglaMapeoTipo,
-} from '@/drizzle/schema';
+import type { comprobanteDireccion } from '@/drizzle/schema';
+import {
+  cerrarPorDiferencia,
+  detectarTapadas,
+  num,
+  round2,
+  seleccionarPorPrioridad,
+  type AsientoArmado,
+  type Base,
+  type Lado,
+  type LineaArmada,
+  type ReglaLike,
+  type ReglaLineaLike,
+  type ReglaTipo,
+} from './accounting-reglas';
 
 export type Direccion = (typeof comprobanteDireccion.enumValues)[number];
-export type Lado = (typeof asientoLineaLado.enumValues)[number];
-export type Base = (typeof reglaMapeoBase.enumValues)[number];
-export type ReglaTipo = (typeof reglaMapeoTipo.enumValues)[number];
+// Los tipos comunes viven en `accounting-reglas`; se re-exportan porque medio
+// módulo de contabilidad los importa desde acá desde antes del núcleo común.
+export type {
+  AsientoArmado,
+  Base,
+  Lado,
+  LineaArmada,
+  ReglaLike,
+  ReglaLineaLike,
+  ReglaTipo,
+};
 
 export interface ComprobanteLike {
   direccion: Direccion;
@@ -37,13 +54,6 @@ export interface ImportesComprobante {
   iva: number;
   otrosTributos: number;
 }
-
-const num = (v: string | number | null | undefined): number => {
-  const x = typeof v === 'number' ? v : parseFloat(v ?? '0');
-  return isNaN(x) ? 0 : x;
-};
-const round2 = (x: number): number =>
-  Math.round((x + Number.EPSILON) * 100) / 100;
 
 /**
  * Descompone los importes en total / neto / IVA / otros tributos.
@@ -82,23 +92,6 @@ export function importeSegunBase(
     default:
       return 0;
   }
-}
-
-export interface ReglaLineaLike {
-  cuentaId: string;
-  lado: Lado;
-  base: Base;
-  importeFijo?: number | string | null;
-  descripcion?: string | null;
-}
-
-export interface ReglaLike {
-  id: string;
-  nombre: string;
-  tipo: ReglaTipo;
-  condicion: Record<string, unknown> | null;
-  prioridad: number;
-  lineas: ReglaLineaLike[];
 }
 
 /**
@@ -232,13 +225,7 @@ export function detectarReglasTapadas(
     activa: boolean;
   })[]
 ): Map<string, { id: string; nombre: string }> {
-  const out = new Map<string, { id: string; nombre: string }>();
-  const activas = reglas.filter((r) => r.activa);
-  activas.forEach((b, i) => {
-    const tapa = activas.slice(0, i).find((a) => reglaCubre(a, b));
-    if (tapa) out.set(b.id, { id: tapa.id, nombre: tapa.nombre });
-  });
-  return out;
+  return detectarTapadas(reglas, reglaCubre);
 }
 
 export type EstadoCuadre =
@@ -308,24 +295,7 @@ export function seleccionarRegla(
   reglas: ReglaLike[],
   c: ComprobanteLike
 ): ReglaLike | null {
-  for (const r of reglas) {
-    if (reglaMatchea(r, c)) return r;
-  }
-  return null;
-}
-
-export interface LineaArmada {
-  cuentaId: string;
-  debe: number;
-  haber: number;
-  descripcion: string | null;
-}
-
-export interface AsientoArmado {
-  lineas: LineaArmada[];
-  usoPendienteRevision: boolean;
-  /** Motivo por el que cayó (parcial o total) a pendiente de revisión, si aplica. */
-  motivo: string | null;
+  return seleccionarPorPrioridad(reglas, c, reglaMatchea);
 }
 
 /**
@@ -373,6 +343,7 @@ export function armarLineas(
       debe: rl.lado === 'debe' ? importe : 0,
       haber: rl.lado === 'haber' ? importe : 0,
       descripcion: rl.descripcion ?? null,
+      reglaId: regla.id,
     });
   }
 
@@ -383,24 +354,15 @@ export function armarLineas(
     );
   }
 
-  const sumaDebe = round2(lineas.reduce((s, l) => s + l.debe, 0));
-  const sumaHaber = round2(lineas.reduce((s, l) => s + l.haber, 0));
-  const residuo = round2(sumaDebe - sumaHaber);
-
-  let usoPendienteRevision = false;
-  let motivo: string | null = null;
-
-  if (Math.abs(residuo) > 0.005) {
-    lineas.push({
-      cuentaId: cuentaPendienteRevisionId,
-      debe: residuo > 0 ? 0 : -residuo,
-      haber: residuo > 0 ? residuo : 0,
+  const { cerro, motivo } = cerrarPorDiferencia(
+    lineas,
+    cuentaPendienteRevisionId,
+    {
       descripcion: 'Diferencia a imputar (otros tributos / redondeo)',
-    });
-    usoPendienteRevision = true;
-    motivo =
-      'La regla no cubre el total del comprobante (diferencia a pendiente de revisión)';
-  }
+      motivo:
+        'La regla no cubre el total del comprobante (diferencia a pendiente de revisión)',
+    }
+  );
 
-  return { lineas, usoPendienteRevision, motivo };
+  return { lineas, usoPendienteRevision: cerro, motivo };
 }

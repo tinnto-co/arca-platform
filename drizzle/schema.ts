@@ -1255,6 +1255,9 @@ export const asientoLinea = pgTable("asiento_linea", {
 	orden: integer().default(0).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	// De qué regla salió la línea. En sueldos cada línea puede venir de una
+	// distinta, así que la cabecera no alcanza.
+	reglaId: uuid("regla_id"),
 }, (table) => [
 	index("idx_asiento_linea_asiento").using("btree", table.asientoId.asc().nullsLast().op("uuid_ops")),
 	index("idx_asiento_linea_cuenta").using("btree", table.cuentaId.asc().nullsLast().op("uuid_ops")),

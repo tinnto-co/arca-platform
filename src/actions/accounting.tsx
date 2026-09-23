@@ -34,7 +34,20 @@ import {
   asientoTemplate,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
-import { nextEntryNumber } from '@/lib/accounting-posting-db';
+import { reglaCubreConcepto } from '@/lib/accounting-payroll-posting';
+import {
+  BASES_POR_MODULO,
+  detectarTapadas,
+  type Base as BaseRegla,
+  type ModuloRegla,
+} from '@/lib/accounting-reglas';
+import {
+  assertPostableAccounts,
+  insertarAsientoConLineas,
+  loadActiveMappingRules,
+  loadPendingReviewAccountId,
+  nextEntryNumber,
+} from '@/lib/accounting-posting-db';
 import type { LayoutEntry } from '@/lib/accounting-document';
 import {
   buildClosingEntries,
@@ -57,6 +70,7 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   lte,
@@ -79,6 +93,7 @@ import {
   EXPENSE_FUNCTION_LABELS,
   type AccountGroup,
   CASH_FLOW_ACTIVITY_FROM_DB,
+  MAPPING_AMOUNT_BASIS_LABELS,
   type AccountingFramework,
 } from '@/lib/accounting-labels';
 import {
@@ -2012,46 +2027,6 @@ function validateLineAmounts(lines: { debit: number; credit: number }[]) {
   return { totalDebit: td, totalCredit: tc };
 }
 
-/** Valida que las cuentas de las líneas sean imputables y activas para la empresa. */
-async function assertPostableAccounts(
-  clientId: string,
-  orgId: string,
-  accountIds: string[]
-) {
-  const ids = [...new Set(accountIds)];
-  const accs = await db
-    .select()
-    .from(cuenta)
-    .where(and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ids)));
-  const overrides = await db
-    .select()
-    .from(clienteCuenta)
-    .where(
-      and(
-        eq(clienteCuenta.clienteId, clientId),
-        inArray(clienteCuenta.cuentaId, ids)
-      )
-    );
-  const ovMap = new Map(overrides.map((o) => [o.cuentaId, o]));
-  const byId = new Map(accs.map((a) => [a.id, a]));
-  for (const id of ids) {
-    const a = byId.get(id);
-    if (!a)
-      throw new Error('Una de las cuentas no existe o no pertenece al estudio');
-    if (a.alcance === 'propia' && a.clienteId !== clientId) {
-      throw new Error('Una de las cuentas es custom de otra empresa');
-    }
-    if (a.tipo !== 'imputable') {
-      throw new Error(
-        `La cuenta ${a.codigo} es de agrupación; solo se imputan cuentas imputables`
-      );
-    }
-    const active = ovMap.get(id)?.activa ?? a.activa;
-    if (!active)
-      throw new Error(`La cuenta ${a.codigo} está inactiva para esta empresa`);
-  }
-}
-
 /** Cuentas imputables y activas de la empresa, para el selector de líneas del asiento. */
 export const getPostableAccounts = createServerFn({ method: 'GET' })
   .validator(z.object({ clientId: z.string().uuid() }))
@@ -3181,10 +3156,13 @@ async function loadMappingRuleForOrg(
 
 interface RuleLineInput {
   side: 'debe' | 'haber';
-  amountBasis: string;
+  amountBasis: BaseRegla;
   fixedAmount?: number | null;
 }
-function validateRuleLines(lines: RuleLineInput[]): void {
+function validateRuleLines(
+  lines: RuleLineInput[],
+  sourceModule: ModuloRegla
+): void {
   if (lines.length < 2)
     throw new Error('La regla debe tener al menos 2 líneas');
   const hasDebit = lines.some((l) => l.side === 'debe');
@@ -3194,7 +3172,13 @@ function validateRuleLines(lines: RuleLineInput[]): void {
       'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
     );
   }
+  const bases = BASES_POR_MODULO[sourceModule];
   for (const l of lines) {
+    if (!bases.includes(l.amountBasis)) {
+      throw new Error(
+        `La base "${MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}" no aplica a este módulo`
+      );
+    }
     if (
       l.amountBasis === 'fijo' &&
       (l.fixedAmount == null || l.fixedAmount <= 0)
@@ -3203,6 +3187,17 @@ function validateRuleLines(lines: RuleLineInput[]): void {
         'Las líneas con base "monto fijo" requieren un importe mayor a 0'
       );
     }
+  }
+  // Un asiento que no cuadra manda la diferencia a "Pendiente de revisión" y
+  // bloquea el cierre del período. Antes se avisaba y se guardaba igual.
+  const cuadre = analizarCuadreRegla(
+    lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
+  );
+  if (cuadre.estado === 'descuadra') {
+    throw new Error(
+      cuadre.mensaje ??
+        'Las líneas de la regla no cuadran: el Debe y el Haber no suman lo mismo'
+    );
   }
 }
 
@@ -3323,18 +3318,23 @@ export const listMappingRules = createServerFn({ method: 'GET' })
       }
     }
 
-    // El solapamiento se calcula siempre sobre la cola completa de facturas,
-    // aunque el filtro de módulo esté puesto: la cola es la misma.
-    const invoiceRules = rules
-      .filter((r) => r.modulo === 'comprobante')
-      .map((r) => ({
-        id: r.id,
-        nombre: r.nombre,
-        tipo: r.tipo,
-        condicion: (r.condicion ?? null) as Record<string, unknown> | null,
-        activa: r.activa,
-      }));
-    const shadowed = detectarReglasTapadas(invoiceRules);
+    // El solapamiento se calcula sobre la cola completa de cada módulo, aunque
+    // el filtro esté puesto: la cola es la misma. Sueldos también se revisa,
+    // con su propia idea de qué regla tapa a cuál.
+    const deLaCola = (modulo: 'comprobante' | 'recibo') =>
+      rules
+        .filter((r) => r.modulo === modulo)
+        .map((r) => ({
+          id: r.id,
+          nombre: r.nombre,
+          tipo: r.tipo,
+          condicion: (r.condicion ?? null) as Record<string, unknown> | null,
+          activa: r.activa,
+        }));
+    const shadowed = new Map([
+      ...detectarReglasTapadas(deLaCola('comprobante')),
+      ...detectarTapadas(deLaCola('recibo'), reglaCubreConcepto),
+    ]);
 
     return rules.map((r): MappingRuleListRow => {
       const cond = (r.condicion ?? null) as Record<string, unknown> | null;
@@ -3464,7 +3464,7 @@ export const createMappingRule = createServerFn({ method: 'POST' })
     assertOwner(role);
     const d = ctx.data;
     await ensureClientBelongsToOrg(d.clientId, orgId);
-    validateRuleLines(d.lines);
+    validateRuleLines(d.lines, d.sourceModule);
     await assertPostableAccounts(
       d.clientId,
       orgId,
@@ -3532,12 +3532,21 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
     assertOwner(role);
     const d = ctx.data;
     const rule = await loadMappingRuleForOrg(d.id, orgId);
-    validateRuleLines(d.lines);
+    validateRuleLines(d.lines, d.sourceModule);
     await assertPostableAccounts(
       rule.clienteId,
       orgId,
       d.lines.map((l) => l.accountId)
     );
+
+    // Si cambió de módulo, la prioridad vieja es de otra cola: la regla va al
+    // final de la nueva, como una recién creada. Si no, se queda donde está.
+    const cambioDeModulo = d.sourceModule !== rule.modulo;
+    const prioridad =
+      d.priority ??
+      (cambioDeModulo
+        ? await siguientePrioridad(orgId, rule.clienteId, d.sourceModule)
+        : null);
 
     await db.transaction(async (tx) => {
       await tx
@@ -3551,7 +3560,7 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
             d.ruleType,
             d.condition
           ),
-          ...(d.priority != null ? { prioridad: d.priority } : {}),
+          ...(prioridad != null ? { prioridad } : {}),
         })
         .where(eq(reglaMapeo.id, rule.id));
       await tx
@@ -3678,6 +3687,14 @@ export const reorderMappingRules = createServerFn({ method: 'POST' })
  * Copia las reglas de una empresa a otra (isActive=false). Resuelve las cuentas
  * por código en la empresa destino; salta reglas con cuentas que no existen allí. (US 3.1.5)
  */
+/** Una regla que no se copió, con el porqué, para avisarlo en la pantalla. */
+export interface ReglaOmitida {
+  nombre: string;
+  motivo: 'ya_existe' | 'sin_lineas' | 'cuentas_faltantes';
+  /** Códigos de cuenta que la empresa destino no tiene. */
+  cuentas?: string[];
+}
+
 export const importMappingRules = createServerFn({ method: 'POST' })
   .validator(
     z.object({ fromClientId: z.string().uuid(), toClientId: z.string().uuid() })
@@ -3697,7 +3714,31 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       .from(reglaMapeo)
       .where(eq(reglaMapeo.clienteId, fromClientId))
       .orderBy(asc(reglaMapeo.prioridad));
-    if (srcRules.length === 0) return { created: 0, skipped: [] as string[] };
+    if (srcRules.length === 0)
+      return { created: 0, skipped: [] as ReglaOmitida[] };
+
+    // Lo que la empresa destino ya tiene: una regla con el mismo nombre y
+    // módulo no se copia de nuevo. Antes, importar dos veces las duplicaba.
+    const yaTiene = await db
+      .select({
+        nombre: reglaMapeo.nombre,
+        modulo: reglaMapeo.modulo,
+        prioridad: reglaMapeo.prioridad,
+      })
+      .from(reglaMapeo)
+      .where(eq(reglaMapeo.clienteId, toClientId));
+    const existentes = new Set(
+      yaTiene.map((r) => `${r.modulo}|${r.nombre.trim().toLowerCase()}`)
+    );
+    // Las copias van al final de la cola de su módulo, no intercaladas con las
+    // reglas propias por conservar la prioridad de la empresa de origen.
+    const ultimaPrioridad = new Map<string, number>();
+    for (const r of yaTiene) {
+      ultimaPrioridad.set(
+        r.modulo,
+        Math.max(ultimaPrioridad.get(r.modulo) ?? 0, r.prioridad)
+      );
+    }
 
     const srcLines = await db
       .select({
@@ -3739,17 +3780,34 @@ export const importMappingRules = createServerFn({ method: 'POST' })
     }
 
     let created = 0;
-    const skipped: string[] = [];
+    const skipped: ReglaOmitida[] = [];
     for (const r of srcRules) {
       const lines = linesByRule.get(r.id) ?? [];
       const resolved = lines.map((l) => ({
         ...l,
         targetId: codeToId.get(l.code),
       }));
-      if (lines.length < 2 || resolved.some((l) => !l.targetId)) {
-        skipped.push(r.nombre);
+      if (existentes.has(`${r.modulo}|${r.nombre.trim().toLowerCase()}`)) {
+        skipped.push({ nombre: r.nombre, motivo: 'ya_existe' });
         continue;
       }
+      if (lines.length < 2) {
+        skipped.push({ nombre: r.nombre, motivo: 'sin_lineas' });
+        continue;
+      }
+      const faltantes = [
+        ...new Set(resolved.filter((l) => !l.targetId).map((l) => l.code)),
+      ];
+      if (faltantes.length > 0) {
+        skipped.push({
+          nombre: r.nombre,
+          motivo: 'cuentas_faltantes',
+          cuentas: faltantes,
+        });
+        continue;
+      }
+      const prioridad = (ultimaPrioridad.get(r.modulo) ?? 0) + 10;
+      ultimaPrioridad.set(r.modulo, prioridad);
       await db.transaction(async (tx) => {
         const [nr] = await tx
           .insert(reglaMapeo)
@@ -3760,7 +3818,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
             modulo: r.modulo,
             tipo: r.tipo,
             condicion: r.condicion,
-            prioridad: r.prioridad,
+            prioridad,
             activa: false,
           })
           .returning();
@@ -3784,76 +3842,9 @@ export const importMappingRules = createServerFn({ method: 'POST' })
 
 /* ════════════ Asientos automáticos desde facturas (US 3.2.x) ════════════ */
 
-/** Cuenta de sistema pending_review (base, a nivel estudio). Lanza si falta. */
-async function loadPendingReviewAccountId(orgId: string): Promise<string> {
-  const [acc] = await db
-    .select({ id: cuenta.id })
-    .from(cuenta)
-    .where(
-      and(
-        eq(cuenta.orgId, orgId),
-        eq(cuenta.alcance, 'base'),
-        eq(cuenta.codigo, PENDING_REVIEW_CODE)
-      )
-    )
-    .limit(1);
-  if (!acc) {
-    throw new Error(
-      'Falta la cuenta de sistema "Pendiente de revisión". Re-sembrá el plan base'
-    );
-  }
-  return acc.id;
-}
-
-/** Reglas de facturas activas de una empresa, con sus líneas, ordenadas por prioridad. */
-async function loadActiveInvoiceRules(clientId: string): Promise<ReglaLike[]> {
-  const rules = await db
-    .select()
-    .from(reglaMapeo)
-    .where(
-      and(
-        eq(reglaMapeo.clienteId, clientId),
-        eq(reglaMapeo.modulo, 'comprobante'),
-        eq(reglaMapeo.activa, true)
-      )
-    )
-    .orderBy(asc(reglaMapeo.prioridad), asc(reglaMapeo.nombre));
-  if (rules.length === 0) return [];
-
-  const lines = await db
-    .select()
-    .from(reglaMapeoLinea)
-    .where(
-      inArray(
-        reglaMapeoLinea.reglaId,
-        rules.map((r) => r.id)
-      )
-    )
-    .orderBy(asc(reglaMapeoLinea.orden));
-  const byRule = new Map<string, typeof lines>();
-  for (const l of lines) {
-    const arr = byRule.get(l.reglaId) ?? [];
-    arr.push(l);
-    byRule.set(l.reglaId, arr);
-  }
-
-  return rules.map(
-    (r): ReglaLike => ({
-      id: r.id,
-      nombre: r.nombre,
-      tipo: r.tipo,
-      condicion: (r.condicion ?? null) as Record<string, unknown> | null,
-      prioridad: r.prioridad,
-      lineas: (byRule.get(r.id) ?? []).map((l) => ({
-        cuentaId: l.cuentaId,
-        lado: l.lado,
-        base: l.base,
-        importeFijo: l.importeFijo,
-        descripcion: l.descripcion,
-      })),
-    })
-  );
-}
+/** Reglas de facturas activas de la empresa, con sus líneas, por prioridad. */
+const loadActiveInvoiceRules = (clientId: string): Promise<ReglaLike[]> =>
+  loadActiveMappingRules(clientId, 'comprobante');
 
 /** Asiento auto vigente (no anulado) de una factura, si existe. */
 async function findAutoEntryForInvoice(clientId: string, invoiceId: string) {
@@ -3928,45 +3919,22 @@ async function insertAutoInvoiceEntry(
     userId,
   } = params;
 
-  const [{ maxNum }] = await tx
-    .select({
-      maxNum: sql<number>`coalesce(max(${asiento.numero}),0)::int`,
-    })
-    .from(asiento)
-    .where(and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fyId)));
-  const number = (maxNum ?? 0) + 1;
-
   const label = inv.direccion === 'recibido' ? 'Compra' : 'Venta';
-  const description =
-    `${label} ${inv.letra ?? inv.tipo} — ${inv.contraparte ?? ''}`.trim();
-
-  const [je] = await tx
-    .insert(asiento)
-    .values({
-      orgId,
-      clienteId: clientId,
-      ejercicioId: fyId,
-      periodoId: periodId,
-      numero: number,
-      fecha: date,
-      descripcion: description,
-      origenTipo: 'comprobante',
-      origenId: inv.id,
-      reglaId: ruleId,
-      creadoPor: userId,
-    })
-    .returning();
-
-  await tx.insert(asientoLinea).values(
-    lines.map((l, i) => ({
-      asientoId: je.id,
-      cuentaId: l.cuentaId,
-      debe: String(l.debe),
-      haber: String(l.haber),
-      descripcion: l.descripcion,
-      orden: i,
-    }))
-  );
+  const je = await insertarAsientoConLineas(tx, {
+    orgId,
+    clienteId: clientId,
+    ejercicioId: fyId,
+    periodoId: periodId,
+    fecha: date,
+    descripcion:
+      `${label} ${inv.letra ?? inv.tipo} — ${inv.contraparte ?? ''}`.trim(),
+    origenTipo: 'comprobante',
+    origenId: inv.id,
+    reglaId: ruleId,
+    lineas: lines,
+    creadoPor: userId,
+  });
+  const number = je.numero;
 
   await tx.insert(evento).values(
     accountingEvent({
@@ -4538,6 +4506,85 @@ export const regenerateInvoiceEntries = createServerFn({ method: 'POST' })
         prId,
         force: ctx.data.force,
         reason: 'Regenerado en bloque desde Contabilizar',
+      });
+      if (out.kind === 'done') summary.regenerated++;
+      else if (out.kind === 'needs_confirmation') summary.skippedEdited++;
+      else summary.errors.push({ invoiceId: inv.id, reason: out.reason });
+    }
+    return summary;
+  });
+
+/**
+ * Rehace los asientos del período abierto que generó una regla, después de
+ * editarla. Antes solo se avisaba que habían quedado con la versión anterior
+ * y había que buscarlos a mano en Contabilizar.
+ *
+ * Solo facturas: un asiento de sueldos agrupa el período entero y se rehace
+ * volviendo a cerrar el período. Los asientos editados a mano se conservan
+ * salvo que se pida `force`.
+ */
+export const regenerateEntriesForRule = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ ruleId: z.string().uuid(), force: z.boolean().default(false) })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const rule = await loadMappingRuleForOrg(ctx.data.ruleId, orgId);
+    if (rule.modulo !== 'comprobante') {
+      throw new Error(
+        'Los asientos de sueldos se rehacen volviendo a cerrar el período'
+      );
+    }
+    const clientId = rule.clienteId;
+
+    // Las facturas cuyo asiento vigente salió de esta regla, en un período
+    // que todavía se puede tocar.
+    const conAsiento = await db
+      .select({ invoiceId: asiento.origenId })
+      .from(asiento)
+      .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
+      .where(
+        and(
+          eq(asiento.reglaId, rule.id),
+          eq(asiento.origenTipo, 'comprobante'),
+          eq(asiento.anulado, false),
+          eq(periodoContable.estado, 'abierto'),
+          isNotNull(asiento.origenId)
+        )
+      );
+    const ids = [...new Set(conAsiento.map((r) => r.invoiceId!))];
+    if (ids.length === 0)
+      return { regenerated: 0, skippedEdited: 0, errors: [] };
+
+    const invs = await db
+      .select(INVOICE_SELECT)
+      .from(comprobante)
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
+      .where(inArray(comprobante.id, ids))
+      .orderBy(asc(comprobante.fechaEmision));
+
+    const rules = await loadActiveInvoiceRules(clientId);
+    const prId = await loadPendingReviewAccountId(orgId);
+
+    const summary = {
+      regenerated: 0,
+      skippedEdited: 0,
+      errors: [] as { invoiceId: string; reason: string }[],
+    };
+    for (const inv of invs) {
+      const out = await regenerateOneInvoice({
+        inv,
+        clientId,
+        orgId,
+        userId,
+        rules,
+        prId,
+        force: ctx.data.force,
+        reason: `Regenerado al editar la regla «${rule.nombre}»`,
       });
       if (out.kind === 'done') summary.regenerated++;
       else if (out.kind === 'needs_confirmation') summary.skippedEdited++;
