@@ -9,17 +9,31 @@
  * Cada banco nombra las cosas distinto («TRANSF RECIB», «TRF CTA», «CREDITO
  * INMEDIATO»): las keywords acumulan variantes reales; agregar un banco
  * nuevo es sumar palabras acá, con su test.
+ *
+ * Los impuestos se abren uno por uno (TIN-1715, fase 2). «Impuestos» era un
+ * bolsón de 468 movimientos donde convivían el impuesto al cheque, IIBB e
+ * IVA: el estudio no podía ver cuánto se fue en cada cosa, que es justamente
+ * lo que después va a cada cuenta contable.
  */
 
 export const CATEGORIAS_MOVIMIENTO = [
   'transferencias',
+  'transferencias_propias',
   'cobros_tarjeta',
+  'impuestos_idc',
+  'impuestos_iibb',
+  'impuestos_iva',
+  'impuestos_ganancias',
+  'impuestos_otros',
   'impuestos',
   'comisiones',
   'sueldos',
+  'cargas_sociales',
   'debitos_automaticos',
   'cheques',
   'efectivo',
+  'plazo_fijo',
+  'fci',
   'intereses',
   'varios',
 ] as const;
@@ -27,22 +41,33 @@ export const CATEGORIAS_MOVIMIENTO = [
 export type CategoriaMovimiento = (typeof CATEGORIAS_MOVIMIENTO)[number];
 
 /**
- * Lo que nunca va a tener una factura que lo respalde: impuestos, comisiones
- * del banco, sueldos, débitos automáticos, intereses y retiros de efectivo.
+ * Lo que nunca va a tener una factura que lo respalde: impuestos, cargas
+ * sociales, comisiones del banco, sueldos, débitos automáticos, intereses,
+ * retiros de efectivo, colocaciones y traspasos entre cuentas propias.
  *
  * Contarlos como "sin conciliar" infla el número y esconde lo que sí hay que
  * revisar: en Gastrotecno, enero 2026, son 82 de 153 movimientos.
  *
  * Los cheques quedan afuera a propósito: un cheque sí puede ser el pago de una
- * factura.
+ * factura. Los débitos automáticos también podrían tenerla (la luz, el
+ * teléfono), pero el banco no la trae y el estudio no la busca ahí.
  */
 export const CATEGORIAS_SIN_FACTURA: readonly CategoriaMovimiento[] = [
+  'impuestos_idc',
+  'impuestos_iibb',
+  'impuestos_iva',
+  'impuestos_ganancias',
+  'impuestos_otros',
   'impuestos',
+  'cargas_sociales',
   'comisiones',
   'sueldos',
   'debitos_automaticos',
   'intereses',
   'efectivo',
+  'plazo_fijo',
+  'fci',
+  'transferencias_propias',
 ];
 
 /** ¿Este movimiento puede llegar a tener una factura detrás? */
@@ -50,15 +75,36 @@ export function requiereFactura(categoria: string | null | undefined): boolean {
   return !CATEGORIAS_SIN_FACTURA.includes(categoria as CategoriaMovimiento);
 }
 
+/** Las que son un impuesto, para sumarlas juntas cuando hace falta. */
+export const CATEGORIAS_IMPUESTO: readonly CategoriaMovimiento[] = [
+  'impuestos_idc',
+  'impuestos_iibb',
+  'impuestos_iva',
+  'impuestos_ganancias',
+  'impuestos_otros',
+  'impuestos',
+];
+
 export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
   transferencias: 'Transferencias',
+  transferencias_propias: 'Entre cuentas propias',
   cobros_tarjeta: 'Cobros con tarjeta',
-  impuestos: 'Impuestos',
+  impuestos_idc: 'Impuesto al cheque (deb. y créd.)',
+  impuestos_iibb: 'Ingresos brutos y SIRCREB',
+  impuestos_iva: 'IVA y percepciones',
+  impuestos_ganancias: 'Ganancias y SICORE',
+  impuestos_otros: 'Otros impuestos',
+  // Queda para los movimientos que alguien marcó a mano antes de que los
+  // impuestos se abrieran: el clasificador ya no la devuelve.
+  impuestos: 'Impuestos (sin detallar)',
   comisiones: 'Comisiones bancarias',
   sueldos: 'Sueldos',
+  cargas_sociales: 'Cargas sociales',
   debitos_automaticos: 'Débitos automáticos',
   cheques: 'Cheques',
   efectivo: 'Efectivo',
+  plazo_fijo: 'Plazos fijos',
+  fci: 'Fondos comunes de inversión',
   intereses: 'Intereses',
   varios: 'Varios',
 };
@@ -66,12 +112,37 @@ export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
 /**
  * El ORDEN importa: gana la primera categoría cuyo patrón matchee. Lo más
  * específico va antes (un «IMPUESTO DEBITO S/TRANSFERENCIA» es impuesto,
- * no transferencia).
+ * no transferencia; y es el impuesto al cheque, no "otros impuestos").
  */
 const REGLAS: [CategoriaMovimiento, RegExp][] = [
+  // Impuesto sobre los débitos y créditos (ley 25.413), el "impuesto al
+  // cheque": es el más repetido de todos y el estudio lo quiere aparte para
+  // ver el acumulado. Va primero porque su texto menciona "débito" y
+  // "crédito", que cualquier otra regla se llevaría puesto.
   [
-    'impuestos',
-    /sircreb|iibb|ing\.?\s*brutos|ingresos brutos|imp\.?\s*(deb|cred|debitos|creditos|ley)|impuesto|afip|arca|iva\b|percepci[oó]n|retenci[oó]n|sicore|ganancias|ley\s*25\.?413/i,
+    'impuestos_idc',
+    /ley\s*(nro\.?\s*)?25\.?413|imp\.?\s*s\/?\s*(deb|cred)|impuesto\s+s\/?\s*(d[eé]bitos?|cr[eé]ditos?)|imp\.?\s*(deb|cre|debitos?|creditos?)\b|impuesto\s+(al\s+)?(d[eé]bito|cheque)/i,
+  ],
+  [
+    'impuestos_iibb',
+    /sircreb|iibb|ing\.?\s*brutos|ingresos\s+brutos|convenio\s+multilateral/i,
+  ],
+  [
+    'impuestos_iva',
+    /\biva\b|impuesto\s+al\s+valor\s+agregado|percepci[oó]n\s+iva|iva\s+(tasa|percep)/i,
+  ],
+  ['impuestos_ganancias', /ganancias|sicore|imp\.?\s*a?\s*las?\s*gcias/i],
+  // Cargas sociales antes que sueldos: un F931 es carga social, no el neto
+  // que cobra el empleado.
+  [
+    'cargas_sociales',
+    /f\.?\s*931|f931|cargas\s+sociales|seguridad\s+social|(pago|aporte|cuota|dep[oó]sito)[^.]{0,20}obra\s+social|sindicato|uocra|uatre|osecac|\bart\b|aseguradora\s+de\s+riesgos|\bsipa\b|contribuciones\s+patronales/i,
+  ],
+  // El resto de los impuestos: pagos a ARCA/AFIP por el sistema de pagos del
+  // banco, retenciones y percepciones sueltas.
+  [
+    'impuestos_otros',
+    /impuesto|\bafip\b|\barca\b|percepci[oó]n|retenci[oó]n|\brentas\b|\bagip\b|\barba\b|tasa\s+municipal|\babl\b/i,
   ],
   [
     'comisiones',
@@ -90,13 +161,28 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
     'efectivo',
     /extracci[oó]n|retiro|efectivo|efvo|dep[oó]sito\s+(en\s+)?efectivo|cajero|atm|extracautom|dep\.?\s*efvo/i,
   ],
+  // Colocaciones: mover plata a un plazo fijo o a un fondo no es un gasto ni
+  // una venta, es la misma plata en otro lado. Los intereses que rinden sí
+  // son resultado, y quedan en `intereses`.
   [
-    'intereses',
-    /inter[eé]s|rendimiento|plazo\s+fijo|fima|fondo\s+com[uú]n|money\s*market/i,
+    'plazo_fijo',
+    /plazo\s*fijo|pl\.?\s*fijo|constituci[oó]n\s+de\s+plazo|renovaci[oó]n\s+plazo/i,
   ],
+  [
+    'fci',
+    /fondo\s+com[uú]n|\bfci\b|fima|money\s*market|suscripci[oó]n\s+(de\s+)?cuotapartes|rescate\s+(de\s+)?cuotapartes|cuotapartes/i,
+  ],
+  ['intereses', /inter[eé]s|intereses|rendimiento/i],
   [
     'debitos_automaticos',
     /d[eé]bito\s+autom|debito\s+directo|dda\b|pago\s+(de\s+)?servicio|edenor|edesur|metrogas|aysa|telecom|personal|claro|movistar|osde|swiss\s*medical|galeno/i,
+  ],
+  // Traspaso entre cuentas de la misma empresa: entra y sale la misma plata,
+  // así que no se compara contra facturas. Por ahora sale del texto del
+  // banco; cuando la contraparte venga con CUIT se puede reconocer sola.
+  [
+    'transferencias_propias',
+    /entre\s+cuentas\s+propias|misma\s+titularidad|mismo\s+titular|traspaso\s+(entre\s+)?cuentas|transferencia\s+interna/i,
   ],
   [
     'transferencias',

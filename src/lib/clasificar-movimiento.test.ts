@@ -18,9 +18,92 @@ describe('clasificarMovimiento', () => {
   it('los impuestos le ganan a la transferencia (orden de reglas)', () => {
     expect(
       clasificarMovimiento('IMPUESTO DEBITOS S/TRANSFERENCIA LEY 25413')
-    ).toBe('impuestos');
-    expect(clasificarMovimiento('SIRCREB ING BRUTOS')).toBe('impuestos');
-    expect(clasificarMovimiento('PERCEPCION IVA RG 2408')).toBe('impuestos');
+    ).toBe('impuestos_idc');
+    expect(clasificarMovimiento('SIRCREB ING BRUTOS')).toBe('impuestos_iibb');
+    expect(clasificarMovimiento('PERCEPCION IVA RG 2408')).toBe(
+      'impuestos_iva'
+    );
+  });
+
+  // Cada impuesto va a su propia cuenta contable, así que el bolsón
+  // "impuestos" no servía. Todos estos salieron de extractos reales.
+  it('separa el impuesto al cheque del resto', () => {
+    for (const d of [
+      'IMP. DEB. LEY 25413 GRAL.',
+      'IMPUESTO LEY 25.413 DEBITO 0,6%',
+      'IMP. CRE. LEY 25413',
+      'LEY NRO 25.413 SOBRE CREDIT',
+      'IMP S/DEBITOS EN CTA CTE',
+      'IM LEY 25413 0.6% EX EF AL GEN REG',
+      'IMP.LEY 25413 07/01/26 00004',
+    ]) {
+      expect(clasificarMovimiento(d), d).toBe('impuestos_idc');
+    }
+  });
+
+  it('abre ingresos brutos, IVA, ganancias y el resto', () => {
+    expect(clasificarMovimiento('ING. BRUTOS S/ CRED REG.RECAU.SIRCREB')).toBe(
+      'impuestos_iibb'
+    );
+    expect(clasificarMovimiento('REG REC SIRCREB F:30/12/25')).toBe(
+      'impuestos_iibb'
+    );
+    expect(
+      clasificarMovimiento('ADELANTO IIBB TUC LETRA H RESP:30718161394')
+    ).toBe('impuestos_iibb');
+    expect(clasificarMovimiento('PERCEPCION INGRESOS BRUTOS CABA')).toBe(
+      'impuestos_iibb'
+    );
+    expect(clasificarMovimiento('IVA TASA GENERAL')).toBe('impuestos_iva');
+    expect(clasificarMovimiento('IVA 21% REG DE TRANSFISC LEY27743')).toBe(
+      'impuestos_iva'
+    );
+    expect(clasificarMovimiento('RETENCION GANANCIAS SICORE')).toBe(
+      'impuestos_ganancias'
+    );
+    expect(clasificarMovimiento('PAGO DE SERVICIO ARCA')).toBe(
+      'impuestos_otros'
+    );
+    expect(
+      clasificarMovimiento('PAGO DE SERVICIOS IMP.AFIP: 30707920056924')
+    ).toBe('impuestos_otros');
+  });
+
+  it('las cargas sociales no se cuentan como sueldos', () => {
+    expect(clasificarMovimiento('PAGO F931 SEGURIDAD SOCIAL')).toBe(
+      'cargas_sociales'
+    );
+    expect(clasificarMovimiento('APORTE SINDICATO OSECAC')).toBe(
+      'cargas_sociales'
+    );
+    expect(clasificarMovimiento('CUOTA ART PREVENCION')).toBe(
+      'cargas_sociales'
+    );
+    // El neto que cobra el empleado sigue siendo sueldo.
+    expect(clasificarMovimiento('DB/CR POR PAGO DE SUELDOS')).toBe('sueldos');
+  });
+
+  it('separa las colocaciones de lo que rinden', () => {
+    expect(
+      clasificarMovimiento('ACREDITACION VENCIMIENTO PLAZO FIJO 809343083344')
+    ).toBe('plazo_fijo');
+    expect(clasificarMovimiento('SUSCRIPCION CUOTAPARTES FIMA PREMIUM')).toBe(
+      'fci'
+    );
+    // Lo que rinde sí es resultado del período.
+    expect(clasificarMovimiento('RENDIMIENTOS')).toBe('intereses');
+    expect(clasificarMovimiento('DEBITO LIQUIDACION INTERES')).toBe(
+      'intereses'
+    );
+  });
+
+  it('el traspaso entre cuentas propias no es una transferencia más', () => {
+    expect(clasificarMovimiento('TRANSFERENCIA ENTRE CUENTAS PROPIAS')).toBe(
+      'transferencias_propias'
+    );
+    expect(clasificarMovimiento('TRASPASO CUENTAS MISMO TITULAR')).toBe(
+      'transferencias_propias'
+    );
   });
 
   it('comisiones, tarjetas, sueldos, cheques, efectivo, intereses, débitos', () => {
@@ -35,7 +118,9 @@ describe('clasificarMovimiento', () => {
     expect(clasificarMovimiento('EXTRACCION CAJERO ATM RED LINK')).toBe(
       'efectivo'
     );
-    expect(clasificarMovimiento('RENDIMIENTO FIMA PREMIUM')).toBe('intereses');
+    expect(clasificarMovimiento('DEBITO LIQUIDACION INTERES')).toBe(
+      'intereses'
+    );
     expect(clasificarMovimiento('DEBITO AUTOM EDENOR')).toBe(
       'debitos_automaticos'
     );
@@ -84,7 +169,11 @@ describe('requiereFactura', () => {
       'COM. MANTENIMIENTO CUENTA',
       'ACREDITACION DE HABERES',
       'DEBITO AUTOM EDENOR',
-      'RENDIMIENTO FIMA PREMIUM',
+      'RENDIMIENTOS',
+      'IMP. DEB. LEY 25413 GRAL.',
+      'PAGO F931 SEGURIDAD SOCIAL',
+      'SUSCRIPCION CUOTAPARTES FIMA PREMIUM',
+      'TRANSFERENCIA ENTRE CUENTAS PROPIAS',
       'Retiro de efectivo en santander Tarj nro. 3260',
     ]) {
       expect(requiereFactura(clasificarMovimiento(d)), d).toBe(false);
