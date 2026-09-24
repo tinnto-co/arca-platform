@@ -3163,13 +3163,32 @@ function validateRuleLines(
   lines: RuleLineInput[],
   sourceModule: ModuloRegla
 ): void {
-  if (lines.length < 2)
-    throw new Error('La regla debe tener al menos 2 líneas');
-  const hasDebit = lines.some((l) => l.side === 'debe');
-  const hasCredit = lines.some((l) => l.side === 'haber');
-  if (!hasDebit || !hasCredit) {
+  // En banco la contrapartida la pone el motor: sale de la cuenta contable de
+  // la cuenta bancaria del movimiento, no de la regla. Pedirla acá obligaría a
+  // escribir una regla por cada cuenta bancaria del cliente.
+  const contrapartidaAutomatica = sourceModule === 'movimiento_bancario';
+
+  if (lines.length < (contrapartidaAutomatica ? 1 : 2))
     throw new Error(
-      'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
+      contrapartidaAutomatica
+        ? 'La regla necesita al menos una línea'
+        : 'La regla debe tener al menos 2 líneas'
+    );
+  if (!contrapartidaAutomatica) {
+    const hasDebit = lines.some((l) => l.side === 'debe');
+    const hasCredit = lines.some((l) => l.side === 'haber');
+    if (!hasDebit || !hasCredit) {
+      throw new Error(
+        'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
+      );
+    }
+  } else if (
+    lines.some((l) => l.side === 'debe') &&
+    lines.some((l) => l.side === 'haber')
+  ) {
+    // Con líneas de los dos lados no se sabe cuánto va contra el banco.
+    throw new Error(
+      'En una regla de banco todas las líneas van del mismo lado: la contrapartida contra el banco la agrega el sistema'
     );
   }
   const bases = BASES_POR_MODULO[sourceModule];
@@ -3188,6 +3207,9 @@ function validateRuleLines(
       );
     }
   }
+  // En banco no se pide cuadre: la línea que falta la pone el motor.
+  if (contrapartidaAutomatica) return;
+
   // Un asiento que no cuadra manda la diferencia a "Pendiente de revisión" y
   // bloquea el cierre del período. Antes se avisaba y se guardaba igual.
   const cuadre = analizarCuadreRegla(

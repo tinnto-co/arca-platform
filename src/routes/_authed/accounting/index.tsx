@@ -7282,13 +7282,16 @@ function RuleEditorDialog({
 
   const hasDebit = lines.some((l) => l.side === 'debe');
   const hasCredit = lines.some((l) => l.side === 'haber');
-  const linesOk =
-    lines.length >= 2 &&
-    hasDebit &&
-    hasCredit &&
-    lines.every(
-      (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
-    );
+  // En banco la contrapartida la agrega el sistema —sale de la cuenta
+  // contable de la cuenta bancaria del movimiento—, así que la regla define
+  // un solo lado: el del concepto.
+  const contrapartidaAutomatica = sourceModule === 'movimiento_bancario';
+  const cuentasCompletas = lines.every(
+    (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
+  );
+  const linesOk = contrapartidaAutomatica
+    ? lines.length >= 1 && !(hasDebit && hasCredit) && cuentasCompletas
+    : lines.length >= 2 && hasDebit && hasCredit && cuentasCompletas;
   const needsDirection = sourceModule === 'comprobante';
   const cuadre =
     sourceModule === 'comprobante'
@@ -7476,12 +7479,20 @@ function RuleEditorDialog({
                 setSourceModule(modulo);
                 // Las bases cambian con el módulo: "Total del comprobante" no
                 // existe en sueldos. Sin esto, la línea quedaba sin base.
-                setLines((prev) =>
-                  prev.map((l) => ({
+                setLines((prev) => {
+                  const ajustadas = prev.map((l) => ({
                     ...l,
                     amountBasis: baseValidaEnModulo(l.amountBasis, modulo),
-                  }))
-                );
+                  }));
+                  // En banco la regla lleva un solo lado, así que el par
+                  // Debe/Haber con el que arranca el formulario no sirve: se
+                  // queda la primera y el resto se agrega a mano si hace falta.
+                  return modulo === 'movimiento_bancario' &&
+                    ajustadas.some((l) => l.side === 'debe') &&
+                    ajustadas.some((l) => l.side === 'haber')
+                    ? ajustadas.slice(0, 1)
+                    : ajustadas;
+                });
               }}
             >
               <SelectTrigger className="w-full text-[12.5px]">
@@ -7815,6 +7826,14 @@ function RuleEditorDialog({
         </div>
 
         {/* Líneas-plantilla */}
+        {contrapartidaAutomatica && (
+          <p className="-mb-1 text-[11.5px] text-[var(--arca-ink-3)]">
+            Escribí solo el lado del concepto: la contrapartida contra el banco
+            la agrega el sistema, con la cuenta contable de la cuenta bancaria
+            de cada movimiento. Por eso una sola regla sirve para todas las
+            cuentas del cliente.
+          </p>
+        )}
         <div
           className="border border-[var(--arca-border)] rounded-xl overflow-hidden"
           data-tour="regla-lineas"
@@ -7933,7 +7952,11 @@ function RuleEditorDialog({
                 </span>
               ) : (
                 <span className="text-[var(--arca-ink-3)]">
-                  Requiere ≥2 líneas, al menos una al Debe y una al Haber
+                  {contrapartidaAutomatica
+                    ? hasDebit && hasCredit
+                      ? 'Todas las líneas van del mismo lado: el otro lo pone el banco'
+                      : 'Requiere al menos una línea, con su cuenta elegida'
+                    : 'Requiere ≥2 líneas, al menos una al Debe y una al Haber'}
                 </span>
               )}
             </span>
