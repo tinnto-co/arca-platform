@@ -325,6 +325,7 @@ import {
   reopenPayrollPeriod,
 } from '@/lib/accounting-payroll-close';
 import * as r2 from '@/lib/r2';
+import { describirProblemasLsd, verificarLargosLsd } from '@/lib/lsd-registro';
 
 // ---------- Convenios ----------
 
@@ -5952,9 +5953,19 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       const cuil = emp.cuil.replace(/[-\s]/g, '').padStart(11, '0');
       const legajo = emp.legajo;
 
-      // ── Record 02 — Empleado ─────────────────────────────────────────────
+      /*
+       * ── Record 02 — Empleado (115 chars) ───────────────────────────────
+       * Diseño de ARCA: 1-2 tipo, 3-13 CUIL, 14-23 legajo, 24-73 dependencia
+       * de revista, 74-95 CBU, 96-98 días para proporcionar tope, 99-106
+       * fecha de pago, 107-114 fecha de rúbrica, 115 forma de pago.
+       *
+       * El prefijo se rellenaba hasta 96 y corría un lugar todo lo que viene
+       * después: ARCA rechazaba días liquidados, fecha de pago, fecha de
+       * rúbrica y forma de pago, los cuatro campos del final, y la línea
+       * salía de 116.
+       */
       const r02prefix = `02${cuil}${legajo}`;
-      r02Lines.push(r02prefix.padEnd(96) + `000${fechaFin}${' '.repeat(8)}1`);
+      r02Lines.push(r02prefix.padEnd(95) + `000${fechaFin}${' '.repeat(8)}1`);
 
       // ── Record 03 — Conceptos ─────────────────────────────────────────────
       const conceptos = conceptosByRecibo.get(rec.id) ?? [];
@@ -5979,17 +5990,26 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
 
         const amountStr = String(centavos).padStart(15, '0');
 
-        if (sosNum >= 400) {
-          const qty = String(Math.round(cantidadRaw * 100)).padStart(6, '0');
-          r03Lines.push(
-            `03${cuil}${'0'.repeat(9)}${sosCode}${qty}$${amountStr}${credDeb}`
-          );
-        } else {
-          const qty = String(Math.round(cantidadRaw * 100)).padStart(5, '0');
-          r03Lines.push(
-            `03${cuil}${'0'.repeat(7)}${sosCode}${qty}$${amountStr}${credDeb}`
-          );
-        }
+        /*
+         * ── Record 03 — Concepto (51 chars) ─────────────────────────────
+         * Diseño de ARCA: 1-2 tipo, 3-13 CUIL, 14-23 código de concepto del
+         * empleador, 24-28 cantidad (3 enteros + 2 decimales), 29 unidad
+         * ('$' = moneda), 30-44 importe (13 + 2 decimales), 45 débito o
+         * crédito, 46-51 período de ajuste retroactivo (en blanco si el
+         * concepto es del período que se liquida).
+         *
+         * Había dos ramas, una para conceptos de 400 en adelante, que armaban
+         * líneas de 48 y 45 caracteres: un registro de ancho fijo no puede
+         * tener dos largos. La de 48 además corría el código de concepto y la
+         * cantidad, y ARCA rechazaba unidades, importe e indicador D/C en
+         * todas las líneas de las sumas no remunerativas y los acuerdos.
+         */
+        const qty = String(Math.round(cantidadRaw * 100)).padStart(5, '0');
+        const conceptoEmpleador = `${'0'.repeat(7)}${sosCode}`;
+        const periodoAjuste = ' '.repeat(6);
+        r03Lines.push(
+          `03${cuil}${conceptoEmpleador}${qty}$${amountStr}${credDeb}${periodoAjuste}`
+        );
       }
 
       // ── Record 04 — Bases imponibles ─────────────────────────────────────
@@ -6161,13 +6181,36 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       );
     const nroPresentacion = (maxPres?.maxNro ?? 0) + 1;
 
-    // R01: pos 23-27 = nroPresentacion (5 dígitos), pos 28 = '3' (tipo forma, fijo según referencia AFIP)
+    /*
+     * ── Record 01 — Encabezado (35 chars) ──────────────────────────────────
+     * 1-2 tipo, 3-13 CUIT, 14-15 identificación del envío ('SJ' = liquidación
+     * de sueldos y datos del F931), 16-21 período, 22 tipo de liquidación,
+     * 23-27 número de liquidación, 28-29 días base ('30'), 30-35 cantidad de
+     * trabajadores informados en registros '04'.
+     *
+     * Los dos últimos campos estaban escritos como un '3' suelto más siete
+     * dígitos de cantidad. Daba los mismos 35 caracteres y por casualidad los
+     * mismos bytes —el cero que sobra de la cantidad completaba el '30'—, pero
+     * dejaba de funcionar con un millón de trabajadores y no se entendía.
+     */
     const nroStr = String(nroPresentacion).padStart(5, '0');
-    // Nota: posiciones 14-15 usan 'SJ' según archivo de referencia E-Presis.
-    const r01 = `01${cuit}SJ${periodoLsd}M${nroStr}3${String(numEmpleados).padStart(7, '0')}`;
+    const diasBase = '30';
+    const cantTrabajadores = String(numEmpleados).padStart(6, '0');
+    const r01 = `01${cuit}SJ${periodoLsd}M${nroStr}${diasBase}${cantTrabajadores}`;
 
     const lines = [r01, ...r02Lines, ...r03Lines, ...r04Lines];
-    const contenido = lines.join('\r\n') + '\r\n';
+
+    // Antes de entregarlo: si algún registro no tiene su ancho, ARCA lo rechaza
+    // entero y los errores apuntan a los campos del final en vez de al
+    // corrimiento. Mejor fallar acá que después de que lo suban.
+    const problemas = verificarLargosLsd(lines);
+    if (problemas.length > 0) {
+      throw new Error(describirProblemasLsd(problemas));
+    }
+
+    // Sin salto al final: con él, ARCA lee una línea vacía de más y la rechaza
+    // como "tipo de registro inválido: ''".
+    const contenido = lines.join('\r\n');
     const filename = `${cuit}_${year}_${month}_LSD.txt`;
 
     // Guardar la presentación en la base de datos
