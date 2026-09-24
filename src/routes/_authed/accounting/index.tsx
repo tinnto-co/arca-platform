@@ -116,6 +116,10 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { Button } from '@/components/ui/button';
 import { Badge, BadgeDot } from '@/components/ui/badge';
 import { Ayuda } from '@/components/shared/ayuda';
+import {
+  CATEGORIAS_MOVIMIENTO,
+  CATEGORIA_MOVIMIENTO_LABEL,
+} from '@/lib/clasificar-movimiento';
 import { Paginador } from '@/components/shared/paginador';
 import { chipFiltro, LimpiarFiltros } from '@/components/shared/filtros';
 import {
@@ -288,6 +292,7 @@ import {
   MAPPING_RULE_TYPE_LABELS,
   MAPPING_SIDE_LABELS,
   MAPPING_AMOUNT_BASIS_LABELS,
+  etiquetaBase,
   FIXED_ASSET_CATEGORY_LABELS,
   FIXED_ASSET_STATUS_LABELS,
   FIXED_ASSET_DISPOSAL_REASON_LABELS,
@@ -6996,6 +7001,7 @@ function Reglas({
             <SelectItem value="all">Todos</SelectItem>
             <SelectItem value="comprobante">Facturas</SelectItem>
             <SelectItem value="recibo">Sueldos</SelectItem>
+            <SelectItem value="movimiento_bancario">Banco</SelectItem>
           </SelectContent>
         </Select>
 
@@ -7181,6 +7187,12 @@ function RuleEditorDialog({
   const [condConceptTipos, setCondConceptTipos] = useState<string[]>([]);
   /** Sueldos: códigos SOS exactos, separados por coma (ej. "101, 102"). */
   const [condSosCodes, setCondSosCodes] = useState('');
+  /** Banco: categorías de movimiento a las que aplica la regla. */
+  const [condCategorias, setCondCategorias] = useState<string[]>([]);
+  /** Banco: si aplica solo a lo que entra, solo a lo que sale, o a los dos. */
+  const [condMovDireccion, setCondMovDireccion] = useState<
+    '' | 'ingreso' | 'egreso'
+  >('');
   const [lines, setLines] = useState<RuleLineDraft[]>([
     emptyRuleLine('debe'),
     emptyRuleLine('haber'),
@@ -7227,6 +7239,22 @@ function RuleEditorDialog({
           ? [rawSos]
           : [];
       setCondSosCodes(sosArr.map((c) => String(c).trim()).join(', '));
+      const rawCat = cond.categoria;
+      const catArr = Array.isArray(rawCat)
+        ? rawCat
+        : rawCat != null
+          ? [rawCat]
+          : [];
+      setCondCategorias(
+        catArr.map((c) => String(c).trim().toLowerCase()).filter(Boolean)
+      );
+      const rawDirMov = cond.direccion;
+      setCondMovDireccion(
+        existing.rule.modulo === 'movimiento_bancario' &&
+          (rawDirMov === 'ingreso' || rawDirMov === 'egreso')
+          ? rawDirMov
+          : ''
+      );
     }
     setLines(
       existing.lines.map((l) => ({
@@ -7293,6 +7321,14 @@ function RuleEditorDialog({
           .filter(Boolean);
         if (codes.length) c.sosCode = codes;
         if (condConceptTipos.length) c.tipo = condConceptTipos;
+        condition = Object.keys(c).length ? c : undefined;
+      } else if (
+        ruleType === 'condicional' &&
+        sourceModule === 'movimiento_bancario'
+      ) {
+        const c: Record<string, unknown> = {};
+        if (condCategorias.length) c.categoria = condCategorias;
+        if (condMovDireccion) c.direccion = condMovDireccion;
         condition = Object.keys(c).length ? c : undefined;
       }
       const payloadLines = lines.map((l) => ({
@@ -7422,7 +7458,7 @@ function RuleEditorDialog({
             label={
               <>
                 Módulo origen *
-                <HelpTip text="De qué módulo viene el comprobante que dispara la regla: Facturas o Sueldos." />
+                <HelpTip text="Qué dispara la regla: una factura, un concepto de un recibo de sueldo, o un movimiento del banco." />
               </>
             }
           >
@@ -7447,6 +7483,7 @@ function RuleEditorDialog({
               <SelectContent>
                 <SelectItem value="comprobante">Facturas</SelectItem>
                 <SelectItem value="recibo">Sueldos</SelectItem>
+                <SelectItem value="movimiento_bancario">Banco</SelectItem>
               </SelectContent>
             </Select>
           </Field>
@@ -7666,6 +7703,95 @@ function RuleEditorDialog({
               </Field>
             </>
           )}
+          {ruleType === 'condicional' &&
+            sourceModule === 'movimiento_bancario' && (
+              <>
+                <Field
+                  label={
+                    <>
+                      Concepto del movimiento
+                      <HelpTip text="Marcá los conceptos a los que aplica la regla. El concepto sale del texto del extracto: impuesto al cheque, retención de IIBB, comisiones, sueldos… Si no marcás ninguno, no filtra por concepto." />
+                    </>
+                  }
+                  full
+                >
+                  <div className="flex flex-wrap gap-1.5">
+                    {CATEGORIAS_MOVIMIENTO.map((c) => {
+                      const on = condCategorias.includes(c);
+                      return (
+                        <button
+                          type="button"
+                          key={c}
+                          onClick={() =>
+                            setCondCategorias((prev) =>
+                              prev.includes(c)
+                                ? prev.filter((x) => x !== c)
+                                : [...prev, c]
+                            )
+                          }
+                          className={`h-8 px-2.5 text-[12.5px] font-medium rounded-[8px] border transition-colors ${
+                            on
+                              ? 'bg-[var(--arca-accent)] text-white border-[var(--arca-accent)]'
+                              : 'border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                          }`}
+                        >
+                          {CATEGORIA_MOVIMIENTO_LABEL[c]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Field>
+                <Field
+                  label={
+                    <>
+                      Entra o sale
+                      <HelpTip text="El mismo concepto puede tener las dos puntas: una transferencia que entra es un cobro y una que sale, un pago, y no van a la misma cuenta." />
+                    </>
+                  }
+                  full
+                >
+                  <Select
+                    value={condMovDireccion === '' ? 'ambas' : condMovDireccion}
+                    onValueChange={(v) =>
+                      setCondMovDireccion(
+                        v === 'ambas' ? '' : (v as 'ingreso' | 'egreso')
+                      )
+                    }
+                  >
+                    <SelectTrigger className="w-full text-[12.5px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ambas">Las dos</SelectItem>
+                      <SelectItem value="ingreso">Solo lo que entra</SelectItem>
+                      <SelectItem value="egreso">Solo lo que sale</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-[11px] text-[var(--arca-ink-3)]">
+                    {condCategorias.length === 0 && condMovDireccion === ''
+                      ? 'Sin filtros: esta regla condicional aplicaría a cualquier movimiento.'
+                      : `Aplica a ${
+                          condCategorias.length
+                            ? condCategorias
+                                .map(
+                                  (c) =>
+                                    CATEGORIA_MOVIMIENTO_LABEL[
+                                      c as keyof typeof CATEGORIA_MOVIMIENTO_LABEL
+                                    ] ?? c
+                                )
+                                .join(', ')
+                            : 'cualquier movimiento'
+                        }${
+                          condMovDireccion === 'ingreso'
+                            ? ', solo cuando entra'
+                            : condMovDireccion === 'egreso'
+                              ? ', solo cuando sale'
+                              : ''
+                        }.`}
+                  </p>
+                </Field>
+              </>
+            )}
         </div>
 
         {/* Líneas-plantilla */}
@@ -7743,7 +7869,7 @@ function RuleEditorDialog({
                 <SelectContent>
                   {basesDelModulo(sourceModule).map((b) => (
                     <SelectItem key={b} value={b}>
-                      {MAPPING_AMOUNT_BASIS_LABELS[b]}
+                      {etiquetaBase(b, sourceModule)}
                     </SelectItem>
                   ))}
                 </SelectContent>
