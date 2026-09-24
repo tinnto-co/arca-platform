@@ -135,11 +135,12 @@ function Comparacion({
                 Diferencia
               </p>
             </TooltipTrigger>
-            <TooltipContent className="max-w-[300px] text-[12px] leading-snug">
+            <TooltipContent className="max-w-[320px] text-[12px] leading-snug">
               {etiquetaBanco} menos {etiquetaComprobantes.toLowerCase()}. El
               porcentaje es esa diferencia sobre{' '}
-              {etiquetaComprobantes.toLowerCase()}, el total de los comprobantes
-              del período.
+              {etiquetaComprobantes.toLowerCase()}, que es la referencia: lo que
+              debería haber pasado por el banco. Sin comprobantes en el período
+              no hay contra qué comparar y no se muestra.
             </TooltipContent>
           </Tooltip>
           <p
@@ -148,8 +149,13 @@ function Comparacion({
           >
             {lado.diferencia > 0 ? '+' : ''}
             {fmt.format(lado.diferencia)}
+            {/* Sin comprobantes el porcentaje no significa nada: la cuenta
+                sería sobre cero. Pasa de verdad (Chirin, agosto 2026: entraron
+                $12,5M sin una sola factura emitida). */}
             <span className="ml-1 text-[11px] font-normal">
-              ({lado.porcentaje}%)
+              {lado.comprobantes === 0
+                ? 'sin comprobantes'
+                : `(${lado.porcentaje}%)`}
             </span>
           </p>
         </div>
