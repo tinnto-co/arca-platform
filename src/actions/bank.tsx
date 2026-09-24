@@ -10,6 +10,7 @@ import { createServerFn } from '@tanstack/react-start';
 import z from 'zod';
 import { db } from '@/lib/db';
 import {
+  cuenta,
   cuentaBancaria,
   cuentaBancariaTipo,
   movimientoBancario,
@@ -110,6 +111,60 @@ export const createCuentaBancaria = createServerFn({ method: 'POST' })
       .returning();
 
     return cuenta;
+  });
+
+/**
+ * A qué cuenta del plan se imputan los movimientos de esta cuenta bancaria.
+ *
+ * Sin esto no hay asiento posible: el Debe de un cobro y el Haber de un pago
+ * van siempre contra el banco, y el banco es una cuenta del plan distinta por
+ * cada cuenta bancaria (Banco Nación c/c no es Banco Galicia c/c).
+ */
+export const setCuentaContableDeCuentaBancaria = createServerFn({
+  method: 'POST',
+})
+  .validator(
+    z.object({
+      cuentaBancariaId: z.string().uuid(),
+      /** Null la desvincula: la cuenta queda sin poder generar asientos. */
+      cuentaContableId: z.string().uuid().nullable(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+    const cuentaBanco = await getCuentaDeOrg(ctx.data.cuentaBancariaId, orgId);
+
+    // La cuenta contable tiene que ser de la misma organización y poder
+    // recibir asientos: una cuenta de agrupación no admite movimientos.
+    if (ctx.data.cuentaContableId) {
+      const [destino] = await db
+        .select({
+          id: cuenta.id,
+          tipo: cuenta.tipo,
+          clienteId: cuenta.clienteId,
+        })
+        .from(cuenta)
+        .where(
+          and(
+            eq(cuenta.id, ctx.data.cuentaContableId),
+            eq(cuenta.orgId, orgId),
+            eq(cuenta.tipo, 'imputable')
+          )
+        );
+      if (!destino)
+        throw new Error('La cuenta contable no existe o no es imputable');
+      // Una cuenta propia de otro cliente no puede usarse acá.
+      if (destino.clienteId && destino.clienteId !== cuentaBanco.clienteId)
+        throw new Error('Esa cuenta es de otra empresa');
+    }
+
+    await db
+      .update(cuentaBancaria)
+      .set({ cuentaContableId: ctx.data.cuentaContableId })
+      .where(eq(cuentaBancaria.id, ctx.data.cuentaBancariaId));
+
+    return { success: true };
   });
 
 export const listCuentasBancarias = createServerFn({ method: 'GET' })
@@ -225,6 +280,7 @@ export const listCuentasConResumen = createServerFn({ method: 'GET' })
         alias: cuentaBancaria.alias,
         tipo: cuentaBancaria.tipo,
         moneda: cuentaBancaria.moneda,
+        cuentaContableId: cuentaBancaria.cuentaContableId,
         movimientos: sql<number>`(count(${movimientoBancario.id}))::int`,
         ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
         egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,

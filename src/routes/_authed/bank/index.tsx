@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConAyuda } from '@/components/shared/ayuda';
+import { getPostableAccounts } from '@/actions/accounting';
 import { CardsResumen } from '@/components/shared/cards-resumen';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -74,6 +75,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ArcaCard } from '@/components/dashboard/shared';
 import {
+  setCuentaContableDeCuentaBancaria,
   listCuentasConResumen,
   listMovimientos,
   autoConciliar,
@@ -1519,6 +1521,79 @@ function TotalesDelPeriodo({
 }
 
 /* ─── Las cuentas, visibles ─── */
+/**
+ * A qué cuenta del plan van los movimientos de esta cuenta bancaria.
+ *
+ * Sin esto no hay asiento posible: el Debe de un cobro y el Haber de un pago
+ * van siempre contra el banco, y cada cuenta bancaria es una cuenta distinta
+ * del plan (Banco Naci\u00f3n c/c no es Banco Galicia c/c). Va debajo de la
+ * tarjeta y no adentro, porque la tarjeta entera es el bot\u00f3n que filtra.
+ */
+function CuentaContableDeBanco({
+  cuenta,
+  clienteId,
+}: {
+  cuenta: CuentaConResumen;
+  clienteId: string;
+}) {
+  const queryClient = useQueryClient();
+  const { data: plan = [] } = useQuery({
+    queryKey: ['accounting', 'postable', clienteId],
+    queryFn: () => getPostableAccounts({ data: { clientId: clienteId } }),
+    enabled: !!clienteId,
+  });
+
+  const guardar = useMutation({
+    mutationFn: (cuentaContableId: string | null) =>
+      setCuentaContableDeCuentaBancaria({
+        data: { cuentaBancariaId: cuenta.id, cuentaContableId },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bankAccountsResumen'] });
+      toast.success('Cuenta contable actualizada');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const sinAsignar = !cuenta.cuentaContableId;
+
+  return (
+    <div className="mt-1.5 flex items-center gap-2">
+      <SearchableSelect
+        size="sm"
+        width="100%"
+        value={cuenta.cuentaContableId ?? 'ninguna'}
+        onValueChange={(v) => guardar.mutate(v === 'ninguna' ? null : v)}
+        placeholder="Cuenta contable"
+        searchPlaceholder="Buscar por código o nombre..."
+        label="Cuenta del plan"
+        options={[
+          { value: 'ninguna', label: 'Sin cuenta contable' },
+          ...plan.map((c) => ({ value: c.id, label: `${c.code} · ${c.name}` })),
+        ]}
+      />
+      <ConAyuda
+        texto={
+          sinAsignar
+            ? 'Elegí a qué cuenta del plan se imputan los movimientos de esta cuenta bancaria. Sin esto no se pueden generar los asientos automáticos.'
+            : 'A esta cuenta del plan se imputan los movimientos de esta cuenta bancaria.'
+        }
+      >
+        <span
+          className="shrink-0 cursor-default text-[11px]"
+          style={{
+            color: sinAsignar
+              ? 'var(--arca-accent-warn-fg)'
+              : 'var(--arca-ink-4)',
+          }}
+        >
+          {sinAsignar ? 'Sin asignar' : 'Asignada'}
+        </span>
+      </ConAyuda>
+    </div>
+  );
+}
+
 function TarjetaCuenta({
   cuenta,
   activa,
@@ -1914,23 +1989,25 @@ function BankPage() {
         ) : (
           <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {accounts.map((c) => (
-              <TarjetaCuenta
-                key={c.id}
-                cuenta={c}
-                activa={accountId === c.id}
-                onClick={() => {
-                  // Volver a clickear la cuenta activa muestra todas de nuevo.
-                  setAccountId((prev) => (prev === c.id ? '' : c.id));
-                  setShowManualMovement(false);
-                  void navigate({
-                    resetScroll: false,
-                    search: (prev: BankSearch) => ({
-                      ...prev,
-                      vista: 'movimientos',
-                    }),
-                  });
-                }}
-              />
+              <div key={c.id} className="flex flex-col">
+                <TarjetaCuenta
+                  cuenta={c}
+                  activa={accountId === c.id}
+                  onClick={() => {
+                    // Volver a clickear la cuenta activa muestra todas de nuevo.
+                    setAccountId((prev) => (prev === c.id ? '' : c.id));
+                    setShowManualMovement(false);
+                    void navigate({
+                      resetScroll: false,
+                      search: (prev: BankSearch) => ({
+                        ...prev,
+                        vista: 'movimientos',
+                      }),
+                    });
+                  }}
+                />
+                <CuentaContableDeBanco cuenta={c} clienteId={clienteId} />
+              </div>
             ))}
           </div>
         ))}
