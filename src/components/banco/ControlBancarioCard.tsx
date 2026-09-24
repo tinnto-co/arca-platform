@@ -13,7 +13,18 @@
  */
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Scale, Loader2, ChevronDown } from 'lucide-react';
+import {
+  Scale,
+  Loader2,
+  ChevronDown,
+  ArrowDownLeft,
+  ArrowUpRight,
+} from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { getControlBancario } from '@/actions/bank';
 import { MesPicker } from '@/components/shared/mes-picker';
 import { CATEGORIA_MOVIMIENTO_LABEL } from '@/lib/clasificar-movimiento';
@@ -48,6 +59,34 @@ function mesAnterior(): string {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Badge de entrada o salida: el color y la flecha se leen antes que el texto. */
+function Insignia({
+  direccion,
+  texto,
+}: {
+  direccion: 'ingreso' | 'egreso';
+  texto: string;
+}) {
+  const entra = direccion === 'ingreso';
+  const Flecha = entra ? ArrowDownLeft : ArrowUpRight;
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+      style={{
+        background: entra
+          ? 'var(--arca-accent-pos-bg, oklch(0.95 0.05 145))'
+          : 'var(--arca-accent-neg-bg, oklch(0.95 0.04 25))',
+        color: entra
+          ? 'var(--arca-accent-pos-fg, oklch(0.4 0.12 145))'
+          : 'var(--arca-accent-neg, oklch(0.5 0.18 25))',
+      }}
+    >
+      <Flecha className="size-3" strokeWidth={2.5} />
+      {texto}
+    </span>
+  );
 }
 
 /** Una de las dos comparaciones, con su diferencia. */
@@ -90,7 +129,19 @@ function Comparacion({
           </p>
         </div>
         <div>
-          <p className="text-[11px] text-[var(--arca-ink-3)]">Diferencia</p>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p className="w-fit cursor-help text-[11px] text-[var(--arca-ink-3)] underline decoration-dotted underline-offset-2">
+                Diferencia
+              </p>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[300px] text-[12px] leading-snug">
+              {etiquetaBanco} menos {etiquetaComprobantes.toLowerCase()}. El
+              porcentaje es esa diferencia sobre{' '}
+              {etiquetaComprobantes.toLowerCase()}, el total de los comprobantes
+              del período.
+            </TooltipContent>
+          </Tooltip>
           <p
             className="text-[15px] font-semibold tabular-nums"
             style={{ color }}
@@ -120,9 +171,19 @@ export function ControlBancarioCard({
   periodo?: string;
   onPeriodoChange: (mes: string) => void;
 }) {
+  // La ventana arranca siempre en un mes: es el período con el que trabaja el
+  // estudio. Mirar más meses es una decisión puntual, así que no se recuerda
+  // al cambiar de empresa o de mes.
   const [meses, setMeses] = useState(1);
   const [verDesglose, setVerDesglose] = useState(false);
   const mes = periodo ?? mesAnterior();
+  // Se ajusta durante el render, no en un efecto: así la card nunca llega a
+  // pintarse con la ventana de la empresa anterior.
+  const [clave, setClave] = useState(`${clienteId}|${mes}`);
+  if (clave !== `${clienteId}|${mes}`) {
+    setClave(`${clienteId}|${mes}`);
+    setMeses(1);
+  }
 
   const { data, isFetching } = useQuery({
     queryKey: ['controlBancario', clienteId, mes, meses],
@@ -135,7 +196,6 @@ export function ControlBancarioCard({
   });
 
   const desglose = data?.desglose ?? [];
-  const totalDesglose = desglose.reduce((s, d) => s + d.total, 0);
 
   return (
     <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] p-4">
@@ -237,60 +297,80 @@ export function ControlBancarioCard({
               </button>
             </div>
 
-            {/* El desglose es lo que explica la diferencia: qué parte de lo que
-                entró o salió son impuestos, comisiones o sueldos. */}
+            {/* El desglose es lo que explica la diferencia: qué parte de lo
+                que entró o salió son impuestos, comisiones o sueldos. Va en
+                dos bloques, porque mezclar lo que entra con lo que sale en una
+                sola lista obliga a leer fila por fila para ubicarse. */}
             {verDesglose && (
-              <div className="mt-2 overflow-hidden rounded-[10px] border border-[var(--arca-border)]">
-                <table className="w-full text-[12px]">
-                  <thead className="bg-[var(--arca-bg)] text-[10.5px] uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                    <tr>
-                      <th className="px-3 py-1.5 text-left font-semibold">
-                        Concepto
-                      </th>
-                      <th className="px-3 py-1.5 text-left font-semibold">
-                        Entró o salió
-                      </th>
-                      <th className="px-3 py-1.5 text-right font-semibold">
-                        Movimientos
-                      </th>
-                      <th className="px-3 py-1.5 text-right font-semibold">
-                        Total
-                      </th>
-                      <th className="px-3 py-1.5 text-right font-semibold">
-                        % del total
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {desglose.map((d) => (
-                      <tr
-                        key={`${d.categoria}-${d.direccion}`}
-                        className="border-t border-[var(--arca-border)]"
-                      >
-                        <td className="px-3 py-1.5">
-                          {CATEGORIA_MOVIMIENTO_LABEL[
-                            d.categoria as keyof typeof CATEGORIA_MOVIMIENTO_LABEL
-                          ] ?? d.categoria}
-                        </td>
-                        <td className="px-3 py-1.5 text-[var(--arca-ink-3)]">
-                          {d.direccion === 'ingreso' ? 'Entró' : 'Salió'}
-                        </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">
-                          {d.movimientos}
-                        </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">
-                          {fmt.format(d.total)}
-                        </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-[var(--arca-ink-3)]">
-                          {totalDesglose > 0
-                            ? Math.round((d.total / totalDesglose) * 100)
-                            : 0}
-                          %
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {(
+                  [
+                    ['ingreso', 'Entró', data.ingresos.banco],
+                    ['egreso', 'Salió', data.egresos.banco],
+                  ] as const
+                ).map(([direccion, titulo, total]) => {
+                  const filas = desglose.filter(
+                    (d) => d.direccion === direccion
+                  );
+                  return (
+                    <div
+                      key={direccion}
+                      className="overflow-hidden rounded-[10px] border border-[var(--arca-border)]"
+                    >
+                      <div className="flex items-center gap-2 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-3 py-2">
+                        <Insignia direccion={direccion} texto={titulo} />
+                        <span className="ml-auto text-[12.5px] font-semibold tabular-nums text-[var(--arca-ink)]">
+                          {fmt.format(total)}
+                        </span>
+                      </div>
+                      {filas.length === 0 ? (
+                        <p className="px-3 py-3 text-[12px] text-[var(--arca-ink-4)]">
+                          Sin movimientos de este lado en el período.
+                        </p>
+                      ) : (
+                        <ul className="divide-y divide-[var(--arca-border)]">
+                          {filas.map((d) => {
+                            const parte = total > 0 ? d.total / total : 0;
+                            return (
+                              <li key={d.categoria} className="px-3 py-2">
+                                <div className="flex items-baseline gap-2">
+                                  <span className="text-[12.5px] text-[var(--arca-ink)]">
+                                    {CATEGORIA_MOVIMIENTO_LABEL[
+                                      d.categoria as keyof typeof CATEGORIA_MOVIMIENTO_LABEL
+                                    ] ?? d.categoria}
+                                  </span>
+                                  <span className="text-[11px] text-[var(--arca-ink-4)]">
+                                    {d.movimientos}
+                                  </span>
+                                  <span className="ml-auto text-[12.5px] font-medium tabular-nums text-[var(--arca-ink)]">
+                                    {fmt.format(d.total)}
+                                  </span>
+                                  <span className="w-9 text-right text-[11px] tabular-nums text-[var(--arca-ink-3)]">
+                                    {Math.round(parte * 100)}%
+                                  </span>
+                                </div>
+                                {/* La barra deja ver de un vistazo qué concepto
+                                    explica la mayor parte del movimiento. */}
+                                <div className="mt-1 h-1 overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{
+                                      width: `${Math.max(parte * 100, 1)}%`,
+                                      background:
+                                        direccion === 'ingreso'
+                                          ? 'var(--arca-accent-pos-fg, oklch(0.5 0.12 145))'
+                                          : 'var(--arca-accent-neg, oklch(0.55 0.18 25))',
+                                    }}
+                                  />
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>
