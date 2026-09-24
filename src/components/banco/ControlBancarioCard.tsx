@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Scale,
+  Gauge,
   Loader2,
   ChevronDown,
   ArrowDownLeft,
@@ -259,7 +259,7 @@ export function ControlBancarioCard({
   return (
     <div className="flex h-full flex-col rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Scale className="size-4 text-[var(--arca-ink-2)]" strokeWidth={2} />
+        <Gauge className="size-4 text-[var(--arca-ink-2)]" strokeWidth={2} />
         <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
           Control bancario
         </span>

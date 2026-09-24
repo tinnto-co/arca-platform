@@ -19,7 +19,7 @@ import {
   Check,
   X,
   Gauge,
-  Link2,
+  Scale,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -1823,7 +1823,7 @@ function BankPage() {
               ['control', 'Control', Gauge],
               ['movimientos', 'Movimientos', ArrowLeftRight],
               ['cuentas', 'Cuentas y extractos', Landmark],
-              ['conciliacion', 'Conciliación', Link2],
+              ['conciliacion', 'Conciliación', Scale],
             ] as const
           ).map(([id, label, Icono]) => (
             <button
