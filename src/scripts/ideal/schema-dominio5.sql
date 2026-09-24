@@ -63,6 +63,8 @@ create table movimiento_bancario (
   categoria text,
   categoria_fuente text check (categoria_fuente in ('sistema', 'manual')),
   excluido boolean not null default false,
+  asiento_id uuid references asiento(id) on delete set null,
+  no_contabilizar boolean not null default false,
   fuente dato_fuente not null default 'import',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -72,12 +74,17 @@ create index idx_movimiento_bancario_cuenta on movimiento_bancario(cuenta_bancar
 create index idx_movimiento_bancario_fecha on movimiento_bancario(fecha);
 create index idx_movimiento_bancario_periodo on movimiento_bancario(periodo);
 create index idx_movimiento_bancario_contraparte on movimiento_bancario(contraparte_id);
+create index idx_movimiento_bancario_asiento on movimiento_bancario(asiento_id) where asiento_id is not null;
 create unique index idx_movimiento_bancario_externo
   on movimiento_bancario(cuenta_bancaria_id, id_externo) where id_externo is not null;
 create trigger trg_set_updated_at before update on movimiento_bancario for each row execute function set_updated_at();
 
 comment on table movimiento_bancario is
-  'Una línea del extracto bancario. El asiento contable NO se guarda acá: lo apunta asiento.origen_tipo = movimiento_bancario + origen_id.';
+  'Una línea del extracto bancario.';
+comment on column movimiento_bancario.asiento_id is
+  'En qué asiento quedó contabilizado. El asiento del banco agrupa un mes, un concepto y una cuenta bancaria, así que muchos movimientos apuntan al mismo: por eso la referencia vive acá y no en asiento.origen_id. Null = todavía no contabilizado.';
+comment on column movimiento_bancario.no_contabilizar is
+  'Marcado a mano: este movimiento ya está contabilizado por otro lado y el asiento automático tiene que ignorarlo.';
 comment on column movimiento_bancario.direccion is
   'Visto desde el cliente: ingreso = entró plata a su cuenta, egreso = salió. No se usa el criterio del banco (que lo ve al revés).';
 comment on column movimiento_bancario.importe is

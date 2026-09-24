@@ -2686,6 +2686,8 @@ export const movimientoBancario = pgTable("movimiento_bancario", {
 	categoria: text(),
 	categoriaFuente: text("categoria_fuente"),
 	excluido: boolean().default(false).notNull(),
+	asientoId: uuid("asiento_id"),
+	noContabilizar: boolean("no_contabilizar").default(false).notNull(),
 	fuente: datoFuente().default('import').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

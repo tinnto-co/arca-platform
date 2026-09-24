@@ -138,6 +138,11 @@ export interface AsientoBancarioArmado extends AsientoArmado {
   grupo: GrupoBancario;
   /** La regla que lo generó, para poder rastrearlo y regenerarlo. */
   reglaId: string | null;
+  /**
+   * Por qué este grupo no se puede contabilizar todavía. Con bloqueo no hay
+   * asiento: `lineas` queda vacío y generar lo saltea.
+   */
+  bloqueo: string | null;
 }
 
 /**
@@ -158,20 +163,40 @@ export function armarLineasBanco(
   const lineas: LineaArmada[] = [];
   const regla = seleccionarReglaGrupo(reglas, grupo);
 
-  const aRevision = (motivo: string): AsientoBancarioArmado => {
-    // Contra sí misma no sirve de nada: el asiento tiene que tener dos lados,
-    // y del lado del banco no hay cuenta que usar.
+  // Sin la cuenta del banco no hay asiento posible: uno con el Debe y el
+  // Haber en "Pendiente de revisión" mueve la plata contra sí misma y ensucia
+  // el mayor sin decir nada. Es mejor no generarlo y avisar qué falta.
+  if (!cuentaDelBancoId)
+    return {
+      grupo,
+      reglaId: null,
+      lineas: [],
+      usoPendienteRevision: false,
+      motivo: null,
+      bloqueo:
+        'La cuenta bancaria no tiene cuenta contable asignada (Banco → Cuentas y extractos)',
+    };
+
+  /**
+   * Sin regla el asiento igual se arma: contra el banco de un lado y
+   * "Pendiente de revisión" del otro. Así la plata queda registrada, el saldo
+   * del banco cierra, y lo que falta definir queda a la vista trabando el
+   * cierre del período.
+   */
+  if (!regla) {
+    const motivo = `Sin regla para ${grupo.categoria} (${grupo.direccion === 'ingreso' ? 'entra' : 'sale'})`;
+    const entra = grupo.direccion === 'ingreso';
     lineas.push({
-      cuentaId: cuentaPendienteRevisionId,
-      debe: grupo.direccion === 'ingreso' ? grupo.total : 0,
-      haber: grupo.direccion === 'ingreso' ? 0 : grupo.total,
+      cuentaId: entra ? cuentaDelBancoId : cuentaPendienteRevisionId,
+      debe: grupo.total,
+      haber: 0,
       descripcion: motivo,
       reglaId: null,
     });
     lineas.push({
-      cuentaId: cuentaDelBancoId ?? cuentaPendienteRevisionId,
-      debe: grupo.direccion === 'ingreso' ? 0 : grupo.total,
-      haber: grupo.direccion === 'ingreso' ? grupo.total : 0,
+      cuentaId: entra ? cuentaPendienteRevisionId : cuentaDelBancoId,
+      debe: 0,
+      haber: grupo.total,
       descripcion: motivo,
       reglaId: null,
     });
@@ -181,26 +206,16 @@ export function armarLineasBanco(
       lineas,
       usoPendienteRevision: true,
       motivo,
+      bloqueo: null,
     };
-  };
-
-  if (!regla)
-    return aRevision(
-      `Sin regla para ${grupo.categoria} (${grupo.direccion === 'ingreso' ? 'entra' : 'sale'})`
-    );
-
-  const necesitaBanco = regla.lineas.some((l) => l.usaCuentaBanco);
-  if (necesitaBanco && !cuentaDelBancoId)
-    return aRevision(
-      'La cuenta bancaria no tiene cuenta contable asignada (Banco → Cuentas y extractos)'
-    );
+  }
 
   for (const l of regla.lineas) {
     const importe =
       l.base === 'fijo' ? round2(num(l.importeFijo)) : grupo.total;
     if (importe === 0) continue;
     lineas.push({
-      cuentaId: l.usaCuentaBanco ? cuentaDelBancoId! : l.cuentaId!,
+      cuentaId: l.usaCuentaBanco ? cuentaDelBancoId : l.cuentaId!,
       debe: l.lado === 'debe' ? importe : 0,
       haber: l.lado === 'haber' ? importe : 0,
       descripcion: l.descripcion ?? null,
@@ -209,7 +224,14 @@ export function armarLineasBanco(
   }
 
   if (lineas.length === 0)
-    return aRevision(`La regla "${regla.nombre}" no generó ninguna línea`);
+    return {
+      grupo,
+      reglaId: regla.id,
+      lineas: [],
+      usoPendienteRevision: false,
+      motivo: null,
+      bloqueo: `La regla "${regla.nombre}" no genera ninguna línea para este importe`,
+    };
 
   const { cerro, motivo } = cerrarPorDiferencia(
     lineas,
@@ -226,5 +248,6 @@ export function armarLineasBanco(
     lineas,
     usoPendienteRevision: cerro,
     motivo,
+    bloqueo: null,
   };
 }

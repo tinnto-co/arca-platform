@@ -164,23 +164,39 @@ describe('armarLineasBanco', () => {
     });
   });
 
-  it('sin cuenta contable en la cuenta bancaria, el grupo va a revisión', () => {
+  it('sin cuenta contable en la cuenta bancaria, no se genera nada', () => {
+    // Un asiento con el Debe y el Haber en "Pendiente de revisión" mueve la
+    // plata contra sí misma: ensucia el mayor sin decir nada.
     const r = armarLineasBanco(grupo(), [reglaComisiones], PENDIENTE, null);
-    expect(r.usoPendienteRevision).toBe(true);
-    expect(r.motivo).toContain('no tiene cuenta contable');
-    // Aun así el asiento balancea.
-    expect(r.lineas.reduce((s, l) => s + l.debe, 0)).toBe(
-      r.lineas.reduce((s, l) => s + l.haber, 0)
-    );
+    expect(r.lineas).toHaveLength(0);
+    expect(r.bloqueo).toContain('no tiene cuenta contable');
   });
 
-  it('sin regla, el grupo va a revisión y el asiento cuadra igual', () => {
+  it('sin regla, el asiento igual se arma contra el banco', () => {
+    // La plata queda registrada y el saldo del banco cierra; lo que falta
+    // definir queda en revisión, trabando el cierre del período.
     const r = armarLineasBanco(grupo(), [], PENDIENTE, CTA_BBVA);
     expect(r.usoPendienteRevision).toBe(true);
     expect(r.reglaId).toBeNull();
+    expect(r.bloqueo).toBeNull();
     expect(r.motivo).toContain('Sin regla');
-    expect(r.lineas.reduce((s, l) => s + l.debe, 0)).toBe(350);
-    expect(r.lineas.reduce((s, l) => s + l.haber, 0)).toBe(350);
+    expect(r.lineas).toEqual([
+      expect.objectContaining({ cuentaId: PENDIENTE, debe: 350 }),
+      expect.objectContaining({ cuentaId: CTA_BBVA, haber: 350 }),
+    ]);
+  });
+
+  it('sin regla y entrando plata, el banco va al Debe', () => {
+    const r = armarLineasBanco(
+      grupo({ direccion: 'ingreso' }),
+      [],
+      PENDIENTE,
+      CTA_BBVA
+    );
+    expect(r.lineas).toEqual([
+      expect.objectContaining({ cuentaId: CTA_BBVA, debe: 350 }),
+      expect.objectContaining({ cuentaId: PENDIENTE, haber: 350 }),
+    ]);
   });
 
   it('una regla que no cuadra manda la diferencia a revisión', () => {
