@@ -163,15 +163,21 @@ function Comparacion({
           >
             {lado.diferencia > 0 ? '+' : ''}
             {fmt.format(lado.diferencia)}
-            {/* Sin comprobantes el porcentaje no significa nada: la cuenta
-                sería sobre cero. Pasa de verdad (Chirin, agosto 2026: entraron
-                $12,5M sin una sola factura emitida). */}
-            <span className="ml-1 text-[11px] font-normal">
-              {lado.comprobantes === 0
-                ? 'sin comprobantes'
-                : `(${lado.porcentaje}%)`}
-            </span>
+            {lado.comprobantes > 0 && (
+              <span className="ml-1 text-[11px] font-normal">
+                ({lado.porcentaje}%)
+              </span>
+            )}
           </p>
+          {/* Sin comprobantes el porcentaje no significa nada: la cuenta sería
+              sobre cero. Pasa de verdad (Chirin, agosto 2026: entraron $12,5M
+              sin una sola factura emitida). Va debajo, no al lado del importe,
+              para no empujar el número. */}
+          {lado.comprobantes === 0 && (
+            <p className="text-[11px] text-[var(--arca-ink-4)]">
+              sin comprobantes
+            </p>
+          )}
         </div>
       </div>
       {explicacion && (
