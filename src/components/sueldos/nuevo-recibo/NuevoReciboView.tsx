@@ -20,6 +20,7 @@ import {
   listImportRecibosByPeriodo,
   listSituaciones,
 } from '@/actions/sueldos';
+import { baseColumnaDe } from '@/components/sueldos/TablaReciboSos';
 import type {
   ConceptoImportado,
   EditsMap,
@@ -238,13 +239,25 @@ export function NuevoReciboView({
         ...plantillaManual.map((p) => {
           const prev = ultimoByCode.get(p.codigo);
           if (!prev) return p;
+          /*
+           * El monto y el importe del recibo anterior se copian SOLO en los
+           * conceptos de importe propio. En los que se derivan del básico o
+           * de un subtotal, copiarlos congelaba el recibo viejo: el cálculo
+           * no pisa un monto que ya tiene valor, así que "Copiar último
+           * recibo" traía el básico del mes anterior y la escala nueva no se
+           * aplicaba —y el importe copiado es el valor diario del básico
+           * viejo, que además alimenta la fórmula—. Cantidad, porcentaje y
+           * topes sí se copian: son la configuración del concepto.
+           */
+          const base = baseColumnaDe(p);
+          const importePropio = base === null || base === 'importe_fijo';
           return {
             ...p,
-            monto: prev.monto,
+            monto: importePropio ? prev.monto : p.monto,
             cantidad: prev.cantidad,
             porcentaje: prev.porcentaje,
             importeConceptoNumero: refATexto(prev.importeConceptoNumero),
-            importe: prev.importe,
+            importe: importePropio ? prev.importe : p.importe,
             importeMinimo: prev.importeMinimo,
             importeMaximo: prev.importeMaximo,
             memo: prev.memo ?? null,
@@ -724,7 +737,10 @@ export function NuevoReciboView({
           convenioNombre={convenioNombre}
           categoriaNombre={basicoData?.categoriaNombre ?? null}
           fechaBaja={fechaBaja}
-          onFechaBajaChange={(v) => { setFechaBaja(v); programarGuardado(); }}
+          onFechaBajaChange={(v) => {
+            setFechaBaja(v);
+            programarGuardado();
+          }}
         />
 
         <RevistaNovedadesCard
