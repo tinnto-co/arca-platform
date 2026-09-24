@@ -1119,106 +1119,6 @@ export const getResumenConciliacion = createServerFn({ method: 'GET' })
   });
 
 /**
- * Banco vs Facturación (TIN-1634): lo que entró al banco contra lo que la
- * empresa facturó en el mismo mes. La brecha grande es la incongruencia que
- * el estudio necesita ver (el caso del ticket: $10M facturados, $800M en la
- * cuenta). Los movimientos marcados `excluido` (p. ej. transferencias entre
- * cuentas propias) quedan afuera de la suma.
- */
-export const getBancoVsFacturacion = createServerFn({ method: 'GET' })
-  .validator(
-    z.object({
-      clienteId: z.string().uuid(),
-      /** Mes a comparar, 'YYYY-MM'. */
-      periodo: z.string().regex(/^\d{4}-\d{2}$/),
-    })
-  )
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-
-    const desde = `${ctx.data.periodo}-01`;
-    const hasta = sql`(${desde}::date + interval '1 month')`;
-
-    // Contra la base remota cada viaje cuesta cientos de milisegundos, y la
-    // card se repregunta con cada cambio de mes: las dos mitades salen en
-    // paralelo y los movimientos cuelgan del join con la cuenta, así no hace
-    // falta un viaje extra para saber qué cuentas tiene la empresa.
-    const [[banco], [ventas]] = await Promise.all([
-      db
-        .select({
-          cuentas: sql<number>`(count(distinct ${cuentaBancaria.id}))::int`,
-          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
-          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
-          movimientos: sql<number>`(count(${movimientoBancario.id}) filter (where not ${movimientoBancario.excluido}))::int`,
-          excluidos: sql<number>`(count(${movimientoBancario.id}) filter (where ${movimientoBancario.excluido}))::int`,
-          // El último mes con movimientos, sin importar el período pedido.
-          ultimoPeriodo: sql<string | null>`(
-            select to_char(max(mb2.fecha), 'YYYY-MM') from movimiento_bancario mb2
-            where mb2.cuenta_bancaria_id in (
-              select cb2.id from cuenta_bancaria cb2
-              where cb2.cliente_id = ${ctx.data.clienteId} and cb2.activa
-            )
-          )`,
-        })
-        .from(cuentaBancaria)
-        // LEFT JOIN: una empresa con cuentas pero sin movimientos en el mes
-        // tiene que seguir contando sus cuentas.
-        .leftJoin(
-          movimientoBancario,
-          and(
-            eq(movimientoBancario.cuentaBancariaId, cuentaBancaria.id),
-            gte(movimientoBancario.fecha, desde),
-            sql`${movimientoBancario.fecha} < ${hasta}`
-          )
-        )
-        .where(
-          and(
-            eq(cuentaBancaria.orgId, orgId),
-            eq(cuentaBancaria.clienteId, ctx.data.clienteId),
-            eq(cuentaBancaria.activa, true)
-          )
-        ),
-
-      // Ventas del mismo mes (mismo criterio que la solapa de IVA: emitidos,
-      // con las notas de crédito restando).
-      db
-        .select({
-          total: sql<string>`coalesce(sum(case when ${comprobanteTipo.esNc} then -${comprobante.total} else ${comprobante.total} end), 0)::text`,
-          comprobantes: sql<number>`count(${comprobante.id})::int`,
-        })
-        .from(comprobante)
-        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
-        .where(
-          and(
-            eq(comprobante.orgId, orgId),
-            eq(comprobante.clienteId, ctx.data.clienteId),
-            eq(comprobante.direccion, 'emitido'),
-            gte(comprobante.fechaEmision, desde),
-            sql`${comprobante.fechaEmision} < ${hasta}`
-          )
-        ),
-    ]);
-
-    const ingresosBancarios = Number(banco?.ingresos ?? 0);
-    const ventasFacturadas = Number(ventas?.total ?? 0);
-
-    return {
-      periodo: ctx.data.periodo,
-      // Para que la card pueda abrirse en un mes con datos en vez de en uno
-      // vacío: los extractos se cargan a mes vencido y con atraso.
-      ultimoPeriodoConDatos: banco?.ultimoPeriodo ?? null,
-      cuentas: Number(banco?.cuentas ?? 0),
-      ingresosBancarios,
-      egresosBancarios: Number(banco?.egresos ?? 0),
-      movimientos: Number(banco?.movimientos ?? 0),
-      movimientosExcluidos: Number(banco?.excluidos ?? 0),
-      ventasFacturadas,
-      comprobantes: Number(ventas?.comprobantes ?? 0),
-      ...semaforoBancoVsFacturacion(ingresosBancarios, ventasFacturadas),
-    };
-  });
-
-/**
  * Control bancario (reunión del 23/9): el módulo no busca cruzar factura por
  * factura, busca que los totales cierren. Dos comparaciones del mismo período:
  *
@@ -1281,53 +1181,82 @@ export const getControlBancario = createServerFn({ method: 'GET' })
               else coalesce(nullif(${comprobante.cotizacion}, 0), 1) end)
       * ${comprobante.total}), 0)::text`;
 
-    const [banco, porConcepto, [emitidas], [recibidas]] = await Promise.all([
-      db
-        .select({
-          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
-          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
-          movimientos: sql<number>`count(*)::int`,
-        })
-        .from(movimientoBancario)
-        .innerJoin(
-          cuentaBancaria,
-          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
-        )
-        .where(movimientosDelPeriodo),
+    const [banco, porConcepto, [emitidas], [recibidas], [ultimo]] =
+      await Promise.all([
+        db
+          .select({
+            ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+            egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+            movimientos: sql<number>`count(*)::int`,
+          })
+          .from(movimientoBancario)
+          .innerJoin(
+            cuentaBancaria,
+            eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+          )
+          .where(movimientosDelPeriodo),
 
-      db
-        .select({
-          categoria: movimientoBancario.categoria,
-          direccion: movimientoBancario.direccion,
-          total: sql<string>`coalesce(sum(${movimientoBancario.importe}), 0)::text`,
-          movimientos: sql<number>`count(*)::int`,
-        })
-        .from(movimientoBancario)
-        .innerJoin(
-          cuentaBancaria,
-          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
-        )
-        .where(movimientosDelPeriodo)
-        .groupBy(movimientoBancario.categoria, movimientoBancario.direccion),
+        db
+          .select({
+            categoria: movimientoBancario.categoria,
+            direccion: movimientoBancario.direccion,
+            total: sql<string>`coalesce(sum(${movimientoBancario.importe}), 0)::text`,
+            movimientos: sql<number>`count(*)::int`,
+          })
+          .from(movimientoBancario)
+          .innerJoin(
+            cuentaBancaria,
+            eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+          )
+          .where(movimientosDelPeriodo)
+          .groupBy(movimientoBancario.categoria, movimientoBancario.direccion),
 
-      db
-        .select({
-          total: totalComprobantes,
-          comprobantes: sql<number>`count(*)::int`,
-        })
-        .from(comprobante)
-        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
-        .where(comprobantesDelPeriodo('emitido')),
+        db
+          .select({
+            total: totalComprobantes,
+            comprobantes: sql<number>`count(*)::int`,
+          })
+          .from(comprobante)
+          .leftJoin(
+            comprobanteTipo,
+            eq(comprobanteTipo.codigo, comprobante.tipo)
+          )
+          .where(comprobantesDelPeriodo('emitido')),
 
-      db
-        .select({
-          total: totalComprobantes,
-          comprobantes: sql<number>`count(*)::int`,
-        })
-        .from(comprobante)
-        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
-        .where(comprobantesDelPeriodo('recibido')),
-    ]);
+        db
+          .select({
+            total: totalComprobantes,
+            comprobantes: sql<number>`count(*)::int`,
+          })
+          .from(comprobante)
+          .leftJoin(
+            comprobanteTipo,
+            eq(comprobanteTipo.codigo, comprobante.tipo)
+          )
+          .where(comprobantesDelPeriodo('recibido')),
+
+        // El último mes con movimientos, sin importar el período pedido: la card
+        // de la ficha del cliente abre ahí cuando el mes anterior está vacío,
+        // porque los extractos se cargan con atraso.
+        db
+          .select({
+            periodo: sql<
+              string | null
+            >`to_char(max(${movimientoBancario.fecha}), 'YYYY-MM')`,
+          })
+          .from(movimientoBancario)
+          .innerJoin(
+            cuentaBancaria,
+            eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+          )
+          .where(
+            and(
+              eq(cuentaBancaria.orgId, orgId),
+              eq(cuentaBancaria.clienteId, clienteId),
+              eq(cuentaBancaria.activa, true)
+            )
+          ),
+      ]);
 
     const ingresos = Number(banco[0]?.ingresos ?? 0);
     const egresos = Number(banco[0]?.egresos ?? 0);
@@ -1359,6 +1288,7 @@ export const getControlBancario = createServerFn({ method: 'GET' })
         ...semaforoBancoVsFacturacion(egresos, compras),
       },
       movimientos: Number(banco[0]?.movimientos ?? 0),
+      ultimoPeriodoConDatos: ultimo?.periodo ?? null,
       desglose,
     };
   });

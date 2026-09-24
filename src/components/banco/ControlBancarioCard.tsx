@@ -19,13 +19,17 @@ import {
   ChevronDown,
   ArrowDownLeft,
   ArrowUpRight,
+  ArrowRight,
 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getControlBancario } from '@/actions/bank';
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { MesPicker } from '@/components/shared/mes-picker';
 import { CATEGORIA_MOVIMIENTO_LABEL } from '@/lib/clasificar-movimiento';
 import type { SemaforoIncongruencia } from '@/lib/extracto-calc';
@@ -53,6 +57,14 @@ const VENTANAS = [
 
 type Control = Awaited<ReturnType<typeof getControlBancario>>;
 type Lado = Control['ingresos'];
+
+/** 'YYYY-MM' → 'enero 2026', que es como lo lee una persona. */
+function mesEnPalabras(periodo: string): string {
+  const [ano, mes] = periodo.split('-');
+  return format(new Date(Number(ano), Number(mes) - 1, 1), 'MMMM yyyy', {
+    locale: es,
+  });
+}
 
 /** El mes anterior: los extractos se cargan a mes vencido. */
 function mesAnterior(): string {
@@ -106,7 +118,8 @@ function Comparacion({
   /** Cómo se nombra la referencia dentro de una frase: "lo facturado". */
   referencia: string;
   lado: Lado;
-  explicacion: string;
+  /** En la ficha del cliente no va: la card es un vistazo. */
+  explicacion: string | null;
 }) {
   const color = COLOR[lado.nivel];
   return (
@@ -159,9 +172,11 @@ function Comparacion({
           </p>
         </div>
       </div>
-      <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--arca-ink-3)]">
-        {explicacion}
-      </p>
+      {explicacion && (
+        <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--arca-ink-3)]">
+          {explicacion}
+        </p>
+      )}
     </div>
   );
 }
@@ -170,18 +185,26 @@ export function ControlBancarioCard({
   clienteId,
   periodo,
   onPeriodoChange,
+  compacto = false,
 }: {
   clienteId: string;
   /** Último mes de la ventana, 'YYYY-MM'. Lo manda la URL de Banco. */
   periodo?: string;
-  onPeriodoChange: (mes: string) => void;
+  onPeriodoChange?: (mes: string) => void;
+  /**
+   * En la ficha del cliente: sin selectores ni desglose, con link a Banco.
+   * Ahí la card es un vistazo, no la herramienta.
+   */
+  compacto?: boolean;
 }) {
   // La ventana arranca siempre en un mes: es el período con el que trabaja el
   // estudio. Mirar más meses es una decisión puntual, así que no se recuerda
   // al cambiar de empresa o de mes.
   const [meses, setMeses] = useState(1);
   const [verDesglose, setVerDesglose] = useState(false);
-  const mes = periodo ?? mesAnterior();
+  // En Banco el mes lo manda la URL; en la ficha del cliente lo lleva la card.
+  const [mesPropio, setMesPropio] = useState(mesAnterior());
+  const mes = periodo ?? mesPropio;
   // Se ajusta durante el render, no en un efecto: así la card nunca llega a
   // pintarse con la ventana de la empresa anterior.
   const [clave, setClave] = useState(`${clienteId}|${mes}`);
@@ -200,6 +223,22 @@ export function ControlBancarioCard({
     placeholderData: (previo) => previo,
   });
 
+  // La ficha del cliente abre en el mes anterior, que suele estar vacío
+  // porque los extractos llegan con atraso: si no hay nada, la card se corre
+  // sola —una sola vez— al último mes con movimientos.
+  const [yaReubicada, setYaReubicada] = useState(false);
+  if (
+    compacto &&
+    !yaReubicada &&
+    data &&
+    data.movimientos === 0 &&
+    data.ultimoPeriodoConDatos &&
+    data.ultimoPeriodoConDatos !== mes
+  ) {
+    setYaReubicada(true);
+    setMesPropio(data.ultimoPeriodoConDatos);
+  }
+
   const desglose = data?.desglose ?? [];
 
   return (
@@ -215,27 +254,37 @@ export function ControlBancarioCard({
             Actualizando…
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2">
-          {/* La ventana: mirar dos meses juntos absorbe el desfase entre lo
-              facturado y lo cobrado. */}
-          <select
-            value={meses}
-            onChange={(e) => setMeses(Number(e.target.value))}
-            className="h-7 rounded-[8px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 text-[11.5px] text-[var(--arca-ink-2)]"
+        {compacto ? (
+          <Link
+            to="/bank"
+            className="ml-auto inline-flex items-center gap-1 text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
           >
-            {VENTANAS.map((v) => (
-              <option key={v.meses} value={v.meses}>
-                {v.label}
-              </option>
-            ))}
-          </select>
-          <MesPicker
-            size="sm"
-            ano={mes.slice(0, 4)}
-            mes={mes.slice(5, 7)}
-            onChange={(ano, m) => onPeriodoChange(`${ano}-${m}`)}
-          />
-        </div>
+            Ver en Banco
+            <ArrowRight className="size-3" />
+          </Link>
+        ) : (
+          <div className="ml-auto flex items-center gap-2">
+            {/* La ventana: mirar dos meses juntos absorbe el desfase entre lo
+                facturado y lo cobrado. */}
+            <select
+              value={meses}
+              onChange={(e) => setMeses(Number(e.target.value))}
+              className="h-7 rounded-[8px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 text-[11.5px] text-[var(--arca-ink-2)]"
+            >
+              {VENTANAS.map((v) => (
+                <option key={v.meses} value={v.meses}>
+                  {v.label}
+                </option>
+              ))}
+            </select>
+            <MesPicker
+              size="sm"
+              ano={mes.slice(0, 4)}
+              mes={mes.slice(5, 7)}
+              onChange={(ano, m) => onPeriodoChange?.(`${ano}-${m}`)}
+            />
+          </div>
+        )}
       </div>
 
       <div
@@ -249,12 +298,16 @@ export function ControlBancarioCard({
           </p>
         ) : data.movimientos === 0 ? (
           <p className="mt-3 text-[12.5px] text-[var(--arca-ink-3)]">
-            Sin movimientos bancarios en el período. Importá el extracto para
-            comparar.
+            Sin movimientos bancarios en {mesEnPalabras(mes)}. Importá el
+            extracto para comparar.
           </p>
         ) : (
           <>
-            <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {/* En la ficha del cliente la card entra en 560px: dos columnas
+                dejarían cada comparación en 280 y los números se pisan. */}
+            <div
+              className={`mt-3 grid gap-2 ${compacto ? '' : 'md:grid-cols-2'}`}
+            >
               <Comparacion
                 titulo="Ingresos"
                 banco={data.ingresos.banco}
@@ -263,9 +316,11 @@ export function ControlBancarioCard({
                 referencia="lo que se facturó"
                 lado={data.ingresos}
                 explicacion={
-                  data.ingresos.diferencia > 0
-                    ? 'Entró más de lo facturado: puede haber cobros de facturas de meses anteriores o ventas sin facturar.'
-                    : 'Se facturó más de lo que entró: puede haber facturas todavía no cobradas, retenciones o cobros en efectivo.'
+                  compacto
+                    ? null
+                    : data.ingresos.diferencia > 0
+                      ? 'Entró más de lo facturado: puede haber cobros de facturas de meses anteriores o ventas sin facturar.'
+                      : 'Se facturó más de lo que entró: puede haber facturas todavía no cobradas, retenciones o cobros en efectivo.'
                 }
               />
               <Comparacion
@@ -276,14 +331,18 @@ export function ControlBancarioCard({
                 referencia="lo que se compró"
                 lado={data.egresos}
                 explicacion={
-                  data.egresos.diferencia > 0
-                    ? 'Salió más de lo comprado: impuestos, sueldos y comisiones no tienen factura de proveedor. El desglose lo explica.'
-                    : 'Se compró más de lo que salió: puede haber facturas todavía impagas.'
+                  compacto
+                    ? null
+                    : data.egresos.diferencia > 0
+                      ? 'Salió más de lo comprado: impuestos, sueldos y comisiones no tienen factura de proveedor. El desglose lo explica.'
+                      : 'Se compró más de lo que salió: puede haber facturas todavía impagas.'
                 }
               />
             </div>
 
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--arca-ink-4)]">
+            <div
+              className={`mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--arca-ink-4)] ${compacto ? 'hidden' : ''}`}
+            >
               <span>
                 {data.movimientos} movimiento
                 {data.movimientos !== 1 ? 's' : ''} ·{' '}
@@ -308,7 +367,7 @@ export function ControlBancarioCard({
                 que entró o salió son impuestos, comisiones o sueldos. Va en
                 dos bloques, porque mezclar lo que entra con lo que sale en una
                 sola lista obliga a leer fila por fila para ubicarse. */}
-            {verDesglose && (
+            {verDesglose && !compacto && (
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 {(
                   [

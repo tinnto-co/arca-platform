@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
-import { BancoVsFacturacionCard } from '@/components/banco/BancoVsFacturacionCard';
+import { ControlBancarioCard } from '@/components/banco/ControlBancarioCard';
 import { PanelLectura } from '@/components/notificaciones/PanelLectura';
 import { CrearTareaDesdeNotificacion } from '@/components/notificaciones/CrearTareaDesdeNotificacion';
 import {
@@ -2516,11 +2516,11 @@ export function RepresentativeDetailPage({
               `representative_balance_config` no existe en el modelo nuevo.
             */}
 
-            {/* Banco vs Facturación (TIN-1634): el semáforo del mes pasado.
-                Solo aparece si la empresa tiene cuentas bancarias cargadas. */}
+            {/* Control bancario: el vistazo del mes pasado, ingresos contra
+                ventas y egresos contra compras. El detalle está en Banco. */}
             {selectedClientId && (
               <div className="max-w-[560px]">
-                <BancoVsFacturacionCard clienteId={selectedClientId} compacto />
+                <ControlBancarioCard clienteId={selectedClientId} compacto />
               </div>
             )}
 
