@@ -47,6 +47,7 @@ import {
   desc,
   asc,
   lte,
+  lt,
   or,
   isNull,
   isNotNull,
@@ -5427,6 +5428,57 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
   });
 
 /**
+ * Envía por mail al empleador (cliente) el PDF/ZIP de recibos ya generado
+ * en el navegador. El adjunto viaja en base64; el servidor solo resuelve el
+ * destinatario (cliente.email) y dispara el mail vía Resend.
+ */
+export const enviarRecibosPorMail = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      ano: z.string().regex(/^\d{4}$/, 'Año inválido'),
+      mes: z
+        .string()
+        .regex(/^\d{2}$/)
+        .optional(),
+      filename: z.string().min(1),
+      contentBase64: z.string().min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [c] = await db
+      .select({ email: cliente.email, razonSocial: cliente.razonSocial })
+      .from(cliente)
+      .where(eq(cliente.id, ctx.data.clientId))
+      .limit(1);
+
+    if (!c?.email) {
+      throw new Error(
+        'El cliente no tiene un email cargado. Agregalo en "Editar cliente" antes de enviar los recibos.'
+      );
+    }
+
+    const { ano, mes } = ctx.data;
+    const periodoLabel = mes ? `${mes}/${ano}` : ano;
+
+    const { sendRecibosEmail } = await import('@/lib/send-recibos-email');
+    await sendRecibosEmail({
+      to: c.email,
+      razonSocial: c.razonSocial,
+      periodoLabel,
+      attachment: {
+        filename: ctx.data.filename,
+        contentBase64: ctx.data.contentBase64,
+      },
+    });
+  });
+
+/**
  * Resumen agregado de la liquidación de un cliente para un período.
  * Devuelve totales (haberes, no remunerativo, descuentos, retenciones, neto)
  * + cantidad de recibos por tipo + cantidad de empleados liquidados.
@@ -7026,6 +7078,249 @@ export const generarLiqFinalMasivo = createServerFn({ method: 'POST' })
     });
 
     return { generados: itemsACrear.length };
+  });
+
+// ─── Generación masiva de recibos mensuales (copiando el último) ──────────────
+
+/**
+ * Preview para el diálogo de generación masiva: por cada empleado activo,
+ * indica si ya tiene recibo mensual en el período y cuál sería el recibo
+ * anterior del que se copiarían los conceptos.
+ */
+export const getGenerarRecibosMasivoPreview = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const { periodo } = ctx.data;
+    const periodoDate = periodoADate(periodo);
+
+    const empleados = await db
+      .select({
+        id: empleado.id,
+        nombre: empleado.nombre,
+        legajo: empleado.legajo,
+        convenioId: empleado.convenioId,
+      })
+      .from(empleado)
+      .where(
+        and(eq(empleado.clienteId, ctx.data.clientId), eq(empleado.activo, true))
+      );
+
+    if (empleados.length === 0) return [];
+
+    const empIds = empleados.map((e) => e.id);
+
+    const existentes = await db
+      .select({ empleadoId: recibo.empleadoId })
+      .from(recibo)
+      .where(
+        and(
+          inArray(recibo.empleadoId, empIds),
+          eq(recibo.periodo, periodoDate),
+          eq(recibo.tipo, 'mensual')
+        )
+      );
+    const existentesIds = new Set(existentes.map((r) => r.empleadoId));
+
+    // Recibos mensuales anteriores al período, más reciente primero.
+    const anteriores = await db
+      .select({
+        empleadoId: recibo.empleadoId,
+        periodo: recibo.periodo,
+        neto: recibo.neto,
+      })
+      .from(recibo)
+      .where(
+        and(
+          inArray(recibo.empleadoId, empIds),
+          eq(recibo.tipo, 'mensual'),
+          lt(recibo.periodo, periodoDate)
+        )
+      )
+      .orderBy(desc(recibo.periodo));
+
+    const ultimoPorEmpleado = new Map<string, { periodo: string; neto: number }>();
+    for (const r of anteriores) {
+      if (!ultimoPorEmpleado.has(r.empleadoId)) {
+        ultimoPorEmpleado.set(r.empleadoId, {
+          periodo: dateAPeriodo(String(r.periodo)),
+          neto: Number(r.neto),
+        });
+      }
+    }
+
+    return empleados
+      .map((emp) => {
+        const ultimo = ultimoPorEmpleado.get(emp.id) ?? null;
+        return {
+          empleadoId: emp.id,
+          nombre: emp.nombre ?? '—',
+          legajo: emp.legajo ?? '',
+          sinConvenio: !emp.convenioId,
+          yaTiene: existentesIds.has(emp.id),
+          ultimoPeriodo: ultimo?.periodo ?? null,
+          ultimoNeto: ultimo?.neto ?? null,
+        };
+      })
+      .sort((a, b) => (a.nombre ?? '').localeCompare(b.nombre ?? ''));
+  });
+
+/**
+ * Genera en lote el recibo mensual de cada empleado seleccionado, copiando
+ * cabecera de pago y conceptos de su recibo mensual anterior más reciente
+ * (mismo criterio que "copiar último recibo" del alta individual). Quedan
+ * como borrador (`confirmado: false`) para revisar novedades del período
+ * antes de emitir.
+ */
+export const generarRecibosMasivo = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      empleadoIds: z.array(z.string().uuid()).min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    if (!puedeLiquidarPeriodo(ctx.data.periodo)) {
+      throw new Error('No se puede liquidar períodos futuros.');
+    }
+
+    const { periodo, empleadoIds } = ctx.data;
+    const periodoDate = periodoADate(periodo);
+    const [py, pm] = periodo.split('-').map(Number) as [number, number];
+
+    const empValidos = await db
+      .select({ id: empleado.id, convenioId: empleado.convenioId })
+      .from(empleado)
+      .where(
+        and(
+          inArray(empleado.id, empleadoIds),
+          eq(empleado.clienteId, ctx.data.clientId),
+          eq(empleado.activo, true)
+        )
+      );
+    const empValidosIds = new Set(
+      empValidos.filter((e) => e.convenioId).map((e) => e.id)
+    );
+
+    const existentes = await db
+      .select({ empleadoId: recibo.empleadoId })
+      .from(recibo)
+      .where(
+        and(
+          inArray(recibo.empleadoId, empleadoIds),
+          eq(recibo.periodo, periodoDate),
+          eq(recibo.tipo, 'mensual')
+        )
+      );
+    const existentesIds = new Set(existentes.map((r) => r.empleadoId));
+
+    const candidatos = empleadoIds.filter(
+      (id) => empValidosIds.has(id) && !existentesIds.has(id)
+    );
+    if (candidatos.length === 0) return { generados: 0 };
+
+    // Recibo mensual anterior más reciente por empleado (de donde se copia).
+    const anteriores = await db
+      .select()
+      .from(recibo)
+      .where(
+        and(
+          inArray(recibo.empleadoId, candidatos),
+          eq(recibo.tipo, 'mensual'),
+          lt(recibo.periodo, periodoDate)
+        )
+      )
+      .orderBy(desc(recibo.periodo));
+
+    const ultimoPorEmpleado = new Map<string, (typeof anteriores)[number]>();
+    for (const r of anteriores) {
+      if (!ultimoPorEmpleado.has(r.empleadoId))
+        ultimoPorEmpleado.set(r.empleadoId, r);
+    }
+
+    const ultimoDiaDelMes = new Date(py, pm, 0).getDate();
+    const [depY, depM] = pm === 12 ? [py + 1, 1] : [py, pm + 1];
+    const fechaDepositoCargasDefault = `${depY}-${String(depM).padStart(2, '0')}-10`;
+
+    let generados = 0;
+    await db.transaction(async (tx) => {
+      for (const empleadoId of candidatos) {
+        const prev = ultimoPorEmpleado.get(empleadoId);
+        if (!prev) continue;
+
+        const quincena = prev.quincena ?? 0;
+        const fecha = `${periodo}-${String(
+          quincena === 1 ? 15 : ultimoDiaDelMes
+        ).padStart(2, '0')}`;
+
+        const [nuevo] = await tx
+          .insert(recibo)
+          .values({
+            orgId,
+            clienteId: ctx.data.clientId,
+            empleadoId,
+            periodo: periodoDate,
+            tipo: 'mensual',
+            quincena,
+            basico: prev.basico,
+            haberes: prev.haberes,
+            noRemunerativo: prev.noRemunerativo,
+            descuentos: prev.descuentos,
+            retenciones: prev.retenciones,
+            neto: prev.neto,
+            obraSocialId: prev.obraSocialId,
+            fecha,
+            fechaPago: fecha,
+            lugarPago: prev.lugarPago,
+            formaPago: prev.formaPago,
+            cbu: prev.cbu,
+            banco: prev.banco,
+            periodoCargas: periodoDate,
+            fechaDepositoCargas: fechaDepositoCargasDefault,
+            confirmado: false,
+            fuente: 'calculo',
+          })
+          .returning();
+        if (!nuevo) continue;
+
+        const detallesPrev = await tx
+          .select()
+          .from(reciboConcepto)
+          .where(eq(reciboConcepto.reciboId, prev.id));
+        for (const d of detallesPrev) {
+          await tx.insert(reciboConcepto).values({
+            reciboId: nuevo.id,
+            conceptoId: d.conceptoId,
+            tipo: d.tipo,
+            monto: d.monto,
+            cantidad: d.cantidad,
+            porcentaje: d.porcentaje,
+            conceptoRef: d.conceptoRef,
+            importe: d.importe,
+            importeMin: d.importeMin,
+            importeMax: d.importeMax,
+            activo: d.activo,
+            memo: d.memo,
+          });
+        }
+        generados++;
+      }
+    });
+
+    return { generados };
   });
 
 /* ─── Listado de empresas para la portada de Sueldos ───────────────────────── */

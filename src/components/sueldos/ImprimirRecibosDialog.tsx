@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Loader2, Printer, Download, Eye, X } from 'lucide-react';
+import { Loader2, Printer, Download, Eye, X, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -21,10 +21,22 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { listRecibosDetalleParaPDF } from '@/actions/sueldos';
+import { listRecibosDetalleParaPDF, enviarRecibosPorMail } from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
 import type { ClientDataPdf } from './recibo-pdf';
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1] ?? '');
+    };
+    reader.onerror = () => reject(new Error(reader.error?.message ?? 'Error al leer el archivo.'));
+    reader.readAsDataURL(blob);
+  });
+}
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -70,6 +82,10 @@ export function ImprimirRecibosDialog({
   const [progreso, setProgreso] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [generandoPreview, setGenerandoPreview] = useState(false);
+  const [archivoGenerado, setArchivoGenerado] = useState<
+    { blob: Blob; filename: string; filtrosKey: string } | null
+  >(null);
+  const [enviandoMail, setEnviandoMail] = useState(false);
 
   // Limpiar la URL del blob al cerrar el diálogo
   useEffect(() => {
@@ -79,6 +95,12 @@ export function ImprimirRecibosDialog({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // El archivo generado deja de ser válido para enviar por mail si los
+  // filtros cambiaron desde que se generó (se compara sin estado extra).
+  const filtrosKey = `${ano}|${mes}|${todosEmpleados}|${[...selectedIds].sort().join(',')}`;
+  const archivoVigente =
+    archivoGenerado?.filtrosKey === filtrosKey ? archivoGenerado : null;
 
   function replacePreview(url: string | null) {
     setPreviewUrl((prev) => {
@@ -201,9 +223,9 @@ export function ImprimirRecibosDialog({
           : `Generando ${totalEmpleados} PDFs…`
       );
 
-      const { generarYDescargar } = await import('./recibo-pdf');
+      const { generarArchivoRecibos, triggerDownload } = await import('./recibo-pdf');
 
-      await generarYDescargar({
+      const archivo = await generarArchivoRecibos({
         recibosAgrupados: agrupados,
         clientData,
         firmaEmpleadorUrl,
@@ -215,13 +237,15 @@ export function ImprimirRecibosDialog({
         },
       });
 
+      triggerDownload(archivo.blob, archivo.filename);
+      setArchivoGenerado({ ...archivo, filtrosKey });
+
       const totalRecibos = data.length;
       toast.success(
         totalEmpleados === 1
           ? `PDF generado: ${totalRecibos} recibo${totalRecibos !== 1 ? 's' : ''}.`
           : `PDF generado: ${totalRecibos} recibos de ${totalEmpleados} empleados.`
       );
-      onOpenChange(false);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Error al generar el PDF.'
@@ -229,6 +253,30 @@ export function ImprimirRecibosDialog({
     } finally {
       setGenerando(false);
       setProgreso('');
+    }
+  }
+
+  // ── Enviar por mail al empleador ─────────────────────────────────────────
+
+  async function handleEnviarMail() {
+    if (!archivoVigente) return;
+    setEnviandoMail(true);
+    try {
+      const contentBase64 = await blobToBase64(archivoVigente.blob);
+      await enviarRecibosPorMail({
+        data: {
+          clientId,
+          ano,
+          mes: mes || undefined,
+          filename: archivoVigente.filename,
+          contentBase64,
+        },
+      });
+      toast.success('Recibos enviados por mail al cliente.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al enviar el mail.');
+    } finally {
+      setEnviandoMail(false);
     }
   }
 
@@ -240,7 +288,7 @@ export function ImprimirRecibosDialog({
         className={
           showPreview
             ? 'flex h-[88vh] w-[95vw] max-w-[95vw] sm:max-w-[95vw] flex-col'
-            : 'max-w-lg'
+            : 'flex max-h-[85vh] w-full flex-col sm:max-w-xl'
         }
       >
         <DialogHeader className="shrink-0">
@@ -250,21 +298,11 @@ export function ImprimirRecibosDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div
-          className={
-            showPreview
-              ? 'flex min-h-0 flex-1 gap-6 overflow-hidden'
-              : undefined
-          }
-        >
+        <div className="flex min-h-0 flex-1 gap-6 overflow-hidden">
+
           {/* ── Panel izquierdo: filtros ──────────────────────────────────── */}
-          <div
-            className={
-              showPreview
-                ? 'w-72 shrink-0 space-y-4 overflow-y-auto py-2'
-                : 'space-y-4 py-2'
-            }
-          >
+          <div className={showPreview ? 'w-72 shrink-0 space-y-4 overflow-y-auto py-2' : 'flex-1 space-y-4 overflow-y-auto py-2'}>
+
             {/* Año */}
             <div>
               <label className="mb-1.5 block text-sm font-medium">
@@ -419,12 +457,8 @@ export function ImprimirRecibosDialog({
         </div>
 
         {/* ── Acciones ─────────────────────────────────────────────────────── */}
-        <div className="flex shrink-0 justify-end gap-2 pt-1">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={generando}
-          >
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-[var(--arca-border)] pt-3">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={generando}>
             Cancelar
           </Button>
           <Button
@@ -452,6 +486,19 @@ export function ImprimirRecibosDialog({
             )}
             {generando ? 'Generando…' : 'Generar y descargar'}
           </Button>
+          {archivoVigente && (
+            <Button
+              variant="secondary"
+              onClick={handleEnviarMail}
+              disabled={enviandoMail}
+              className="gap-2"
+            >
+              {enviandoMail
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Mail className="h-4 w-4" />}
+              {enviandoMail ? 'Enviando…' : 'Enviar por mail'}
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>
