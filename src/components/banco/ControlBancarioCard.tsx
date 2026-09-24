@@ -95,6 +95,7 @@ function Comparacion({
   banco,
   etiquetaBanco,
   etiquetaComprobantes,
+  referencia,
   lado,
   explicacion,
 }: {
@@ -102,6 +103,8 @@ function Comparacion({
   banco: number;
   etiquetaBanco: string;
   etiquetaComprobantes: string;
+  /** Cómo se nombra la referencia dentro de una frase: "lo facturado". */
+  referencia: string;
   lado: Lado;
   explicacion: string;
 }) {
@@ -136,8 +139,7 @@ function Comparacion({
               </p>
             </TooltipTrigger>
             <TooltipContent className="max-w-[260px] text-[12px] leading-snug">
-              {etiquetaBanco} menos {etiquetaComprobantes.toLowerCase()}. El %
-              es sobre {etiquetaComprobantes.toLowerCase()}.
+              {etiquetaBanco} menos {referencia}. El % es sobre {referencia}.
             </TooltipContent>
           </Tooltip>
           <p
@@ -258,6 +260,7 @@ export function ControlBancarioCard({
                 banco={data.ingresos.banco}
                 etiquetaBanco="Entró al banco"
                 etiquetaComprobantes="Se facturó"
+                referencia="lo que se facturó"
                 lado={data.ingresos}
                 explicacion={
                   data.ingresos.diferencia > 0
@@ -270,6 +273,7 @@ export function ControlBancarioCard({
                 banco={data.egresos.banco}
                 etiquetaBanco="Salió del banco"
                 etiquetaComprobantes="Se compró"
+                referencia="lo que se compró"
                 lado={data.egresos}
                 explicacion={
                   data.egresos.diferencia > 0
