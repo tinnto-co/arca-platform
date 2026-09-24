@@ -21,8 +21,13 @@ export const CATEGORIAS_MOVIMIENTO = [
   'transferencias_propias',
   'cobros_tarjeta',
   'impuestos_idc',
+  'retencion_iibb',
+  'percepcion_iibb',
   'impuestos_iibb',
+  'percepcion_iva',
+  'retencion_iva',
   'impuestos_iva',
+  'retencion_ganancias',
   'impuestos_ganancias',
   'impuestos_otros',
   'pago_impuestos',
@@ -55,8 +60,13 @@ export type CategoriaMovimiento = (typeof CATEGORIAS_MOVIMIENTO)[number];
  */
 export const CATEGORIAS_SIN_FACTURA: readonly CategoriaMovimiento[] = [
   'impuestos_idc',
+  'retencion_iibb',
+  'percepcion_iibb',
   'impuestos_iibb',
+  'percepcion_iva',
+  'retencion_iva',
   'impuestos_iva',
+  'retencion_ganancias',
   'impuestos_ganancias',
   'impuestos_otros',
   'pago_impuestos',
@@ -80,8 +90,13 @@ export function requiereFactura(categoria: string | null | undefined): boolean {
 /** Las que son un impuesto, para sumarlas juntas cuando hace falta. */
 export const CATEGORIAS_IMPUESTO: readonly CategoriaMovimiento[] = [
   'impuestos_idc',
+  'retencion_iibb',
+  'percepcion_iibb',
   'impuestos_iibb',
+  'percepcion_iva',
+  'retencion_iva',
   'impuestos_iva',
+  'retencion_ganancias',
   'impuestos_ganancias',
   'impuestos_otros',
   'pago_impuestos',
@@ -93,9 +108,14 @@ export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
   transferencias_propias: 'Entre cuentas propias',
   cobros_tarjeta: 'Cobros con tarjeta',
   impuestos_idc: 'Impuesto al cheque (deb. y créd.)',
-  impuestos_iibb: 'Ingresos brutos y SIRCREB',
-  impuestos_iva: 'IVA y percepciones',
-  impuestos_ganancias: 'Ganancias y SICORE',
+  retencion_iibb: 'Retención IIBB (SIRCREB)',
+  percepcion_iibb: 'Percepción IIBB',
+  impuestos_iibb: 'Ingresos brutos',
+  percepcion_iva: 'Percepción IVA',
+  retencion_iva: 'Retención IVA',
+  impuestos_iva: 'IVA',
+  retencion_ganancias: 'Retención Ganancias (SICORE)',
+  impuestos_ganancias: 'Ganancias',
   impuestos_otros: 'Otros impuestos',
   pago_impuestos: 'Pago de impuestos',
   // Queda para los movimientos que alguien marcó a mano antes de que los
@@ -135,15 +155,29 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
     'impuestos_idc',
     /ley\s*(nro\.?\s*)?25\.?413|imp\.?\s*s\/?\s*(deb|cred)|impuesto\s+s\/?\s*(d[eé]bitos?|cr[eé]ditos?)|imp\.?\s*(deb|cre|debitos?|creditos?)\b|impuesto\s+(al\s+)?(d[eé]bito|cheque)/i,
   ],
+  // Lo que te retienen o perciben es un saldo a favor; el impuesto que el
+  // banco te cobra es un gasto. El estudio los pidió abiertos uno por uno,
+  // así que cada uno va antes que su impuesto "a secas".
+  //
+  // SIRCREB es el régimen de recaudación sobre acreditaciones bancarias: le
+  // dicen retención de ingresos brutos.
+  [
+    'retencion_iibb',
+    /sircreb|r[eé]g(imen)?\.?\s*(de\s*)?recaud|retenci[oó]n[^.]{0,25}(iibb|ing\.?\s*brutos|ingresos\s+brutos)/i,
+  ],
+  [
+    'percepcion_iibb',
+    /percepci[oó]n[^.]{0,25}(iibb|ing\.?\s*brutos|ingresos\s+brutos)|(iibb|ingresos\s+brutos)[^.]{0,25}percepci[oó]n/i,
+  ],
   [
     'impuestos_iibb',
-    /sircreb|iibb|ing\.?\s*brutos|ingresos\s+brutos|convenio\s+multilateral/i,
+    /iibb|ing\.?\s*brutos|ingresos\s+brutos|convenio\s+multilateral/i,
   ],
-  [
-    'impuestos_iva',
-    /\biva\b|impuesto\s+al\s+valor\s+agregado|percepci[oó]n\s+iva|iva\s+(tasa|percep)/i,
-  ],
-  ['impuestos_ganancias', /ganancias|sicore|imp\.?\s*a?\s*las?\s*gcias/i],
+  ['percepcion_iva', /percepci[oó]n[^.]{0,15}iva|iva[^.]{0,15}percepci[oó]n/i],
+  ['retencion_iva', /retenci[oó]n[^.]{0,15}iva|iva[^.]{0,15}retenci[oó]n/i],
+  ['impuestos_iva', /\biva\b|impuesto\s+al\s+valor\s+agregado/i],
+  ['retencion_ganancias', /sicore|retenci[oó]n[^.]{0,25}(ganancias|gcias)/i],
+  ['impuestos_ganancias', /ganancias|imp\.?\s*a?\s*las?\s*gcias/i],
   // Cargas sociales antes que sueldos: un F931 es carga social, no el neto
   // que cobra el empleado.
   [

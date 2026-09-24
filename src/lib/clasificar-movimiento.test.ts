@@ -19,9 +19,9 @@ describe('clasificarMovimiento', () => {
     expect(
       clasificarMovimiento('IMPUESTO DEBITOS S/TRANSFERENCIA LEY 25413')
     ).toBe('impuestos_idc');
-    expect(clasificarMovimiento('SIRCREB ING BRUTOS')).toBe('impuestos_iibb');
+    expect(clasificarMovimiento('SIRCREB ING BRUTOS')).toBe('retencion_iibb');
     expect(clasificarMovimiento('PERCEPCION IVA RG 2408')).toBe(
-      'impuestos_iva'
+      'percepcion_iva'
     );
   });
 
@@ -41,25 +41,32 @@ describe('clasificarMovimiento', () => {
     }
   });
 
+  // El estudio las pidió abiertas una por una: lo que te retienen o perciben
+  // es saldo a favor, el impuesto que el banco cobra es gasto.
   it('abre ingresos brutos, IVA, ganancias y el resto', () => {
     expect(clasificarMovimiento('ING. BRUTOS S/ CRED REG.RECAU.SIRCREB')).toBe(
-      'impuestos_iibb'
+      'retencion_iibb'
     );
     expect(clasificarMovimiento('REG REC SIRCREB F:30/12/25')).toBe(
-      'impuestos_iibb'
+      'retencion_iibb'
     );
     expect(
       clasificarMovimiento('ADELANTO IIBB TUC LETRA H RESP:30718161394')
     ).toBe('impuestos_iibb');
     expect(clasificarMovimiento('PERCEPCION INGRESOS BRUTOS CABA')).toBe(
-      'impuestos_iibb'
+      'percepcion_iibb'
     );
+    // El IVA que el banco cobra sobre sus comisiones no es una percepción.
     expect(clasificarMovimiento('IVA TASA GENERAL')).toBe('impuestos_iva');
     expect(clasificarMovimiento('IVA 21% REG DE TRANSFISC LEY27743')).toBe(
       'impuestos_iva'
     );
+    expect(clasificarMovimiento('IVA PERCEPCION RG 2408')).toBe(
+      'percepcion_iva'
+    );
+    expect(clasificarMovimiento('RETENCION IVA RG 2854')).toBe('retencion_iva');
     expect(clasificarMovimiento('RETENCION GANANCIAS SICORE')).toBe(
-      'impuestos_ganancias'
+      'retencion_ganancias'
     );
   });
 
@@ -77,10 +84,10 @@ describe('clasificarMovimiento', () => {
     expect(clasificarMovimiento('PAGO VEP IIBB CABA')).toBe('pago_impuestos');
     // Lo que el banco descuenta solo sigue en su impuesto.
     expect(clasificarMovimiento('REG REC SIRCREB F:30/12/25')).toBe(
-      'impuestos_iibb'
+      'retencion_iibb'
     );
     expect(clasificarMovimiento('PERCEPCION IVA RG 2408')).toBe(
-      'impuestos_iva'
+      'percepcion_iva'
     );
   });
 
