@@ -209,7 +209,9 @@ export function ControlBancarioCard({
   // estudio. Mirar más meses es una decisión puntual, así que no se recuerda
   // al cambiar de empresa o de mes.
   const [meses, setMeses] = useState(1);
-  const [verDesglose, setVerDesglose] = useState(false);
+  // Abierto por defecto: el desglose por concepto es lo que explica la
+  // diferencia, no un detalle opcional.
+  const [verDesglose, setVerDesglose] = useState(true);
   // En Banco el mes lo manda la URL; en la ficha del cliente lo lleva la card.
   const [mesPropio, setMesPropio] = useState(mesAnterior());
   const mes = periodo ?? mesPropio;
@@ -357,12 +359,16 @@ export function ControlBancarioCard({
             <div
               className={`mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--arca-ink-4)] ${compacto ? 'hidden' : ''}`}
             >
+              {/* "23 emitidas · 12 recibidas" no decía emitidas de qué: son
+                  las facturas con las que se compara el banco. */}
               <span>
                 {data.movimientos} movimiento
-                {data.movimientos !== 1 ? 's' : ''} ·{' '}
-                {data.ingresos.cantidadComprobantes} emitida
+                {data.movimientos !== 1 ? 's' : ''} del banco ·{' '}
+                {data.ingresos.cantidadComprobantes} factura
+                {data.ingresos.cantidadComprobantes !== 1 ? 's' : ''} emitida
                 {data.ingresos.cantidadComprobantes !== 1 ? 's' : ''} ·{' '}
-                {data.egresos.cantidadComprobantes} recibida
+                {data.egresos.cantidadComprobantes} factura
+                {data.egresos.cantidadComprobantes !== 1 ? 's' : ''} recibida
                 {data.egresos.cantidadComprobantes !== 1 ? 's' : ''}
               </span>
               <button

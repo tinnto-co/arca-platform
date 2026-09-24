@@ -18,6 +18,8 @@ import {
   Loader2,
   Check,
   X,
+  Gauge,
+  Link2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -142,12 +144,17 @@ export const Route = createFileRoute('/_authed/bank/')({
 
 /** Los períodos que puede abarcar el registro. */
 const RANGO_LABEL = {
-  mes: 'El mes elegido arriba',
+  mes: 'Un mes',
   '3m': 'Últimos 3 meses',
   '12m': 'Últimos 12 meses',
   todo: 'Todo el historial',
 } as const;
 type Rango = keyof typeof RANGO_LABEL;
+
+/** "enero de 2026" → "Enero de 2026". */
+function conMayuscula(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
 
 /** 'YYYY-MM' → "enero de 2026". */
 function nombreMes(mes: string): string {
@@ -937,7 +944,7 @@ function TransactionItem({
 
   return (
     <div
-      className={`px-5 py-3.5 flex items-center gap-4 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] ${
+      className={`px-5 py-2 flex items-center gap-4 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] ${
         tx.excluido ? 'opacity-45' : ''
       }`}
     >
@@ -1813,12 +1820,12 @@ function BankPage() {
         <div className="mb-4 flex items-center gap-1 border-b border-[var(--arca-border)]">
           {(
             [
-              ['control', 'Control'],
-              ['movimientos', 'Movimientos'],
-              ['cuentas', 'Cuentas y extractos'],
-              ['conciliacion', 'Conciliación'],
+              ['control', 'Control', Gauge],
+              ['movimientos', 'Movimientos', ArrowLeftRight],
+              ['cuentas', 'Cuentas y extractos', Landmark],
+              ['conciliacion', 'Conciliación', Link2],
             ] as const
-          ).map(([id, label]) => (
+          ).map(([id, label, Icono]) => (
             <button
               key={id}
               onClick={() =>
@@ -1827,12 +1834,13 @@ function BankPage() {
                   search: (prev: BankSearch) => ({ ...prev, vista: id }),
                 })
               }
-              className={`-mb-px border-b-2 px-3 pb-2 pt-1 text-[13px] transition-colors ${
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 pb-2 pt-1 text-[13px] transition-colors ${
                 vista === id
                   ? 'border-[var(--arca-accent)] font-medium text-[var(--arca-ink)]'
                   : 'border-transparent text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]'
               }`}
             >
+              <Icono className="w-3.5 h-3.5" strokeWidth={1.8} />
               {label}
             </button>
           ))}
@@ -1877,7 +1885,9 @@ function BankPage() {
           <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
             Cuentas
           </span>
-          <div className="flex-1 h-px bg-[var(--arca-border)]" />
+          {/* La raya al medio no separaba nada: el título y los botones son
+              la misma barra. */}
+          <div className="flex-1" />
           <button
             onClick={() => setShowCreateAccount((v) => !v)}
             className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
@@ -1953,10 +1963,12 @@ function BankPage() {
             movimientos={movimientosFiltrados}
             conciliados={totalesRegistro?.conciliados ?? 0}
             porcentaje={
-              movimientosFiltrados > 0
+              // Los conciliados se cuentan sobre todo lo filtrado menos el
+              // estado; el porcentaje tiene que usar esa misma base.
+              (totalesRegistro?.movimientosSinEstado ?? 0) > 0
                 ? Math.round(
                     ((totalesRegistro?.conciliados ?? 0) /
-                      movimientosFiltrados) *
+                      (totalesRegistro?.movimientosSinEstado ?? 1)) *
                       100
                   )
                 : 0
@@ -1972,47 +1984,29 @@ function BankPage() {
 
       {vista === 'movimientos' && accounts.length > 0 && (
         <ArcaCard>
-          <div className="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-[var(--arca-border)]">
-            <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-              Movimientos
-            </span>
-            <span className="text-[11.5px] text-[var(--arca-ink-3)]">
-              {cuentaElegida
-                ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`
-                : 'todas las cuentas'}
-              {' · '}
-              {mesLabel} · {movimientosFiltrados} movimientos ·{' '}
-              {totalesRegistro?.conciliados ?? 0} conciliados
-              {(totalesRegistro?.sugeridos ?? 0) > 0 && (
-                <span className="text-[var(--arca-accent-warn-fg)]">
-                  {' · '}
-                  {totalesRegistro?.sugeridos} sugerido
-                  {totalesRegistro?.sugeridos === 1 ? '' : 's'} para revisar
+          {/* Dos niveles: arriba qué se está viendo y las acciones, siempre
+              en el mismo lugar; abajo con qué filtrarlo. Antes los botones
+              cambiaban de renglón según cuántos contadores hubiera. */}
+          <div className="px-5 py-3 flex items-center gap-3 border-b border-[var(--arca-border)]">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                  Movimientos
                 </span>
-              )}
-              {(totalesRegistro?.noRequiereFactura ?? 0) > 0 && (
-                <span>
-                  {' · '}
-                  {totalesRegistro?.noRequiereFactura} no requieren factura
-                </span>
-              )}
-              {' · '}
-              {unmatchedCount} sin conciliar
-            </span>
-            {accountId && (
-              <ConAyuda texto="Ahora ves solo esta cuenta porque hiciste click en su tarjeta. Esto vuelve a mostrar todas las cuentas de la empresa.">
-                <button
-                  onClick={() => setAccountId('')}
-                  className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
-                >
-                  ✕ Quitar filtro: ver todas las cuentas
-                </button>
-              </ConAyuda>
-            )}
-            {txsFetching && (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--arca-ink-4)]" />
-            )}
-            <div className="ml-auto flex items-center gap-3">
+                {txsFetching && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--arca-ink-4)]" />
+                )}
+              </div>
+              <div className="text-[11.5px] text-[var(--arca-ink-3)] truncate">
+                {cuentaElegida
+                  ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`
+                  : `Todas las cuentas (${accounts.length})`}
+                {' · '}
+                {mesLabel} · {movimientosFiltrados} movimiento
+                {movimientosFiltrados === 1 ? '' : 's'}
+              </div>
+            </div>
+            <div className="ml-auto shrink-0 flex items-center gap-3">
               {(totalesRegistro?.sugeridos ?? 0) > 0 && (
                 <RevisarSugerencias
                   alcance={
@@ -2022,15 +2016,22 @@ function BankPage() {
                   }
                 />
               )}
-              {accountId && (
+              <ConAyuda
+                texto={
+                  accountId
+                    ? 'Carga un movimiento que no vino en el extracto.'
+                    : 'Elegí una cuenta para poder cargar un movimiento a mano.'
+                }
+              >
                 <button
                   onClick={() => setShowManualMovement((v) => !v)}
-                  className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
+                  disabled={!accountId}
+                  className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] disabled:opacity-40 disabled:hover:text-[var(--arca-ink-2)] transition-colors"
                 >
                   <Plus className="w-3 h-3" strokeWidth={2} />
                   Movimiento manual
                 </button>
-              )}
+              </ConAyuda>
               <ConAyuda
                 texto={`Busca, para cada movimiento ${accountId ? 'de esta cuenta' : 'de todas las cuentas de la empresa'} y de todos los meses, una factura con el mismo importe (cobros contra emitidas, pagos contra recibidas): hasta 5 días de diferencia, o hasta 30 días antes si es el mismo cliente o proveedor o la única factura posible. Si varios movimientos pueden ser la misma factura, se la da al que mejor corresponde: misma contraparte, después la fecha más cercana. Cada vez recalcula las sugerencias pendientes; lo confirmado y lo descartado no se toca.`}
               >
@@ -2051,6 +2052,23 @@ function BankPage() {
           {/* Filtros de la tabla. Los totales de arriba los siguen: con
               "Impuestos" elegido, "Salió" es lo que se fue en impuestos. */}
           <div className="px-5 py-2.5 flex flex-wrap items-center gap-2 border-b border-[var(--arca-border)]">
+            {/* Antes la única forma de ver una sola cuenta era ir a la pestaña
+                Cuentas y hacer click en su tarjeta. */}
+            <SearchableSelect
+              size="sm"
+              value={accountId || 'all'}
+              onValueChange={(v) => setAccountId(v === 'all' ? '' : v)}
+              placeholder="Cuenta"
+              searchPlaceholder="Buscar cuenta..."
+              width={230}
+              options={[
+                { value: 'all', label: 'Todas las cuentas' },
+                ...accounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.banco} ${a.numero ?? ''}`.trim(),
+                })),
+              ]}
+            />
             <SearchableSelect
               size="sm"
               value={rango}
@@ -2068,7 +2086,12 @@ function BankPage() {
               width={190}
               options={(Object.keys(RANGO_LABEL) as Rango[]).map((r) => ({
                 value: r,
-                label: RANGO_LABEL[r],
+                // "El mes elegido arriba" no se entendía: en esta pestaña no
+                // hay ningún mes a la vista, así que se nombra el mes.
+                label:
+                  r === 'mes' && search.mes
+                    ? conMayuscula(nombreMes(search.mes))
+                    : RANGO_LABEL[r],
               }))}
             />
             <SearchableSelect
@@ -2151,6 +2174,43 @@ function BankPage() {
                 }
               />
             )}
+          </div>
+
+          {/* Los contadores que antes eran una frase larga en el encabezado.
+              Como cada uno es un estado del filtro, se tocan para filtrar. */}
+          <div className="px-5 py-2 flex flex-wrap items-center gap-1.5 border-b border-[var(--arca-border)]">
+            {(
+              [
+                ['conciliado', totalesRegistro?.conciliados ?? 0],
+                ['sugerido', totalesRegistro?.sugeridos ?? 0],
+                ['no_requiere', totalesRegistro?.noRequiereFactura ?? 0],
+                ['sin_conciliar', unmatchedCount],
+              ] as const
+            ).map(([estado, cantidad]) => {
+              const activo = search.estado === estado;
+              return (
+                <button
+                  key={estado}
+                  type="button"
+                  onClick={() =>
+                    void navigate({
+                      resetScroll: false,
+                      search: (prev: BankSearch) => ({
+                        ...prev,
+                        estado: activo ? undefined : estado,
+                      }),
+                    })
+                  }
+                  className={`h-6 px-2 rounded-[6px] text-[11.5px] border transition-colors ${
+                    activo
+                      ? 'border-[var(--arca-ink-2)] bg-[var(--arca-surface-2)] text-[var(--arca-ink)] font-medium'
+                      : 'border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)]'
+                  }`}
+                >
+                  {cantidad} {ESTADO_LABEL[estado].toLowerCase()}
+                </button>
+              );
+            })}
           </div>
 
           {showManualMovement && accountId && (

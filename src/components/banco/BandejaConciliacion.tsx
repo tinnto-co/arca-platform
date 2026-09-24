@@ -115,17 +115,17 @@ function Progreso({
   const base = totales.ingresos || 1;
 
   return (
-    <div className="grid gap-5 sm:grid-cols-2">
-      <div className="flex flex-col gap-1.5">
+    <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+      <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-[17px] font-semibold tabular-nums text-[var(--arca-ink)]">
+          <span className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
             {pesos(totales.facturadoConciliado)}
           </span>
           <span className="text-[11.5px] text-[var(--arca-ink-3)]">
             de {pesos(totales.facturado)} facturados, conciliados
           </span>
         </div>
-        <div className="flex h-[9px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
+        <div className="flex h-[7px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
           <span
             className="h-full bg-[var(--arca-accent-pos)]"
             style={{ width: `${pctFacturado}%` }}
@@ -152,9 +152,9 @@ function Progreso({
         </span>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-[17px] font-semibold tabular-nums text-[var(--arca-ink)]">
+          <span className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
             {pesos(totales.sinExplicar)}
           </span>
           <span className="text-[11.5px] text-[var(--arca-ink-3)]">
@@ -162,7 +162,7 @@ function Progreso({
           </span>
         </div>
         {/* Una sola escala: lo que entró en el mes, partido en tres estados. */}
-        <div className="flex h-[9px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
+        <div className="flex h-[7px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
           <Tramo
             clase="bg-[var(--arca-accent-pos)]"
             ancho={(totales.conciliado / base) * 100}
@@ -206,7 +206,7 @@ function FilaMovimiento({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0 ${
+      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
         elegido
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -283,7 +283,7 @@ function FilaComprobante({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0 ${
+      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
         esCandidato
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -464,7 +464,7 @@ export function BandejaConciliacion({
   return (
     <div className="flex flex-col gap-3.5">
       {/* Cabecera: el mes y cuánto falta de cada lado */}
-      <div className="flex flex-col gap-3.5 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
+      <div className="flex flex-col gap-2.5 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <Scale className="size-4 text-[var(--arca-ink-2)]" strokeWidth={2} />
           <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
@@ -600,7 +600,7 @@ export function BandejaConciliacion({
                 Todo lo que entró en el mes está identificado.
               </p>
             ) : (
-              <div className="max-h-[440px] overflow-y-auto">
+              <div className="max-h-[min(440px,42vh)] overflow-y-auto">
                 {movimientos.map((m) => (
                   <FilaMovimiento
                     key={m.id}
@@ -652,7 +652,7 @@ export function BandejaConciliacion({
                   : 'Todas las facturas del mes tienen su cobro identificado.'}
               </p>
             ) : (
-              <div className="max-h-[440px] overflow-y-auto">
+              <div className="max-h-[min(440px,42vh)] overflow-y-auto">
                 {/* Los candidatos del movimiento elegido van primero. */}
                 {[...comprobantes]
                   .sort(
@@ -780,7 +780,7 @@ export function BandejaConciliacion({
           {data.conciliados.map((m) => (
             <div
               key={m.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0"
             >
               <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
                 {fecha(m.fecha)}
@@ -819,7 +819,7 @@ export function BandejaConciliacion({
           {data.excluidos.map((m) => (
             <div
               key={m.id}
-              className="flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+              className="flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0"
             >
               <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
                 {fecha(m.fecha)}
