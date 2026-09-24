@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
+  AlertTriangle,
   LayoutDashboard,
   Users,
   FileText,
@@ -39,6 +40,7 @@ import {
   listEmpleados,
   listImportEmpleados,
   listConvenios,
+  listEmpleadosSinBasico,
   getProfileSueldosConfig,
   calcularLiquidacionMasiva,
   type LiquidacionMasivaErrorCode,
@@ -131,6 +133,15 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
     queryFn: () => listConvenios({ data: { clientId } }),
     enabled: !!clientId,
   });
+  /* Aviso previo a liquidar: qué empleados no tienen de dónde sacar el básico.
+     El control ya existía en la pantalla del recibo, pero se veía de a un
+     empleado — había que abrir cada uno para enterarse. */
+  const { data: sinBasico } = useQuery({
+    queryKey: ['empleados-sin-basico', clientId, periodo],
+    queryFn: () => listEmpleadosSinBasico({ data: { clientId, periodo } }),
+    enabled: !!clientId,
+  });
+
   const { data: profileSueldosConfig } = useQuery({
     queryKey: ['profile-sueldos-config', clientId],
     queryFn: () => getProfileSueldosConfig({ data: { clientId } }),
@@ -414,6 +425,56 @@ export function SueldosDashboard({ clientId }: SueldosDashboardProps) {
           </button>
         </div>
       </div>
+
+      {/* Empleados sin básico para el período. Va antes del resumen a
+        propósito: si falta la escala, todo lo que sigue se liquida en cero. */}
+      {sinBasico && sinBasico.problemas.length > 0 && (
+        <div className="mb-6 rounded-xl border border-[var(--arca-warn-border,#f0c36d)] bg-[var(--arca-warn-bg,#fdf6e3)] p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle
+              style={{ width: 16, height: 16 }}
+              className="mt-[2px] shrink-0 text-[var(--arca-warn-ink,#8a6100)]"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                {sinBasico.problemas.length === 1
+                  ? '1 empleado sin básico para este período'
+                  : `${sinBasico.problemas.length} empleados sin básico para este período`}
+              </p>
+              <p className="mt-[2px] text-[12px] text-[var(--arca-ink-3)]">
+                Si los liquidás así, el sueldo básico sale en cero.
+              </p>
+              <ul className="mt-3 space-y-1">
+                {sinBasico.problemas.slice(0, 8).map((p) => (
+                  <li
+                    key={p.empleadoId}
+                    className="flex flex-wrap items-baseline gap-x-2 text-[12.5px] text-[var(--arca-ink-2)]"
+                  >
+                    <span className="font-medium">{p.nombre}</span>
+                    {p.legajo && (
+                      <span className="font-[family-name:var(--ff-mono)] text-[11.5px] text-[var(--arca-ink-4)]">
+                        leg. {p.legajo}
+                      </span>
+                    )}
+                    <span className="text-[var(--arca-ink-3)]">
+                      {p.motivo === 'sin_categoria'
+                        ? '— sin categoría asignada'
+                        : p.motivo === 'sin_sueldo_propio'
+                          ? '— excluido de convenio, sin sueldo cargado en el legajo'
+                          : `— ${p.convenio ?? 'convenio'} · ${p.categoria ?? 'categoría'} sin escala del período`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {sinBasico.problemas.length > 8 && (
+                <p className="mt-2 text-[12px] text-[var(--arca-ink-4)]">
+                  y {sinBasico.problemas.length - 8} más.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* La misma banda de resumen que Deudas, Vencimientos y Convenio: los
         números viven en cards, no sueltos sobre el fondo. La barra de acento
