@@ -669,6 +669,10 @@ function CategoriaRow({
     format(startOfMonth(new Date()), 'yyyy-MM-dd')
   );
   const [monto, setMonto] = useState('');
+  // Las escalas de convenio suelen tener básico + sumas no remunerativas
+  // (los acuerdos que todavía no se absorbieron). Sin este campo la carga a
+  // mano quedaba incompleta y el recibo salía sin las sumas.
+  const [montoNoRem, setMontoNoRem] = useState('');
 
   const { data: escalas = [] } = useQuery({
     queryKey: ['escalas', categoria.id],
@@ -684,12 +688,15 @@ function CategoriaRow({
           clientId,
           vigenciaDesde,
           montoBasico: parseFloat(monto) || 0,
+          montoNoRemunerativo: parseFloat(montoNoRem) || 0,
+          fuente: 'manual',
         },
       }),
     onSuccess: () => {
       onRefresh();
       queryClient.invalidateQueries({ queryKey: ['escalas', categoria.id] });
       setMonto('');
+      setMontoNoRem('');
       setShowEscala(false);
       toast.success('Escala agregada');
     },
@@ -779,6 +786,13 @@ function CategoriaRow({
             placeholder="Monto básico"
             value={monto}
             onChange={(e) => setMonto(e.target.value)}
+          />
+          <Input
+            type="number"
+            placeholder="No remunerativo"
+            value={montoNoRem}
+            onChange={(e) => setMontoNoRem(e.target.value)}
+            title="Sumas no remunerativas del acuerdo, si las hay. Si son varias, la suma de todas."
           />
           <Button
             size="sm"
