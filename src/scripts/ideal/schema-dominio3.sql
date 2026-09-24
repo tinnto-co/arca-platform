@@ -524,6 +524,16 @@ create table cct_escala (
   fuente text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  -- Una paritaria fija sueldos por meses, no por años: una fila que dice regir
+  -- cinco años no es una escala, y como el cálculo toma la vigencia más
+  -- reciente, le gana a todas las mensuales posteriores. Pasó con Comercio en
+  -- 2026. Sin fecha de fin sí se permite: es la última escala cargada, que rige
+  -- hasta que llegue la siguiente.
+  constraint cct_escala_vigencia_razonable check (
+    vigencia_hasta is null
+    or (vigencia_hasta >= vigencia_desde
+        and vigencia_hasta < vigencia_desde + interval '13 months')
+  ),
   unique (cct_categoria_id, vigencia_desde)
 );
 create index idx_cct_escala_categoria on cct_escala(cct_categoria_id);
@@ -587,6 +597,16 @@ create table escala_salarial (
   fuente text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  -- Una paritaria fija sueldos por meses, no por años: una fila que dice regir
+  -- cinco años no es una escala, y como el cálculo toma la vigencia más
+  -- reciente, le gana a todas las mensuales posteriores. Pasó con Comercio en
+  -- 2026. Sin fecha de fin sí se permite: es la última escala cargada, que rige
+  -- hasta que llegue la siguiente.
+  constraint escala_salarial_vigencia_razonable check (
+    vigencia_hasta is null
+    or (vigencia_hasta >= vigencia_desde
+        and vigencia_hasta < vigencia_desde + interval '13 months')
+  ),
   unique (categoria_id, vigencia_desde)
 );
 create index idx_escala_categoria on escala_salarial(categoria_id);

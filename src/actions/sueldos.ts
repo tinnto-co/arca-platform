@@ -326,6 +326,7 @@ import {
 } from '@/lib/accounting-payroll-close';
 import * as r2 from '@/lib/r2';
 import { describirProblemasLsd, verificarLargosLsd } from '@/lib/lsd-registro';
+import { problemaVigencia } from '@/lib/escala-vigencia';
 
 // ---------- Convenios ----------
 
@@ -897,6 +898,14 @@ export const upsertEscala = createServerFn({ method: 'POST' })
     const role = await getMemberRole();
     assertCanWrite(role);
     await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    // Una escala que dura años no es una escala: es lo que rompió Comercio.
+    const problema = problemaVigencia({
+      desde: ctx.data.vigenciaDesde.slice(0, 10),
+      hasta: ctx.data.vigenciaHasta?.slice(0, 10) ?? null,
+    });
+    if (problema) throw new Error(problema);
+
     const [row] = await db
       .insert(escalaSalarial)
       .values({
