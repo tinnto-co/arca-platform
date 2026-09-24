@@ -359,10 +359,6 @@ export const listConvenios = createServerFn({ method: 'GET' })
       .where(eq(convenio.clienteId, ctx.data.clientId))
       .orderBy(convenio.nombre);
 
-    if (ctx.data.clientId) {
-    }
-
-    // Si se pasa profileId, traer solo los CCTs de ese perfil; si no, traer todos del cliente.
     const afipRows = await db
       .select({
         cct: clienteCct.cctCodigo,
@@ -421,7 +417,13 @@ export const listConvenios = createServerFn({ method: 'GET' })
     }
 
     const mapped = convenios.map((convenio) => {
-      const cct = convenio.cctCodigo ?? extractCctCodigo(convenio.nombre);
+      // Las claves del mapa vienen normalizadas (`0130/75` → `130/75`), así
+      // que el código del convenio tiene que pasar por la misma función. Sin
+      // esto ningún convenio con el cero adelante —que es como los guarda
+      // ARCA— encontraba su fila y quedaba marcado como "no confirmado".
+      const cct =
+        extractCctCodigo(convenio.cctCodigo) ??
+        extractCctCodigo(convenio.nombre);
       const afipUpdatedAt = cct ? (afipByCct.get(cct) ?? null) : null;
       const fuentes = new Set<string>();
       if (afipUpdatedAt) fuentes.add('AFIP');
@@ -435,14 +437,12 @@ export const listConvenios = createServerFn({ method: 'GET' })
       };
     });
 
-    // Cuando se filtra por perfil y el perfil tiene CCTs registrados en AFIP,
-    // mostrar solo los convenios cuyo código CCT está en afip_empleadores_convenio
-    // para ese perfil. Si el perfil no tiene ningún CCT en AFIP, mostrar todos
-    // (estado inicial antes del primer scraping).
-    if (ctx.data.clientId && afipRows.length > 0) {
-      return mapped.filter((c) => c.afipUpdatedAt !== null);
-    }
-
+    // Se devuelven todos los convenios de la empresa. Antes, si ARCA informaba
+    // algún CCT, se escondían los que no estuvieran en esa lista: eso borraba
+    // de la pantalla —y del alta de empleados y de los recibos— los convenios
+    // cargados a mano, empezando por "Excluido de Convenio 9999/99", que ARCA
+    // nunca informa porque no es un CCT. Qué confirma ARCA ya se ve en
+    // `fuentes`/`afipUpdatedAt`, que es información, no motivo para ocultar.
     return mapped;
   });
 
