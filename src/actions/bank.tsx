@@ -21,19 +21,34 @@ import {
   cliente,
 } from '@/drizzle/schema';
 import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
+import { getUmbralControlBancario } from '@/actions/admin';
 import { type ContraparteSugerida } from '@/lib/contraparte-movimiento';
 import { DIAS_PROXIMIDAD } from '@/lib/cruce-conciliacion';
 import {
   cuentasActivasDeCliente,
   generarSugerencias,
 } from '@/lib/sugerencias-conciliacion';
-import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
+import {
+  CATEGORIAS_MOVIMIENTO,
+  CATEGORIAS_SIN_FACTURA,
+} from '@/lib/clasificar-movimiento';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import { eq, and, desc, gte, lte, sql, inArray, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  or,
+  desc,
+  gte,
+  lte,
+  sql,
+  ilike,
+  inArray,
+  type SQL,
+} from 'drizzle-orm';
 
 /** La cuenta, validando que sea de la organización activa. */
 async function getCuentaDeOrg(cuentaBancariaId: string, orgId: string) {
@@ -268,7 +283,11 @@ export const listMovimientos = createServerFn({ method: 'GET' })
           .optional(),
         categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
         /** Estados excluyentes: con cruce confirmado, solo sugerido, o nada. */
-        estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+        estado: z
+          .enum(['conciliado', 'sugerido', 'sin_conciliar', 'no_requiere'])
+          .optional(),
+        /** Texto libre: busca en la descripción del banco y en la contraparte. */
+        busqueda: z.string().trim().max(120).optional(),
         /** Rango de importe, en pesos, sin importar si entró o salió. */
         importeMin: z.number().nonnegative().optional(),
         importeMax: z.number().nonnegative().optional(),
@@ -289,10 +308,12 @@ export const listMovimientos = createServerFn({ method: 'GET' })
       porPagina,
       totales: {
         movimientos: 0,
+        movimientosSinEstado: 0,
         ingresos: 0,
         egresos: 0,
         conciliados: 0,
         sugeridos: 0,
+        noRequiereFactura: 0,
         sinConciliar: 0,
       },
     };
@@ -340,6 +361,17 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     const sugerido = conCruce('sugerida');
     if (ctx.data.categoria)
       conditions.push(eq(movimientoBancario.categoria, ctx.data.categoria));
+    // El banco escribe la contraparte dentro de la descripción y a veces
+    // también la tenemos aparte, así que se busca en las dos.
+    if (ctx.data.busqueda) {
+      const patron = `%${ctx.data.busqueda}%`;
+      conditions.push(
+        or(
+          ilike(movimientoBancario.descripcion, patron),
+          ilike(movimientoBancario.contraparteTexto, patron)
+        )!
+      );
+    }
     if (ctx.data.importeMin != null)
       conditions.push(
         gte(movimientoBancario.importe, ctx.data.importeMin.toFixed(2))
@@ -348,26 +380,46 @@ export const listMovimientos = createServerFn({ method: 'GET' })
       conditions.push(
         lte(movimientoBancario.importe, ctx.data.importeMax.toFixed(2))
       );
+    // Lo que nunca va a tener factura (impuestos, comisiones, sueldos…) sale
+    // de "sin conciliar": contarlo ahí escondía lo que sí hay que revisar.
+    const sinFactura = inArray(
+      movimientoBancario.categoria,
+      CATEGORIAS_SIN_FACTURA as string[]
+    );
+    // Los cuatro estados parten el mismo conjunto, así que se cuentan sin
+    // aplicar el filtro de estado: si no, elegir uno dejaba los otros tres
+    // en cero y no se podía saltar de uno a otro.
+    const filtroSinEstado = and(...conditions);
     if (ctx.data.estado === 'conciliado') conditions.push(conciliado);
     if (ctx.data.estado === 'sugerido')
       conditions.push(sql`${sugerido} and not ${conciliado}`);
     if (ctx.data.estado === 'sin_conciliar')
-      conditions.push(sql`not ${conciliado} and not ${sugerido}`);
-    // Los totales usan este mismo filtro: con "Impuestos" elegido, "salió"
-    // es lo que se fue en impuestos.
+      conditions.push(
+        sql`not ${conciliado} and not ${sugerido} and not ${sinFactura}`
+      );
+    if (ctx.data.estado === 'no_requiere') conditions.push(sinFactura);
+    // Los totales de plata usan este mismo filtro: con "Impuestos" elegido,
+    // "salió" es lo que se fue en impuestos.
     const filtro = and(...conditions);
 
-    const [[totales], movimientos] = await Promise.all([
+    const [[totales], [porEstado], movimientos] = await Promise.all([
       db
         .select({
           movimientos: sql<number>`count(*)::int`,
           ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
           egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
-          conciliados: sql<number>`(count(*) filter (where ${conciliado}))::int`,
-          sugeridos: sql<number>`(count(*) filter (where ${sugerido} and not ${conciliado}))::int`,
         })
         .from(movimientoBancario)
         .where(filtro),
+      db
+        .select({
+          movimientos: sql<number>`count(*)::int`,
+          conciliados: sql<number>`(count(*) filter (where ${conciliado}))::int`,
+          sinFactura: sql<number>`(count(*) filter (where ${movimientoBancario.categoria} in ${CATEGORIAS_SIN_FACTURA}))::int`,
+          sugeridos: sql<number>`(count(*) filter (where ${sugerido} and not ${conciliado}))::int`,
+        })
+        .from(movimientoBancario)
+        .where(filtroSinEstado),
       db
         .select({
           id: movimientoBancario.id,
@@ -453,7 +505,10 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     }
 
     const total = Number(totales?.movimientos ?? 0);
-    const conciliados = Number(totales?.conciliados ?? 0);
+    // Los contadores por estado se cuentan sobre todo lo filtrado menos el
+    // estado, así que su base no es `total`.
+    const totalSinEstado = Number(porEstado?.movimientos ?? 0);
+    const conciliados = Number(porEstado?.conciliados ?? 0);
 
     return {
       filas: movimientos.map((m) => ({
@@ -467,12 +522,21 @@ export const listMovimientos = createServerFn({ method: 'GET' })
       porPagina,
       totales: {
         movimientos: total,
+        // Base de los cuatro contadores: lo filtrado sin mirar el estado.
+        movimientosSinEstado: totalSinEstado,
         ingresos: Number(totales?.ingresos ?? 0),
         egresos: Number(totales?.egresos ?? 0),
         conciliados,
-        sugeridos: Number(totales?.sugeridos ?? 0),
-        // Excluyente con los otros dos, igual que el filtro de estado.
-        sinConciliar: total - conciliados - Number(totales?.sugeridos ?? 0),
+        sugeridos: Number(porEstado?.sugeridos ?? 0),
+        // Movimientos que nunca van a tener factura: impuestos, comisiones,
+        // sueldos, débitos automáticos, intereses y retiros de efectivo.
+        noRequiereFactura: Number(porEstado?.sinFactura ?? 0),
+        // Excluyente con los otros tres, igual que el filtro de estado.
+        sinConciliar:
+          totalSinEstado -
+          conciliados -
+          Number(porEstado?.sugeridos ?? 0) -
+          Number(porEstado?.sinFactura ?? 0),
       },
     };
   });
@@ -1096,102 +1160,215 @@ export const getResumenConciliacion = createServerFn({ method: 'GET' })
   });
 
 /**
- * Banco vs Facturación (TIN-1634): lo que entró al banco contra lo que la
- * empresa facturó en el mismo mes. La brecha grande es la incongruencia que
- * el estudio necesita ver (el caso del ticket: $10M facturados, $800M en la
- * cuenta). Los movimientos marcados `excluido` (p. ej. transferencias entre
- * cuentas propias) quedan afuera de la suma.
+ * Control bancario (reunión del 23/9): el módulo no busca cruzar factura por
+ * factura, busca que los totales cierren. Dos comparaciones del mismo período:
+ *
+ *   ingresos del banco  vs  lo facturado (emitidas)
+ *   egresos del banco   vs  lo comprado  (recibidas)
+ *
+ * De cada una sale la diferencia en pesos y en porcentaje. La diferencia no es
+ * un error: puede ser una factura todavía no cobrada, un cobro de un mes
+ * anterior, retenciones o impuestos. Por eso también vuelve el desglose por
+ * concepto, que es lo que la explica.
+ *
+ * `meses` permite mirar una ventana más larga (agosto + septiembre), porque lo
+ * facturado en un mes se cobra en el otro y mes a mes la brecha engaña.
+ *
+ * Las compras cuentan **todas** las facturas recibidas, sin importar la letra:
+ * el estudio lo pidió explícitamente.
  */
-export const getBancoVsFacturacion = createServerFn({ method: 'GET' })
+export const getControlBancario = createServerFn({ method: 'GET' })
   .validator(
     z.object({
       clienteId: z.string().uuid(),
-      /** Mes a comparar, 'YYYY-MM'. */
+      /** Último mes de la ventana, 'YYYY-MM'. */
       periodo: z.string().regex(/^\d{4}-\d{2}$/),
+      /** Cuántos meses mira hacia atrás, incluido el pedido. */
+      meses: z.number().int().min(1).max(12).default(1),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
+    const { clienteId, meses } = ctx.data;
 
-    const desde = `${ctx.data.periodo}-01`;
-    const hasta = sql`(${desde}::date + interval '1 month')`;
+    const finDeVentana = `${ctx.data.periodo}-01`;
+    // La ventana termina al final del mes pedido y arranca `meses - 1` antes.
+    const desde = sql`(${finDeVentana}::date - make_interval(months => ${meses - 1}))`;
+    const hasta = sql`(${finDeVentana}::date + interval '1 month')`;
 
-    // Contra la base remota cada viaje cuesta cientos de milisegundos, y la
-    // card se repregunta con cada cambio de mes: las dos mitades salen en
-    // paralelo y los movimientos cuelgan del join con la cuenta, así no hace
-    // falta un viaje extra para saber qué cuentas tiene la empresa.
-    const [[banco], [ventas]] = await Promise.all([
+    const movimientosDelPeriodo = and(
+      eq(cuentaBancaria.orgId, orgId),
+      eq(cuentaBancaria.clienteId, clienteId),
+      eq(cuentaBancaria.activa, true),
+      eq(movimientoBancario.excluido, false),
+      sql`${movimientoBancario.fecha} >= ${desde}`,
+      sql`${movimientoBancario.fecha} < ${hasta}`
+    );
+
+    const comprobantesDelPeriodo = (direccion: 'emitido' | 'recibido') =>
+      and(
+        eq(comprobante.orgId, orgId),
+        eq(comprobante.clienteId, clienteId),
+        eq(comprobante.direccion, direccion),
+        sql`${comprobante.fechaEmision} >= ${desde}`,
+        sql`${comprobante.fechaEmision} < ${hasta}`
+      );
+
+    // Las notas de crédito restan, igual que en IVA y en el resumen de
+    // Facturas. Lo que está en otra moneda se pasa a pesos con su cotización.
+    const totalComprobantes = sql<string>`coalesce(sum(
+      (case when ${comprobanteTipo.esNc} then -1 else 1 end)
+      * (case when upper(${comprobante.moneda}) = 'ARS' then 1
+              else coalesce(nullif(${comprobante.cotizacion}, 0), 1) end)
+      * ${comprobante.total}), 0)::text`;
+
+    // El impuesto al cheque (ley 25.413) se toma a cuenta de Ganancias, así
+    // que el estudio necesita el acumulado del año además del mes. Va por año
+    // calendario, que es como se computa.
+    const anio = ctx.data.periodo.slice(0, 4);
+
+    const [
+      banco,
+      porConcepto,
+      [emitidas],
+      [recibidas],
+      [ultimo],
+      [chequeAnual],
+    ] = await Promise.all([
       db
         .select({
-          cuentas: sql<number>`(count(distinct ${cuentaBancaria.id}))::int`,
-          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
-          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' and not ${movimientoBancario.excluido} then ${movimientoBancario.importe} else 0 end), 0)::text`,
-          movimientos: sql<number>`(count(${movimientoBancario.id}) filter (where not ${movimientoBancario.excluido}))::int`,
-          excluidos: sql<number>`(count(${movimientoBancario.id}) filter (where ${movimientoBancario.excluido}))::int`,
-          // El último mes con movimientos, sin importar el período pedido.
-          ultimoPeriodo: sql<string | null>`(
-            select to_char(max(mb2.fecha), 'YYYY-MM') from movimiento_bancario mb2
-            where mb2.cuenta_bancaria_id in (
-              select cb2.id from cuenta_bancaria cb2
-              where cb2.cliente_id = ${ctx.data.clienteId} and cb2.activa
-            )
-          )`,
+          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          movimientos: sql<number>`count(*)::int`,
         })
-        .from(cuentaBancaria)
-        // LEFT JOIN: una empresa con cuentas pero sin movimientos en el mes
-        // tiene que seguir contando sus cuentas.
-        .leftJoin(
-          movimientoBancario,
-          and(
-            eq(movimientoBancario.cuentaBancariaId, cuentaBancaria.id),
-            gte(movimientoBancario.fecha, desde),
-            sql`${movimientoBancario.fecha} < ${hasta}`
-          )
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(movimientosDelPeriodo),
+
+      db
+        .select({
+          categoria: movimientoBancario.categoria,
+          direccion: movimientoBancario.direccion,
+          total: sql<string>`coalesce(sum(${movimientoBancario.importe}), 0)::text`,
+          movimientos: sql<number>`count(*)::int`,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(movimientosDelPeriodo)
+        .groupBy(movimientoBancario.categoria, movimientoBancario.direccion),
+
+      db
+        .select({
+          total: totalComprobantes,
+          comprobantes: sql<number>`count(*)::int`,
+        })
+        .from(comprobante)
+        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+        .where(comprobantesDelPeriodo('emitido')),
+
+      db
+        .select({
+          total: totalComprobantes,
+          comprobantes: sql<number>`count(*)::int`,
+        })
+        .from(comprobante)
+        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+        .where(comprobantesDelPeriodo('recibido')),
+
+      // El último mes con movimientos, sin importar el período pedido: la card
+      // de la ficha del cliente abre ahí cuando el mes anterior está vacío,
+      // porque los extractos se cargan con atraso.
+      db
+        .select({
+          periodo: sql<
+            string | null
+          >`to_char(max(${movimientoBancario.fecha}), 'YYYY-MM')`,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
         )
         .where(
           and(
             eq(cuentaBancaria.orgId, orgId),
-            eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+            eq(cuentaBancaria.clienteId, clienteId),
             eq(cuentaBancaria.activa, true)
           )
         ),
 
-      // Ventas del mismo mes (mismo criterio que la solapa de IVA: emitidos,
-      // con las notas de crédito restando).
       db
         .select({
-          total: sql<string>`coalesce(sum(case when ${comprobanteTipo.esNc} then -${comprobante.total} else ${comprobante.total} end), 0)::text`,
-          comprobantes: sql<number>`count(${comprobante.id})::int`,
+          total: sql<string>`coalesce(sum(${movimientoBancario.importe}), 0)::text`,
+          movimientos: sql<number>`count(*)::int`,
         })
-        .from(comprobante)
-        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
         .where(
           and(
-            eq(comprobante.orgId, orgId),
-            eq(comprobante.clienteId, ctx.data.clienteId),
-            eq(comprobante.direccion, 'emitido'),
-            gte(comprobante.fechaEmision, desde),
-            sql`${comprobante.fechaEmision} < ${hasta}`
+            eq(cuentaBancaria.orgId, orgId),
+            eq(cuentaBancaria.clienteId, clienteId),
+            eq(cuentaBancaria.activa, true),
+            eq(movimientoBancario.categoria, 'impuestos_idc'),
+            sql`${movimientoBancario.fecha} >= ${`${anio}-01-01`}::date`,
+            sql`${movimientoBancario.fecha} < (${`${anio}-01-01`}::date + interval '1 year')`
           )
         ),
     ]);
 
-    const ingresosBancarios = Number(banco?.ingresos ?? 0);
-    const ventasFacturadas = Number(ventas?.total ?? 0);
+    const ingresos = Number(banco[0]?.ingresos ?? 0);
+    const egresos = Number(banco[0]?.egresos ?? 0);
+    const ventas = Number(emitidas?.total ?? 0);
+    const compras = Number(recibidas?.total ?? 0);
+    // Con qué desvío este estudio quiere que le avisen.
+    const umbral = await getUmbralControlBancario();
+
+    const desglose = porConcepto
+      .map((c) => ({
+        categoria: c.categoria ?? 'varios',
+        direccion: c.direccion,
+        total: Number(c.total),
+        movimientos: c.movimientos,
+      }))
+      .sort((a, b) => b.total - a.total);
 
     return {
       periodo: ctx.data.periodo,
-      // Para que la card pueda abrirse en un mes con datos en vez de en uno
-      // vacío: los extractos se cargan a mes vencido y con atraso.
-      ultimoPeriodoConDatos: banco?.ultimoPeriodo ?? null,
-      cuentas: Number(banco?.cuentas ?? 0),
-      ingresosBancarios,
-      egresosBancarios: Number(banco?.egresos ?? 0),
-      movimientos: Number(banco?.movimientos ?? 0),
-      movimientosExcluidos: Number(banco?.excluidos ?? 0),
-      ventasFacturadas,
-      comprobantes: Number(ventas?.comprobantes ?? 0),
-      ...semaforoBancoVsFacturacion(ingresosBancarios, ventasFacturadas),
+      meses,
+      ingresos: {
+        banco: ingresos,
+        comprobantes: ventas,
+        cantidadComprobantes: Number(emitidas?.comprobantes ?? 0),
+        ...semaforoBancoVsFacturacion(ingresos, ventas, umbral),
+      },
+      egresos: {
+        banco: egresos,
+        comprobantes: compras,
+        cantidadComprobantes: Number(recibidas?.comprobantes ?? 0),
+        ...semaforoBancoVsFacturacion(egresos, compras, umbral),
+      },
+      movimientos: Number(banco[0]?.movimientos ?? 0),
+      ultimoPeriodoConDatos: ultimo?.periodo ?? null,
+      umbral: { porcentaje: umbral.porcentaje, monto: umbral.monto },
+      desglose,
+      /** Impuesto al cheque: lo de la ventana y lo del año, para Ganancias. */
+      impuestoCheque: {
+        ventana: desglose
+          .filter((d) => d.categoria === 'impuestos_idc')
+          .reduce((acc, d) => acc + d.total, 0),
+        anio: Number(chequeAnual?.total ?? 0),
+        movimientosAnio: Number(chequeAnual?.movimientos ?? 0),
+        anioLabel: anio,
+      },
     };
   });
 

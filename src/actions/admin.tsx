@@ -9,7 +9,15 @@ import {
   hayCorreoConfigurado,
   linkDeInvitacion,
 } from '@/lib/send-invitation-email';
-import { organizationModule, orgModule } from '@/drizzle/schema';
+import {
+  configuracionOrg,
+  organizationModule,
+  orgModule,
+} from '@/drizzle/schema';
+import {
+  UMBRAL_CONTROL_BANCARIO_DEFAULT,
+  type UmbralControlBancario,
+} from '@/lib/extracto-calc';
 import { and, eq, ne, or } from 'drizzle-orm';
 import { getMemberRole, getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
@@ -33,8 +41,7 @@ async function requireOwner() {
     session,
     orgId,
     userId,
-    esSuperadmin:
-      (session.user as { role?: string | null }).role === 'admin',
+    esSuperadmin: (session.user as { role?: string | null }).role === 'admin',
   };
 }
 
@@ -317,6 +324,76 @@ export const setModuleEnabled = createServerFn({
     if (ctx.data.module === 'contabilidad' && ctx.data.enabled) {
       await seedBaseChartForOrg(orgId);
     }
+
+    return { success: true };
+  });
+
+/* ─────────────────────── Preferencias del estudio ─────────────────────── */
+
+/**
+ * Cuándo avisar que lo que entró al banco no se parece a lo facturado.
+ *
+ * Es una preferencia, no una regla del negocio: el estudio mira varias
+ * empresas y decide con qué desvío quiere que lo molesten. Se guarda en
+ * `configuracion_org`; sin fila, vale el default de `extracto-calc`.
+ */
+export const CLAVE_UMBRAL_BANCO = 'control_bancario_umbral';
+
+export const getUmbralControlBancario = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+
+  const [fila] = await db
+    .select({ valor: configuracionOrg.valor })
+    .from(configuracionOrg)
+    .where(
+      and(
+        eq(configuracionOrg.orgId, orgId),
+        eq(configuracionOrg.clave, CLAVE_UMBRAL_BANCO)
+      )
+    );
+
+  const guardado = fila?.valor as Partial<UmbralControlBancario> | undefined;
+  // Si alguien guardó un jsonb raro a mano, el default evita que la pantalla
+  // se quede sin umbral: es preferible avisar de más que no avisar.
+  return {
+    porcentaje:
+      typeof guardado?.porcentaje === 'number'
+        ? guardado.porcentaje
+        : UMBRAL_CONTROL_BANCARIO_DEFAULT.porcentaje,
+    monto:
+      typeof guardado?.monto === 'number'
+        ? guardado.monto
+        : UMBRAL_CONTROL_BANCARIO_DEFAULT.monto,
+    esDefault: !fila,
+  };
+});
+
+export const setUmbralControlBancario = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      /** Un umbral de 0% avisaría siempre; de 100%, casi nunca. */
+      porcentaje: z.number().min(1).max(100),
+      monto: z.number().min(0),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await requireOwner();
+
+    await db
+      .insert(configuracionOrg)
+      .values({
+        orgId,
+        clave: CLAVE_UMBRAL_BANCO,
+        valor: { porcentaje: ctx.data.porcentaje, monto: ctx.data.monto },
+      })
+      .onConflictDoUpdate({
+        target: [configuracionOrg.orgId, configuracionOrg.clave],
+        set: {
+          valor: { porcentaje: ctx.data.porcentaje, monto: ctx.data.monto },
+        },
+      });
 
     return { success: true };
   });

@@ -97,6 +97,24 @@ create trigger trg_set_updated_at before update on organization_module for each 
 comment on table organization_module is
   'Qué módulos tiene habilitados cada estudio. Si no hay fila, el módulo está apagado.';
 
+create table configuracion_org (
+  id uuid primary key default gen_random_uuid(),
+  org_id text not null references organization(id) on delete cascade,
+  clave text not null,
+  valor jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (org_id, clave)
+);
+create trigger trg_set_updated_at before update on configuracion_org for each row execute function set_updated_at();
+
+comment on table configuracion_org is
+  'Preferencias del estudio que cambian cómo se juzga un dato, no cómo se calcula: umbrales de aviso, tolerancias. Clave-valor a propósito: cada preferencia nace de una conversación con un estudio y agregar una columna por cada una llenaría la tabla de nulls. Lo que define el negocio (qué módulos hay, qué cuentas usa una regla) NO va acá: eso es modelo, no preferencia.';
+comment on column configuracion_org.clave is
+  'Identificador estable, en snake_case. El código lee esta clave, así que renombrarla rompe la configuración guardada.';
+comment on column configuracion_org.valor is
+  'jsonb porque una preferencia rara vez es un solo número: el umbral del control bancario son dos (porcentaje y monto) y se evalúan juntos.';
+
 -- ============================================================================
 -- AGENTES: CONVERSACIÓN
 -- ============================================================================

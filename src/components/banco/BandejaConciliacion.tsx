@@ -38,6 +38,7 @@ import {
   getBandejaConciliacion,
 } from '@/actions/bank';
 import { excluirMovimiento } from '@/actions/extractos';
+import { Button } from '@/components/ui/button';
 import { MesPicker } from '@/components/shared/mes-picker';
 import { fechaLocal } from '@/components/inicio/compartido';
 import {
@@ -115,17 +116,17 @@ function Progreso({
   const base = totales.ingresos || 1;
 
   return (
-    <div className="grid gap-5 sm:grid-cols-2">
-      <div className="flex flex-col gap-1.5">
+    <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+      <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-[17px] font-semibold tabular-nums text-[var(--arca-ink)]">
+          <span className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
             {pesos(totales.facturadoConciliado)}
           </span>
           <span className="text-[11.5px] text-[var(--arca-ink-3)]">
             de {pesos(totales.facturado)} facturados, conciliados
           </span>
         </div>
-        <div className="flex h-[9px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
+        <div className="flex h-[7px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
           <span
             className="h-full bg-[var(--arca-accent-pos)]"
             style={{ width: `${pctFacturado}%` }}
@@ -152,9 +153,9 @@ function Progreso({
         </span>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-[17px] font-semibold tabular-nums text-[var(--arca-ink)]">
+          <span className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
             {pesos(totales.sinExplicar)}
           </span>
           <span className="text-[11.5px] text-[var(--arca-ink-3)]">
@@ -162,7 +163,7 @@ function Progreso({
           </span>
         </div>
         {/* Una sola escala: lo que entró en el mes, partido en tres estados. */}
-        <div className="flex h-[9px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
+        <div className="flex h-[7px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
           <Tramo
             clase="bg-[var(--arca-accent-pos)]"
             ancho={(totales.conciliado / base) * 100}
@@ -206,7 +207,7 @@ function FilaMovimiento({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0 ${
+      className={`flex h-[56px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 first:border-t-0 ${
         elegido
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -283,7 +284,7 @@ function FilaComprobante({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0 ${
+      className={`flex h-[56px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 first:border-t-0 ${
         esCandidato
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -464,7 +465,7 @@ export function BandejaConciliacion({
   return (
     <div className="flex flex-col gap-3.5">
       {/* Cabecera: el mes y cuánto falta de cada lado */}
-      <div className="flex flex-col gap-3.5 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
+      <div className="flex flex-col gap-2.5 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <Scale className="size-4 text-[var(--arca-ink-2)]" strokeWidth={2} />
           <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
@@ -485,11 +486,11 @@ export function BandejaConciliacion({
               }}
             />
             {crucesExactos.length > 0 && (
-              <button
+              <Button
                 type="button"
+                size="sm"
                 onClick={() => setRevisandoLote(true)}
                 disabled={conciliar.isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[var(--arca-accent)] px-3 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {conciliar.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -499,7 +500,7 @@ export function BandejaConciliacion({
                 Revisar {crucesExactos.length} cruce
                 {crucesExactos.length === 1 ? '' : 's'} exacto
                 {crucesExactos.length === 1 ? '' : 's'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -537,7 +538,7 @@ export function BandejaConciliacion({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
               disabled={conciliar.isPending}
               onClick={() =>
@@ -548,7 +549,7 @@ export function BandejaConciliacion({
                   },
                 ])
               }
-              className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--arca-accent)] px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              size="sm"
             >
               {conciliar.isPending ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -556,14 +557,15 @@ export function BandejaConciliacion({
                 <Check className="size-3.5" />
               )}
               Confirmar este cruce
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setMovElegido(null)}
-              className="rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 py-1.5 text-[12px] font-medium text-[var(--arca-ink-2)]"
             >
               No es esta
-            </button>
+            </Button>
             <span className="text-[11px] text-[var(--arca-accent-pos-fg)]">
               o elegí otra factura de la derecha
             </span>
@@ -582,10 +584,10 @@ export function BandejaConciliacion({
           </p>
         </div>
       ) : (
-        <div className="grid items-start gap-3.5 lg:grid-cols-2">
+        <div className="grid items-stretch gap-3.5 lg:grid-cols-2">
           {/* Izquierda: la plata que entró sin identificar */}
-          <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
-            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] px-4 py-2.5">
+          <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
               <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                 Entró al banco, sin identificar
               </span>
@@ -600,7 +602,7 @@ export function BandejaConciliacion({
                 Todo lo que entró en el mes está identificado.
               </p>
             ) : (
-              <div className="max-h-[440px] overflow-y-auto">
+              <div className="max-h-[min(440px,42vh)] flex-1 overflow-y-auto">
                 {movimientos.map((m) => (
                   <FilaMovimiento
                     key={m.id}
@@ -618,8 +620,8 @@ export function BandejaConciliacion({
           </div>
 
           {/* Derecha: las facturas que esperan su cobro */}
-          <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
-            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] px-4 py-2.5">
+          <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
               <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                 Facturas sin cobro identificado
               </span>
@@ -652,7 +654,7 @@ export function BandejaConciliacion({
                   : 'Todas las facturas del mes tienen su cobro identificado.'}
               </p>
             ) : (
-              <div className="max-h-[440px] overflow-y-auto">
+              <div className="max-h-[min(440px,42vh)] flex-1 overflow-y-auto">
                 {/* Los candidatos del movimiento elegido van primero. */}
                 {[...comprobantes]
                   .sort(
@@ -773,14 +775,14 @@ export function BandejaConciliacion({
 
       {/* Lo conciliado, con su deshacer: confirmar no es definitivo */}
       {verConciliados && data.conciliados.length > 0 && (
-        <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
           <div className="border-b border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]">
             Movimientos con su factura asignada
           </div>
           {data.conciliados.map((m) => (
             <div
               key={m.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0"
             >
               <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
                 {fecha(m.fecha)}
@@ -812,14 +814,14 @@ export function BandejaConciliacion({
 
       {/* Los excluidos, con la puerta de vuelta */}
       {verExcluidos && data.excluidos.length > 0 && (
-        <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
           <div className="border-b border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]">
             Fuera de la conciliación y de la comparación con facturación
           </div>
           {data.excluidos.map((m) => (
             <div
               key={m.id}
-              className="flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+              className="flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0"
             >
               <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
                 {fecha(m.fecha)}

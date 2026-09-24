@@ -2152,6 +2152,23 @@ export const obraSocial = pgTable("obra_social", {
 	unique("obra_social_codigo_key").on(table.codigo),
 ]);
 
+export const configuracionOrg = pgTable("configuracion_org", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	clave: text().notNull(),
+	valor: jsonb().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "configuracion_org_org_id_fkey"
+		}).onDelete("cascade"),
+	unique("configuracion_org_org_id_clave_key").on(table.orgId, table.clave),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
 export const organizationModule = pgTable("organization_module", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	orgId: text("org_id").notNull(),

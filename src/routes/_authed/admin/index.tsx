@@ -13,6 +13,8 @@ import {
   cancelInvitation,
   listOrgModules,
   setModuleEnabled,
+  getUmbralControlBancario,
+  setUmbralControlBancario,
 } from '@/actions/admin';
 import { getUser } from '@/actions/user';
 import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
@@ -65,6 +67,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { pesos } from '@/components/inicio/compartido';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 import {
@@ -151,8 +154,9 @@ function AdminPanel() {
         <TabsContent value="invitations">
           <InvitationsTab />
         </TabsContent>
-        <TabsContent value="settings">
+        <TabsContent value="settings" className="space-y-4">
           <SettingsTab />
+          <UmbralBancoCard />
         </TabsContent>
         <TabsContent value="modules">
           <ModulesTab />
@@ -199,8 +203,7 @@ function MembersTab() {
   // El acceso de soporte de la plataforma no es gente del estudio: se muestra
   // —esconderlo sería ocultarle a un contador quién puede ver los datos de sus
   // clientes— pero no se cuenta entre los suyos ni ocupa un lugar.
-  const miembrosDelEstudio =
-    members?.filter((m) => !m.esSoporte).length ?? 0;
+  const miembrosDelEstudio = members?.filter((m) => !m.esSoporte).length ?? 0;
 
   const { data: usuarioActual } = useQuery(userQuery);
 
@@ -772,6 +775,133 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   portal_cliente: 'Acceso del cliente a su información fiscal',
   ai_agent: 'Asistente inteligente con acceso a datos fiscales',
 };
+
+/**
+ * El desvío con el que el estudio quiere que le avisen del control bancario.
+ *
+ * El número que traíamos —20% y un millón— salió de mirar unas pocas
+ * empresas. Un estudio con clientes grandes lo va a querer más alto y uno con
+ * monotributistas, más bajo; hasta ahora había que tocar el código.
+ */
+function UmbralBancoCard() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin', 'umbralBanco'],
+    queryFn: () => getUmbralControlBancario(),
+  });
+
+  const [porcentaje, setPorcentaje] = useState('');
+  const [monto, setMonto] = useState('');
+  // Los inputs se llenan con lo guardado la primera vez que llega, y no
+  // vuelven a pisarse mientras la persona escribe.
+  const [cargado, setCargado] = useState(false);
+  if (data && !cargado) {
+    setPorcentaje(String(data.porcentaje));
+    setMonto(String(data.monto));
+    setCargado(true);
+  }
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      setUmbralControlBancario({
+        data: { porcentaje: Number(porcentaje), monto: Number(monto) },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['admin', 'umbralBanco'],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['inicio'] });
+      void queryClient.invalidateQueries({ queryKey: ['controlBancario'] });
+      toast.success('Umbral guardado');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Un campo vacío no es un cero: `Number('')` da 0 y, en el importe, eso
+  // cambiaba el criterio a "avisá solo por porcentaje" sin que nadie lo
+  // pidiera. Los dos son obligatorios; para no poner mínimo de importe hay
+  // que escribir 0, y entonces la pantalla lo dice.
+  const pct = porcentaje.trim() === '' ? NaN : Number(porcentaje);
+  const mto = monto.trim() === '' ? NaN : Number(monto);
+  const error =
+    !Number.isFinite(pct) || pct < 1 || pct > 100
+      ? 'La diferencia va de 1 a 100%.'
+      : !Number.isFinite(mto) || mto < 0
+        ? 'Poné un importe, o 0 para avisar sin importar el monto.'
+        : null;
+  const sinCambios =
+    !!data && pct === data.porcentaje && mto === data.monto && !data.esDefault;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Aviso de control bancario</CardTitle>
+        <CardDescription>
+          Con qué diferencia entre lo que entró al banco y lo que se facturó
+          querés que aparezca el aviso en Inicio. Se avisa cuando se pasan los
+          dos valores a la vez: un desvío del 30% sobre $40.000 no amerita
+          molestar, y $2.000.000 sobre $200.000.000 tampoco.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-[var(--arca-ink-3)]">Cargando...</p>
+        ) : (
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="umbral-pct">Diferencia mínima (%)</Label>
+              <Input
+                id="umbral-pct"
+                type="number"
+                min={1}
+                max={100}
+                value={porcentaje}
+                onChange={(e) => setPorcentaje(e.target.value)}
+                className="w-[140px]"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="umbral-monto">Importe mínimo ($)</Label>
+              <Input
+                id="umbral-monto"
+                type="number"
+                min={0}
+                step={100000}
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+                className="w-[180px]"
+              />
+            </div>
+            <Button
+              onClick={() => guardar.mutate()}
+              disabled={!!error || sinCambios || guardar.isPending}
+            >
+              {guardar.isPending ? 'Guardando…' : 'Guardar'}
+            </Button>
+            <p
+              className="text-[12px]"
+              style={{
+                color: error
+                  ? 'var(--arca-accent-neg-fg)'
+                  : 'var(--arca-ink-3)',
+              }}
+            >
+              {/* Lo que se va a guardar, en una frase: los dos números juntos
+                  se leen distinto que por separado. */}
+              {error ??
+                (mto === 0
+                  ? `Vas a recibir aviso cuando la diferencia supere el ${pct}%, sin importar el monto.`
+                  : `Vas a recibir aviso cuando la diferencia supere el ${pct}% y ${pesos(mto)}.`)}
+              {!error && data?.esDefault
+                ? ' Todavía sin configurar: rige el valor con el que arranca el sistema.'
+                : ''}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function ModulesTab() {
   const queryClient = useQueryClient();

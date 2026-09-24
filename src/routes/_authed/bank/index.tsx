@@ -18,7 +18,13 @@ import {
   Loader2,
   Check,
   X,
+  ChartNoAxesColumn,
+  Search,
+  Scale,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { ConAyuda } from '@/components/shared/ayuda';
+import { CardsResumen } from '@/components/shared/cards-resumen';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { Paginador } from '@/components/shared/paginador';
@@ -43,11 +49,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
   guardarClienteSeleccionado,
@@ -93,6 +94,7 @@ import {
 import { ImportarExtractoDialog } from '@/components/banco/ImportarExtractoDialog';
 import { AvisoExtractosEnCurso } from '@/components/banco/AvisoExtractosEnCurso';
 import { BandejaConciliacion } from '@/components/banco/BandejaConciliacion';
+import { ControlBancarioCard } from '@/components/banco/ControlBancarioCard';
 import {
   CATEGORIAS_MOVIMIENTO,
   CATEGORIA_MOVIMIENTO_LABEL,
@@ -112,13 +114,20 @@ const bankSearchSchema = z.object({
     .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
     .optional(),
   /** Filtros del registro de movimientos. */
+  q: z.string().min(1).max(120).optional(),
   categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
-  estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+  estado: z
+    .enum(['conciliado', 'sugerido', 'sin_conciliar', 'no_requiere'])
+    .optional(),
   /** Rango de importe en pesos, sin importar si entró o salió. */
   min: z.number().nonnegative().optional(),
   max: z.number().nonnegative().optional(),
   /** Cuánto abarca el registro: el mes de arriba (por defecto) o más. */
   rango: z.enum(['mes', '3m', '12m', 'todo']).optional(),
+  /** Qué pestaña se mira. Sin esto, Banco era una sola página larga. */
+  vista: z
+    .enum(['control', 'movimientos', 'cuentas', 'conciliacion'])
+    .optional(),
 });
 type BankSearch = z.infer<typeof bankSearchSchema>;
 
@@ -135,12 +144,17 @@ export const Route = createFileRoute('/_authed/bank/')({
 
 /** Los períodos que puede abarcar el registro. */
 const RANGO_LABEL = {
-  mes: 'El mes elegido arriba',
+  mes: 'Un mes',
   '3m': 'Últimos 3 meses',
   '12m': 'Últimos 12 meses',
   todo: 'Todo el historial',
 } as const;
 type Rango = keyof typeof RANGO_LABEL;
+
+/** "enero de 2026" → "Enero de 2026". */
+function conMayuscula(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
 
 /** 'YYYY-MM' → "enero de 2026". */
 function nombreMes(mes: string): string {
@@ -169,7 +183,7 @@ function periodoDelRango(
 }
 
 /** Filas por página del registro de movimientos. */
-const MOVIMIENTOS_POR_PAGINA = 50;
+const MOVIMIENTOS_POR_PAGINA = 10;
 
 /* ─── Types ─── */
 type MovimientoRow = Awaited<
@@ -211,28 +225,11 @@ function fmtDate(d: string | Date) {
   });
 }
 
-/** Tooltip del sistema alrededor de un elemento (en vez de `title`). */
-function ConAyuda({
-  texto,
-  children,
-}: {
-  texto: React.ReactNode;
-  children: React.ReactElement;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent className="max-w-[300px] text-[12px] leading-snug">
-        {texto}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
 const ESTADO_LABEL = {
   conciliado: 'Conciliados',
   sugerido: 'Sugeridos',
   sin_conciliar: 'Sin conciliar',
+  no_requiere: 'No requieren factura',
 } as const;
 
 /** "1234,5" o "1.234,50" → 1234.5. Vacío o inválido → undefined. */
@@ -251,6 +248,46 @@ function leerPesos(texto: string): number | undefined {
  * Filtro por monto: "desde" y "hasta" en un popover, que se aplica al
  * confirmar y no con cada tecla (cada cambio es un pedido al servidor).
  */
+/**
+ * Busca texto en la descripción del banco y en la contraparte. Escribe en la
+ * URL con una demora: sin eso, cada tecla dispara una consulta.
+ */
+function BuscadorMovimientos({
+  valor,
+  onBuscar,
+}: {
+  valor: string | undefined;
+  onBuscar: (q: string | undefined) => void;
+}) {
+  const [texto, setTexto] = useState(valor ?? '');
+  // Si el filtro se limpia desde afuera ("Limpiar"), el input lo acompaña.
+  const [prevValor, setPrevValor] = useState(valor);
+  if (prevValor !== valor) {
+    setPrevValor(valor);
+    setTexto(valor ?? '');
+  }
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const limpio = texto.trim();
+      if ((limpio || undefined) !== valor) onBuscar(limpio || undefined);
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [texto]);
+
+  return (
+    <div className="relative min-w-[160px] flex-1">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--arca-ink-4)]" />
+      <input
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        placeholder="Buscar descripción o contraparte…"
+        className="h-8 w-full rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] pl-8 pr-2.5 text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-3)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] focus-visible:outline-none"
+      />
+    </div>
+  );
+}
+
 function FiltroMonto({
   min,
   max,
@@ -450,13 +487,10 @@ function RevisarSugerencias({
       }}
     >
       <AlertDialogTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity"
-        >
-          <Check className="w-3 h-3" strokeWidth={2.4} />
+        <Button type="button" variant="outline" size="sm">
+          <Check className="size-3.5" strokeWidth={2.4} />
           Revisar sugeridos
-        </button>
+        </Button>
       </AlertDialogTrigger>
       <AlertDialogContent className="!max-w-3xl">
         <AlertDialogHeader>
@@ -929,7 +963,7 @@ function TransactionItem({
 
   return (
     <div
-      className={`px-5 py-3.5 flex items-center gap-4 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] ${
+      className={`px-5 py-2 flex items-center gap-4 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms] ${
         tx.excluido ? 'opacity-45' : ''
       }`}
     >
@@ -1438,90 +1472,49 @@ function TotalesDelPeriodo({
   egresos,
   movimientos,
   conciliados,
-  porcentaje,
-  alcance,
+  sinConciliar,
 }: {
   ingresos: number;
   egresos: number;
   movimientos: number;
   conciliados: number;
-  porcentaje: number;
-  /** Qué abarcan los números: una cuenta puntual o todas. */
-  alcance: string;
+  sinConciliar: number;
 }) {
   const neto = ingresos - egresos;
+  const pct =
+    movimientos > 0 ? Math.round((conciliados / movimientos) * 100) : 0;
+  // La banda de resumen del sistema, la misma de Deudas y Vencimientos. El
+  // cuarto número es el único accionable —cuánto falta revisar—, por eso
+  // está entre los principales.
   return (
-    <div className="mb-4 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
-      <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
-        <div>
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
-            <TrendingUp
-              className="w-3 h-3"
-              style={{ color: 'oklch(0.55 0.12 145)' }}
-              strokeWidth={2}
-            />
-            Entró
-          </div>
-          <div
-            className="text-[26px] font-semibold tracking-tight tabular-nums"
-            style={{
-              fontFamily: 'var(--ff-display)',
-              color: 'oklch(0.45 0.14 145)',
-            }}
-          >
-            {fmtPesos(ingresos)}
-          </div>
-        </div>
-        <div>
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
-            <TrendingDown
-              className="w-3 h-3"
-              style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}
-              strokeWidth={2}
-            />
-            Salió
-          </div>
-          <div
-            className="text-[26px] font-semibold tracking-tight tabular-nums"
-            style={{
-              fontFamily: 'var(--ff-display)',
-              color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))',
-            }}
-          >
-            {fmtPesos(egresos)}
-          </div>
-        </div>
-        {/* El neto es la lectura que el contador hace de los dos anteriores. */}
-        <div className="border-l border-[var(--arca-border)] pl-10">
-          <div className="text-[11px] font-medium text-[var(--arca-ink-3)]">
-            Resultado del período
-          </div>
-          <div
-            className="text-[26px] font-semibold tracking-tight tabular-nums text-[var(--arca-ink)]"
-            style={{ fontFamily: 'var(--ff-display)' }}
-          >
-            {neto >= 0 ? '+' : '−'}
-            {fmtPesos(Math.abs(neto))}
-          </div>
-        </div>
-
-        {/* La conciliación es el estado del trabajo, no el dato principal. */}
-        <div className="ml-auto flex flex-col items-end gap-1 text-[11.5px] text-[var(--arca-ink-3)]">
-          <span>
-            {movimientos} movimiento{movimientos !== 1 ? 's' : ''} · {alcance}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2
-              className="w-3 h-3"
-              style={{ color: 'oklch(0.55 0.12 145)' }}
-              strokeWidth={2}
-            />
-            {conciliados} conciliado{conciliados !== 1 ? 's' : ''} ({porcentaje}
-            %)
-          </span>
-        </div>
-      </div>
-    </div>
+    <CardsResumen
+      className="mb-4"
+      cards={[
+        {
+          label: 'Entró',
+          valor: fmtPesos(ingresos),
+          icono: TrendingUp,
+          tono: 'positivo',
+        },
+        {
+          label: 'Salió',
+          valor: fmtPesos(egresos),
+          icono: TrendingDown,
+          tono: 'urgente',
+        },
+        {
+          label: 'Resultado del período',
+          valor: `${neto >= 0 ? '+' : '−'}${fmtPesos(Math.abs(neto))}`,
+          tono: 'neutro',
+        },
+        {
+          label: 'Sin conciliar',
+          valor: String(sinConciliar),
+          sub: `de ${movimientos} · ${conciliados} conciliado${conciliados === 1 ? '' : 's'} (${pct}%)`,
+          tono: sinConciliar > 0 ? 'atencion' : 'positivo',
+        },
+      ]}
+    />
   );
 }
 
@@ -1599,6 +1592,8 @@ function BankPage() {
   // dentro de la misma pantalla: por eso cada `navigate` de acá lleva
   // `resetScroll: false`, para no saltar al principio de la página.
   const search: BankSearch = Route.useSearch();
+  // El control es la vista de entrada: es lo que el estudio mira primero.
+  const vista = search.vista ?? 'control';
   const navigate = Route.useNavigate();
   const [clienteGlobal] = useClienteSeleccionado();
   const clienteId = search.clientId ?? clienteGlobal ?? '';
@@ -1643,7 +1638,6 @@ function BankPage() {
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [showManualMovement, setShowManualMovement] = useState(false);
   // El registro completo arranca plegado: la vista es la conciliación.
-  const [showRegistro, setShowRegistro] = useState(false);
   // El importador se abre desde dos lados: el botón de Cuentas y la franja de
   // extractos en curso, que si no anuncia trabajo pendiente sin dar la puerta.
   const [importarAbierto, setImportarAbierto] = useState(false);
@@ -1670,7 +1664,7 @@ function BankPage() {
   // mes vuelve a la primera página (ajuste durante el render, como el de
   // `prevCliente`).
   const [pagina, setPagina] = useState(1);
-  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}|${search.min ?? ''}|${search.max ?? ''}|${search.rango ?? ''}`;
+  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.q ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}|${search.min ?? ''}|${search.max ?? ''}|${search.rango ?? ''}`;
   const [prevLista, setPrevLista] = useState(claveLista);
   if (prevLista !== claveLista) {
     setPrevLista(claveLista);
@@ -1689,6 +1683,7 @@ function BankPage() {
       accountId || clienteId,
       accountId ? 'cuenta' : 'todas',
       search.mes,
+      search.q,
       search.categoria,
       search.estado,
       search.min,
@@ -1701,6 +1696,7 @@ function BankPage() {
         data: {
           ...(accountId ? { cuentaBancariaId: accountId } : { clienteId }),
           ...periodoRegistro,
+          busqueda: search.q,
           categoria: search.categoria,
           estado: search.estado,
           importeMin: search.min,
@@ -1796,8 +1792,57 @@ function BankPage() {
         />
       )}
 
-      {/* La bandeja ES la vista: el trabajo del mes, no el resumen de caja. */}
+      {/* Cuatro vistas en vez de una página larga: el control (lo que pidió
+          el estudio el 23/9), los movimientos, las cuentas con sus extractos
+          y la conciliación factura por factura, que pasó a ser una
+          herramienta manual. */}
       {accounts.length > 0 && (
+        <div className="mb-4 flex items-center gap-1 border-b border-[var(--arca-border)]">
+          {(
+            [
+              ['control', 'Control', ChartNoAxesColumn],
+              ['movimientos', 'Movimientos', ArrowLeftRight],
+              ['cuentas', 'Cuentas y extractos', Landmark],
+              ['conciliacion', 'Conciliación', Scale],
+            ] as const
+          ).map(([id, label, Icono]) => (
+            <button
+              key={id}
+              onClick={() =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({ ...prev, vista: id }),
+                })
+              }
+              className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 pb-2 pt-1 text-[13px] transition-colors ${
+                vista === id
+                  ? 'border-[var(--arca-accent)] font-medium text-[var(--arca-ink)]'
+                  : 'border-transparent text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]'
+              }`}
+            >
+              <Icono className="w-3.5 h-3.5" strokeWidth={1.8} />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {vista === 'control' && accounts.length > 0 && clienteId && (
+        <div className="mb-4">
+          <ControlBancarioCard
+            clienteId={clienteId}
+            periodo={search.mes}
+            onPeriodoChange={(mes) =>
+              void navigate({
+                resetScroll: false,
+                search: (prev: BankSearch) => ({ ...prev, mes }),
+              })
+            }
+          />
+        </div>
+      )}
+
+      {vista === 'conciliacion' && accounts.length > 0 && (
         <div className="mb-5">
           <BandejaConciliacion
             clienteId={clienteId}
@@ -1813,32 +1858,38 @@ function BankPage() {
         </div>
       )}
 
-      {/* Las cuentas: qué son y cuánto movieron. También filtran el registro. */}
-      <div className="mb-2 flex items-center gap-3">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-          Cuentas
-        </span>
-        <div className="flex-1 h-px bg-[var(--arca-border)]" />
-        <button
-          onClick={() => setShowCreateAccount((v) => !v)}
-          className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-        >
-          <Plus className="w-3 h-3" strokeWidth={2} />
-          Nueva cuenta
-        </button>
-        <ImportarExtractoDialog
-          clienteId={clienteId}
-          abierto={importarAbierto}
-          onAbiertoChange={setImportarAbierto}
-        >
-          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity">
-            <Upload className="w-3.5 h-3.5" strokeWidth={2} />
-            Importar extracto
-          </button>
-        </ImportarExtractoDialog>
-      </div>
+      {/* Las cuentas: qué son y cuánto movieron. Al tocar una, el registro se
+          filtra por ella y la vista salta a Movimientos. */}
+      {vista === 'cuentas' && (
+        <div className="mb-2 flex items-center gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Cuentas
+          </span>
+          {/* La raya al medio no separaba nada: el título y los botones son
+              la misma barra. */}
+          <div className="flex-1" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCreateAccount((v) => !v)}
+          >
+            <Plus className="size-3.5" strokeWidth={2} />
+            Nueva cuenta
+          </Button>
+          <ImportarExtractoDialog
+            clienteId={clienteId}
+            abierto={importarAbierto}
+            onAbiertoChange={setImportarAbierto}
+          >
+            <Button size="sm">
+              <Upload className="size-3.5" strokeWidth={2} />
+              Importar extracto
+            </Button>
+          </ImportarExtractoDialog>
+        </div>
+      )}
 
-      {showCreateAccount && (
+      {vista === 'cuentas' && showCreateAccount && (
         <div className="mb-4 rounded-[12px] border border-[var(--arca-border)] overflow-hidden">
           <CreateAccountForm
             clienteId={clienteId}
@@ -1847,116 +1898,106 @@ function BankPage() {
         </div>
       )}
 
-      {accounts.length === 0 ? (
-        <ArcaCard>
-          <div className="flex flex-col items-center justify-center py-10 text-[var(--arca-ink-3)]">
-            <Landmark className="w-7 h-7 mb-2 opacity-40" strokeWidth={1.5} />
-            <p className="text-[13px]">
-              Esta empresa todavía no tiene cuentas bancarias
-            </p>
-            <p className="text-[12px] mt-1">
-              Importá un extracto: la cuenta se crea con los datos del PDF
-            </p>
+      {vista === 'cuentas' &&
+        (accounts.length === 0 ? (
+          <ArcaCard>
+            <div className="flex flex-col items-center justify-center py-10 text-[var(--arca-ink-3)]">
+              <Landmark className="w-7 h-7 mb-2 opacity-40" strokeWidth={1.5} />
+              <p className="text-[13px]">
+                Esta empresa todavía no tiene cuentas bancarias
+              </p>
+              <p className="text-[12px] mt-1">
+                Importá un extracto: la cuenta se crea con los datos del PDF
+              </p>
+            </div>
+          </ArcaCard>
+        ) : (
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {accounts.map((c) => (
+              <TarjetaCuenta
+                key={c.id}
+                cuenta={c}
+                activa={accountId === c.id}
+                onClick={() => {
+                  // Volver a clickear la cuenta activa muestra todas de nuevo.
+                  setAccountId((prev) => (prev === c.id ? '' : c.id));
+                  setShowManualMovement(false);
+                  void navigate({
+                    resetScroll: false,
+                    search: (prev: BankSearch) => ({
+                      ...prev,
+                      vista: 'movimientos',
+                    }),
+                  });
+                }}
+              />
+            ))}
           </div>
-        </ArcaCard>
-      ) : (
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {accounts.map((c) => (
-            <TarjetaCuenta
-              key={c.id}
-              cuenta={c}
-              activa={accountId === c.id}
-              onClick={() => {
-                // Volver a clickear la cuenta activa muestra todas de nuevo.
-                setAccountId((prev) => (prev === c.id ? '' : c.id));
-                setShowManualMovement(false);
-              }}
-            />
-          ))}
-        </div>
+        ))}
+
+      {vista === 'movimientos' && accounts.length > 0 && (
+        <TotalesDelPeriodo
+          ingresos={totalesRegistro?.ingresos ?? 0}
+          egresos={totalesRegistro?.egresos ?? 0}
+          movimientos={totalesRegistro?.movimientosSinEstado ?? 0}
+          conciliados={totalesRegistro?.conciliados ?? 0}
+          sinConciliar={unmatchedCount}
+        />
       )}
 
-      {/* Totales de caja y registro: el respaldo, no el foco. */}
-      {accounts.length > 0 && (
-        <div className="mb-3 mt-5 flex items-center gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-            Registro y totales
-          </span>
-          <div className="flex-1 h-px bg-[var(--arca-border)]" />
-          <button
-            onClick={() => setShowRegistro((v) => !v)}
-            className="text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-          >
-            {showRegistro
-              ? 'Ocultar'
-              : `Ver los ${movimientosFiltrados} movimientos de ${mesLabel}`}
-          </button>
-        </div>
-      )}
-
-      {accounts.length > 0 && showRegistro && (
-        <div className="mb-4">
-          {/* Mismo filtro que la tabla: empresa, cuenta y mes. */}
-          <TotalesDelPeriodo
-            ingresos={totalesRegistro?.ingresos ?? 0}
-            egresos={totalesRegistro?.egresos ?? 0}
-            movimientos={movimientosFiltrados}
-            conciliados={totalesRegistro?.conciliados ?? 0}
-            porcentaje={
-              movimientosFiltrados > 0
-                ? Math.round(
-                    ((totalesRegistro?.conciliados ?? 0) /
-                      movimientosFiltrados) *
-                      100
-                  )
-                : 0
-            }
-            alcance={`${mesLabel} · ${
-              cuentaElegida
-                ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`.trim()
-                : `${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''}`
-            }`}
-          />
-        </div>
-      )}
-
-      {accounts.length > 0 && showRegistro && (
+      {vista === 'movimientos' && accounts.length > 0 && (
         <ArcaCard>
-          <div className="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-[var(--arca-border)]">
-            <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-              Movimientos
-            </span>
-            <span className="text-[11.5px] text-[var(--arca-ink-3)]">
-              {cuentaElegida
-                ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`
-                : 'todas las cuentas'}
-              {' · '}
-              {mesLabel} · {movimientosFiltrados} movimientos ·{' '}
-              {totalesRegistro?.conciliados ?? 0} conciliados
-              {(totalesRegistro?.sugeridos ?? 0) > 0 && (
-                <span className="text-[var(--arca-accent-warn-fg)]">
-                  {' · '}
-                  {totalesRegistro?.sugeridos} sugerido
-                  {totalesRegistro?.sugeridos === 1 ? '' : 's'} para revisar
+          {/* Dos niveles: arriba qué se está viendo y las acciones, siempre
+              en el mismo lugar; abajo con qué filtrarlo. Antes los botones
+              cambiaban de renglón según cuántos contadores hubiera. */}
+          <div className="px-5 py-3 flex items-center gap-3 border-b border-[var(--arca-border)]">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--arca-ink)]">
+                  <ArrowLeftRight className="size-3.5" strokeWidth={1.8} />
+                  Movimientos
                 </span>
-              )}
-              {' · '}
-              {unmatchedCount} sin conciliar
-            </span>
-            {accountId && (
-              <ConAyuda texto="Ahora ves solo esta cuenta porque hiciste click en su tarjeta. Esto vuelve a mostrar todas las cuentas de la empresa.">
-                <button
-                  onClick={() => setAccountId('')}
-                  className="text-[11.5px] text-[var(--arca-ink-3)] hover:underline"
+                {txsFetching && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--arca-ink-4)]" />
+                )}
+              </div>
+              <div className="text-[11.5px] text-[var(--arca-ink-3)] truncate">
+                {cuentaElegida
+                  ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`
+                  : `Todas las cuentas (${accounts.length})`}
+                {' · '}
+                {mesLabel} ·{' '}
+                {/* Es lo unico del subtitulo que cambia al filtrar: si se lee
+                    igual que el resto, el filtro parece no haber hecho nada. */}
+                <span className="font-semibold text-[var(--arca-ink)]">
+                  {movimientosFiltrados} movimiento
+                  {movimientosFiltrados === 1 ? '' : 's'}
+                </span>{' '}
+                · {totalesRegistro?.conciliados ?? 0} conciliados ·{' '}
+                {totalesRegistro?.noRequiereFactura ?? 0} sin factura ·{' '}
+                {unmatchedCount} sin conciliar
+              </div>
+            </div>
+            {/* De menor a mayor peso, y el principal —Auto-conciliar, que es
+                lo que hace avanzar el trabajo— siempre ultimo a la derecha. */}
+            <div className="ml-auto shrink-0 flex items-center gap-2">
+              <ConAyuda
+                texto={
+                  accountId
+                    ? 'Carga un movimiento que no vino en el extracto.'
+                    : 'Elegí una cuenta para poder cargar un movimiento a mano.'
+                }
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowManualMovement((v) => !v)}
+                  disabled={!accountId}
                 >
-                  ✕ Quitar filtro: ver todas las cuentas
-                </button>
+                  <Plus className="size-3.5" strokeWidth={2} />
+                  Movimiento manual
+                </Button>
               </ConAyuda>
-            )}
-            {txsFetching && (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--arca-ink-4)]" />
-            )}
-            <div className="ml-auto flex items-center gap-3">
               {(totalesRegistro?.sugeridos ?? 0) > 0 && (
                 <RevisarSugerencias
                   alcance={
@@ -1966,54 +2007,51 @@ function BankPage() {
                   }
                 />
               )}
-              {accountId && (
-                <button
-                  onClick={() => setShowManualMovement((v) => !v)}
-                  className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-                >
-                  <Plus className="w-3 h-3" strokeWidth={2} />
-                  Movimiento manual
-                </button>
-              )}
               <ConAyuda
                 texto={`Busca, para cada movimiento ${accountId ? 'de esta cuenta' : 'de todas las cuentas de la empresa'} y de todos los meses, una factura con el mismo importe (cobros contra emitidas, pagos contra recibidas): hasta 5 días de diferencia, o hasta 30 días antes si es el mismo cliente o proveedor o la única factura posible. Si varios movimientos pueden ser la misma factura, se la da al que mejor corresponde: misma contraparte, después la fecha más cercana. Cada vez recalcula las sugerencias pendientes; lo confirmado y lo descartado no se toca.`}
               >
-                <button
+                <Button
+                  size="sm"
                   onClick={() => autoMatchMutation.mutate()}
                   disabled={autoMatchMutation.isPending}
-                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 transition-colors"
                 >
-                  <Zap className="w-3 h-3" strokeWidth={2} />
+                  <Zap className="size-3.5" strokeWidth={2} />
                   {autoMatchMutation.isPending
                     ? 'Buscando cruces…'
                     : 'Auto-conciliar'}
-                </button>
+                </Button>
               </ConAyuda>
             </div>
           </div>
 
           {/* Filtros de la tabla. Los totales de arriba los siguen: con
               "Impuestos" elegido, "Salió" es lo que se fue en impuestos. */}
-          <div className="px-5 py-2.5 flex flex-wrap items-center gap-2 border-b border-[var(--arca-border)]">
-            <SearchableSelect
-              size="sm"
-              value={rango}
-              onValueChange={(v) =>
+          <div className="px-5 py-2.5 flex items-center gap-2 border-b border-[var(--arca-border)]">
+            <BuscadorMovimientos
+              valor={search.q}
+              onBuscar={(q) =>
                 void navigate({
                   resetScroll: false,
-                  search: (prev: BankSearch) => ({
-                    ...prev,
-                    rango: v === 'mes' ? undefined : (v as Rango),
-                  }),
+                  search: (prev: BankSearch) => ({ ...prev, q }),
                 })
               }
-              placeholder="Período"
-              searchPlaceholder="Buscar período..."
-              width={190}
-              options={(Object.keys(RANGO_LABEL) as Rango[]).map((r) => ({
-                value: r,
-                label: RANGO_LABEL[r],
-              }))}
+            />
+            {/* Antes la única forma de ver una sola cuenta era ir a la pestaña
+                Cuentas y hacer click en su tarjeta. */}
+            <SearchableSelect
+              size="sm"
+              value={accountId || 'all'}
+              onValueChange={(v) => setAccountId(v === 'all' ? '' : v)}
+              placeholder="Cuenta"
+              searchPlaceholder="Buscar cuenta..."
+              width={178}
+              options={[
+                { value: 'all', label: 'Todas las cuentas' },
+                ...accounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.banco} ${a.numero ?? ''}`.trim(),
+                })),
+              ]}
             />
             <SearchableSelect
               size="sm"
@@ -2030,7 +2068,7 @@ function BankPage() {
               }
               placeholder="Categoría"
               searchPlaceholder="Buscar categoría..."
-              width={210}
+              width={176}
               options={[
                 { value: 'all', label: 'Todas las categorías' },
                 ...CATEGORIAS_MOVIMIENTO.map((c) => ({
@@ -2038,6 +2076,31 @@ function BankPage() {
                   label: CATEGORIA_MOVIMIENTO_LABEL[c],
                 })),
               ]}
+            />
+            <SearchableSelect
+              size="sm"
+              value={rango}
+              onValueChange={(v) =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({
+                    ...prev,
+                    rango: v === 'mes' ? undefined : (v as Rango),
+                  }),
+                })
+              }
+              placeholder="Período"
+              buscable={false}
+              width={150}
+              options={(Object.keys(RANGO_LABEL) as Rango[]).map((r) => ({
+                value: r,
+                // "El mes elegido arriba" no se entendía: en esta pestaña no
+                // hay ningún mes a la vista, así que se nombra el mes.
+                label:
+                  r === 'mes' && search.mes
+                    ? conMayuscula(nombreMes(search.mes))
+                    : RANGO_LABEL[r],
+              }))}
             />
             <SearchableSelect
               size="sm"
@@ -2055,8 +2118,8 @@ function BankPage() {
                 })
               }
               placeholder="Estado"
-              searchPlaceholder="Buscar estado..."
-              width={190}
+              buscable={false}
+              width={164}
               options={[
                 { value: 'all', label: 'Todos los estados' },
                 ...(
@@ -2074,7 +2137,8 @@ function BankPage() {
                 })
               }
             />
-            {(search.categoria ??
+            {(search.q ??
+              search.categoria ??
               search.estado ??
               search.min ??
               search.max ??
@@ -2085,6 +2149,7 @@ function BankPage() {
                     resetScroll: false,
                     search: (prev: BankSearch) => ({
                       ...prev,
+                      q: undefined,
                       categoria: undefined,
                       estado: undefined,
                       min: undefined,
