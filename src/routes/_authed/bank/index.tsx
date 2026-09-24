@@ -23,7 +23,7 @@ import {
   Scale,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ConAyuda } from '@/components/shared/ayuda';
+import { AyudaIcono, ConAyuda } from '@/components/shared/ayuda';
 import { getPostableAccounts } from '@/actions/accounting';
 import { CardsResumen } from '@/components/shared/cards-resumen';
 import { PageHeader } from '@/components/shared/page-header';
@@ -1532,12 +1532,9 @@ function TotalesDelPeriodo({
 function CuentaContableDeBanco({
   cuenta,
   clienteId,
-  compartidaCon,
 }: {
   cuenta: CuentaConResumen;
   clienteId: string;
-  /** Otras cuentas bancarias que imputan a la misma cuenta del plan. */
-  compartidaCon: string[];
 }) {
   const queryClient = useQueryClient();
   const { data: plan = [] } = useQuery({
@@ -1558,45 +1555,25 @@ function CuentaContableDeBanco({
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const sinAsignar = !cuenta.cuentaContableId;
-  const compartida = compartidaCon.length > 0;
-
   return (
-    <div className="mt-1.5 flex items-center gap-2">
+    <div className="border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
+      <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+        Sus movimientos van a
+        <AyudaIcono texto="La cuenta del plan donde se imputan los movimientos de esta cuenta bancaria. Varias cuentas bancarias pueden apuntar a la misma: ahí el mayor las suma, que es lo que se quiere cuando se lleva una sola cuenta por banco. Sin elegir una, esta cuenta no genera asientos." />
+      </p>
       <SearchableSelect
         size="sm"
         width="100%"
         value={cuenta.cuentaContableId ?? 'ninguna'}
         onValueChange={(v) => guardar.mutate(v === 'ninguna' ? null : v)}
-        placeholder="Cuenta contable"
+        placeholder="Elegí la cuenta del plan"
         searchPlaceholder="Buscar por código o nombre..."
         label="Cuenta del plan"
         options={[
-          { value: 'ninguna', label: 'Sin cuenta contable' },
+          { value: 'ninguna', label: 'Sin asignar' },
           ...plan.map((c) => ({ value: c.id, label: `${c.code} · ${c.name}` })),
         ]}
       />
-      <ConAyuda
-        texto={
-          sinAsignar
-            ? 'Elegí a qué cuenta del plan se imputan los movimientos de esta cuenta bancaria. Sin esto no se pueden generar los asientos automáticos.'
-            : compartida
-              ? `Esta cuenta del plan también la usa ${compartidaCon.join(' y ')}. Los movimientos de las dos van a quedar sumados en el mismo mayor, así que el saldo contable no va a coincidir con el de ningún extracto por separado. Se puede hacer, pero lo normal es una cuenta del plan por cada cuenta bancaria.`
-              : 'A esta cuenta del plan se imputan los movimientos de esta cuenta bancaria.'
-        }
-      >
-        <span
-          className="shrink-0 cursor-default text-[11px]"
-          style={{
-            color:
-              sinAsignar || compartida
-                ? 'var(--arca-accent-warn-fg)'
-                : 'var(--arca-ink-4)',
-          }}
-        >
-          {sinAsignar ? 'Sin asignar' : compartida ? 'Compartida' : 'Asignada'}
-        </span>
-      </ConAyuda>
     </div>
   );
 }
@@ -1605,22 +1582,28 @@ function TarjetaCuenta({
   cuenta,
   activa,
   onClick,
+  pie,
 }: {
   cuenta: CuentaConResumen;
   activa: boolean;
   onClick: () => void;
+  /** Va dentro de la card, separado por una línea: no es clickeable. */
+  pie?: React.ReactNode;
 }) {
   const ingresos = parseFloat(cuenta.ingresos);
   const egresos = parseFloat(cuenta.egresos);
   return (
-    <button
-      onClick={onClick}
-      className={`flex flex-col gap-2 rounded-[12px] border px-4 py-3 text-left transition-colors ${
+    <div
+      className={`flex flex-col overflow-hidden rounded-[12px] border transition-colors ${
         activa
           ? 'border-[var(--arca-ink)] bg-[var(--arca-surface)]'
-          : 'border-[var(--arca-border)] bg-[var(--arca-surface)] hover:bg-[var(--arca-surface-2)]'
+          : 'border-[var(--arca-border)] bg-[var(--arca-surface)]'
       }`}
     >
+      <button
+        onClick={onClick}
+        className="flex flex-col gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--arca-surface-2)]"
+      >
       <div className="flex items-center gap-2">
         <Landmark
           className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-3)]"
@@ -1659,8 +1642,10 @@ function TarjetaCuenta({
         {cuenta.saldoUltimo
           ? ` · saldo ${fmtPesos(parseFloat(cuenta.saldoUltimo))}`
           : ''}
-      </div>
-    </button>
+        </div>
+      </button>
+      {pie}
+    </div>
   );
 }
 
@@ -2000,6 +1985,9 @@ function BankPage() {
                 <TarjetaCuenta
                   cuenta={c}
                   activa={accountId === c.id}
+                  pie={
+                    <CuentaContableDeBanco cuenta={c} clienteId={clienteId} />
+                  }
                   onClick={() => {
                     // Volver a clickear la cuenta activa muestra todas de nuevo.
                     setAccountId((prev) => (prev === c.id ? '' : c.id));
@@ -2012,21 +2000,6 @@ function BankPage() {
                       }),
                     });
                   }}
-                />
-                <CuentaContableDeBanco
-                  cuenta={c}
-                  clienteId={clienteId}
-                  compartidaCon={
-                    c.cuentaContableId
-                      ? accounts
-                          .filter(
-                            (o) =>
-                              o.id !== c.id &&
-                              o.cuentaContableId === c.cuentaContableId
-                          )
-                          .map((o) => `${o.banco} ${o.numero ?? ''}`.trim())
-                      : []
-                  }
                 />
               </div>
             ))}
