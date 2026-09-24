@@ -102,7 +102,10 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
    * se avisa acá es lo que allá está en rojo.
    */
   const banco = (datos.controlBancario ?? [])
-    .map((b) => ({ ...b, ...semaforoBancoVsFacturacion(b.ingresos, b.ventas) }))
+    .map((b) => ({
+      ...b,
+      ...semaforoBancoVsFacturacion(b.ingresos, b.ventas, datos.umbralBanco),
+    }))
     .filter((b) => b.nivel !== 'ok')
     .sort((a, b) => Math.abs(b.diferencia) - Math.abs(a.diferencia));
 
@@ -406,7 +409,8 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
               className="text-[11.5px]"
               style={{ color: 'var(--arca-ink-3)' }}
             >
-              Se avisa desde el 20% de diferencia o {pesos(1_000_000)}
+              Se avisa desde el {datos.umbralBanco.porcentaje}% de diferencia o{' '}
+              {pesos(datos.umbralBanco.monto)}
             </span>
           </div>
         </>

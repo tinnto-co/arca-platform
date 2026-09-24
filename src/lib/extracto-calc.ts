@@ -70,21 +70,40 @@ export function monedaIso(valor: string): string {
 
 export type SemaforoIncongruencia = 'ok' | 'atencion' | 'alerta';
 
+/** Cuándo una brecha amerita aviso. Cada estudio puede correr el número. */
+export interface UmbralControlBancario {
+  /** Diferencia sobre lo facturado, en puntos porcentuales. */
+  porcentaje: number;
+  /** Diferencia en pesos. */
+  monto: number;
+}
+
+/**
+ * El umbral con el que arrancan todos los estudios. Sale de la reunión del
+ * 23/9: el estudio quería mirar varias empresas antes de fijar un número, así
+ * que se dejó el que ya usaba la pantalla.
+ */
+export const UMBRAL_CONTROL_BANCARIO_DEFAULT: UmbralControlBancario = {
+  porcentaje: 20,
+  monto: 1_000_000,
+};
+
 /**
  * Semáforo de Banco vs Facturación. La brecha es significativa cuando pasa
- * el 20% Y el millón de pesos a la vez (una brecha de 25% sobre $40.000 no
+ * el porcentaje Y el monto a la vez (una brecha de 25% sobre $40.000 no
  * amerita rojo; una de $2M sobre $200M tampoco). Un solo umbral superado
  * queda en atención.
  */
 export function semaforoBancoVsFacturacion(
   ingresosBancarios: number,
-  ventasFacturadas: number
+  ventasFacturadas: number,
+  umbral: UmbralControlBancario = UMBRAL_CONTROL_BANCARIO_DEFAULT
 ): { diferencia: number; porcentaje: number; nivel: SemaforoIncongruencia } {
   const diferencia = round2(ingresosBancarios - ventasFacturadas);
   const base = Math.max(Math.abs(ventasFacturadas), 1);
   const porcentaje = Math.round((Math.abs(diferencia) / base) * 100);
-  const pasaPct = porcentaje > 20;
-  const pasaMonto = Math.abs(diferencia) > 1_000_000;
+  const pasaPct = porcentaje > umbral.porcentaje;
+  const pasaMonto = Math.abs(diferencia) > umbral.monto;
   const nivel: SemaforoIncongruencia =
     pasaPct && pasaMonto ? 'alerta' : pasaPct || pasaMonto ? 'atencion' : 'ok';
   return { diferencia, porcentaje, nivel };

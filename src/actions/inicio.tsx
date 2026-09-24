@@ -26,6 +26,7 @@ import {
 import { user } from '@/drizzle/auth';
 import { and, asc, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
+import { getUmbralControlBancario } from '@/actions/admin';
 
 /** `YYYY-MM-DD` local: las columnas `date` son strings y UTC correría un día. */
 function aFecha(d: Date): string {
@@ -304,6 +305,9 @@ export const getInicio = createServerFn({ method: 'GET' })
       where c.estado = 'activo'
     `);
 
+    // Con qué desvío este estudio quiere que le avisen del banco.
+    const umbral = await getUmbralControlBancario();
+
     const [
       vencs,
       vencidosRows,
@@ -336,6 +340,7 @@ export const getInicio = createServerFn({ method: 'GET' })
       notificaciones: notifs,
       monotributo: monos,
       equipo: equipoRows,
+      umbralBanco: { porcentaje: umbral.porcentaje, monto: umbral.monto },
       controlBancario: (
         bancoRows as unknown as {
           clienteId: string;

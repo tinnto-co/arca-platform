@@ -21,6 +21,7 @@ import {
   cliente,
 } from '@/drizzle/schema';
 import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
+import { getUmbralControlBancario } from '@/actions/admin';
 import { type ContraparteSugerida } from '@/lib/contraparte-movimiento';
 import { DIAS_PROXIMIDAD } from '@/lib/cruce-conciliacion';
 import {
@@ -1328,6 +1329,8 @@ export const getControlBancario = createServerFn({ method: 'GET' })
     const egresos = Number(banco[0]?.egresos ?? 0);
     const ventas = Number(emitidas?.total ?? 0);
     const compras = Number(recibidas?.total ?? 0);
+    // Con qué desvío este estudio quiere que le avisen.
+    const umbral = await getUmbralControlBancario();
 
     const desglose = porConcepto
       .map((c) => ({
@@ -1345,16 +1348,17 @@ export const getControlBancario = createServerFn({ method: 'GET' })
         banco: ingresos,
         comprobantes: ventas,
         cantidadComprobantes: Number(emitidas?.comprobantes ?? 0),
-        ...semaforoBancoVsFacturacion(ingresos, ventas),
+        ...semaforoBancoVsFacturacion(ingresos, ventas, umbral),
       },
       egresos: {
         banco: egresos,
         comprobantes: compras,
         cantidadComprobantes: Number(recibidas?.comprobantes ?? 0),
-        ...semaforoBancoVsFacturacion(egresos, compras),
+        ...semaforoBancoVsFacturacion(egresos, compras, umbral),
       },
       movimientos: Number(banco[0]?.movimientos ?? 0),
       ultimoPeriodoConDatos: ultimo?.periodo ?? null,
+      umbral: { porcentaje: umbral.porcentaje, monto: umbral.monto },
       desglose,
       /** Impuesto al cheque: lo de la ventana y lo del año, para Ganancias. */
       impuestoCheque: {
