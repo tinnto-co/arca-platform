@@ -19,6 +19,7 @@ import {
   Check,
   X,
   Gauge,
+  Search,
   Scale,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -112,6 +113,7 @@ const bankSearchSchema = z.object({
     .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
     .optional(),
   /** Filtros del registro de movimientos. */
+  q: z.string().min(1).max(120).optional(),
   categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
   estado: z
     .enum(['conciliado', 'sugerido', 'sin_conciliar', 'no_requiere'])
@@ -245,6 +247,46 @@ function leerPesos(texto: string): number | undefined {
  * Filtro por monto: "desde" y "hasta" en un popover, que se aplica al
  * confirmar y no con cada tecla (cada cambio es un pedido al servidor).
  */
+/**
+ * Busca texto en la descripción del banco y en la contraparte. Escribe en la
+ * URL con una demora: sin eso, cada tecla dispara una consulta.
+ */
+function BuscadorMovimientos({
+  valor,
+  onBuscar,
+}: {
+  valor: string | undefined;
+  onBuscar: (q: string | undefined) => void;
+}) {
+  const [texto, setTexto] = useState(valor ?? '');
+  // Si el filtro se limpia desde afuera ("Limpiar"), el input lo acompaña.
+  const [prevValor, setPrevValor] = useState(valor);
+  if (prevValor !== valor) {
+    setPrevValor(valor);
+    setTexto(valor ?? '');
+  }
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const limpio = texto.trim();
+      if ((limpio || undefined) !== valor) onBuscar(limpio || undefined);
+    }, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [texto]);
+
+  return (
+    <div className="relative min-w-[160px] flex-1">
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-[var(--arca-ink-4)]" />
+      <input
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        placeholder="Buscar descripción o contraparte…"
+        className="h-8 w-full rounded-lg border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] pl-8 pr-2.5 text-[12.5px] text-[var(--arca-ink)] placeholder:text-[var(--arca-ink-3)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-bg)] focus-visible:outline-none"
+      />
+    </div>
+  );
+}
+
 function FiltroMonto({
   min,
   max,
@@ -1427,91 +1469,66 @@ function CreateAccountForm({
 function TotalesDelPeriodo({
   ingresos,
   egresos,
-  movimientos,
-  conciliados,
-  porcentaje,
-  alcance,
 }: {
   ingresos: number;
   egresos: number;
-  movimientos: number;
-  conciliados: number;
-  porcentaje: number;
-  /** Qué abarcan los números: una cuenta puntual o todas. */
-  alcance: string;
 }) {
   const neto = ingresos - egresos;
-  return (
-    <div className="mb-4 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
-      <div className="flex flex-wrap items-end gap-x-10 gap-y-4">
-        <div>
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
-            <TrendingUp
-              className="w-3 h-3"
-              style={{ color: 'oklch(0.55 0.12 145)' }}
-              strokeWidth={2}
-            />
-            Entró
-          </div>
-          <div
-            className="text-[26px] font-semibold tracking-tight tabular-nums"
-            style={{
-              fontFamily: 'var(--ff-display)',
-              color: 'oklch(0.45 0.14 145)',
-            }}
-          >
-            {fmtPesos(ingresos)}
-          </div>
-        </div>
-        <div>
-          <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
-            <TrendingDown
-              className="w-3 h-3"
-              style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}
-              strokeWidth={2}
-            />
-            Salió
-          </div>
-          <div
-            className="text-[26px] font-semibold tracking-tight tabular-nums"
-            style={{
-              fontFamily: 'var(--ff-display)',
-              color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))',
-            }}
-          >
-            {fmtPesos(egresos)}
-          </div>
-        </div>
-        {/* El neto es la lectura que el contador hace de los dos anteriores. */}
-        <div className="border-l border-[var(--arca-border)] pl-10">
-          <div className="text-[11px] font-medium text-[var(--arca-ink-3)]">
-            Resultado del período
-          </div>
-          <div
-            className="text-[26px] font-semibold tracking-tight tabular-nums text-[var(--arca-ink)]"
-            style={{ fontFamily: 'var(--ff-display)' }}
-          >
-            {neto >= 0 ? '+' : '−'}
-            {fmtPesos(Math.abs(neto))}
-          </div>
-        </div>
+  // Tres bloques del mismo ancho, como los de Control bancario: eran una card
+  // aparte arriba de la tabla y se leían como otra pantalla, cuando en
+  // realidad son el resumen de lo que la tabla está mostrando.
+  const bloques = [
+    {
+      titulo: 'Entró',
+      icono: (
+        <TrendingUp
+          className="size-3"
+          style={{ color: 'oklch(0.55 0.12 145)' }}
+          strokeWidth={2}
+        />
+      ),
+      valor: fmtPesos(ingresos),
+      color: 'oklch(0.45 0.14 145)',
+    },
+    {
+      titulo: 'Salió',
+      icono: (
+        <TrendingDown
+          className="size-3"
+          style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}
+          strokeWidth={2}
+        />
+      ),
+      valor: fmtPesos(egresos),
+      color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))',
+    },
+    {
+      titulo: 'Resultado del período',
+      icono: null,
+      valor: `${neto >= 0 ? '+' : '−'}${fmtPesos(Math.abs(neto))}`,
+      color: 'var(--arca-ink)',
+    },
+  ];
 
-        {/* La conciliación es el estado del trabajo, no el dato principal. */}
-        <div className="ml-auto flex flex-col items-end gap-1 text-[11.5px] text-[var(--arca-ink-3)]">
-          <span>
-            {movimientos} movimiento{movimientos !== 1 ? 's' : ''} · {alcance}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <CheckCircle2
-              className="w-3 h-3"
-              style={{ color: 'oklch(0.55 0.12 145)' }}
-              strokeWidth={2}
-            />
-            {conciliados} conciliado{conciliados !== 1 ? 's' : ''} ({porcentaje}
-            %)
-          </span>
+  return (
+    <div className="grid gap-3 border-b border-[var(--arca-border)] px-5 py-3 sm:grid-cols-3">
+      {bloques.map((b) => (
+        <div
+          key={b.titulo}
+          className="rounded-[10px] border border-[var(--arca-border)] px-3.5 py-2.5"
+        >
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            {b.icono}
+            {b.titulo}
+          </p>
+          <p
+            className="mt-0.5 text-[20px] font-semibold tracking-tight tabular-nums"
+            style={{ fontFamily: 'var(--ff-display)', color: b.color }}
+          >
+            {b.valor}
+          </p>
         </div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -1662,7 +1679,7 @@ function BankPage() {
   // mes vuelve a la primera página (ajuste durante el render, como el de
   // `prevCliente`).
   const [pagina, setPagina] = useState(1);
-  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}|${search.min ?? ''}|${search.max ?? ''}|${search.rango ?? ''}`;
+  const claveLista = `${clienteId}|${accountId}|${search.mes ?? ''}|${search.q ?? ''}|${search.categoria ?? ''}|${search.estado ?? ''}|${search.min ?? ''}|${search.max ?? ''}|${search.rango ?? ''}`;
   const [prevLista, setPrevLista] = useState(claveLista);
   if (prevLista !== claveLista) {
     setPrevLista(claveLista);
@@ -1681,6 +1698,7 @@ function BankPage() {
       accountId || clienteId,
       accountId ? 'cuenta' : 'todas',
       search.mes,
+      search.q,
       search.categoria,
       search.estado,
       search.min,
@@ -1693,6 +1711,7 @@ function BankPage() {
         data: {
           ...(accountId ? { cuentaBancariaId: accountId } : { clienteId }),
           ...periodoRegistro,
+          busqueda: search.q,
           categoria: search.categoria,
           estado: search.estado,
           importeMin: search.min,
@@ -1932,34 +1951,6 @@ function BankPage() {
         ))}
 
       {vista === 'movimientos' && accounts.length > 0 && (
-        <div className="mb-4">
-          {/* Mismo filtro que la tabla: empresa, cuenta y mes. */}
-          <TotalesDelPeriodo
-            ingresos={totalesRegistro?.ingresos ?? 0}
-            egresos={totalesRegistro?.egresos ?? 0}
-            movimientos={movimientosFiltrados}
-            conciliados={totalesRegistro?.conciliados ?? 0}
-            porcentaje={
-              // Los conciliados se cuentan sobre todo lo filtrado menos el
-              // estado; el porcentaje tiene que usar esa misma base.
-              (totalesRegistro?.movimientosSinEstado ?? 0) > 0
-                ? Math.round(
-                    ((totalesRegistro?.conciliados ?? 0) /
-                      (totalesRegistro?.movimientosSinEstado ?? 1)) *
-                      100
-                  )
-                : 0
-            }
-            alcance={`${mesLabel} · ${
-              cuentaElegida
-                ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`.trim()
-                : `${accounts.length} cuenta${accounts.length !== 1 ? 's' : ''}`
-            }`}
-          />
-        </div>
-      )}
-
-      {vista === 'movimientos' && accounts.length > 0 && (
         <ArcaCard>
           {/* Dos niveles: arriba qué se está viendo y las acciones, siempre
               en el mismo lugar; abajo con qué filtrarlo. Antes los botones
@@ -2038,9 +2029,23 @@ function BankPage() {
             </div>
           </div>
 
+          <TotalesDelPeriodo
+            ingresos={totalesRegistro?.ingresos ?? 0}
+            egresos={totalesRegistro?.egresos ?? 0}
+          />
+
           {/* Filtros de la tabla. Los totales de arriba los siguen: con
               "Impuestos" elegido, "Salió" es lo que se fue en impuestos. */}
-          <div className="px-5 py-2.5 flex flex-wrap items-center gap-2 border-b border-[var(--arca-border)]">
+          <div className="px-5 py-2.5 flex items-center gap-2 border-b border-[var(--arca-border)]">
+            <BuscadorMovimientos
+              valor={search.q}
+              onBuscar={(q) =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({ ...prev, q }),
+                })
+              }
+            />
             {/* Antes la única forma de ver una sola cuenta era ir a la pestaña
                 Cuentas y hacer click en su tarjeta. */}
             <SearchableSelect
@@ -2049,12 +2054,36 @@ function BankPage() {
               onValueChange={(v) => setAccountId(v === 'all' ? '' : v)}
               placeholder="Cuenta"
               searchPlaceholder="Buscar cuenta..."
-              width={206}
+              width={178}
               options={[
                 { value: 'all', label: 'Todas las cuentas' },
                 ...accounts.map((a) => ({
                   value: a.id,
                   label: `${a.banco} ${a.numero ?? ''}`.trim(),
+                })),
+              ]}
+            />
+            <SearchableSelect
+              size="sm"
+              value={search.categoria ?? 'all'}
+              onValueChange={(v) =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({
+                    ...prev,
+                    categoria:
+                      v === 'all' ? undefined : (v as CategoriaMovimiento),
+                  }),
+                })
+              }
+              placeholder="Categoría"
+              searchPlaceholder="Buscar categoría..."
+              width={176}
+              options={[
+                { value: 'all', label: 'Todas las categorías' },
+                ...CATEGORIAS_MOVIMIENTO.map((c) => ({
+                  value: c,
+                  label: CATEGORIA_MOVIMIENTO_LABEL[c],
                 })),
               ]}
             />
@@ -2072,7 +2101,7 @@ function BankPage() {
               }
               placeholder="Período"
               buscable={false}
-              width={168}
+              width={150}
               options={(Object.keys(RANGO_LABEL) as Rango[]).map((r) => ({
                 value: r,
                 // "El mes elegido arriba" no se entendía: en esta pestaña no
@@ -2082,30 +2111,6 @@ function BankPage() {
                     ? conMayuscula(nombreMes(search.mes))
                     : RANGO_LABEL[r],
               }))}
-            />
-            <SearchableSelect
-              size="sm"
-              value={search.categoria ?? 'all'}
-              onValueChange={(v) =>
-                void navigate({
-                  resetScroll: false,
-                  search: (prev: BankSearch) => ({
-                    ...prev,
-                    categoria:
-                      v === 'all' ? undefined : (v as CategoriaMovimiento),
-                  }),
-                })
-              }
-              placeholder="Categoría"
-              searchPlaceholder="Buscar categoría..."
-              width={196}
-              options={[
-                { value: 'all', label: 'Todas las categorías' },
-                ...CATEGORIAS_MOVIMIENTO.map((c) => ({
-                  value: c,
-                  label: CATEGORIA_MOVIMIENTO_LABEL[c],
-                })),
-              ]}
             />
             <SearchableSelect
               size="sm"
@@ -2124,7 +2129,7 @@ function BankPage() {
               }
               placeholder="Estado"
               buscable={false}
-              width={186}
+              width={164}
               options={[
                 { value: 'all', label: 'Todos los estados' },
                 ...(
@@ -2142,7 +2147,8 @@ function BankPage() {
                 })
               }
             />
-            {(search.categoria ??
+            {(search.q ??
+              search.categoria ??
               search.estado ??
               search.min ??
               search.max ??
@@ -2153,6 +2159,7 @@ function BankPage() {
                     resetScroll: false,
                     search: (prev: BankSearch) => ({
                       ...prev,
+                      q: undefined,
                       categoria: undefined,
                       estado: undefined,
                       min: undefined,

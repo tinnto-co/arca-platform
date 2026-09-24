@@ -36,7 +36,18 @@ import {
   assertCanWrite,
   getMemberRole,
 } from '@/actions/helpers';
-import { eq, and, desc, gte, lte, sql, inArray, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  or,
+  desc,
+  gte,
+  lte,
+  sql,
+  ilike,
+  inArray,
+  type SQL,
+} from 'drizzle-orm';
 
 /** La cuenta, validando que sea de la organización activa. */
 async function getCuentaDeOrg(cuentaBancariaId: string, orgId: string) {
@@ -274,6 +285,8 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         estado: z
           .enum(['conciliado', 'sugerido', 'sin_conciliar', 'no_requiere'])
           .optional(),
+        /** Texto libre: busca en la descripción del banco y en la contraparte. */
+        busqueda: z.string().trim().max(120).optional(),
         /** Rango de importe, en pesos, sin importar si entró o salió. */
         importeMin: z.number().nonnegative().optional(),
         importeMax: z.number().nonnegative().optional(),
@@ -347,6 +360,17 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     const sugerido = conCruce('sugerida');
     if (ctx.data.categoria)
       conditions.push(eq(movimientoBancario.categoria, ctx.data.categoria));
+    // El banco escribe la contraparte dentro de la descripción y a veces
+    // también la tenemos aparte, así que se busca en las dos.
+    if (ctx.data.busqueda) {
+      const patron = `%${ctx.data.busqueda}%`;
+      conditions.push(
+        or(
+          ilike(movimientoBancario.descripcion, patron),
+          ilike(movimientoBancario.contraparteTexto, patron)
+        ) as SQL
+      );
+    }
     if (ctx.data.importeMin != null)
       conditions.push(
         gte(movimientoBancario.importe, ctx.data.importeMin.toFixed(2))

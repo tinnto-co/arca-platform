@@ -207,7 +207,7 @@ function FilaMovimiento({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
+      className={`flex min-h-[54px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
         elegido
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -284,7 +284,7 @@ function FilaComprobante({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
+      className={`flex min-h-[54px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
         esCandidato
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -587,7 +587,7 @@ export function BandejaConciliacion({
         <div className="grid items-stretch gap-3.5 lg:grid-cols-2">
           {/* Izquierda: la plata que entró sin identificar */}
           <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
-            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
               <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                 Entró al banco, sin identificar
               </span>
@@ -621,7 +621,7 @@ export function BandejaConciliacion({
 
           {/* Derecha: las facturas que esperan su cobro */}
           <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
-            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] px-4 py-2.5">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
               <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                 Facturas sin cobro identificado
               </span>
