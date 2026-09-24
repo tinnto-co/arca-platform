@@ -46,12 +46,21 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       typeof body === 'object' &&
       body !== null &&
       (body as { scrapingPaused?: unknown }).scrapingPaused === true;
+    // El servicio rechaza un tipo de job que no conoce: pasa cuando la
+    // plataforma ya tiene una función y el scrapper desplegado todavía no.
+    // Su mensaje enumera los tipos internos, vocabulario que no significa
+    // nada para el estudio.
+    const tipoDesconocido =
+      typeof error === 'string' && /invalid job type/i.test(error);
+
     throw new ScrapperError(
       pausado
         ? 'Actualizaciones en pausa temporal — reintentá más tarde'
-        : typeof error === 'string'
-          ? error
-          : `${res.status} ${res.statusText}`,
+        : tipoDesconocido
+          ? 'Esta actualización todavía no está disponible en el servicio de ARCA. Avisale al equipo: falta desplegar el servicio.'
+          : typeof error === 'string'
+            ? error
+            : `${res.status} ${res.statusText}`,
       res.status,
       body
     );
