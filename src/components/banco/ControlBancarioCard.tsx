@@ -123,11 +123,11 @@ function Comparacion({
 }) {
   const color = COLOR[lado.nivel];
   return (
-    <div className="rounded-[10px] border border-[var(--arca-border)] px-3 py-2.5">
+    <div className="rounded-[10px] border border-[var(--arca-border)] px-3.5 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
         {titulo}
       </p>
-      <div className="mt-1.5 grid grid-cols-3 gap-2">
+      <div className="mt-2 grid grid-cols-3 gap-2">
         <div>
           <p className="text-[11px] text-[var(--arca-ink-3)]">
             {etiquetaBanco}
@@ -308,10 +308,11 @@ export function ControlBancarioCard({
           </p>
         ) : (
           <>
-            {/* En la ficha del cliente la card entra en 560px: dos columnas
-                dejarían cada comparación en 280 y los números se pisan. */}
+            {/* En la ficha del cliente la card entra angosta: dos columnas
+                dejarían los números pisados, así que van apiladas y se
+                reparten el alto para no dejar un hueco abajo. */}
             <div
-              className={`mt-3 grid gap-2 ${compacto ? '' : 'md:grid-cols-2'}`}
+              className={`mt-3 grid gap-3 ${compacto ? 'flex-1 content-between' : 'md:grid-cols-2'}`}
             >
               <Comparacion
                 titulo="Ingresos"

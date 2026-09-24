@@ -106,7 +106,13 @@ function RouteComponent() {
     asistenteSlot: React.ReactNode
   ) => (
     <OrgSwitchProvider>
-      <SidebarProvider defaultOpen={true} className="h-svh">
+      {/* `overflow-hidden`: el alto es el de la ventana y el scroll vive en
+          el contenido. Sin esto, cualquier elemento oculto que Radix deja al
+          pie (el `select` nativo de un desplegable, la descripción `sr-only`
+          de un diálogo) estira el documento unos 28px y la ventana entera se
+          corre: el encabezado pegajoso de la ficha del cliente quedaba
+          cortado al scrollear. */}
+      <SidebarProvider defaultOpen={true} className="h-svh overflow-hidden">
         <AppSidebar />
         <SidebarInset className="relative flex min-h-0 min-w-0 flex-col">
           <div
