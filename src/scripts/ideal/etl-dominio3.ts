@@ -167,6 +167,7 @@ const MODO_POR_BASE_COLUMNA: Record<string, { modo: string; base?: string }> = {
   sub411_469: { modo: "pct_sobre_base", base: "total_no_remunerativo" },
   sub1_199_plus_411_469: { modo: "pct_sobre_base", base: "bruto" },
   sub411_414_qty: { modo: "pct_sobre_base", base: "no_remunerativo_con_os" },
+  sub411_413: { modo: "pct_sobre_base", base: "no_remunerativo_previo" },
   os_base: { modo: "pct_sobre_base", base: "base_obra_social" },
   os_norem_base: { modo: "pct_sobre_base", base: "no_remunerativo_con_os" },
 };

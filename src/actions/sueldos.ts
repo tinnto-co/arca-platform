@@ -2254,6 +2254,7 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
     const plantillaMap = new Map<
       string,
       {
+        monto: string | null;
         cantidad: string | null;
         porcentaje: string | null;
         importeConceptoNumero: string | null;
@@ -2263,44 +2264,78 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       }
     >();
 
-    if (profileRow?.plantillaEmpleadoId) {
-      // Buscar el último recibo del empleado de referencia
-      const ultimoReciboRef = await db
-        .select({ id: recibo.id })
-        .from(recibo)
-        .where(eq(recibo.empleadoId, profileRow.plantillaEmpleadoId))
-        .orderBy(recibo.periodo)
-        .then((r) => r.at(-1) ?? null);
+    /*
+     * Recibo de referencia para la plantilla.
+     *
+     * Si la empresa tiene empleado de referencia configurado, su último
+     * recibo. Si no —y hoy no lo tiene ninguna de las 37—, el último recibo
+     * mensual de la empresa: sin esto `plantillaMap` queda vacío, no hay
+     * ningún concepto marcado como plantilla base y la grilla arranca con el
+     * juego fijo de `codigosActivosIniciales` (básico, antigüedad y los tres
+     * descuentos). El estudio veía un recibo sin presentismo, sin las sumas
+     * no remunerativas y sin las retenciones sindicales, aunque la empresa
+     * las tuviera cargadas en sus conceptos.
+     *
+     * Mensual a propósito: el recibo de SAC no tiene básico ni presentismo y
+     * como plantilla sería peor que no tener ninguna. Y se elige el de más
+     * conceptos, no el más reciente: en Artzeinu el último mensual es uno de
+     * julio con 5 líneas —armado con esta misma plantilla incompleta—, contra
+     * los de 17 de marzo. Tomar el más nuevo perpetuaría el recorte.
+     */
+    const ultimoReciboRef = profileRow?.plantillaEmpleadoId
+      ? await db
+          .select({ id: recibo.id })
+          .from(recibo)
+          .where(eq(recibo.empleadoId, profileRow.plantillaEmpleadoId))
+          .orderBy(desc(recibo.periodo))
+          .limit(1)
+          .then((r) => r[0] ?? null)
+      : await db
+          .select({ id: recibo.id })
+          .from(recibo)
+          .innerJoin(empleado, eq(empleado.id, recibo.empleadoId))
+          .leftJoin(reciboConcepto, eq(reciboConcepto.reciboId, recibo.id))
+          .where(
+            and(
+              eq(empleado.clienteId, ctx.data.clientId),
+              eq(recibo.tipo, 'mensual')
+            )
+          )
+          .groupBy(recibo.id, recibo.periodo)
+          .orderBy(desc(sql`count(${reciboConcepto.id})`), desc(recibo.periodo))
+          .limit(1)
+          .then((r) => r[0] ?? null);
 
-      if (ultimoReciboRef) {
-        const conceptosRef = await db
-          .select({
-            numeroSos: concepto.numero,
-            cantidad: reciboConcepto.cantidad,
-            porcentaje: reciboConcepto.porcentaje,
-            importeConceptoNumero: reciboConcepto.conceptoRef,
-            importe: reciboConcepto.importe,
-            importeMinimo: reciboConcepto.importeMin,
-            importeMaximo: reciboConcepto.importeMax,
-          })
-          .from(reciboConcepto)
-          .innerJoin(concepto, eq(reciboConcepto.conceptoId, concepto.id))
-          .where(eq(reciboConcepto.reciboId, ultimoReciboRef.id));
+    if (ultimoReciboRef) {
+      const conceptosRef = await db
+        .select({
+          numeroSos: concepto.numero,
+          monto: reciboConcepto.monto,
+          cantidad: reciboConcepto.cantidad,
+          porcentaje: reciboConcepto.porcentaje,
+          importeConceptoNumero: reciboConcepto.conceptoRef,
+          importe: reciboConcepto.importe,
+          importeMinimo: reciboConcepto.importeMin,
+          importeMaximo: reciboConcepto.importeMax,
+        })
+        .from(reciboConcepto)
+        .innerJoin(concepto, eq(reciboConcepto.conceptoId, concepto.id))
+        .where(eq(reciboConcepto.reciboId, ultimoReciboRef.id));
 
-        for (const c of conceptosRef) {
-          if (c.numeroSos >= 1 && c.numeroSos <= 699) {
-            plantillaMap.set(String(c.numeroSos), {
-              cantidad: c.cantidad ?? null,
-              porcentaje: c.porcentaje ?? null,
-              importeConceptoNumero:
-                c.importeConceptoNumero != null
-                  ? String(c.importeConceptoNumero)
-                  : null,
-              importe: c.importe ?? null,
-              importeMinimo: c.importeMinimo ?? null,
-              importeMaximo: c.importeMaximo ?? null,
-            });
-          }
+      for (const c of conceptosRef) {
+        if (c.numeroSos >= 1 && c.numeroSos <= 699) {
+          plantillaMap.set(String(c.numeroSos), {
+            monto: c.monto ?? null,
+            cantidad: c.cantidad ?? null,
+            porcentaje: c.porcentaje ?? null,
+            importeConceptoNumero:
+              c.importeConceptoNumero != null
+                ? String(c.importeConceptoNumero)
+                : null,
+            importe: c.importe ?? null,
+            importeMinimo: c.importeMinimo ?? null,
+            importeMaximo: c.importeMaximo ?? null,
+          });
         }
       }
     }
@@ -2336,10 +2371,22 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       const ov = overridePorConceptoId.get(r.id);
       const modo = ov?.modo ?? r.modo;
       const baseCalculoId = ov?.baseCalculoId ?? r.baseCalculoId;
+      /*
+       * El monto del recibo de referencia se pre-carga SOLO en los conceptos
+       * de importe propio (las sumas no remunerativas de un acuerdo, por
+       * ejemplo): nada los puede derivar, y sin esto el estudio ve la línea
+       * en cero. En los que salen del básico o de un subtotal se deja vacío
+       * a propósito, para que el cálculo los arme con la escala del período
+       * y no con el monto del mes pasado.
+       */
+      const importePropio =
+        modo == null ||
+        modo === 'importe_manual' ||
+        modo === 'pct_sobre_concepto';
       return {
         id: r.id,
         codigo,
-        monto: null as string | null,
+        monto: (importePropio ? ref?.monto : null) ?? null,
         cantidad: ref?.cantidad ?? null,
         porcentaje:
           ref?.porcentaje ?? (r.pctFijo != null ? String(r.pctFijo) : null),

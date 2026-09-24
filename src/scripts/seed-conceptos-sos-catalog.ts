@@ -37,6 +37,7 @@ interface ConceptoSos {
     | 'sub411_469'
     | 'sub1_199_plus_411_469'
     | 'sub411_414_qty'
+    | 'sub411_413'         // suma de las no remunerativas anteriores (411+412+413): base de la antigüedad NR
     | 'os_base'
     | 'os_norem_base'
     | 'importe_fijo'
@@ -182,7 +183,7 @@ const CONCEPTOS: ConceptoSos[] = [
   { numeroSos: 411, codigoAfip: '540000', nombre: 'Otros Conceptos no Remunerativos c/Ap y Cont. OS',        tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 412, codigoAfip: '541000', nombre: 'Otros Conceptos no Remunerativos c/Ap y Cont. OS',        tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 413, codigoAfip: '540000', nombre: 'Otros Conceptos no Remunerativos c/Ap y Cont. OS',        tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
-  { numeroSos: 414, codigoAfip: '541000', nombre: 'Otros Conceptos no Remunerativos c/Ap y Cont. OS',        tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
+  { numeroSos: 414, codigoAfip: '541000', nombre: 'Otros Conceptos no Remunerativos c/Ap y Cont. OS',        tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'sub411_413', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 415, codigoAfip: '551000', nombre: 'Asig. Complementaria no Rem. (s/conc. 411 a 414)',        tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: false, tieneImporte: false, tieneImpMin: false, tieneImpMax: false, baseColumna: 'sub411_414_qty', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 416, codigoAfip: '551000', nombre: 'Otros Conceptos no Rem. sin Retenciones',                 tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
   { numeroSos: 417, codigoAfip: '551000', nombre: 'Otros Conceptos no Rem. sin Retenciones',                 tieneMemo: true,  tieneCantidad: true,  tienePct: true,  tieneImpConceptoNro: true,  tieneImporte: true,  tieneImpMin: false, tieneImpMax: false, baseColumna: 'importe_fijo', divHsNorm: 1,   divCantidad: 1  },
