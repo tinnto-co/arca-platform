@@ -824,7 +824,7 @@ export function SueldosRecibo({
                 className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] h-[44px] px-5 rounded-t-[10px] text-[10.5px] font-semibold tracking-[0.06em] uppercase grid items-center"
                 style={{
                   gridTemplateColumns:
-                    'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
+                    'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 132px 48px',
                   columnGap: 16,
                 }}
               >
@@ -836,6 +836,7 @@ export function SueldosRecibo({
                 <span className="text-right">No Rem.</span>
                 <span className="text-right">Neto</span>
                 <span className="text-right">Redond.</span>
+                <span className="text-right">Rem. + No Rem.</span>
                 <span></span>
               </div>
               {/* Data rows */}
@@ -857,7 +858,7 @@ export function SueldosRecibo({
                       className={`cursor-pointer border-b border-[var(--arca-border)] last:border-b-0 hover:bg-[var(--arca-surface-2)] transition-colors grid items-center px-5 py-[13px] ${isSelected ? 'bg-[var(--arca-surface-2)]' : ''}`}
                       style={{
                         gridTemplateColumns:
-                          'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 48px',
+                          'minmax(140px,1.2fr) 104px 122px 84px 122px 116px 122px 124px 132px 48px',
                         columnGap: 16,
                       }}
                     >
@@ -920,6 +921,16 @@ export function SueldosRecibo({
                       </div>
                       <div className="text-right tabular-nums text-[13px] font-bold text-[var(--arca-ink)] whitespace-nowrap">
                         {moneyFmt(redondeado)}
+                      </div>
+                      {/* Remunerativo + no remunerativo: el bruto del recibo,
+                          que es lo que el estudio compara contra SOS. No es el
+                          neto ni los haberes solos. */}
+                      <div className="text-right tabular-nums text-[13px] text-[var(--arca-ink-2)] whitespace-nowrap">
+                        {haberes + noRem === 0 ? (
+                          <span className="text-[var(--arca-ink-4)]">—</span>
+                        ) : (
+                          moneyFmt(haberes + noRem)
+                        )}
                       </div>
                       <div className="flex items-center gap-2 justify-end">
                         {onEditRecibo && (
