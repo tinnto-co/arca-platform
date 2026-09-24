@@ -1186,20 +1186,27 @@ async function getBasicoVigenteInternal(
     )
     .orderBy(desc(escalaSalarial.vigenciaDesde))
     .limit(1);
-  if (escala) return Number(escala.montoBasico);
 
   /*
-   * Sin escala propia, la publicada del convenio.
+   * Escala propia de la empresa y grilla publicada del convenio: gana la de
+   * vigencia más reciente, y la propia desempata.
    *
    * `escala_salarial` es lo que este empleador paga distinto —por encima del
-   * convenio, o una categoría que no existe en la grilla oficial— y por eso
-   * manda. El básico de convenio es nacional y vive una sola vez en
-   * `cct_escala`, que es donde escribe el scrapeo semanal: antes tenía que
-   * copiarlo a cada cliente adherido, y sin clientes adheridos no escribía
-   * nada y terminaba en OK igual.
+   * convenio, o una categoría que no existe en la grilla oficial—, y por eso
+   * manda cuando las dos arrancan el mismo día. El básico de convenio es
+   * nacional y vive una sola vez en `cct_escala`, donde escribe el scrapeo.
+   *
+   * Antes la propia ganaba siempre, existiera o no algo más nuevo en la
+   * grilla. Con eso, una empresa a la que alguna vez se le copió la escala del
+   * convenio quedaba clavada en esa copia para siempre: las 34 de Comercio
+   * tienen cargado septiembre sin fecha de fin, así que octubre habría salido
+   * con el básico de septiembre aunque la grilla estuviera al día.
    */
   const [publicada] = await db
-    .select({ montoBasico: cctEscala.montoBasico })
+    .select({
+      montoBasico: cctEscala.montoBasico,
+      vigenciaDesde: cctEscala.vigenciaDesde,
+    })
     .from(cctEscala)
     .innerJoin(
       convenioCategoria,
@@ -1217,6 +1224,13 @@ async function getBasicoVigenteInternal(
     )
     .orderBy(desc(cctEscala.vigenciaDesde))
     .limit(1);
+
+  if (escala && publicada) {
+    return publicada.vigenciaDesde > escala.vigenciaDesde
+      ? Number(publicada.montoBasico)
+      : Number(escala.montoBasico);
+  }
+  if (escala) return Number(escala.montoBasico);
   return publicada ? Number(publicada.montoBasico) : 0;
 }
 
