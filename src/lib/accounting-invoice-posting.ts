@@ -338,6 +338,8 @@ export function armarLineas(
   for (const rl of regla.lineas) {
     const importe = round2(importeSegunBase(rl.base, importes, rl.importeFijo));
     if (importe <= 0) continue; // descarta líneas en cero (ej. IVA en factura B)
+    // Sin cuenta no hay línea: "la cuenta del banco" no existe en facturas.
+    if (!rl.cuentaId) continue;
     lineas.push({
       cuentaId: rl.cuentaId,
       debe: rl.lado === 'debe' ? importe : 0,

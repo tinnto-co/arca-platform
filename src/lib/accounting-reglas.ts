@@ -27,7 +27,14 @@ export type ReglaTipo = (typeof reglaMapeoTipo.enumValues)[number];
 export type ModuloRegla = (typeof reglaMapeoModulo.enumValues)[number];
 
 export interface ReglaLineaLike {
-  cuentaId: string;
+  /**
+   * Null solo cuando la línea usa la cuenta del banco (`usaCuentaBanco`): ahí
+   * la cuenta se resuelve al generar, con la de la cuenta bancaria del
+   * movimiento.
+   */
+  cuentaId: string | null;
+  /** Solo en el módulo de banco. Ver `accounting-bank-posting`. */
+  usaCuentaBanco?: boolean;
   lado: Lado;
   base: Base;
   importeFijo?: number | string | null;

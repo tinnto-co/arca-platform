@@ -308,6 +308,7 @@ export function armarLineasSueldos(
       // Un concepto negativo (ajuste en contra) invierte el lado de la línea.
       const lado: Lado =
         amt >= 0 ? rl.lado : rl.lado === 'debe' ? 'haber' : 'debe';
+      if (!rl.cuentaId) continue;
       add(rl.cuentaId, lado, Math.abs(amt), rl.descripcion ?? null, rule.id);
     }
 
