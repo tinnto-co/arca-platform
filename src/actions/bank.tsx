@@ -1221,82 +1221,108 @@ export const getControlBancario = createServerFn({ method: 'GET' })
               else coalesce(nullif(${comprobante.cotizacion}, 0), 1) end)
       * ${comprobante.total}), 0)::text`;
 
-    const [banco, porConcepto, [emitidas], [recibidas], [ultimo]] =
-      await Promise.all([
-        db
-          .select({
-            ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
-            egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
-            movimientos: sql<number>`count(*)::int`,
-          })
-          .from(movimientoBancario)
-          .innerJoin(
-            cuentaBancaria,
-            eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
-          )
-          .where(movimientosDelPeriodo),
+    // El impuesto al cheque (ley 25.413) se toma a cuenta de Ganancias, así
+    // que el estudio necesita el acumulado del año además del mes. Va por año
+    // calendario, que es como se computa.
+    const anio = ctx.data.periodo.slice(0, 4);
 
-        db
-          .select({
-            categoria: movimientoBancario.categoria,
-            direccion: movimientoBancario.direccion,
-            total: sql<string>`coalesce(sum(${movimientoBancario.importe}), 0)::text`,
-            movimientos: sql<number>`count(*)::int`,
-          })
-          .from(movimientoBancario)
-          .innerJoin(
-            cuentaBancaria,
-            eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
-          )
-          .where(movimientosDelPeriodo)
-          .groupBy(movimientoBancario.categoria, movimientoBancario.direccion),
+    const [
+      banco,
+      porConcepto,
+      [emitidas],
+      [recibidas],
+      [ultimo],
+      [chequeAnual],
+    ] = await Promise.all([
+      db
+        .select({
+          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          movimientos: sql<number>`count(*)::int`,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(movimientosDelPeriodo),
 
-        db
-          .select({
-            total: totalComprobantes,
-            comprobantes: sql<number>`count(*)::int`,
-          })
-          .from(comprobante)
-          .leftJoin(
-            comprobanteTipo,
-            eq(comprobanteTipo.codigo, comprobante.tipo)
-          )
-          .where(comprobantesDelPeriodo('emitido')),
+      db
+        .select({
+          categoria: movimientoBancario.categoria,
+          direccion: movimientoBancario.direccion,
+          total: sql<string>`coalesce(sum(${movimientoBancario.importe}), 0)::text`,
+          movimientos: sql<number>`count(*)::int`,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(movimientosDelPeriodo)
+        .groupBy(movimientoBancario.categoria, movimientoBancario.direccion),
 
-        db
-          .select({
-            total: totalComprobantes,
-            comprobantes: sql<number>`count(*)::int`,
-          })
-          .from(comprobante)
-          .leftJoin(
-            comprobanteTipo,
-            eq(comprobanteTipo.codigo, comprobante.tipo)
-          )
-          .where(comprobantesDelPeriodo('recibido')),
+      db
+        .select({
+          total: totalComprobantes,
+          comprobantes: sql<number>`count(*)::int`,
+        })
+        .from(comprobante)
+        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+        .where(comprobantesDelPeriodo('emitido')),
 
-        // El último mes con movimientos, sin importar el período pedido: la card
-        // de la ficha del cliente abre ahí cuando el mes anterior está vacío,
-        // porque los extractos se cargan con atraso.
-        db
-          .select({
-            periodo: sql<
-              string | null
-            >`to_char(max(${movimientoBancario.fecha}), 'YYYY-MM')`,
-          })
-          .from(movimientoBancario)
-          .innerJoin(
-            cuentaBancaria,
-            eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      db
+        .select({
+          total: totalComprobantes,
+          comprobantes: sql<number>`count(*)::int`,
+        })
+        .from(comprobante)
+        .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+        .where(comprobantesDelPeriodo('recibido')),
+
+      // El último mes con movimientos, sin importar el período pedido: la card
+      // de la ficha del cliente abre ahí cuando el mes anterior está vacío,
+      // porque los extractos se cargan con atraso.
+      db
+        .select({
+          periodo: sql<
+            string | null
+          >`to_char(max(${movimientoBancario.fecha}), 'YYYY-MM')`,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(
+          and(
+            eq(cuentaBancaria.orgId, orgId),
+            eq(cuentaBancaria.clienteId, clienteId),
+            eq(cuentaBancaria.activa, true)
           )
-          .where(
-            and(
-              eq(cuentaBancaria.orgId, orgId),
-              eq(cuentaBancaria.clienteId, clienteId),
-              eq(cuentaBancaria.activa, true)
-            )
-          ),
-      ]);
+        ),
+
+      db
+        .select({
+          total: sql<string>`coalesce(sum(${movimientoBancario.importe}), 0)::text`,
+          movimientos: sql<number>`count(*)::int`,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(
+          and(
+            eq(cuentaBancaria.orgId, orgId),
+            eq(cuentaBancaria.clienteId, clienteId),
+            eq(cuentaBancaria.activa, true),
+            eq(movimientoBancario.categoria, 'impuestos_idc'),
+            sql`${movimientoBancario.fecha} >= ${`${anio}-01-01`}::date`,
+            sql`${movimientoBancario.fecha} < (${`${anio}-01-01`}::date + interval '1 year')`
+          )
+        ),
+    ]);
 
     const ingresos = Number(banco[0]?.ingresos ?? 0);
     const egresos = Number(banco[0]?.egresos ?? 0);
@@ -1330,6 +1356,15 @@ export const getControlBancario = createServerFn({ method: 'GET' })
       movimientos: Number(banco[0]?.movimientos ?? 0),
       ultimoPeriodoConDatos: ultimo?.periodo ?? null,
       desglose,
+      /** Impuesto al cheque: lo de la ventana y lo del año, para Ganancias. */
+      impuestoCheque: {
+        ventana: desglose
+          .filter((d) => d.categoria === 'impuestos_idc')
+          .reduce((acc, d) => acc + d.total, 0),
+        anio: Number(chequeAnual?.total ?? 0),
+        movimientosAnio: Number(chequeAnual?.movimientos ?? 0),
+        anioLabel: anio,
+      },
     };
   });
 

@@ -342,6 +342,35 @@ export function ControlBancarioCard({
               />
             </div>
 
+            {/* El impuesto al cheque se toma a cuenta de Ganancias, así que
+                el estudio necesita el acumulado del año, no solo el mes. Va
+                fuera del desglose porque se consulta aparte, cuando arman la
+                declaración. */}
+            {!compacto && data.impuestoCheque.anio > 0 && (
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-bg)] px-3 py-2">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                  Impuesto al cheque
+                </span>
+                <span className="text-[12.5px] text-[var(--arca-ink-3)]">
+                  {meses === 1 ? mesEnPalabras(mes) : `últimos ${meses} meses`}
+                </span>
+                <span className="text-[13px] font-semibold tabular-nums text-[var(--arca-ink)]">
+                  {fmt.format(data.impuestoCheque.ventana)}
+                </span>
+                <span className="ml-auto text-[12.5px] text-[var(--arca-ink-3)]">
+                  acumulado {data.impuestoCheque.anioLabel}
+                </span>
+                <span className="text-[13px] font-semibold tabular-nums text-[var(--arca-ink)]">
+                  {fmt.format(data.impuestoCheque.anio)}
+                </span>
+                <span className="text-[11px] text-[var(--arca-ink-4)]">
+                  ({data.impuestoCheque.movimientosAnio} movimiento
+                  {data.impuestoCheque.movimientosAnio === 1 ? '' : 's'})
+                </span>
+                <AyudaIcono texto="Lo que el banco descontó por la ley 25.413. Se muestra aparte porque se computa a cuenta de Ganancias, y ahí hace falta el total del año." />
+              </div>
+            )}
+
             <div
               className={`mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--arca-ink-4)] ${compacto ? 'hidden' : ''}`}
             >
