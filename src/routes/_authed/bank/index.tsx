@@ -18,12 +18,13 @@ import {
   Loader2,
   Check,
   X,
-  Gauge,
+  ChartNoAxesColumn,
   Search,
   Scale,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConAyuda } from '@/components/shared/ayuda';
+import { CardsResumen } from '@/components/shared/cards-resumen';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { Paginador } from '@/components/shared/paginador';
@@ -1469,67 +1470,51 @@ function CreateAccountForm({
 function TotalesDelPeriodo({
   ingresos,
   egresos,
+  movimientos,
+  conciliados,
+  sinConciliar,
 }: {
   ingresos: number;
   egresos: number;
+  movimientos: number;
+  conciliados: number;
+  sinConciliar: number;
 }) {
   const neto = ingresos - egresos;
-  // Tres bloques del mismo ancho, como los de Control bancario: eran una card
-  // aparte arriba de la tabla y se leían como otra pantalla, cuando en
-  // realidad son el resumen de lo que la tabla está mostrando.
-  const bloques = [
-    {
-      titulo: 'Entró',
-      icono: (
-        <TrendingUp
-          className="size-3"
-          style={{ color: 'oklch(0.55 0.12 145)' }}
-          strokeWidth={2}
-        />
-      ),
-      valor: fmtPesos(ingresos),
-      color: 'oklch(0.45 0.14 145)',
-    },
-    {
-      titulo: 'Salió',
-      icono: (
-        <TrendingDown
-          className="size-3"
-          style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}
-          strokeWidth={2}
-        />
-      ),
-      valor: fmtPesos(egresos),
-      color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))',
-    },
-    {
-      titulo: 'Resultado del período',
-      icono: null,
-      valor: `${neto >= 0 ? '+' : '−'}${fmtPesos(Math.abs(neto))}`,
-      color: 'var(--arca-ink)',
-    },
-  ];
-
+  const pct =
+    movimientos > 0 ? Math.round((conciliados / movimientos) * 100) : 0;
+  // La banda de resumen del sistema, la misma de Deudas y Vencimientos. El
+  // cuarto número es el único accionable —cuánto falta revisar—, por eso
+  // está entre los principales.
   return (
-    <div className="grid gap-3 border-b border-[var(--arca-border)] px-5 py-3 sm:grid-cols-3">
-      {bloques.map((b) => (
-        <div
-          key={b.titulo}
-          className="rounded-[10px] border border-[var(--arca-border)] px-3.5 py-2.5"
-        >
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-            {b.icono}
-            {b.titulo}
-          </p>
-          <p
-            className="mt-0.5 text-[20px] font-semibold tracking-tight tabular-nums"
-            style={{ fontFamily: 'var(--ff-display)', color: b.color }}
-          >
-            {b.valor}
-          </p>
-        </div>
-      ))}
-    </div>
+    <CardsResumen
+      className="mb-4"
+      cards={[
+        {
+          label: 'Entró',
+          valor: fmtPesos(ingresos),
+          icono: TrendingUp,
+          tono: 'positivo',
+        },
+        {
+          label: 'Salió',
+          valor: fmtPesos(egresos),
+          icono: TrendingDown,
+          tono: 'urgente',
+        },
+        {
+          label: 'Resultado del período',
+          valor: `${neto >= 0 ? '+' : '−'}${fmtPesos(Math.abs(neto))}`,
+          tono: 'neutro',
+        },
+        {
+          label: 'Sin conciliar',
+          valor: String(sinConciliar),
+          sub: `de ${movimientos} · ${conciliados} conciliado${conciliados === 1 ? '' : 's'} (${pct}%)`,
+          tono: sinConciliar > 0 ? 'atencion' : 'positivo',
+        },
+      ]}
+    />
   );
 }
 
@@ -1815,7 +1800,7 @@ function BankPage() {
         <div className="mb-4 flex items-center gap-1 border-b border-[var(--arca-border)]">
           {(
             [
-              ['control', 'Control', Gauge],
+              ['control', 'Control', ChartNoAxesColumn],
               ['movimientos', 'Movimientos', ArrowLeftRight],
               ['cuentas', 'Cuentas y extractos', Landmark],
               ['conciliacion', 'Conciliación', Scale],
@@ -1951,6 +1936,16 @@ function BankPage() {
         ))}
 
       {vista === 'movimientos' && accounts.length > 0 && (
+        <TotalesDelPeriodo
+          ingresos={totalesRegistro?.ingresos ?? 0}
+          egresos={totalesRegistro?.egresos ?? 0}
+          movimientos={totalesRegistro?.movimientosSinEstado ?? 0}
+          conciliados={totalesRegistro?.conciliados ?? 0}
+          sinConciliar={unmatchedCount}
+        />
+      )}
+
+      {vista === 'movimientos' && accounts.length > 0 && (
         <ArcaCard>
           {/* Dos niveles: arriba qué se está viendo y las acciones, siempre
               en el mismo lugar; abajo con qué filtrarlo. Antes los botones
@@ -1958,7 +1953,8 @@ function BankPage() {
           <div className="px-5 py-3 flex items-center gap-3 border-b border-[var(--arca-border)]">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+                <span className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--arca-ink)]">
+                  <ArrowLeftRight className="size-3.5" strokeWidth={1.8} />
                   Movimientos
                 </span>
                 {txsFetching && (
@@ -1977,8 +1973,7 @@ function BankPage() {
                   {movimientosFiltrados} movimiento
                   {movimientosFiltrados === 1 ? '' : 's'}
                 </span>{' '}
-                ·{' '}
-                {totalesRegistro?.conciliados ?? 0} conciliados ·{' '}
+                · {totalesRegistro?.conciliados ?? 0} conciliados ·{' '}
                 {totalesRegistro?.noRequiereFactura ?? 0} sin factura ·{' '}
                 {unmatchedCount} sin conciliar
               </div>
@@ -2028,11 +2023,6 @@ function BankPage() {
               </ConAyuda>
             </div>
           </div>
-
-          <TotalesDelPeriodo
-            ingresos={totalesRegistro?.ingresos ?? 0}
-            egresos={totalesRegistro?.egresos ?? 0}
-          />
 
           {/* Filtros de la tabla. Los totales de arriba los siguen: con
               "Impuestos" elegido, "Salió" es lo que se fue en impuestos. */}

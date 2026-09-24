@@ -368,7 +368,7 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         or(
           ilike(movimientoBancario.descripcion, patron),
           ilike(movimientoBancario.contraparteTexto, patron)
-        ) as SQL
+        )!
       );
     }
     if (ctx.data.importeMin != null)
