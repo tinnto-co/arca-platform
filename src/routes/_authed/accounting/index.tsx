@@ -7193,6 +7193,13 @@ function RuleEditorDialog({
   const [condMovDireccion, setCondMovDireccion] = useState<
     '' | 'ingreso' | 'egreso'
   >('');
+  /**
+   * Los conceptos son 21 y ocupaban cinco renglones, que empujaban las líneas
+   * del asiento fuera de la pantalla. Se muestran dos renglones y el resto a
+   * pedido. Arranca plegado cada vez que se abre el formulario: el diálogo se
+   * desmonta al cerrarse, así que no hay nada que resetear a mano.
+   */
+  const [verTodosConceptos, setVerTodosConceptos] = useState(false);
   const [lines, setLines] = useState<RuleLineDraft[]>([
     emptyRuleLine('debe'),
     emptyRuleLine('haber'),
@@ -7715,7 +7722,11 @@ function RuleEditorDialog({
                   }
                   full
                 >
-                  <div className="flex flex-wrap gap-1.5">
+                  <div
+                    className={`flex flex-wrap gap-1.5 ${
+                      verTodosConceptos ? '' : 'max-h-[70px] overflow-hidden'
+                    }`}
+                  >
                     {CATEGORIAS_MOVIMIENTO.map((c) => {
                       const on = condCategorias.includes(c);
                       return (
@@ -7740,6 +7751,15 @@ function RuleEditorDialog({
                       );
                     })}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setVerTodosConceptos((v) => !v)}
+                    className="mt-1.5 text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
+                  >
+                    {verTodosConceptos
+                      ? 'Ver menos'
+                      : `Ver los ${CATEGORIAS_MOVIMIENTO.length} conceptos`}
+                  </button>
                 </Field>
                 <Field
                   label={
