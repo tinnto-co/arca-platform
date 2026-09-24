@@ -83,6 +83,59 @@ export const DEFAULT_CASH_FLOW_ACTIVITY_BY_GROUP: Record<
   gastos_financieros: 'operating',
 };
 
+/**
+ * Cuentas cuyo nombre contable no dice qué pasó con la plata (TIN-1431).
+ *
+ * En el Estado de Flujo de Efectivo lo que importa es el origen o el destino
+ * de los fondos, no el nombre de la cuenta que los generó: «Deudores por
+ * ventas» es un saldo, «Cobros por Ventas» es lo que efectivamente entró.
+ *
+ * El renombre es solo de presentación y vive acá: cambiar `cuenta.nombre`
+ * afectaría al plan de cuentas, al mayor y a todos los demás estados.
+ *
+ * «Accionistas» además se reclasifica. Su rubro es `otros_creditos_cte`, que
+ * por defecto es operativa, pero un aporte de los socios es financiación: no
+ * sale del giro del negocio. La reclasificación por rubro no la alcanza porque
+ * la cuenta no está en `aportes_irrevocables`.
+ *
+ * La clave es el nombre normalizado y no el código, a propósito: estas cuentas
+ * pueden ser propias del cliente y ahí el código varía de una empresa a otra.
+ * Un `cuenta.flujo_efectivo` cargado a mano sigue teniendo prioridad sobre
+ * esto.
+ */
+const EFE_PRESENTACION: Record<
+  string,
+  { etiqueta: string; actividad?: CashFlowActivity }
+> = {
+  'deudores por ventas': { etiqueta: 'Cobros por Ventas' },
+  proveedores: { etiqueta: 'Pagos por Compras' },
+  accionistas: {
+    etiqueta: 'Aportes de los propietarios',
+    actividad: 'financing',
+  },
+};
+
+/** minúsculas, sin acentos y sin espacios de más. */
+function normalizar(nombre: string): string {
+  return nombre
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+/**
+ * Cómo mostrar y clasificar una cuenta en el EFE. Coincidencia exacta por
+ * nombre, no por substring: «Anticipos a proveedores» no es «Proveedores».
+ */
+export function presentacionEfe(
+  nombre: string | null | undefined
+): { etiqueta: string; actividad?: CashFlowActivity } | undefined {
+  if (!nombre) return undefined;
+  return EFE_PRESENTACION[normalizar(nombre)];
+}
+
 export function defaultCashFlowActivity(
   accountGroup: string | null | undefined
 ): CashFlowActivity | null {

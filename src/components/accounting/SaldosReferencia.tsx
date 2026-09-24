@@ -213,8 +213,8 @@ function Planilla({
 
       <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
         <table className="w-full text-[12.5px]">
-          <thead className="sticky top-0 bg-[var(--arca-surface-2)] z-10">
-            <tr className="text-[10.5px] uppercase tracking-wide text-[var(--arca-ink-3)]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
               <th className="text-left font-semibold px-4 py-2">Cuenta</th>
               <th className="text-left font-semibold px-3 py-2">Rubro</th>
               <th className="text-right font-semibold px-3 py-2 w-40">
@@ -225,7 +225,7 @@ function Planilla({
               </th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="bg-[var(--arca-surface)]">
             {visible.map((r) => (
               <BalanceRow
                 key={r.accountId}
@@ -261,7 +261,10 @@ function Planilla({
         <div className="flex items-center gap-2 text-[12px]">
           {cuadra ? (
             <>
-              <Check className="w-4 h-4 text-emerald-600" strokeWidth={2} />
+              <Check
+                className="w-4 h-4 text-[var(--arca-accent-pos-fg)]"
+                strokeWidth={2}
+              />
               <span className="text-[var(--arca-ink-3)]">
                 Las dos columnas cuadran.
               </span>
@@ -269,7 +272,7 @@ function Planilla({
           ) : (
             <>
               <AlertTriangle
-                className="w-4 h-4 text-amber-600"
+                className="w-4 h-4 text-[var(--arca-accent-warn-fg)]"
                 strokeWidth={2}
               />
               <span style={{ color: 'oklch(0.58 0.13 75)' }}>
@@ -285,7 +288,7 @@ function Planilla({
           <button
             disabled={!cuadra || save.isPending || totals.cargadas === 0}
             onClick={() => save.mutate()}
-            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white disabled:opacity-40"
+            className="h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white disabled:opacity-40"
           >
             {save.isPending ? 'Guardando…' : 'Guardar saldos'}
           </button>
@@ -311,7 +314,7 @@ function BalanceRow({
   onChange: (field: 'inicio' | 'cierre', value: string) => void;
 }) {
   const cell =
-    'h-8 w-full px-2 text-right tabular-nums text-[12.5px] rounded-[6px] border border-[var(--arca-border)] bg-transparent focus:border-[var(--arca-navy-900)] outline-none';
+    'h-8 w-full px-2 text-right tabular-nums text-[12.5px] rounded-[6px] border border-[var(--arca-border)] bg-transparent focus:border-[var(--arca-accent)] outline-none';
   return (
     <tr className="border-t border-[var(--arca-border)]">
       <td className="px-4 py-1.5">

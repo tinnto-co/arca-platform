@@ -30,7 +30,7 @@ function NoOrganizationPage() {
       className="flex min-h-svh items-center justify-center p-4"
       style={{
         background:
-          'linear-gradient(145deg, var(--arca-navy-900) 0%, var(--arca-navy-800) 100%)',
+          'linear-gradient(145deg, var(--arca-sidebar) 0%, var(--arca-navy-800) 100%)',
       }}
     >
       <Card className="w-full max-w-md text-center">

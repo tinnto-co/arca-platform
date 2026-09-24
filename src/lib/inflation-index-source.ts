@@ -11,7 +11,7 @@
  */
 import * as XLSX from 'xlsx';
 import { db } from '@/lib/db';
-import { inflationIndex } from '@/drizzle/schema';
+import { indiceInflacion } from '@/drizzle/schema';
 import { sql } from 'drizzle-orm';
 
 export const FACPCE_INDEX_PAGE = 'https://www.facpce.org.ar/indices-facpce/';
@@ -132,22 +132,22 @@ export async function upsertInflationIndexes(
   const BATCH = 200;
   for (let i = 0; i < clean.length; i += BATCH) {
     await db
-      .insert(inflationIndex)
+      .insert(indiceInflacion)
       .values(
         clean.slice(i, i + BATCH).map((r) => ({
-          source,
-          year: r.year,
-          month: r.month,
-          value: r.value.toFixed(6),
+          fuente: source,
+          anio: r.year,
+          mes: r.month,
+          valor: r.value.toFixed(6),
         }))
       )
       .onConflictDoUpdate({
         target: [
-          inflationIndex.source,
-          inflationIndex.year,
-          inflationIndex.month,
+          indiceInflacion.fuente,
+          indiceInflacion.anio,
+          indiceInflacion.mes,
         ],
-        set: { value: sql`excluded.value`, updatedAt: new Date() },
+        set: { valor: sql`excluded.valor`, updatedAt: new Date() },
       });
   }
 

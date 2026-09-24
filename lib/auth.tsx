@@ -45,7 +45,11 @@ export const auth = betterAuth({
         member: memberRole,
         viewer,
       },
-      allowUserToCreateOrganization: false,
+      // Solo el superadmin (user.role === 'admin', plugin admin) puede crear
+      // organizaciones: es la persona que da de alta estudios para vender el
+      // producto. El resto de los usuarios sigue sin poder.
+      allowUserToCreateOrganization: (user) =>
+        (user as { role?: string | null }).role === 'admin',
       sendInvitationEmail: sendOrganizationInvitationEmail,
     }),
   ],

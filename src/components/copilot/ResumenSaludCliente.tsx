@@ -1,41 +1,45 @@
 'use client';
 
-import {
-  AlertCircle,
-  AlertTriangle,
-  Bell,
-  Check,
-  Info,
-  TrendingUp,
-} from 'lucide-react';
+import { AlertCircle, AlertTriangle, Check, Info } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
 import type { GetResumenSaludClienteResult } from '@/actions/copilot';
-
-const formatArs = (n: number) =>
-  new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(n);
-
-interface ResumenSaludClienteProps {
-  result: GetResumenSaludClienteResult;
-}
+import {
+  ChatAviso,
+  ChatCard,
+  ChatCardHead,
+  ChatCardLabel,
+  ChatKpi,
+  ChatKpiGrid,
+  ChatRow,
+  ChatRows,
+  formatArs,
+  type Tono,
+} from './chat-card';
 
 const TIPO_LABEL: Record<string, string> = {
   iva: 'IVA',
   comprobantes: 'Facturas',
-  notificaciones: 'Notif. AFIP',
+  notificaciones: 'Notificaciones',
   deuda: 'Deudas',
   vencimientos: 'Vencimientos',
 };
 
-export function ResumenSaludCliente({ result }: ResumenSaludClienteProps) {
+/**
+ * El estado de una empresa en una tarjeta: el score arriba, cuatro números,
+ * cuándo se actualizó cada dato y qué hay que mirar.
+ *
+ * El score es el ancla tipográfica de la card —número grande, display, tabular—
+ * y la barra debajo lo repite en color: verde ≥75, ámbar ≥50, coral abajo. Son
+ * los mismos tres estados que usa el resto del producto para "al día /
+ * pendiente / vencido", así que se leen sin leyenda.
+ */
+export function ResumenSaludCliente({
+  result,
+}: {
+  result: GetResumenSaludClienteResult;
+}) {
   if ('error' in result) {
-    return (
-      <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-        {result.error}
-      </div>
-    );
+    return <ChatAviso>{result.error}</ChatAviso>;
   }
 
   const {
@@ -48,186 +52,154 @@ export function ResumenSaludCliente({ result }: ResumenSaludClienteProps) {
     observaciones,
   } = result;
 
-  const scoreTone =
+  const tono: Tono =
     healthScore >= 75 ? 'pos' : healthScore >= 50 ? 'warn' : 'neg';
-  const scoreColor =
-    scoreTone === 'pos'
+  const colorTexto =
+    tono === 'pos'
       ? 'text-[var(--arca-accent-pos-fg)]'
-      : scoreTone === 'warn'
+      : tono === 'warn'
         ? 'text-[var(--arca-accent-warn-fg)]'
         : 'text-[var(--arca-accent-neg-fg)]';
-  const scoreBarColor =
-    scoreTone === 'pos'
+  const colorBarra =
+    tono === 'pos'
       ? 'bg-[var(--arca-accent-pos)]'
-      : scoreTone === 'warn'
+      : tono === 'warn'
         ? 'bg-[var(--arca-accent-warn)]'
         : 'bg-[var(--arca-accent-neg)]';
 
   return (
-    <div className="@container space-y-3">
-      {/* Header con health score */}
-      <div className="rounded-lg border bg-card px-3 py-2.5">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold truncate">{cliente.name}</div>
-            <div className="text-[11px] text-muted-foreground tabular-nums">
-              CUIT {cliente.identityNumber}
+    <div className="space-y-2.5">
+      <ChatCard>
+        <div className="px-3 py-2.5">
+          <div className="mb-2 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate font-display text-[14px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]">
+                {cliente.razonSocial}
+              </div>
+              <div className="mt-0.5 text-[11.5px] tabular-nums text-[var(--arca-ink-4)] [font-family:var(--ff-mono)]">
+                {cliente.cuit}
+              </div>
+            </div>
+            <div className="shrink-0 text-right">
+              <div
+                className={`font-display text-[26px] font-semibold leading-none tracking-[-0.025em] tabular-nums ${colorTexto}`}
+              >
+                {healthScore}
+              </div>
+              <div className="mt-1 text-[10px] font-medium uppercase tracking-[0.07em] text-[var(--arca-ink-4)]">
+                salud / 100
+              </div>
             </div>
           </div>
-          <div className="text-right shrink-0">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
             <div
-              className={`font-display text-2xl font-bold tabular-nums leading-none ${scoreColor}`}
-            >
-              {healthScore}
-            </div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              salud / 100
-            </div>
+              className={`h-full rounded-full ${colorBarra}`}
+              style={{ width: `${healthScore}%` }}
+            />
           </div>
         </div>
-        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-          <div
-            className={`h-full ${scoreBarColor}`}
-            style={{ width: `${healthScore}%` }}
-          />
-        </div>
-      </div>
+      </ChatCard>
 
-      {/* Mini KPIs */}
-      <div className="grid grid-cols-2 @[24rem]:grid-cols-4 gap-2">
-        <KpiCell
-          icon={<TrendingUp className="h-3 w-3" />}
-          label="Ventas mes"
+      <ChatKpiGrid>
+        <ChatKpi
+          label="Ventas del mes"
           value={formatArs(facturacionMesActual.ventas)}
-          sub={`${facturacionMesActual.cantidad} facts`}
+          sub={
+            facturacionMesActual.cantidad === 1
+              ? '1 comprobante'
+              : `${facturacionMesActual.cantidad} comprobantes`
+          }
         />
-        <KpiCell
-          icon={<TrendingUp className="h-3 w-3 rotate-180" />}
-          label="Compras mes"
+        <ChatKpi
+          label="Compras del mes"
           value={formatArs(facturacionMesActual.compras)}
         />
-        <KpiCell
-          icon={<AlertCircle className="h-3 w-3" />}
-          label="Deudas venc."
+        <ChatKpi
+          label="Deudas vencidas"
           value={String(deudas.vencidas)}
-          sub={deudas.vencidasMonto > 0 ? formatArs(deudas.vencidasMonto) : ''}
+          sub={
+            deudas.vencidas > 0 ? formatArs(deudas.vencidasMonto) : 'sin deuda'
+          }
           tone={deudas.vencidas > 0 ? 'neg' : undefined}
         />
-        <KpiCell
-          icon={<Bell className="h-3 w-3" />}
-          label="Notif. sin leer"
+        <ChatKpi
+          label="Notificaciones sin leer"
           value={String(notificaciones.noLeidas)}
-          tone={notificaciones.noLeidas > 5 ? 'warn' : undefined}
+          tone={notificaciones.noLeidas >= 5 ? 'warn' : undefined}
         />
-      </div>
+      </ChatKpiGrid>
 
-      {/* Estado de scrapes por tipo */}
-      <div className="rounded-md border bg-card overflow-hidden">
-        <div className="px-3 py-2 border-b text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Último scrape por tipo
-        </div>
-        <div className="divide-y">
+      <ChatCard>
+        <ChatCardLabel>Última actualización</ChatCardLabel>
+        <ChatRows>
           {ultimoScrapePorTipo.map((s) => {
-            const tone =
+            const tono: Tono | undefined =
               s.status === 'failed'
-                ? 'text-[var(--arca-accent-neg-fg)]'
+                ? 'neg'
                 : s.status === 'finished' && (s.diasDesde ?? 99) <= 7
-                  ? 'text-[var(--arca-accent-pos-fg)]'
-                  : 'text-muted-foreground';
-            const label =
+                  ? 'pos'
+                  : 'neutro';
+            const dias =
+              s.diasDesde === null
+                ? null
+                : s.diasDesde === 0
+                  ? 'hoy'
+                  : s.diasDesde === 1
+                    ? 'ayer'
+                    : `hace ${s.diasDesde} d`;
+            const valor =
               s.status === null
                 ? 'sin datos'
                 : s.status === 'failed'
-                  ? `falló${s.diasDesde !== null ? ` · hace ${s.diasDesde}d` : ''}`
-                  : s.diasDesde !== null
-                    ? `hace ${s.diasDesde}d`
-                    : s.status;
+                  ? `falló${dias ? ` · ${dias}` : ''}`
+                  : (dias ?? s.status);
             return (
-              <div
+              <ChatRow
                 key={s.tipo}
-                className="flex items-center justify-between px-3 py-1.5 text-xs"
-              >
-                <span className="text-foreground">
-                  {TIPO_LABEL[s.tipo] ?? s.tipo}
-                </span>
-                <span className={`tabular-nums ${tone}`}>{label}</span>
-              </div>
+                label={TIPO_LABEL[s.tipo] ?? s.tipo}
+                value={valor}
+                tone={tono}
+              />
             );
           })}
-        </div>
-      </div>
+        </ChatRows>
+      </ChatCard>
 
-      {/* Observaciones */}
-      {observaciones.length > 0 && (
-        <div className="rounded-md border bg-card overflow-hidden">
-          <div className="px-3 py-2 border-b text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Atención requerida
-          </div>
-          <div className="divide-y">
+      {observaciones.length > 0 ? (
+        <ChatCard>
+          <ChatCardLabel>Atención requerida</ChatCardLabel>
+          <ChatRows>
             {observaciones.map((obs, i) => (
-              <ObsRow key={i} {...obs} />
+              <Observacion key={i} {...obs} />
             ))}
-          </div>
-        </div>
-      )}
-
-      {observaciones.length === 0 && (
-        <div className="flex items-center gap-2 rounded-md border border-[var(--arca-accent-pos)]/30 bg-[var(--arca-accent-pos-bg)] px-3 py-2 text-xs text-[var(--arca-accent-pos-fg)]">
-          <Check className="h-3.5 w-3.5" />
-          Cliente saludable, sin observaciones.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function KpiCell({
-  icon,
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub?: string;
-  tone?: 'pos' | 'neg' | 'warn';
-}) {
-  const toneClass =
-    tone === 'pos'
-      ? 'text-[var(--arca-accent-pos-fg)]'
-      : tone === 'neg'
-        ? 'text-[var(--arca-accent-neg-fg)]'
-        : tone === 'warn'
-          ? 'text-[var(--arca-accent-warn-fg)]'
-          : 'text-foreground';
-  return (
-    <div className="rounded-md border bg-card px-2.5 py-2">
-      <div className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground mb-0.5">
-        {icon}
-        <span className="truncate">{label}</span>
-      </div>
-      <div className={`text-sm font-semibold tabular-nums truncate ${toneClass}`}>
-        {value}
-      </div>
-      {sub && (
-        <div className="text-[10px] text-muted-foreground tabular-nums truncate">
-          {sub}
-        </div>
+          </ChatRows>
+        </ChatCard>
+      ) : (
+        <ChatCard>
+          <ChatCardHead
+            title="Sin observaciones"
+            sub="No hay nada pendiente de revisar."
+            trailing={
+              <Badge variant="success" size="sm">
+                <Check className="size-3" />
+                Al día
+              </Badge>
+            }
+          />
+        </ChatCard>
       )}
     </div>
   );
 }
 
-function ObsRow({
+function Observacion({
   severidad,
   mensaje,
 }: {
   severidad: 'info' | 'warn' | 'error';
   mensaje: string;
 }) {
-  const Icon =
+  const Icono =
     severidad === 'error'
       ? AlertCircle
       : severidad === 'warn'
@@ -235,14 +207,14 @@ function ObsRow({
         : Info;
   const color =
     severidad === 'error'
-      ? 'text-[var(--arca-accent-neg-fg)]'
+      ? 'text-[var(--arca-accent-neg)]'
       : severidad === 'warn'
-        ? 'text-[var(--arca-accent-warn-fg)]'
-        : 'text-muted-foreground';
+        ? 'text-[var(--arca-accent-warn)]'
+        : 'text-[var(--arca-ink-4)]';
   return (
-    <div className="flex items-start gap-2 px-3 py-1.5 text-xs">
-      <Icon className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${color}`} />
-      <span className="text-foreground">{mensaje}</span>
+    <div className="flex items-start gap-2 px-3 py-[7px] text-[12.5px]">
+      <Icono className={`mt-[2px] size-3.5 shrink-0 ${color}`} />
+      <span className="min-w-0 text-[var(--arca-ink-2)]">{mensaje}</span>
     </div>
   );
 }

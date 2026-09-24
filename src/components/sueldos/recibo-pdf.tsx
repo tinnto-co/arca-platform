@@ -1,6 +1,16 @@
 'use client';
 
-import { Document, Page, View, Text, Image, StyleSheet, pdf } from '@react-pdf/renderer';
+import {
+  Document,
+  Page,
+  View,
+  Text,
+  Image,
+  StyleSheet,
+  pdf,
+} from '@react-pdf/renderer';
+import { dateAPeriodo } from '@/lib/periodo';
+import { tipoReciboLabel, quincenaLabel } from '@/lib/sueldos-labels';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -13,10 +23,14 @@ interface DetalleRow {
     monto: string | null;
     cantidad: string | null;
     porcentaje: string | null;
-    activoEnRecibo?: boolean | null;
+    activo?: boolean | null;
     memo?: string | null;
   };
-  concepto: { nombre?: string | null; tipo?: string | null; numeroSos?: number | null } | null;
+  concepto: {
+    nombre?: string | null;
+    tipo?: string | null;
+    numeroSos?: number | null;
+  } | null;
   conceptoAfip: { descripcion?: string | null } | null;
   conceptoSos: { nombre?: string | null; codigo?: string | null } | null;
   tipoColumna: TipoCol;
@@ -27,7 +41,7 @@ export interface ReciboDetallePdf {
     id: string;
     periodo: string;
     tipo: string | null;
-    quincena: string | null;
+    quincena: number | null;
     basico: string | null;
     fechaPago: string | null;
     lugarPago: string | null;
@@ -43,8 +57,7 @@ export interface ReciboDetallePdf {
     cuil: string | null;
     fechaAlta: string | null;
     tipoJornada: string | null;
-    categoria: string | null;
-    lugarPago: string | null;
+    categoriaTexto: string | null;
     formaPago: string | null;
     cbu: string | null;
     banco: string | null;
@@ -57,12 +70,15 @@ export interface ReciboDetallePdf {
   detalles: DetalleRow[];
 }
 
+/**
+ * Datos de la empresa que encabezan el recibo. En el modelo nuevo el cliente
+ * ya no tiene `name`/`address`/`identityNumber`: la única razón social es
+ * `razonSocial` y el CUIT vive en `cuit`.
+ */
 export interface ClientDataPdf {
-  name: string | null;
-  address: string | null;
-  identityNumber: string | null;
-  razonSocial?: string | null;
-  cuitEmpresa?: string | null;
+  razonSocial: string | null;
+  domicilio: string | null;
+  cuit: string | null;
 }
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -71,7 +87,10 @@ function moneyFmt(v: string | number | null | undefined): string {
   if (v === null || v === undefined || v === '') return '—';
   const n = typeof v === 'number' ? v : Number(v);
   if (Number.isNaN(n)) return '—';
-  return n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return n.toLocaleString('es-AR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function dateFmt(d: string | null | undefined): string {
@@ -94,27 +113,18 @@ function legajoParaMostrar(raw: string | null | undefined): string {
   return s;
 }
 
-function tipoReciboLabel(tipo: string | null): string {
-  if (!tipo) return 'Sueldo';
-  const map: Record<string, string> = {
-    sueldo: 'Sueldo', anticipo: 'Anticipo', SAC: 'SAC',
-    vacaciones: 'Vacaciones', despido: 'Liquidación final',
-    comisiones: 'Comisiones', desempleo: 'Fondo de desempleo', varios: 'Varios',
-  };
-  return map[tipo] ?? tipo;
-}
-
-function quincenaLabel(q: string | null): string {
-  if (q === '1') return '1ra quincena';
-  if (q === '2') return '2da quincena';
-  return 'Mes completo';
-}
-
 function formaPagoLabel(v: string | null | undefined): string {
   if (!v) return '—';
   const s = String(v).trim().toLowerCase();
   if (s === '1' || s === 'efectivo') return 'Efectivo';
-  if (s === '2' || s === 'acreditacion' || s === 'acreditación') return 'Acreditación';
+  if (
+    s === '2' ||
+    s === 'deposito' ||
+    s === 'acreditacion' ||
+    s === 'acreditación'
+  )
+    return 'Depósito en cuenta';
+  if (s === 'transferencia') return 'Transferencia';
   if (s === '3' || s === 'cheque') return 'Cheque';
   if (s === '4' || s === 'otro' || s === 'otros') return 'Otro';
   return String(v);
@@ -162,10 +172,15 @@ function basicoDesdeDetalle(rows: DetalleRow[]): number {
     const numSos = r.concepto?.numeroSos ?? null;
     const codDet = (r.detalle.codigo ?? '').trim();
     const codSos = (r.conceptoSos?.codigo ?? '').trim();
-    const nombre = `${r.concepto?.nombre ?? ''} ${r.conceptoSos?.nombre ?? ''}`.trim().toLowerCase();
+    const nombre = `${r.concepto?.nombre ?? ''} ${r.conceptoSos?.nombre ?? ''}`
+      .trim()
+      .toLowerCase();
     const esBasico =
-      numSos === 1 || codDet === '1' || codSos === '1' ||
-      nombre.includes('sueldo basico') || nombre.includes('sueldo básico');
+      numSos === 1 ||
+      codDet === '1' ||
+      codSos === '1' ||
+      nombre.includes('sueldo basico') ||
+      nombre.includes('sueldo básico');
     if (!esBasico) continue;
     const monto = Number(r.detalle.monto ?? 0);
     if (Number.isFinite(monto) && monto > 0) return monto;
@@ -186,7 +201,8 @@ function columnaConcepto(d: DetalleRow): TipoCol {
     d.tipoColumna === 'no_remunerativo' ||
     d.tipoColumna === 'descuento' ||
     d.tipoColumna === 'retencion'
-  ) return d.tipoColumna;
+  )
+    return d.tipoColumna;
   return clasificarTipo(d.concepto?.tipo ?? null);
 }
 
@@ -202,9 +218,52 @@ function pickCabecera(liq: ReciboDetallePdf['liquidacion']) {
 
 // ─── Número a letras ──────────────────────────────────────────────────────────
 
-const UNIDADES = ['','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve','diez','once','doce','trece','catorce','quince','dieciséis','diecisiete','dieciocho','diecinueve'];
-const DECENAS = ['','diez','veinte','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
-const CENTENAS = ['','ciento','doscientos','trescientos','cuatrocientos','quinientos','seiscientos','setecientos','ochocientos','novecientos'];
+const UNIDADES = [
+  '',
+  'uno',
+  'dos',
+  'tres',
+  'cuatro',
+  'cinco',
+  'seis',
+  'siete',
+  'ocho',
+  'nueve',
+  'diez',
+  'once',
+  'doce',
+  'trece',
+  'catorce',
+  'quince',
+  'dieciséis',
+  'diecisiete',
+  'dieciocho',
+  'diecinueve',
+];
+const DECENAS = [
+  '',
+  'diez',
+  'veinte',
+  'treinta',
+  'cuarenta',
+  'cincuenta',
+  'sesenta',
+  'setenta',
+  'ochenta',
+  'noventa',
+];
+const CENTENAS = [
+  '',
+  'ciento',
+  'doscientos',
+  'trescientos',
+  'cuatrocientos',
+  'quinientos',
+  'seiscientos',
+  'setecientos',
+  'ochocientos',
+  'novecientos',
+];
 
 function cientos(n: number): string {
   if (n === 100) return 'cien';
@@ -255,9 +314,9 @@ function capitalizarPrimero(s: string): string {
 // A4 = 595 × 842 pt  |  padding 18pt each side  |  content width = 559pt
 
 const BORDER = '#d1d5db';
-const MUTED  = '#6b7280';
+const MUTED = '#6b7280';
 const MUTED_BG = '#f3f4f6';
-const DARK   = '#111827';
+const DARK = '#111827';
 
 const S = StyleSheet.create({
   // ── Page ──────────────────────────────────────────────────────────────────
@@ -388,7 +447,7 @@ const S = StyleSheet.create({
   // Columnas de la tabla
   colCode: { width: 44, paddingLeft: 5, paddingRight: 3 },
   colDesc: { flex: 1, paddingLeft: 4, paddingRight: 4 },
-  colNum:  { width: 40, paddingLeft: 3, paddingRight: 3 },
+  colNum: { width: 40, paddingLeft: 3, paddingRight: 3 },
   colMoney: {
     width: 74,
     paddingLeft: 3,
@@ -411,10 +470,22 @@ const S = StyleSheet.create({
     textAlign: 'right',
   },
 
-  tdCode:  { fontSize: 7,   color: MUTED, paddingTop: 2, paddingBottom: 2 },
-  tdDesc:  { fontSize: 7.5, color: DARK,  paddingTop: 2, paddingBottom: 2 },
-  tdNum:   { fontSize: 7,   color: MUTED, paddingTop: 2, paddingBottom: 2, textAlign: 'right' },
-  tdMoney: { fontSize: 7.5, color: DARK,  paddingTop: 2, paddingBottom: 2, textAlign: 'right' },
+  tdCode: { fontSize: 7, color: MUTED, paddingTop: 2, paddingBottom: 2 },
+  tdDesc: { fontSize: 7.5, color: DARK, paddingTop: 2, paddingBottom: 2 },
+  tdNum: {
+    fontSize: 7,
+    color: MUTED,
+    paddingTop: 2,
+    paddingBottom: 2,
+    textAlign: 'right',
+  },
+  tdMoney: {
+    fontSize: 7.5,
+    color: DARK,
+    paddingTop: 2,
+    paddingBottom: 2,
+    textAlign: 'right',
+  },
   tdMoneyBold: {
     fontSize: 7.5,
     color: DARK,
@@ -513,10 +584,14 @@ const S = StyleSheet.create({
 // NO usar el shorthand `flex: 0` porque en Yoga establece flexBasis:0,
 // lo que invalida el width declarado y genera superposición visual.
 const FIXED_CELL = {
-  paddingTop: 4, paddingBottom: 4,
-  paddingLeft: 6, paddingRight: 6,
-  borderRightWidth: 0.5, borderRightColor: BORDER,
-  flexGrow: 0, flexShrink: 0,
+  paddingTop: 4,
+  paddingBottom: 4,
+  paddingLeft: 6,
+  paddingRight: 6,
+  borderRightWidth: 0.5,
+  borderRightColor: BORDER,
+  flexGrow: 0,
+  flexShrink: 0,
 } as const;
 
 // ─── Celda de info (label + value) ───────────────────────────────────────────
@@ -554,61 +629,86 @@ function ReciboPdfPage({
   firmaEmpleadorUrl: string | null;
   copia: 'empleado' | 'empleador';
 }) {
-  const { liquidacion, empleado, convenio, categoria, obraSocial, basicoCalculado, basicoEscalaCategoria, detalles } = recibo;
+  const {
+    liquidacion,
+    empleado,
+    convenio,
+    categoria,
+    obraSocial,
+    basicoCalculado,
+    basicoEscalaCategoria,
+    detalles,
+  } = recibo;
 
   // Básico a mostrar (misma lógica que ReciboDocumento)
-  const basicoCalculadoNum    = Number(basicoCalculado ?? 0);
-  const basicoEscalaNum       = Number(basicoEscalaCategoria ?? 0);
-  const basicoLiquidacionNum  = Number(liquidacion.basico ?? 0);
-  const basicoDetalleNum      = basicoDesdeDetalle(detalles);
-  const esGerente             = esCategoriaGerente(categoria?.nombre) || esCategoriaGerente(empleado.categoria);
-  const mostrarBasicoEscalaGerente = esGerente && basicoCalculadoNum <= 0 && basicoEscalaNum > 0;
+  const basicoCalculadoNum = Number(basicoCalculado ?? 0);
+  const basicoEscalaNum = Number(basicoEscalaCategoria ?? 0);
+  const basicoLiquidacionNum = Number(liquidacion.basico ?? 0);
+  const basicoDetalleNum = basicoDesdeDetalle(detalles);
+  const esGerente =
+    esCategoriaGerente(categoria?.nombre) ||
+    esCategoriaGerente(empleado.categoriaTexto);
+  const mostrarBasicoEscalaGerente =
+    esGerente && basicoCalculadoNum <= 0 && basicoEscalaNum > 0;
   const basicoMostrado = mostrarBasicoEscalaGerente
     ? basicoEscalaNum
     : esGerente && basicoCalculadoNum <= 0
-      ? basicoLiquidacionNum > 0 ? basicoLiquidacionNum
-        : basicoDetalleNum > 0 ? basicoDetalleNum
-        : basicoCalculadoNum
+      ? basicoLiquidacionNum > 0
+        ? basicoLiquidacionNum
+        : basicoDetalleNum > 0
+          ? basicoDetalleNum
+          : basicoCalculadoNum
       : basicoCalculadoNum;
 
   // Clasificar conceptos activos
-  const conceptosActivos = detalles.filter((d) => d.detalle.activoEnRecibo !== false);
-  const haberesCon  = conceptosActivos.filter((d) => columnaConcepto(d) === 'remunerativo');
-  const haberesSin  = conceptosActivos.filter((d) => columnaConcepto(d) === 'no_remunerativo');
-  const descuentos  = conceptosActivos.filter((d) => columnaConcepto(d) === 'descuento');
-  const retenciones = conceptosActivos.filter((d) => columnaConcepto(d) === 'retencion');
+  const conceptosActivos = detalles.filter((d) => d.detalle.activo !== false);
+  const haberesCon = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'remunerativo'
+  );
+  const haberesSin = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'no_remunerativo'
+  );
+  const descuentos = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'descuento'
+  );
+  const retenciones = conceptosActivos.filter(
+    (d) => columnaConcepto(d) === 'retencion'
+  );
 
-  const totalHaberes    = redondearPesos(sumaMontosDetalle(haberesCon));
+  const totalHaberes = redondearPesos(sumaMontosDetalle(haberesCon));
   const totalDescuentos = redondearPesos(sumaMontosDetalle(descuentos));
   const totalRetenciones = redondearPesos(sumaMontosDetalle(retenciones));
-  const totalNoRem      = redondearPesos(sumaMontosDetalle(haberesSin));
-  const netoRaw = redondearPesos(totalHaberes + totalNoRem - totalDescuentos - totalRetenciones);
-  const redondeo = netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
+  const totalNoRem = redondearPesos(sumaMontosDetalle(haberesSin));
+  const netoRaw = redondearPesos(
+    totalHaberes + totalNoRem - totalDescuentos - totalRetenciones
+  );
+  const redondeo =
+    netoRaw > 0 && netoRaw % 1 > 0.001 ? Math.ceil(netoRaw) - netoRaw : 0;
   const neto = redondeo > 0 ? Math.ceil(netoRaw) : netoRaw;
 
   // Filas de la tabla ordenadas globalmente por código ascendente
   const filas = [
-    ...haberesCon.map((d)  => ({ ...d, col: 'hab'   as const })),
-    ...descuentos.map((d)  => ({ ...d, col: 'desc'  as const })),
-    ...retenciones.map((d) => ({ ...d, col: 'ret'   as const })),
-    ...haberesSin.map((d)  => ({ ...d, col: 'noRem' as const })),
+    ...haberesCon.map((d) => ({ ...d, col: 'hab' as const })),
+    ...descuentos.map((d) => ({ ...d, col: 'desc' as const })),
+    ...retenciones.map((d) => ({ ...d, col: 'ret' as const })),
+    ...haberesSin.map((d) => ({ ...d, col: 'noRem' as const })),
   ].sort((a, b) => Number(a.detalle.codigo) - Number(b.detalle.codigo));
 
   // Datos de cabecera de pago
-  const cab       = pickCabecera(liquidacion);
-  const lugarPago = cab.lugarPago ?? valorCabeceraLegible(empleado.lugarPago);
-  const banco     = cab.banco     ?? valorCabeceraLegible(empleado.banco);
+  const cab = pickCabecera(liquidacion);
+  // `empleado.lugarPago` desapareció: el lugar de pago vive solo en el recibo.
+  const lugarPago = cab.lugarPago;
+  const banco = cab.banco ?? valorCabeceraLegible(empleado.banco);
   const formaPago = cab.formaPago ?? valorCabeceraLegible(empleado.formaPago);
-  const cbu       = cab.cbu       ?? valorCabeceraLegible(empleado.cbu);
+  const cbu = cab.cbu ?? valorCabeceraLegible(empleado.cbu);
 
   // Datos de empresa
-  const empresaNombre   = toTitleCase(clientData?.razonSocial) || toTitleCase(clientData?.name) || '—';
-  const empresaCUIT     = clientData?.cuitEmpresa || clientData?.identityNumber || '—';
-  const empresaDirec    = clientData?.address || null;
+  const empresaNombre = toTitleCase(clientData?.razonSocial) || '—';
+  const empresaCUIT = clientData?.cuit || '—';
+  const empresaDirec = clientData?.domicilio || null;
 
   return (
     <Page size="A4" style={S.page}>
-
       {/* ── Badge copia ─────────────────────────────────────────────────────── */}
       <Text style={S.copyBadge}>
         {copia === 'empleado' ? 'COPIA EMPLEADO' : 'COPIA EMPLEADOR'}
@@ -616,24 +716,38 @@ function ReciboPdfPage({
 
       {/* ── Encabezado ──────────────────────────────────────────────────────── */}
       <View style={S.headerBox}>
-
         {/* Empresa (izquierda, 50%) */}
         <View style={S.headerCompany}>
-          <Text style={{ fontSize: 11, fontFamily: 'Helvetica-Bold', lineHeight: 1.2 }}>
+          <Text
+            style={{
+              fontSize: 11,
+              fontFamily: 'Helvetica-Bold',
+              lineHeight: 1.2,
+            }}
+          >
             {empresaNombre}
           </Text>
           {empresaDirec ? (
-            <Text style={{ fontSize: 7, color: MUTED, marginTop: 3 }}>{empresaDirec}</Text>
+            <Text style={{ fontSize: 7, color: MUTED, marginTop: 3 }}>
+              {empresaDirec}
+            </Text>
           ) : null}
-          <Text style={{ fontSize: 7, color: MUTED, marginTop: 2 }}>CUIT: {empresaCUIT}</Text>
+          <Text style={{ fontSize: 7, color: MUTED, marginTop: 2 }}>
+            CUIT: {empresaCUIT}
+          </Text>
         </View>
 
         {/* Título + grilla de pago (derecha, 50%) */}
         <View style={S.headerRight}>
-
           {/* Título */}
           <View style={S.headerTitleRow}>
-            <Text style={{ fontSize: 10, fontFamily: 'Helvetica-Bold', letterSpacing: 0.5 }}>
+            <Text
+              style={{
+                fontSize: 10,
+                fontFamily: 'Helvetica-Bold',
+                letterSpacing: 0.5,
+              }}
+            >
               RECIBO DE HABERES
             </Text>
             <Text style={{ fontSize: 7.5, color: MUTED, marginLeft: 6 }}>
@@ -643,24 +757,36 @@ function ReciboPdfPage({
 
           {/* Fila de pago 1 */}
           <View style={S.headerPayRow}>
-            <InfoCell label="Período a pagar" value={liquidacion.periodo ?? '—'} />
-            <InfoCell label="Fecha de pago"   value={dateFmt(cab.fechaPago)} />
-            <InfoCell label="Lugar de pago"   value={lugarPago ?? '—'} last />
+            {/* `recibo.periodo` es date ('YYYY-MM-01'): se muestra como 'YYYY-MM'. */}
+            <InfoCell
+              label="Período a pagar"
+              value={
+                liquidacion.periodo ? dateAPeriodo(liquidacion.periodo) : '—'
+              }
+            />
+            <InfoCell label="Fecha de pago" value={dateFmt(cab.fechaPago)} />
+            <InfoCell label="Lugar de pago" value={lugarPago ?? '—'} last />
           </View>
 
           {/* Fila de pago 2 */}
           <View style={S.headerPayRowSep}>
-            <InfoCell label="Banco"        value={bancoLabel(banco)} />
+            <InfoCell label="Banco" value={bancoLabel(banco)} />
             <InfoCell label="Forma de pago" value={formaPagoLabel(formaPago)} />
             <InfoCell label="CBU / Cuenta" value={cbu ?? '—'} last />
           </View>
-
         </View>
       </View>
 
       {/* ── Fila: Categoría | Tipo de liquidación ───────────────────────────── */}
       <View style={S.infoRow}>
-        <InfoCell label="Categoría" value={empleado.categoria ? toTitleCase(empleado.categoria) : (categoria?.nombre ?? '—')} />
+        <InfoCell
+          label="Categoría"
+          value={
+            empleado.categoriaTexto
+              ? toTitleCase(empleado.categoriaTexto)
+              : (categoria?.nombre ?? '—')
+          }
+        />
         <InfoCell
           label="Tipo de liquidación"
           value={`${tipoReciboLabel(liquidacion.tipo)} — ${quincenaLabel(liquidacion.quincena)}`}
@@ -676,7 +802,9 @@ function ReciboPdfPage({
           <Text style={S.cellValue}>{legajoParaMostrar(empleado.legajo)}</Text>
         </View>
         {/* NOMBRE — flex proporcional */}
-        <View style={{ ...FIXED_CELL, flexGrow: 2, flexShrink: 1, flexBasis: 0 }}>
+        <View
+          style={{ ...FIXED_CELL, flexGrow: 2, flexShrink: 1, flexBasis: 0 }}
+        >
           <Text style={S.cellLabel}>APELLIDO Y NOMBRES</Text>
           <Text style={S.cellValue}>{toTitleCase(empleado.nombre)}</Text>
         </View>
@@ -711,7 +839,11 @@ function ReciboPdfPage({
         />
         <InfoCell
           label="Modalidad"
-          value={empleado.tipoJornada === 'full_time' ? 'Tiempo completo' : 'Tiempo parcial'}
+          value={
+            empleado.tipoJornada === 'full_time'
+              ? 'Tiempo completo'
+              : 'Tiempo parcial'
+          }
         />
         <InfoCell
           label="Obra social"
@@ -727,72 +859,126 @@ function ReciboPdfPage({
       {/* ── Tabla de conceptos ───────────────────────────────────────────────── */}
       {/* Cabecera de tabla */}
       <View style={S.tableHeaderRow}>
-        <View style={S.colCode}><Text style={S.thText}>CÓDIGO</Text></View>
-        <View style={S.colDesc}><Text style={S.thText}>CONCEPTO</Text></View>
-        <View style={S.colNum}> <Text style={S.thTextRight}>CANT.</Text></View>
-        <View style={S.colNum}> <Text style={S.thTextRight}>%</Text></View>
-        <View style={S.colMoney}><Text style={S.thTextRight}>HABERES</Text></View>
-        <View style={S.colMoney}><Text style={S.thTextRight}>DESCUENTOS</Text></View>
-        <View style={S.colMoney}><Text style={S.thTextRight}>RETENCIONES</Text></View>
-        <View style={S.colMoney}><Text style={S.thTextRight}>NO REM.</Text></View>
+        <View style={S.colCode}>
+          <Text style={S.thText}>CÓDIGO</Text>
+        </View>
+        <View style={S.colDesc}>
+          <Text style={S.thText}>CONCEPTO</Text>
+        </View>
+        <View style={S.colNum}>
+          {' '}
+          <Text style={S.thTextRight}>CANT.</Text>
+        </View>
+        <View style={S.colNum}>
+          {' '}
+          <Text style={S.thTextRight}>%</Text>
+        </View>
+        <View style={S.colMoney}>
+          <Text style={S.thTextRight}>HABERES</Text>
+        </View>
+        <View style={S.colMoney}>
+          <Text style={S.thTextRight}>DESCUENTOS</Text>
+        </View>
+        <View style={S.colMoney}>
+          <Text style={S.thTextRight}>RETENCIONES</Text>
+        </View>
+        <View style={S.colMoney}>
+          <Text style={S.thTextRight}>NO REM.</Text>
+        </View>
       </View>
 
       {/* Filas de conceptos */}
       {filas.length === 0 ? (
         <View style={[S.tableRow, { borderBottomWidth: 0.5 }]}>
           <View style={{ flex: 1, paddingTop: 6, paddingBottom: 6 }}>
-            <Text style={{ fontSize: 7, color: MUTED, textAlign: 'center' }}>Sin conceptos</Text>
+            <Text style={{ fontSize: 7, color: MUTED, textAlign: 'center' }}>
+              Sin conceptos
+            </Text>
           </View>
         </View>
       ) : (
-        filas.map(({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
-          <View key={det.id} style={S.tableRow}>
-            <View style={S.colCode}>
-              <Text style={S.tdCode}>{det.codigo}</Text>
+        filas.map(
+          ({ detalle: det, concepto, conceptoAfip, conceptoSos, col }) => (
+            <View key={det.id} style={S.tableRow}>
+              <View style={S.colCode}>
+                <Text style={S.tdCode}>{det.codigo}</Text>
+              </View>
+              <View style={S.colDesc}>
+                <Text style={S.tdDesc}>
+                  {det.memo &&
+                  !det.memo.startsWith('source=') &&
+                  !det.memo.includes('calc_error=')
+                    ? det.memo
+                    : (concepto?.nombre ??
+                      conceptoAfip?.descripcion ??
+                      conceptoSos?.nombre ??
+                      det.codigo)}
+                </Text>
+              </View>
+              <View style={S.colNum}>
+                <Text style={S.tdNum}>
+                  {det.cantidad ? moneyFmt(det.cantidad) : ''}
+                </Text>
+              </View>
+              <View style={S.colNum}>
+                <Text style={S.tdNum}>
+                  {det.porcentaje ? moneyFmt(det.porcentaje) : ''}
+                </Text>
+              </View>
+              <View style={S.colMoney}>
+                <Text style={S.tdMoney}>
+                  {col === 'hab' ? moneyFmt(det.monto) : ''}
+                </Text>
+              </View>
+              <View style={S.colMoney}>
+                <Text style={S.tdMoney}>
+                  {col === 'desc' ? moneyFmt(det.monto) : ''}
+                </Text>
+              </View>
+              <View style={S.colMoney}>
+                <Text style={S.tdMoney}>
+                  {col === 'ret' ? moneyFmt(det.monto) : ''}
+                </Text>
+              </View>
+              <View style={S.colMoney}>
+                <Text style={S.tdMoney}>
+                  {col === 'noRem' ? moneyFmt(det.monto) : ''}
+                </Text>
+              </View>
             </View>
-            <View style={S.colDesc}>
-              <Text style={S.tdDesc}>
-                {(det.memo && !det.memo.startsWith('source=') && !det.memo.includes('calc_error='))
-                  ? det.memo
-                  : (concepto?.nombre ?? conceptoAfip?.descripcion ?? conceptoSos?.nombre ?? det.codigo)}
-              </Text>
-            </View>
-            <View style={S.colNum}>
-              <Text style={S.tdNum}>{det.cantidad ? moneyFmt(det.cantidad) : ''}</Text>
-            </View>
-            <View style={S.colNum}>
-              <Text style={S.tdNum}>{det.porcentaje ? moneyFmt(det.porcentaje) : ''}</Text>
-            </View>
-            <View style={S.colMoney}>
-              <Text style={S.tdMoney}>{col === 'hab'   ? moneyFmt(det.monto) : ''}</Text>
-            </View>
-            <View style={S.colMoney}>
-              <Text style={S.tdMoney}>{col === 'desc'  ? moneyFmt(det.monto) : ''}</Text>
-            </View>
-            <View style={S.colMoney}>
-              <Text style={S.tdMoney}>{col === 'ret'   ? moneyFmt(det.monto) : ''}</Text>
-            </View>
-            <View style={S.colMoney}>
-              <Text style={S.tdMoney}>{col === 'noRem' ? moneyFmt(det.monto) : ''}</Text>
-            </View>
-          </View>
-        ))
+          )
+        )
       )}
 
       {/* ── Fila de totales ──────────────────────────────────────────────────── */}
       <View style={S.totalsRow}>
         <View style={S.colCode} />
         <View style={S.colDesc}>
-          <Text style={{ fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: MUTED, letterSpacing: 0.5 }}>
+          <Text
+            style={{
+              fontSize: 6.5,
+              fontFamily: 'Helvetica-Bold',
+              color: MUTED,
+              letterSpacing: 0.5,
+            }}
+          >
             TOTALES
           </Text>
         </View>
         <View style={S.colNum} />
         <View style={S.colNum} />
-        <View style={S.colMoney}><Text style={S.tdMoneyBold}>{moneyFmt(totalHaberes)}</Text></View>
-        <View style={S.colMoney}><Text style={S.tdMoneyBold}>{moneyFmt(totalDescuentos)}</Text></View>
-        <View style={S.colMoney}><Text style={S.tdMoneyBold}>{moneyFmt(totalRetenciones)}</Text></View>
-        <View style={S.colMoney}><Text style={S.tdMoneyBold}>{moneyFmt(totalNoRem)}</Text></View>
+        <View style={S.colMoney}>
+          <Text style={S.tdMoneyBold}>{moneyFmt(totalHaberes)}</Text>
+        </View>
+        <View style={S.colMoney}>
+          <Text style={S.tdMoneyBold}>{moneyFmt(totalDescuentos)}</Text>
+        </View>
+        <View style={S.colMoney}>
+          <Text style={S.tdMoneyBold}>{moneyFmt(totalRetenciones)}</Text>
+        </View>
+        <View style={S.colMoney}>
+          <Text style={S.tdMoneyBold}>{moneyFmt(totalNoRem)}</Text>
+        </View>
       </View>
 
       {/* ── Neto sin redondeo / Redondeo / Total neto (solo cuando hay centavos) */}
@@ -801,7 +987,9 @@ function ReciboPdfPage({
           {/* Neto sin redondeo */}
           <View style={[S.totalsRow, { borderTopWidth: 0.5 }]}>
             <View style={{ flex: 1, paddingLeft: 5, paddingRight: 5 }}>
-              <Text style={{ fontSize: 6.5, color: MUTED, textAlign: 'right' }}>NETO SIN REDONDEO</Text>
+              <Text style={{ fontSize: 6.5, color: MUTED, textAlign: 'right' }}>
+                NETO SIN REDONDEO
+              </Text>
             </View>
             <View style={S.colMoney}>
               <Text style={S.tdMoneyBold}>{moneyFmt(netoRaw)}</Text>
@@ -810,7 +998,9 @@ function ReciboPdfPage({
           {/* Redondeo */}
           <View style={[S.totalsRow, { borderTopWidth: 0.5 }]}>
             <View style={{ flex: 1, paddingLeft: 5, paddingRight: 5 }}>
-              <Text style={{ fontSize: 6.5, color: MUTED, textAlign: 'right' }}>REDONDEO</Text>
+              <Text style={{ fontSize: 6.5, color: MUTED, textAlign: 'right' }}>
+                REDONDEO
+              </Text>
             </View>
             <View style={S.colMoney}>
               <Text style={S.tdMoney}>+{moneyFmt(redondeo)}</Text>
@@ -819,7 +1009,15 @@ function ReciboPdfPage({
           {/* Total neto */}
           <View style={[S.totalsRow, { borderTopWidth: 1.5 }]}>
             <View style={{ flex: 1, paddingLeft: 5, paddingRight: 5 }}>
-              <Text style={{ fontSize: 6.5, fontFamily: 'Helvetica-Bold', color: DARK, textAlign: 'right', letterSpacing: 0.5 }}>
+              <Text
+                style={{
+                  fontSize: 6.5,
+                  fontFamily: 'Helvetica-Bold',
+                  color: DARK,
+                  textAlign: 'right',
+                  letterSpacing: 0.5,
+                }}
+              >
                 TOTAL NETO
               </Text>
             </View>
@@ -843,10 +1041,19 @@ function ReciboPdfPage({
       {/* ── Observación (opcional) ───────────────────────────────────────────── */}
       {liquidacion.observacionRecibo ? (
         <View style={S.obsRow}>
-          <Text style={{ fontSize: 7, fontFamily: 'Helvetica-Bold', color: MUTED, marginRight: 4 }}>
+          <Text
+            style={{
+              fontSize: 7,
+              fontFamily: 'Helvetica-Bold',
+              color: MUTED,
+              marginRight: 4,
+            }}
+          >
             Observación:
           </Text>
-          <Text style={{ fontSize: 7.5, flex: 1 }}>{liquidacion.observacionRecibo}</Text>
+          <Text style={{ fontSize: 7.5, flex: 1 }}>
+            {liquidacion.observacionRecibo}
+          </Text>
         </View>
       ) : null}
 
@@ -854,7 +1061,10 @@ function ReciboPdfPage({
       <View style={S.firmasBox}>
         <View style={S.firmaCell}>
           {firmaEmpleadorUrl ? (
-            <Image src={firmaEmpleadorUrl} style={{ height: 40, marginBottom: 6 }} />
+            <Image
+              src={firmaEmpleadorUrl}
+              style={{ height: 40, marginBottom: 6 }}
+            />
           ) : (
             <View style={{ height: 40, marginBottom: 6 }} />
           )}
@@ -869,7 +1079,6 @@ function ReciboPdfPage({
           </View>
         </View>
       </View>
-
     </Page>
   );
 }
@@ -893,8 +1102,18 @@ function EmpleadoPdfDocument({
     <Document>
       {recibos.map((recibo) => (
         <React.Fragment key={recibo.liquidacion.id}>
-          <ReciboPdfPage recibo={recibo} clientData={clientData} firmaEmpleadorUrl={firmaEmpleadorUrl} copia="empleado" />
-          <ReciboPdfPage recibo={recibo} clientData={clientData} firmaEmpleadorUrl={firmaEmpleadorUrl} copia="empleador" />
+          <ReciboPdfPage
+            recibo={recibo}
+            clientData={clientData}
+            firmaEmpleadorUrl={firmaEmpleadorUrl}
+            copia="empleado"
+          />
+          <ReciboPdfPage
+            recibo={recibo}
+            clientData={clientData}
+            firmaEmpleadorUrl={firmaEmpleadorUrl}
+            copia="empleador"
+          />
         </React.Fragment>
       ))}
     </Document>
@@ -950,7 +1169,10 @@ export async function generarYDescargar({
   mes,
   onProgress,
 }: {
-  recibosAgrupados: Array<{ empleadoNombre: string; recibos: ReciboDetallePdf[] }>;
+  recibosAgrupados: Array<{
+    empleadoNombre: string;
+    recibos: ReciboDetallePdf[];
+  }>;
   clientData: ClientDataPdf | null;
   firmaEmpleadorUrl: string | null;
   ano: string;
@@ -966,25 +1188,33 @@ export async function generarYDescargar({
   if (recibosAgrupados.length === 1) {
     const { empleadoNombre, recibos } = recibosAgrupados[0]!;
     onProgress?.(0, 1);
-    const blob = await generarPdfBlobEmpleado(recibos, clientData, firmaEmpleadorUrl);
+    const blob = await generarPdfBlobEmpleado(
+      recibos,
+      clientData,
+      firmaEmpleadorUrl
+    );
     onProgress?.(1, 1);
-    triggerDownload(blob, `recibos_${sanitizeFilename(empleadoNombre)}_${periodoLabel}.pdf`);
+    triggerDownload(
+      blob,
+      `recibos_${sanitizeFilename(empleadoNombre)}_${periodoLabel}.pdf`
+    );
     return;
   }
 
-  // Múltiples empleados → ZIP (un PDF por empleado)
-  const JSZip = (await import('jszip')).default;
-  const zip   = new JSZip();
+  /*
+   * Varios empleados → UN solo PDF con todos los recibos, no un ZIP con un
+   * archivo por empleado. El estudio imprime el lote de una: con el ZIP tenían
+   * que descomprimir y abrir uno por uno, y es lo que SOS les da directo.
+   * El orden de las páginas es el de la selección (legajo).
+   */
   const total = recibosAgrupados.length;
-
-  for (let i = 0; i < recibosAgrupados.length; i++) {
-    const { empleadoNombre, recibos } = recibosAgrupados[i]!;
-    onProgress?.(i, total);
-    const blob = await generarPdfBlobEmpleado(recibos, clientData, firmaEmpleadorUrl);
-    zip.file(`${sanitizeFilename(empleadoNombre)}.pdf`, blob);
-  }
-
+  onProgress?.(0, total);
+  const todos = recibosAgrupados.flatMap((g) => g.recibos);
+  const blob = await generarPdfBlobEmpleado(
+    todos,
+    clientData,
+    firmaEmpleadorUrl
+  );
   onProgress?.(total, total);
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
-  triggerDownload(zipBlob, `recibos_${periodoLabel}.zip`);
+  triggerDownload(blob, `recibos_${periodoLabel}.pdf`);
 }

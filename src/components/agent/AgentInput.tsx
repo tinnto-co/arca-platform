@@ -1,6 +1,7 @@
-import { FileText, Paperclip, Send, Sparkles, X } from 'lucide-react';
+import { ArrowUp, ChevronDown, FileText, Paperclip, X } from 'lucide-react';
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -13,9 +14,14 @@ import {
   getMessageCount,
   getPanelState,
   openPanel,
+  getPensando,
   subscribeMessageCount,
   subscribePanelState,
+  subscribePensando,
   submitMessageToSidebar,
+  guardarModo,
+  leerModo,
+  suscribirModo,
 } from '@/components/copilot/copilot-control';
 import { useCopilotAttachment } from '@/components/copilot/AttachmentContext';
 import {
@@ -23,8 +29,18 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { OrbeAsistente } from '@/components/agent/orbe';
+import { useAtajo } from '@/lib/tecla-modificador';
 
 const MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * La barra flotante tapa la última fila de las tablas largas. Para eso está
+ * el FAB: el mismo asistente, reducido a su orbe, corrido a la esquina.
+ *
+ * El modo se lee con `useSyncExternalStore` y no con un `useEffect`: en SSR no
+ * hay localStorage y el snapshot de servidor devuelve el default sin mismatch.
+ */
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -62,6 +78,31 @@ export function AgentInput() {
   );
   const hasConversation = messageCount > 0;
   const { file, setFile, clear } = useCopilotAttachment();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const atajo = useAtajo('J');
+  const pensando = useSyncExternalStore(
+    subscribePensando,
+    getPensando,
+    () => false
+  );
+  const modo = useSyncExternalStore(
+    suscribirModo,
+    leerModo,
+    () => 'barra' as const
+  );
+
+  // ⌘J trae el asistente esté como esté: si está en FAB lo despliega, y en
+  // los dos casos deja el cursor donde se escribe.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== 'j' || !(e.metaKey || e.ctrlKey)) return;
+      e.preventDefault();
+      guardarModo('barra');
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,7 +116,6 @@ export function AgentInput() {
 
     // Fallback: if no bridge (e.g. ai_agent module disabled), open /chat.
     const id = crypto.randomUUID();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     navigate({
       to: '/chat/$id',
       params: { id },
@@ -131,6 +171,41 @@ export function AgentInput() {
   // land here instead of the panel's textarea.
   if (panelState.open) return null;
 
+  if (modo === 'fab') {
+    return (
+      <div className="pointer-events-none absolute right-4 bottom-20 z-10 md:bottom-4">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              // El orbe abre el chat lateral directamente: no despliega la
+              // barra. Y no toca `modo`, así que al cerrar el panel el
+              // asistente vuelve a la forma desde la que se lo llamó.
+              onClick={() => {
+                // Sin puente (módulo de agente apagado) no hay panel que abrir:
+                // ahí sí desplegamos la barra, que sabe caer a /chat.
+                if (openPanel()) return;
+                guardarModo('barra');
+                requestAnimationFrame(() => inputRef.current?.focus());
+              }}
+              aria-label="Abrir el asistente"
+              className="pointer-events-auto relative grid size-[52px] place-items-center rounded-full bg-[var(--arca-sidebar)] shadow-[var(--arca-shadow-float)] transition-transform duration-150 hover:scale-105 focus-visible:ring-[3px] focus-visible:ring-[var(--arca-accent-ring)] focus-visible:outline-none"
+            >
+              <OrbeAsistente size={18} pensando={pensando} />
+              {hasConversation && (
+                <span
+                  aria-hidden
+                  className="absolute -top-0.5 -right-0.5 size-3 rounded-full border-2 border-white bg-[var(--arca-accent-neg)]"
+                />
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Asistente · {atajo}</TooltipContent>
+        </Tooltip>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -163,25 +238,46 @@ export function AgentInput() {
         )}
         <form
           onSubmit={handleSubmit}
-          className="flex items-center gap-2 rounded-xl border border-border bg-white/80 px-4 py-2.5 shadow-lg backdrop-blur-md"
+          className="flex h-12 items-center gap-2 rounded-full border border-[rgba(14,26,43,0.16)] bg-[var(--arca-surface)] px-4 shadow-[var(--arca-shadow-float-lg)]"
         >
-          <Sparkles className="h-4 w-4 shrink-0 text-[#139ed9]" />
+          <OrbeAsistente size={16} pensando={pensando} />
           <input
+            ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onClick={handleInputClick}
             placeholder={placeholder}
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--arca-ink)] outline-none placeholder:text-[var(--arca-ink-3)]"
           />
+          {!value && (
+            <kbd className="hidden shrink-0 text-[11px] text-[var(--arca-ink-4)] [font-family:var(--ff-mono)] sm:block">
+              {atajo}
+            </kbd>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => guardarModo('fab')}
+                aria-label="Plegar el asistente"
+                className="shrink-0 rounded-md p-1.5 text-[var(--arca-ink-3)] transition-colors hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink)]"
+              >
+                <ChevronDown className="h-4 w-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              Plegar — deja de tapar la tabla
+            </TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 aria-label="Adjuntar PDF"
-                className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                className="grid size-7 shrink-0 place-items-center rounded-lg border border-[var(--arca-border)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] transition-colors hover:bg-[var(--arca-bg)] hover:text-[var(--arca-ink)]"
               >
-                <Paperclip className="h-4 w-4" />
+                <Paperclip className="size-3.5" strokeWidth={1.5} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Adjuntar PDF</TooltipContent>
@@ -196,9 +292,9 @@ export function AgentInput() {
           <button
             type="submit"
             disabled={!value.trim()}
-            className="shrink-0 rounded-lg bg-[#232c50] p-1.5 text-white transition-colors hover:bg-[#139ed9] disabled:cursor-not-allowed disabled:opacity-40"
+            className="grid size-7 shrink-0 place-items-center rounded-lg bg-[var(--arca-accent)] text-white transition-colors hover:bg-[var(--arca-accent-hover)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <Send className="h-4 w-4" />
+            <ArrowUp className="size-3.5" strokeWidth={1.75} />
           </button>
         </form>
       </div>

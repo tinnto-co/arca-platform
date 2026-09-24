@@ -1,11 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { Users, FileText, Bell, AlertCircle } from 'lucide-react';
+import { Users, FileText, Bell } from 'lucide-react';
 import {
   getDashboardStats,
-  getOverdueDebts,
   getPendingNotificationsCount,
 } from '@/actions/dashboard';
-import { ProgressBar, formatArs } from './shared';
+import { ProgressBar } from './shared';
+import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
 export type DashboardStats = Awaited<ReturnType<typeof getDashboardStats>>;
@@ -56,12 +56,19 @@ interface MiniKpiCardsRowProps {
   from: Date;
   to: Date;
   stats?: DashboardStats;
+  /**
+   * Para reubicar la fila fuera del tablero: el asistente la muestra en el
+   * panel lateral, donde ni el margen inferior de la página ni las cuatro
+   * columnas del escritorio aplican.
+   */
+  className?: string;
 }
 
 export function MiniKpiCardsRow({
   from,
   to,
   stats: statsProp,
+  className,
 }: MiniKpiCardsRowProps) {
   const fromStr = from.toISOString();
   const toStr = to.toISOString();
@@ -74,25 +81,15 @@ export function MiniKpiCardsRow({
   });
   const stats = statsProp ?? queryStats;
 
-  const { data: overdueDebts = [] } = useQuery({
-    queryKey: ['overdueDebts'],
-    queryFn: () => getOverdueDebts({ data: { limit: 50 } }),
-  });
-
   const { data: pendingNotifications } = useQuery({
     queryKey: ['pendingNotificationsCount'],
     queryFn: () => getPendingNotificationsCount(),
   });
 
-  const totalClients = stats?.totalClients ?? 0;
-  const monthlyInvoices = stats?.monthlyInvoices ?? 0;
-  const totalInvoices = stats?.totalInvoices ?? 0;
+  const totalClients = stats?.totalClientes ?? 0;
+  const monthlyInvoices = stats?.comprobantesDelPeriodo ?? 0;
+  const totalInvoices = stats?.totalComprobantes ?? 0;
   const notifCount = pendingNotifications?.count ?? 0;
-  const overdueCount = overdueDebts.length;
-  const totalOverdue = overdueDebts.reduce(
-    (s, d) => s + Number(d.balance ?? 0),
-    0
-  );
 
   const miniKpis: MiniKpiData[] = [
     {
@@ -160,7 +157,9 @@ export function MiniKpiCardsRow({
   ];
 
   return (
-    <section className="grid grid-cols-2 xl:grid-cols-4 gap-3.5 mb-5">
+    <section
+      className={cn('grid grid-cols-2 xl:grid-cols-4 gap-3.5 mb-5', className)}
+    >
       {miniKpis.map((kpi) => (
         <MiniKpiCard key={kpi.label} data={kpi} />
       ))}

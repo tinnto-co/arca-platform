@@ -1,0 +1,17 @@
+# BD_IDEAL local — destino del ETL actual → ideal (tasks/mapa-actual-ideal.md)
+# Uso: docker compose -f docker-compose.ideal.yml up -d
+services:
+  arca-ideal-db:
+    image: postgres:17
+    container_name: arca-ideal-db
+    environment:
+      POSTGRES_USER: arca
+      POSTGRES_PASSWORD: arca
+      POSTGRES_DB: arca_ideal
+    ports:
+      - "5460:5432"
+    volumes:
+      - arca-ideal-data:/var/lib/postgresql/data
+
+volumes:
+  arca-ideal-data:

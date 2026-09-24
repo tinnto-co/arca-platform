@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { CardsResumen, type TonoSub } from '@/components/shared/cards-resumen';
+import { LimpiarFiltros } from '@/components/shared/filtros';
 import { useNavigate, Link } from '@tanstack/react-router';
 import {
+  AlertTriangle,
   ArrowLeft,
   CalendarIcon,
   Edit,
@@ -17,7 +20,6 @@ import {
   Download,
   X,
   Search,
-  BookOpen,
   ClipboardList,
   Plus,
   Paperclip,
@@ -26,33 +28,17 @@ import {
   ListFilter,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { Input } from '@/components/ui/input';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
-  getRepresentative,
-  getRepresentativeClients,
-  getRepresentativeDebts,
-  getRepresentativeDueDates,
-  getRepresentativeIvaCredit,
+  getCredenciales,
+  getCredencialClientes,
+  getCredencialDeudas,
+  getCredencialVencimientos,
+  getClienteIvaCredit,
   getLastJobByType,
   getRunningJobByType,
-  getBalanceConfig,
-  upsertBalanceConfig,
 } from '@/actions/client';
 import {
   Select,
@@ -62,27 +48,36 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
-import { NotificationsView } from '@/components/notifications-view';
+import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
+import { BancoVsFacturacionCard } from '@/components/banco/BancoVsFacturacionCard';
+import { PanelLectura } from '@/components/notificaciones/PanelLectura';
+import { CrearTareaDesdeNotificacion } from '@/components/notificaciones/CrearTareaDesdeNotificacion';
 import {
   InvoicesTable,
   INVOICE_TYPE_LABELS,
   type InvoicesTableRef,
 } from '@/components/invoices-table';
 import {
-  getInvoices,
-  getClientMultilateralSummary,
-  getClientMultilateralInvoices,
-} from '@/actions/invoice';
+  getComprobantes,
+  getClienteMultilateralResumen,
+  getClienteMultilateralComprobantes,
+} from '@/actions/comprobante';
 import {
   getNotifications,
   markNotificationOpened,
 } from '@/actions/notification';
-import { scrapSingleJob, updateDebtStatus } from '@/actions/client';
+import { scrapSingleJob, updateDeudaEstado } from '@/actions/client';
+import { getLibroIvaPeriodo } from '@/actions/iva';
+import { SERVICIO_AFIP_LABEL } from '@/lib/delegaciones-afip';
 import {
-  listClientRequests,
-  createClientRequest,
-  updateClientRequestStatus,
-  getRequestDocument,
+  AVISO_SCRAPING_PAUSADO,
+  useScrapingPausado,
+} from '@/hooks/use-scraping-status';
+import {
+  listSolicitudes,
+  createSolicitud,
+  updateSolicitudEstado,
+  getDocumentoSolicitud,
   listPortalUsers,
   createPortalUser,
   updatePortalUserPermissions,
@@ -91,14 +86,13 @@ import {
 } from '@/actions/client-portal';
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
+import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import {
-  Clock,
-  CalendarCheck,
-  CalendarX,
   Loader2,
   Play,
   Activity,
   UserCheck,
+  Building2,
   UserPlus,
   Trash2,
   KeyRound,
@@ -119,6 +113,7 @@ import {
   MONTH_NAMES,
   MONTH_NAMES_SHORT,
   type RenderIvaResumeRef,
+  type ClientIvaCreditData,
 } from './render-iva-resume';
 import {
   Popover,
@@ -137,8 +132,16 @@ import {
   DialogClose,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { Paginador } from '@/components/shared/paginador';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
+import {
+  SelectorPeriodo,
+  aPeriodo,
+  dePeriodo,
+} from '@/components/shared/selector-periodo';
 import { cn } from '@/lib/utils';
-import { INVOICE_TYPES } from '@/lib/invoicesTypes';
+import { periodoLegible } from '@/lib/periodo';
+import { CONDICION_IVA_LABELS } from '@/lib/cliente-labels';
 import { ChartContainer, type ChartConfig } from '@/components/ui/chart';
 import {
   BarChart,
@@ -150,9 +153,17 @@ import {
   Tooltip,
 } from 'recharts';
 import { userQuery } from '@/lib/user-query';
-import { ProvinceSourceCell } from '@/components/convenio-multilateral-tab';
+import { ProvinceSourceCell } from '@/components/province-source-cell';
 import { listOrgModules } from '@/actions/admin';
 import { CopilotReadableEntity } from '@/components/copilot/CopilotReadableEntity';
+import { PerfilesTab } from '@/components/perfiles-tab';
+import { FiscalDataCard } from '@/components/fiscal-data-card';
+// `Tooltip` a secas ya es el de recharts en este archivo.
+import {
+  Tooltip as UiTooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { toTitleCase } from '@/lib/format-name';
 
 interface RepresentativeDetailPageProps {
@@ -165,17 +176,49 @@ interface RepresentativeDetailPageProps {
   onClientChange: (empresaId: string) => void;
 }
 
-const INVOICE_TYPE_MAP = new Map(
-  INVOICE_TYPES.map((t) => [t.clave, t.valor] as const)
-);
-
-const getInvoiceTypeLabel = (code: string | number | null | undefined) => {
-  if (code === null || code === undefined || code === '') return '—';
-  const normalized = String(code);
-  return INVOICE_TYPE_MAP.get(normalized) ?? normalized;
-};
-
 /** Fecha y hora para el texto "Ult. actualización" en pestañas de scrape (Deudas, Vencimientos, etc.). */
+/** Estado de delegación por servicio de AFIP (lo escribe el scraper). */
+type DelegacionesAfip = Record<
+  string,
+  { estado: 'ok' | 'sin_delegacion'; at: string }
+> | null;
+
+function sinDelegacion(
+  delegaciones: DelegacionesAfip | undefined,
+  servicio: string
+): boolean {
+  return delegaciones?.[servicio]?.estado === 'sin_delegacion';
+}
+
+/**
+ * La solapa no está vacía porque no haya datos: AFIP no le muestra la empresa
+ * a esta credencial para ese servicio. Sin este aviso, el estudio reporta
+ * «no aparece nada» (caso KASUR).
+ */
+function AvisoSinDelegacion({
+  servicio,
+  credencialNombre,
+}: {
+  servicio: string;
+  credencialNombre: string | null;
+}) {
+  return (
+    <div className="flex items-start gap-2 rounded-[10px] border border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] px-4 py-3 text-[12.5px] leading-relaxed text-[var(--arca-accent-warn-fg)]">
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <span>
+        <span className="font-semibold">
+          Esta empresa no está conectada en AFIP para{' '}
+          {SERVICIO_AFIP_LABEL[servicio] ?? servicio}
+        </span>{' '}
+        con la credencial{credencialNombre ? ` de ${credencialNombre}` : ''}:
+        AFIP no la lista, así que no hay datos para traer. Se resuelve delegando
+        el servicio en «Administrador de Relaciones de Clave Fiscal» — la
+        plataforma lo detecta sola en la próxima actualización.
+      </span>
+    </div>
+  );
+}
+
 const formatLastUpdateAt = (iso: string | Date) =>
   new Date(iso).toLocaleString('es-AR', {
     day: '2-digit',
@@ -185,15 +228,25 @@ const formatLastUpdateAt = (iso: string | Date) =>
     minute: '2-digit',
   });
 
+/**
+ * `YYYY-MM-DD` en horario local. No sirve `toISOString()`: convierte a UTC y en
+ * Argentina (UTC-3) devuelve el día anterior, así que el 1 de julio se pediría
+ * como 30 de junio.
+ */
+const aFechaLocal = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`;
+
 const facturasChartConfig = {
-  ventas: { label: 'Ventas', color: '#1E3460' },
-  compras: { label: 'Compras', color: '#7AA2C8' },
+  ventas: { label: 'Ventas', color: 'var(--arca-chart-1)' },
+  compras: { label: 'Compras', color: 'var(--arca-chart-2)' },
 } satisfies ChartConfig;
 
 /** Convenio Multilateral: comparativa período actual vs anterior */
 const convenioChartConfig = {
-  actual: { label: 'Período actual', color: '#1E3460' },
-  anterior: { label: 'Período anterior', color: '#7AA2C8' },
+  actual: { label: 'Período actual', color: 'var(--arca-chart-1)' },
+  anterior: { label: 'Período anterior', color: 'var(--arca-chart-2)' },
 } satisfies ChartConfig;
 
 const formatIvaCurrency = (
@@ -209,59 +262,29 @@ const formatIvaCurrency = (
   }).format(n);
 };
 
-interface MetricDeltaProps {
-  current: number;
-  previous: number;
-  label?: string;
-}
-
-const MetricDelta = ({
-  current,
-  previous,
-  label = 'vs. mes anterior',
-}: MetricDeltaProps) => {
-  if (previous === 0 && current === 0) {
-    return (
-      <p className="text-xs text-muted-foreground mt-1">{label}: sin cambios</p>
-    );
-  }
-
-  if (previous === 0 && current !== 0) {
-    return (
-      <p className="text-xs text-[var(--arca-accent-pos-fg)] mt-1">
-        {label}: nuevo período con actividad
-      </p>
-    );
-  }
-
+/**
+ * La línea "vs. mes anterior" de las cards de resumen: `CardsResumen` recibe
+ * el texto de apoyo ya escrito, no un componente. Devuelve también el tono,
+ * porque una caída del 37% no es una aclaración gris.
+ */
+function delta(
+  current: number,
+  previous: number,
+  label = 'vs. mes anterior'
+): { sub: string; subTono: TonoSub } {
+  if (previous === 0 && current === 0)
+    return { sub: `${label}: sin cambios`, subTono: 'neutro' };
+  if (previous === 0)
+    return {
+      sub: `${label}: nuevo período con actividad`,
+      subTono: 'positivo',
+    };
   const diff = current - previous;
-  const diffPct = (diff / Math.abs(previous)) * 100;
-  const sign = diff > 0 ? '+' : '';
-  const formattedPct = `${sign}${diffPct.toFixed(1)}%`;
-
-  return (
-    <p
-      className={`text-xs mt-1 ${
-        diff > 0
-          ? 'text-[var(--arca-accent-pos-fg)]'
-          : diff < 0
-            ? 'text-[var(--arca-accent-neg-fg)]'
-            : 'text-muted-foreground'
-      }`}
-    >
-      {label}: {formattedPct}
-    </p>
-  );
-};
-
-/** Período "MM/YYYY" del scrape que alimenta el resumen (mes anterior al elegido). Ej: usuario elige dic/25 → "11/2025". */
-function getPeriodUsedForResumen(from: Date | undefined): string | null {
-  if (!from) return null;
-  const d = new Date(from.getFullYear(), from.getMonth(), 1);
-  const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
-  const mm = String(prev.getMonth() + 1).padStart(2, '0');
-  const yyyy = prev.getFullYear();
-  return `${mm}/${yyyy}`;
+  const pct = (diff / Math.abs(previous)) * 100;
+  return {
+    sub: `${label}: ${diff > 0 ? '+' : ''}${pct.toFixed(1)}%`,
+    subTono: diff > 0 ? 'positivo' : diff < 0 ? 'urgente' : 'neutro',
+  };
 }
 
 /** Período "MM/YYYY" del mes que representa la fecha (ej. 1 feb 2026 → "02/2026"). Es el período del resumen que ve el usuario. */
@@ -275,37 +298,65 @@ function getResumenPeriodMMYYYY(from: Date | undefined): string | null {
 /** Mínimo de caracteres del nombre del perfil para considerarlo un match (evita "S", "A", etc.). */
 const MIN_PROFILE_NAME_LENGTH = 3;
 
+/** Comprobante tal como lo devuelve `getComprobantes`. */
+type ComprobanteRow = Awaited<
+  ReturnType<typeof getComprobantes>
+>['comprobantes'][number];
+
+/** Notificación de AFIP tal como la devuelve `getNotifications`. */
+
+/** Fila del resumen por provincia (Convenio Multilateral). */
+type MultilateralResumenRow = Awaited<
+  ReturnType<typeof getClienteMultilateralResumen>
+>[number];
+
+/** Solicitud al cliente tal como la devuelve el server fn. */
+type SolicitudRow = Awaited<ReturnType<typeof listSolicitudes>>[number];
+type SolicitudEstado = SolicitudRow['estado'];
+type SolicitudTipo = SolicitudRow['tipo'];
+
 /**
  * Elige el id del perfil que mejor coincide con el nombre del cliente (case-insensitive, por contiene).
  * Ej: cliente "Smart Solutions SRL" → perfil "Smart Solutions" (el nombre del perfil está contenido en el del cliente).
  */
 function findBestMatchingProfileId(
   clientName: string | undefined,
-  profiles: { id: string; name?: string }[]
+  profiles: { id: string; razonSocial?: string | null }[]
 ): string | undefined {
   if (!profiles.length) return undefined;
   const normalizedClient = (clientName ?? '').trim().toLowerCase();
   if (normalizedClient.length < 2) return profiles[0].id;
 
   const withName = profiles.filter(
-    (p) => (p.name ?? '').trim().length >= MIN_PROFILE_NAME_LENGTH
+    (p) => (p.razonSocial ?? '').trim().length >= MIN_PROFILE_NAME_LENGTH
   );
   if (withName.length === 0) return profiles[0].id;
 
   const containedInClient = withName
     .filter((p) =>
-      normalizedClient.includes((p.name ?? '').trim().toLowerCase())
+      normalizedClient.includes((p.razonSocial ?? '').trim().toLowerCase())
     )
-    .sort((a, b) => (b.name ?? '').length - (a.name ?? '').length);
+    .sort(
+      (a, b) => (b.razonSocial ?? '').length - (a.razonSocial ?? '').length
+    );
   if (containedInClient.length > 0) return containedInClient[0].id;
 
   const clientInProfile = withName.find((p) =>
-    (p.name ?? '').trim().toLowerCase().includes(normalizedClient)
+    (p.razonSocial ?? '').trim().toLowerCase().includes(normalizedClient)
   );
   if (clientInProfile) return clientInProfile.id;
 
   return profiles[0].id;
 }
+
+/** Pesos sin centavos, que es como se leen los totales de la ficha. */
+const fmtPesos = (n: number) =>
+  new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n);
 
 export function RepresentativeDetailPage({
   representativeId,
@@ -315,7 +366,6 @@ export function RepresentativeDetailPage({
   onClientChange,
 }: RepresentativeDetailPageProps) {
   const navigate = useNavigate();
-  const [copiedField, setCopiedField] = useState<string | null>(null);
   const [editRepresentativeDialogOpen, setEditRepresentativeDialogOpen] =
     useState(false);
   const now = new Date();
@@ -323,13 +373,10 @@ export function RepresentativeDetailPage({
     now.getFullYear(),
     now.getMonth()
   );
-  const [resumenNotifSelected, setResumenNotifSelected] = useState<{
-    id: string;
-    message: string;
-    profileName: string | null | undefined;
-    publicationDate: Date | string | null;
-    expirationDate: Date | string | null;
-  } | null>(null);
+  // Click en una notificación del Resumen: dialog con el MISMO panel de
+  // lectura de la bandeja (no una vista propia), sin salir del Resumen.
+  const [notifAbierta, setNotifAbierta] = useState<string | null>(null);
+  const [creandoTareaDesdeNotif, setCreandoTareaDesdeNotif] = useState(false);
   const [multilateralDateFrom, setMultilateralDateFrom] = useState<string>(
     initialMultilateralRange.from.toISOString().slice(0, 10)
   );
@@ -362,7 +409,6 @@ export function RepresentativeDetailPage({
     from: Date;
     to: Date;
   }>(() => getMonthBounds(now.getFullYear(), now.getMonth()));
-  const [ivaPeriodPickerOpen, setIvaPeriodPickerOpen] = useState(false);
   /** Sección que está ejecutando un job (iva = comprobantes_full + iva, deudas = deuda, vencimientos = vencimientos, facturas = comprobantes_full, notificaciones = notificaciones). */
   const [scrapingSection, setScrapingSection] = useState<
     'iva' | 'deudas' | 'vencimientos' | 'facturas' | 'notificaciones' | null
@@ -373,8 +419,8 @@ export function RepresentativeDetailPage({
   const [debtFilterConcepto, setDebtFilterConcepto] = useState<string>('');
   const [debtPage, setDebtPage] = useState(1);
   const [debtSortKey, setDebtSortKey] = useState<
-    'tax' | 'concept' | 'period' | 'dueDate' | 'detectedAt'
-  >('detectedAt');
+    'impuesto' | 'concepto' | 'periodo' | 'venceAt' | 'detectadaAt'
+  >('detectadaAt');
   const [debtSortDir, setDebtSortDir] = useState<'asc' | 'desc'>('desc');
   const [dueDatePage, setDueDatePage] = useState(1);
 
@@ -409,6 +455,12 @@ export function RepresentativeDetailPage({
     []
   );
   const [facturasSearchTerm, setFacturasSearchTerm] = useState('');
+  /** Cuántos filtros de la pestaña de Facturas están puestos. */
+  const facturasFiltrosPuestos =
+    (facturasPeriodType !== 'none' ? 1 : 0) +
+    (facturasTypeFilter !== 'all' ? 1 : 0) +
+    (facturasDirectionFilter !== 'all' ? 1 : 0) +
+    (facturasSearchTerm ? 1 : 0);
   const [facturasDebouncedSearchTerm, setFacturasDebouncedSearchTerm] =
     useState('');
   useEffect(() => {
@@ -435,9 +487,9 @@ export function RepresentativeDetailPage({
   const updateDebtStatusMutation = useMutation({
     mutationFn: (vars: {
       id: string;
-      status: 'open' | 'in_plan' | 'paid' | 'disputed';
-      isIntimated: boolean;
-    }) => updateDebtStatus({ data: vars }),
+      estado: 'abierta' | 'pagada' | 'plan_pago' | 'prescripta';
+      intimada: boolean;
+    }) => updateDeudaEstado({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: ['representativeDebts', representativeId],
@@ -449,46 +501,24 @@ export function RepresentativeDetailPage({
     },
   });
 
-  // Balance config state
-  const [balanceMonth, setBalanceMonth] = useState<string>('12');
-  const [balanceDay, setBalanceDay] = useState<string>('31');
-  const [balancePresentationDays, setBalancePresentationDays] =
-    useState<string>('');
-  const [balanceAlertDays, setBalanceAlertDays] =
-    useState<string>('60,30,15,7');
-
   // Solicitudes state
-  const [solicitudesStatusFilter, setSolicitudesStatusFilter] =
-    useState<string>('');
+  const [solicitudesStatusFilter, setSolicitudesStatusFilter] = useState<
+    SolicitudEstado | ''
+  >('');
   const [newRequestDialogOpen, setNewRequestDialogOpen] = useState(false);
   const [newRequestTitle, setNewRequestTitle] = useState('');
   const [newRequestDescription, setNewRequestDescription] = useState('');
-  const [newRequestType, setNewRequestType] = useState('general');
+  const [newRequestType, setNewRequestType] =
+    useState<SolicitudTipo>('documentacion');
   const [newRequestDueAt, setNewRequestDueAt] = useState('');
 
-  interface RequestRow {
-    id: string;
-    organizationId: string;
-    representativeId: string;
-    profileId: string | null;
-    requestedByUserId: string | null;
-    title: string;
-    description: string | null;
-    type: string;
-    status: string;
-    dueAt: Date | null;
-    completedAt: Date | null;
-    metadata?: { documentId?: string; documentName?: string } | null;
-    createdAt: Date;
-  }
-
+  // No existe un getter de una sola credencial: se trae la lista de la org y se
+  // filtra por id.
   const { data: client, isLoading: loadingClient } = useQuery({
     queryKey: ['representative', representativeId],
     queryFn: async () => {
-      const result = await getRepresentative({
-        data: { id: representativeId },
-      });
-      return result;
+      const credenciales = await getCredenciales();
+      return credenciales.find((c) => c.id === representativeId) ?? null;
     },
   });
 
@@ -501,13 +531,16 @@ export function RepresentativeDetailPage({
 
   const { data: profiles = [], isLoading: loadingProfiles } = useQuery({
     queryKey: ['representativeClients', representativeId],
-    queryFn: () => getRepresentativeClients({ data: { representativeId } }),
+    queryFn: () =>
+      getCredencialClientes({ data: { credencialId: representativeId } }),
   });
 
   /** Perfil IVA por defecto (según nombre del cliente). Se calcula cuando hay client + profiles. */
   const defaultIvaProfileId = useMemo(() => {
     if (!client || profiles.length === 0) return undefined;
-    return findBestMatchingProfileId(client.name, profiles) ?? profiles[0].id;
+    return (
+      findBestMatchingProfileId(client.nombre ?? '', profiles) ?? profiles[0].id
+    );
   }, [client, profiles]);
 
   /**
@@ -534,8 +567,9 @@ export function RepresentativeDetailPage({
   const effectiveResumenProfileId = selectedClientId;
   const selectedResumenProfile = selectedProfile;
 
+  // Las solicitudes cuelgan del cliente (empresa), no del login de AFIP.
   const {
-    data: clientRequestsData = [] as RequestRow[],
+    data: clientRequestsData = [] as SolicitudRow[],
     refetch: refetchRequests,
   } = useQuery({
     queryKey: [
@@ -545,25 +579,24 @@ export function RepresentativeDetailPage({
       selectedClientId,
     ],
     queryFn: () =>
-      listClientRequests({
+      listSolicitudes({
         data: {
-          clientId: representativeId,
-          status: solicitudesStatusFilter || undefined,
-          profileId: selectedClientId || undefined,
+          clienteId: selectedClientId!,
+          estado: solicitudesStatusFilter || undefined,
         },
       }),
-    enabled: !!representativeId,
+    enabled: !!selectedClientId,
   });
 
   const createRequestMutation = useMutation({
     mutationFn: () =>
-      createClientRequest({
+      createSolicitud({
         data: {
-          clientId: representativeId,
-          title: newRequestTitle,
-          description: newRequestDescription || undefined,
-          type: newRequestType,
-          dueAt: newRequestDueAt || undefined,
+          clienteId: selectedClientId!,
+          titulo: newRequestTitle,
+          descripcion: newRequestDescription || undefined,
+          tipo: newRequestType,
+          venceAt: newRequestDueAt || undefined,
         },
       }),
     onSuccess: () => {
@@ -571,7 +604,7 @@ export function RepresentativeDetailPage({
       setNewRequestDialogOpen(false);
       setNewRequestTitle('');
       setNewRequestDescription('');
-      setNewRequestType('general');
+      setNewRequestType('documentacion');
       setNewRequestDueAt('');
       toast.success('Solicitud creada');
     },
@@ -579,8 +612,8 @@ export function RepresentativeDetailPage({
   });
 
   const updateRequestStatusMutation = useMutation({
-    mutationFn: (vars: { requestId: string; status: string }) =>
-      updateClientRequestStatus({ data: vars }),
+    mutationFn: (vars: { solicitudId: string; estado: SolicitudEstado }) =>
+      updateSolicitudEstado({ data: vars }),
     onSuccess: () => {
       refetchRequests();
       toast.success('Estado actualizado');
@@ -588,66 +621,14 @@ export function RepresentativeDetailPage({
     onError: () => toast.error('Error al actualizar estado'),
   });
 
-  const { data: balanceConfig } = useQuery({
-    queryKey: ['balanceConfig', representativeId],
-    queryFn: () => getBalanceConfig({ data: { representativeId } }),
-    enabled: !!representativeId,
-  });
-
-  // Sync form state when config loads
-  useEffect(() => {
-    if (balanceConfig) {
-      setBalanceMonth(String(balanceConfig.fiscalYearEndMonth));
-      setBalanceDay(String(balanceConfig.fiscalYearEndDay));
-      setBalancePresentationDays(
-        balanceConfig.presentationDueDays != null
-          ? String(balanceConfig.presentationDueDays)
-          : ''
-      );
-      const days = balanceConfig.alertDaysBefore;
-      setBalanceAlertDays(Array.isArray(days) ? days.join(',') : '60,30,15,7');
-    }
-  }, [balanceConfig]);
-
-  const upsertBalanceConfigMutation = useMutation({
-    mutationFn: (vars: {
-      fiscalYearEndMonth: number;
-      fiscalYearEndDay: number;
-      presentationDueDays: number | null;
-      alertDaysBefore: number[];
-    }) => upsertBalanceConfig({ data: { representativeId, ...vars } }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ['balanceConfig', representativeId],
-      });
-      toast.success('Configuración guardada');
-    },
-    onError: () => {
-      toast.error('Error al guardar la configuración');
-    },
-  });
-
   const ivaResumeRef = useRef<RenderIvaResumeRef>(null);
   const ivaSelectedYear = ivaResumenDateRange.from.getFullYear();
   const ivaSelectedMonth = ivaResumenDateRange.from.getMonth();
-  const ivaMaxMonthForYear =
-    ivaSelectedYear === now.getFullYear() ? now.getMonth() : 11;
-  const ivaAvailableMonthIndices = Array.from(
-    { length: ivaMaxMonthForYear + 1 },
-    (_, i) => i
-  );
-
   // Periodo para Convenio Multilateral (mismo patrón: año + meses)
   const multilateralSelectedYear =
     multilateralPeriod?.from.getFullYear() ?? now.getFullYear();
   const multilateralSelectedMonth =
     multilateralPeriod?.from.getMonth() ?? now.getMonth();
-  const multilateralMaxMonthForYear =
-    multilateralSelectedYear === now.getFullYear() ? now.getMonth() : 11;
-  const multilateralAvailableMonthIndices = Array.from(
-    { length: multilateralMaxMonthForYear + 1 },
-    (_, i) => i
-  );
 
   // Período anterior al seleccionado para Convenio Multilateral (para comparativos)
   const multilateralPrevPeriod = useMemo(() => {
@@ -662,13 +643,24 @@ export function RepresentativeDetailPage({
     return getMonthBounds(y, m);
   }, [multilateralPeriod, multilateralSelectedYear, multilateralSelectedMonth]);
 
-  /** Período fiscal del scrape que alimenta el resumen (mes anterior al elegido en el calendario). */
+  /**
+   * Período del resumen = el MES ELEGIDO en el picker (período de
+   * operaciones): en agosto se ven los movimientos de agosto. Antes restaba
+   * un mes y la etiqueta «Septiembre» mostraba el libro de agosto — el
+   * estudio lo marcó apenas entró el Libro de IVA. La DDJJ presentada sigue
+   * siendo a mes vencido, pero ese corrimiento lo aplica getClienteIvaCredit
+   * por su cuenta: acá va el mes que se mira.
+   */
   const periodUsedForResumen = useMemo(
-    () => getPeriodUsedForResumen(ivaResumenDateRange.from),
+    () => getResumenPeriodMMYYYY(ivaResumenDateRange.from),
     [ivaResumenDateRange.from]
   );
 
   const periodoFiscalResumen = getResumenPeriodMMYYYY(ivaResumenDateRange.from);
+  /** Mismo período, en el formato "YYYY-MM-DD" que espera `getClienteIvaCredit`. */
+  const periodoResumenISO = `${ivaResumenDateRange.from.getFullYear()}-${String(
+    ivaResumenDateRange.from.getMonth() + 1
+  ).padStart(2, '0')}-01`;
 
   const {
     data: clientIva,
@@ -682,11 +674,10 @@ export function RepresentativeDetailPage({
       periodoFiscalResumen,
     ],
     queryFn: () =>
-      getRepresentativeIvaCredit({
+      getClienteIvaCredit({
         data: {
-          representativeId,
-          clientId: effectiveIvaProfileId ?? undefined,
-          periodoFiscalResumen: periodoFiscalResumen ?? undefined,
+          clienteId: effectiveIvaProfileId!,
+          periodoResumen: periodoResumenISO,
         },
       }),
     enabled: !!effectiveIvaProfileId,
@@ -694,6 +685,41 @@ export function RepresentativeDetailPage({
     refetchOnMount: false,
     refetchOnWindowFocus: false,
   });
+
+  /**
+   * `getClienteIvaCredit` devuelve la fila cruda de `iva_declaracion`;
+   * `RenderIvaResume` espera el view model `ClientIvaCreditData` (nombres del
+   * F2051). El mapeo es el mismo que hace `CopilotIvaResume`.
+   */
+  const clientIvaResume: ClientIvaCreditData | undefined = useMemo(() => {
+    if (!clientIva) return undefined;
+    const d = clientIva.data;
+    return {
+      cuit: clientIva.cuit,
+      data: d
+        ? {
+            // `periodo` es un date 'YYYY-MM-DD'; la vista habla "MM/YYYY".
+            periodoFiscal: `${d.periodo.slice(5, 7)}/${d.periodo.slice(0, 4)}`,
+            fechaPresentacion: d.presentadaAt ?? undefined,
+            debitoFiscal: d.debitoFiscal,
+            creditoFiscal: d.creditoFiscal,
+            saldoMesPasado: d.saldoMesAnterior,
+            saldoArcaMes: d.saldoAfipMes,
+            saldoTecnicoFavorContribuyente: d.saldoTecnicoFavor,
+            saldoTecnicoFavorContribuyentePosicionMensual:
+              d.saldoTecnicoFavorMensual,
+            saldoLibreDisponibilidadPeriodoAnteriorNeto:
+              d.saldoLibreDisponibilidadAnteriorNeto,
+            totalRetencionesPercepcionesPeriodo:
+              d.retencionesPercepcionesPeriodo,
+            saldoLibreDisponibilidadFavorContribuyentePeriodo:
+              d.saldoLibreDisponibilidadFavor,
+            ok: true,
+          }
+        : null,
+      message: clientIva.message,
+    };
+  }, [clientIva]);
 
   /** IVA para el cuadro del Resumen: usa el perfil seleccionado en "Perfiles Asociados". */
   const { data: resumenClientIva, isLoading: loadingResumenClientIva } =
@@ -705,11 +731,10 @@ export function RepresentativeDetailPage({
         periodoFiscalResumen,
       ],
       queryFn: () =>
-        getRepresentativeIvaCredit({
+        getClienteIvaCredit({
           data: {
-            representativeId,
-            clientId: effectiveResumenProfileId ?? undefined,
-            periodoFiscalResumen: periodoFiscalResumen ?? undefined,
+            clienteId: effectiveResumenProfileId!,
+            periodoResumen: periodoResumenISO,
           },
         }),
       enabled: !!effectiveResumenProfileId,
@@ -742,17 +767,28 @@ export function RepresentativeDetailPage({
 
   const { data: debts = [], isLoading: loadingDebts } = useQuery({
     queryKey: ['representativeDebts', representativeId, selectedClientId],
-    queryFn: () =>
-      getRepresentativeDebts({
-        data: { representativeId, clientId: selectedClientId || undefined },
-      }),
+    // `getCredencialDeudas` devuelve `{ deuda, clienteRazonSocial }` y no filtra
+    // por cliente: se aplana y se filtra acá (mismo criterio que deudas-tab).
+    queryFn: async () => {
+      const rows = await getCredencialDeudas({
+        data: { credencialId: representativeId },
+      });
+      return rows
+        .filter(
+          (row) => !selectedClientId || row.deuda.clienteId === selectedClientId
+        )
+        .map((row) => row.deuda);
+    },
   });
 
   const { data: dueDates = [], isLoading: loadingDueDates } = useQuery({
     queryKey: ['representativeDueDates', representativeId, selectedClientId],
     queryFn: () =>
-      getRepresentativeDueDates({
-        data: { representativeId, clientId: selectedClientId || undefined },
+      getCredencialVencimientos({
+        data: {
+          credencialId: representativeId,
+          clienteId: selectedClientId || undefined,
+        },
       }),
   });
 
@@ -760,7 +796,9 @@ export function RepresentativeDetailPage({
   const { data: lastComprobantesJobIncremental } = useQuery({
     queryKey: ['lastComprobantesJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'comprobantes' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'comprobantes' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -768,7 +806,7 @@ export function RepresentativeDetailPage({
     queryKey: ['lastComprobantesFullJob', representativeId],
     queryFn: () =>
       getLastJobByType({
-        data: { representativeId, jobType: 'comprobantes_full' },
+        data: { credencialId: representativeId, jobType: 'comprobantes_full' },
       }),
     enabled: !!representativeId,
   });
@@ -782,18 +820,36 @@ export function RepresentativeDetailPage({
     return new Date(b.createdAt) > new Date(a.createdAt) ? b : a;
   })();
 
+  const scrapingPausado = useScrapingPausado();
+
   const { data: lastIvaJob } = useQuery({
     queryKey: ['lastIvaJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'iva' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'iva' },
+      }),
     enabled: !!representativeId,
+  });
+
+  // Frescura del dato de la pestaña IVA (misma query que la ficha del
+  // resumen: comparte cache por queryKey).
+  const { data: frescuraIva } = useQuery({
+    queryKey: ['libro-iva', selectedClientId, periodUsedForResumen],
+    queryFn: () =>
+      getLibroIvaPeriodo({
+        data: {
+          clienteId: selectedClientId!,
+          periodo: periodUsedForResumen!,
+        },
+      }),
+    enabled: !!selectedClientId && !!periodUsedForResumen,
   });
 
   const { data: lastNotificacionesJob } = useQuery({
     queryKey: ['lastNotificacionesJob', representativeId],
     queryFn: () =>
       getLastJobByType({
-        data: { representativeId, jobType: 'notificaciones' },
+        data: { credencialId: representativeId, jobType: 'notificaciones' },
       }),
     enabled: !!representativeId,
   });
@@ -801,7 +857,9 @@ export function RepresentativeDetailPage({
   const { data: lastDeudaJob } = useQuery({
     queryKey: ['lastDeudaJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'deuda' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'deuda' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -816,9 +874,9 @@ export function RepresentativeDetailPage({
       queryFn: () =>
         getNotifications({
           data: {
-            representativeFilter: representativeId,
-            clientId: selectedClientId || undefined,
-            opened: false,
+            credencialFilter: representativeId,
+            clienteId: selectedClientId || undefined,
+            leida: false,
             limit: 50,
             page: 1,
           },
@@ -829,7 +887,9 @@ export function RepresentativeDetailPage({
   const { data: lastVencimientosJob } = useQuery({
     queryKey: ['lastVencimientosJob', representativeId],
     queryFn: () =>
-      getLastJobByType({ data: { representativeId, jobType: 'vencimientos' } }),
+      getLastJobByType({
+        data: { credencialId: representativeId, jobType: 'vencimientos' },
+      }),
     enabled: !!representativeId,
   });
 
@@ -838,7 +898,7 @@ export function RepresentativeDetailPage({
     queryKey: ['runningComprobantesJob', representativeId],
     queryFn: () =>
       getRunningJobByType({
-        data: { representativeId, jobType: 'comprobantes' },
+        data: { credencialId: representativeId, jobType: 'comprobantes' },
       }),
     enabled: !!representativeId,
     // Refrescar cada 5s para reflejar cambios de estado
@@ -847,15 +907,16 @@ export function RepresentativeDetailPage({
 
   // Get all invoices for the client to calculate totals
   const { data: allInvoicesData } = useQuery({
-    queryKey: ['clientAllInvoices', representativeId],
+    queryKey: ['clientAllInvoices', representativeId, selectedClientId],
     queryFn: () =>
-      getInvoices({
+      getComprobantes({
         data: {
           page: 1,
           limit: 10000, // Get all invoices
-          clientFilter: representativeId,
+          clienteId: selectedClientId,
         },
       }),
+    enabled: !!selectedClientId,
   });
 
   const {
@@ -870,15 +931,14 @@ export function RepresentativeDetailPage({
       multilateralDateTo,
     ],
     queryFn: () =>
-      getClientMultilateralSummary({
+      getClienteMultilateralResumen({
         data: {
-          clientId: representativeId,
-          profileId: effectiveMultilateralProfileId ?? undefined,
+          clienteId: effectiveMultilateralProfileId!,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!representativeId,
+    enabled: !!effectiveMultilateralProfileId,
   });
 
   const multilateralPrevDateFrom = multilateralPrevPeriod
@@ -897,28 +957,20 @@ export function RepresentativeDetailPage({
       multilateralPrevDateTo,
     ],
     queryFn: () =>
-      getClientMultilateralSummary({
+      getClienteMultilateralResumen({
         data: {
-          clientId: representativeId,
-          profileId: effectiveMultilateralProfileId ?? undefined,
+          clienteId: effectiveMultilateralProfileId!,
           dateFrom: multilateralPrevDateFrom,
           dateTo: multilateralPrevDateTo,
         },
       }),
     enabled:
-      !!representativeId &&
+      !!effectiveMultilateralProfileId &&
       !!multilateralPrevDateFrom &&
       !!multilateralPrevDateTo,
   });
 
-  interface MultilateralAgg {
-    provinces: number;
-    invoices: number;
-    totalIVA: number;
-    totalBase: number;
-  }
-
-  const aggregateMultilateral = (rows: any[]): MultilateralAgg => {
+  const aggregateMultilateral = (rows: MultilateralResumenRow[]) => {
     if (!rows?.length) {
       return { provinces: 0, invoices: 0, totalIVA: 0, totalBase: 0 };
     }
@@ -927,19 +979,19 @@ export function RepresentativeDetailPage({
     let totalIVA = 0;
     let totalBase = 0;
     for (const row of rows) {
-      invoices += Number(row.invoiceCount ?? 0);
-      totalIVA += Number(row.totalIVA ?? 0);
-      totalBase += Number(row.totalTaxed ?? 0);
+      invoices += Number(row.cantidad ?? 0);
+      totalIVA += Number(row.totalIva ?? 0);
+      totalBase += Number(row.totalBase ?? 0);
     }
     return { provinces, invoices, totalIVA, totalBase };
   };
 
   const multilateralAggCurrent = useMemo(
-    () => aggregateMultilateral(multilateralSummary as any[]),
+    () => aggregateMultilateral(multilateralSummary),
     [multilateralSummary]
   );
   const multilateralAggPrev = useMemo(
-    () => aggregateMultilateral(multilateralSummaryPrev as any[]),
+    () => aggregateMultilateral(multilateralSummaryPrev),
     [multilateralSummaryPrev]
   );
 
@@ -994,19 +1046,19 @@ export function RepresentativeDetailPage({
   const sortedMultilateralSummary = useMemo(() => {
     if (!multilateralSortKey) return multilateralSummary;
     const copy = [...multilateralSummary];
-    copy.sort((a: any, b: any) => {
+    copy.sort((a, b) => {
       const dir = multilateralSortDir === 'asc' ? 1 : -1;
       let av = 0;
       let bv = 0;
       if (multilateralSortKey === 'count') {
-        av = Number(a.invoiceCount ?? 0);
-        bv = Number(b.invoiceCount ?? 0);
+        av = Number(a.cantidad ?? 0);
+        bv = Number(b.cantidad ?? 0);
       } else if (multilateralSortKey === 'iva') {
-        av = Number(a.totalIVA ?? 0);
-        bv = Number(b.totalIVA ?? 0);
+        av = Number(a.totalIva ?? 0);
+        bv = Number(b.totalIva ?? 0);
       } else if (multilateralSortKey === 'base') {
-        av = Number(a.totalTaxed ?? 0);
-        bv = Number(b.totalTaxed ?? 0);
+        av = Number(a.totalBase ?? 0);
+        bv = Number(b.totalBase ?? 0);
       }
       if (av === bv) return 0;
       return av > bv ? dir : -dir;
@@ -1047,16 +1099,15 @@ export function RepresentativeDetailPage({
       selectedMultilateralProvince,
     ],
     queryFn: () =>
-      getClientMultilateralInvoices({
+      getClienteMultilateralComprobantes({
         data: {
-          clientId: representativeId,
-          profileId: effectiveMultilateralProfileId ?? undefined,
-          receiptProvince: selectedMultilateralProvince,
+          clienteId: effectiveMultilateralProfileId!,
+          provincia: selectedMultilateralProvince,
           dateFrom: multilateralDateFrom || undefined,
           dateTo: multilateralDateTo || undefined,
         },
       }),
-    enabled: !!representativeId && multilateralDetailOpen,
+    enabled: !!effectiveMultilateralProfileId && multilateralDetailOpen,
   });
 
   const multilateralDetailTotals = useMemo(() => {
@@ -1064,22 +1115,15 @@ export function RepresentativeDetailPage({
       return { base: 0, iva: 0, total: 0 };
     }
     return multilateralDetailInvoices.reduce(
-      (acc: { base: number; iva: number; total: number }, inv: any) => {
-        acc.base += Number(inv.baseImponible ?? inv.amountTaxed ?? 0);
-        acc.iva += Number(inv.totalIVA ?? 0);
-        acc.total += Number(inv.amount ?? 0);
+      (acc: { base: number; iva: number; total: number }, inv) => {
+        acc.base += Number(inv.baseImponible ?? inv.netoGravado ?? 0);
+        acc.iva += Number(inv.ivaTotal ?? 0);
+        acc.total += Number(inv.total ?? 0);
         return acc;
       },
       { base: 0, iva: 0, total: 0 }
     );
   }, [multilateralDetailInvoices]);
-
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    toast.success('Copiado al portapapeles');
-    setTimeout(() => setCopiedField(null), 2000);
-  };
 
   // Calculate debt statistics
   const debtStats = useMemo(() => {
@@ -1087,38 +1131,42 @@ export function RepresentativeDetailPage({
     today.setHours(0, 0, 0, 0);
 
     const totalBalance = debts.reduce(
-      (sum, debt) => sum + Number(debt.balance || 0),
+      (sum, debt) => sum + Number(debt.saldo || 0),
       0
     );
     const totalCompensatoryInterest = debts.reduce(
-      (sum, debt) => sum + Number(debt.compensatoryInterest || 0),
+      (sum, debt) => sum + Number(debt.interesResarcitorio || 0),
       0
     );
     const totalPunitiveInterest = debts.reduce(
-      (sum, debt) => sum + Number(debt.punitiveInterest || 0),
+      (sum, debt) => sum + Number(debt.interesPunitorio || 0),
       0
     );
     const totalDebt =
       totalBalance + totalCompensatoryInterest + totalPunitiveInterest;
 
+    // `venceAt` es nullable en el modelo nuevo: sin fecha no se puede saber si
+    // está vencida, así que queda fuera de ambos grupos.
     const overdueDebts = debts.filter((debt) => {
-      const dueDate = new Date(debt.dueDate);
+      if (!debt.venceAt) return false;
+      const dueDate = new Date(debt.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate < today;
     });
 
     const upcomingDebts = debts.filter((debt) => {
-      const dueDate = new Date(debt.dueDate);
+      if (!debt.venceAt) return false;
+      const dueDate = new Date(debt.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today;
     });
 
     const totalOverdueBalance = overdueDebts.reduce(
-      (sum, debt) => sum + Number(debt.balance || 0),
+      (sum, debt) => sum + Number(debt.saldo || 0),
       0
     );
     const totalUpcomingBalance = upcomingDebts.reduce(
-      (sum, debt) => sum + Number(debt.balance || 0),
+      (sum, debt) => sum + Number(debt.saldo || 0),
       0
     );
 
@@ -1138,10 +1186,10 @@ export function RepresentativeDetailPage({
   // Opciones únicas para filtros de deudas (impuesto, concepto)
   const debtFilterOptions = useMemo(() => {
     const impuestos = Array.from(
-      new Set(debts.map((d) => (d.tax ?? '').trim()).filter(Boolean))
+      new Set(debts.map((d) => (d.impuesto ?? '').trim()).filter(Boolean))
     ).sort();
     const conceptos = Array.from(
-      new Set(debts.map((d) => (d.concept ?? '').trim()).filter(Boolean))
+      new Set(debts.map((d) => (d.concepto ?? '').trim()).filter(Boolean))
     ).sort();
     return { impuestos, conceptos };
   }, [debts]);
@@ -1149,11 +1197,14 @@ export function RepresentativeDetailPage({
   // Deudas filtradas por impuesto y concepto
   const filteredDebts = useMemo(() => {
     return debts.filter((debt) => {
-      if (debtFilterImpuesto && (debt.tax ?? '').trim() !== debtFilterImpuesto)
+      if (
+        debtFilterImpuesto &&
+        (debt.impuesto ?? '').trim() !== debtFilterImpuesto
+      )
         return false;
       if (
         debtFilterConcepto &&
-        (debt.concept ?? '').trim() !== debtFilterConcepto
+        (debt.concepto ?? '').trim() !== debtFilterConcepto
       )
         return false;
       return true;
@@ -1163,7 +1214,7 @@ export function RepresentativeDetailPage({
   const sortedDebts = useMemo(() => {
     const sorted = [...filteredDebts].sort((a, b) => {
       let cmp = 0;
-      if (debtSortKey === 'dueDate' || debtSortKey === 'detectedAt') {
+      if (debtSortKey === 'venceAt' || debtSortKey === 'detectadaAt') {
         cmp =
           new Date(a[debtSortKey] ?? 0).getTime() -
           new Date(b[debtSortKey] ?? 0).getTime();
@@ -1193,16 +1244,6 @@ export function RepresentativeDetailPage({
     dueDatePage * ITEMS_PER_PAGE
   );
 
-  const getPageRange = (currentPage: number, totalPages: number) => {
-    const maxVisible = 7;
-    if (totalPages <= maxVisible) return { startPage: 1, endPage: totalPages };
-    let startPage = Math.max(1, currentPage - 3);
-    const endPage = Math.min(totalPages, startPage + maxVisible - 1);
-    if (endPage - startPage < maxVisible - 1)
-      startPage = Math.max(1, endPage - maxVisible + 1);
-    return { startPage, endPage };
-  };
-
   /** Formatea una fecha en hora local como YYYY-MM-DD (evita desfase por UTC con toISOString). */
   const formatLocalYYYYMMDD = (d: Date) => {
     const y = d.getFullYear();
@@ -1217,31 +1258,20 @@ export function RepresentativeDetailPage({
     return new Date(y, m - 1, d);
   };
 
-  /** Coincide tipo de factura con el filtro (código exacto o etiqueta "...(código)" al final). */
-  const matchInvoiceType = (
-    invType: string | null | undefined,
-    typeFilter: string
-  ): boolean => {
+  /** `comprobante.tipo` es numérico; el filtro llega como string desde el select. */
+  const matchInvoiceType = (invTipo: number, typeFilter: string): boolean => {
     if (!typeFilter || typeFilter === 'all') return true;
-    const t = (invType ?? '').trim();
-    if (t === typeFilter) return true;
-    if (/^\d+$/.test(typeFilter) && new RegExp(`\\(${typeFilter}\\)$`).test(t))
-      return true;
-    return false;
+    return String(invTipo) === typeFilter.trim();
   };
 
   /** True si la factura pasa los filtros de perfil, tipo y dirección (para totales Ventas/Compras). */
-  const invoicePassesFacturasFilters = (inv: any): boolean => {
-    if (selectedClientId) {
-      if ((inv.profileId ?? inv.profile) !== selectedClientId) return false;
-    }
+  const invoicePassesFacturasFilters = (inv: ComprobanteRow): boolean => {
+    if (selectedClientId && inv.clienteId !== selectedClientId) return false;
     if (facturasTypeFilter && facturasTypeFilter !== 'all') {
-      if (!matchInvoiceType(inv.type, facturasTypeFilter)) return false;
+      if (!matchInvoiceType(inv.tipo, facturasTypeFilter)) return false;
     }
     if (facturasDirectionFilter && facturasDirectionFilter !== 'all') {
-      const dir = (inv.direction ?? '').trim();
-      if (dir.toLowerCase() !== facturasDirectionFilter.toLowerCase())
-        return false;
+      if (inv.direccion !== facturasDirectionFilter) return false;
     }
     return true;
   };
@@ -1286,7 +1316,7 @@ export function RepresentativeDetailPage({
     if (
       !facturasBounds.dateFrom ||
       !facturasBounds.dateTo ||
-      !allInvoicesData?.invoices
+      !allInvoicesData?.comprobantes
     ) {
       if (facturasPeriodType !== 'none')
         return { totalSales: 0, totalPurchases: 0 };
@@ -1297,18 +1327,18 @@ export function RepresentativeDetailPage({
     to.setHours(23, 59, 59, 999);
     let totalSales = 0;
     let totalPurchases = 0;
-    allInvoicesData.invoices.forEach((inv: any) => {
+    allInvoicesData.comprobantes.forEach((inv) => {
       if (!invoicePassesFacturasFilters(inv)) return;
-      const invDate = new Date(inv.emitionDate);
+      const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       if (invDate < from || invDate > to) return;
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') {
-        const rate = parseFloat(inv.currencyRate || '1');
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD') {
+        const rate = parseFloat(inv.cotizacion || '1');
         amount = amount * rate;
       }
-      const direction = inv.direction?.toLowerCase();
-      if (direction === 'outbound') totalSales += amount;
-      else if (direction === 'inbound') totalPurchases += amount;
+      const direction = inv.direccion;
+      if (direction === 'emitido') totalSales += amount;
+      else if (direction === 'recibido') totalPurchases += amount;
     });
     return { totalSales, totalPurchases };
   }, [
@@ -1322,7 +1352,7 @@ export function RepresentativeDetailPage({
 
   /** Totales del período anterior (mes anterior o año anterior) para la variación %. */
   const invoiceStatsPrevious = useMemo(() => {
-    if (!allInvoicesData?.invoices?.length) return null;
+    if (!allInvoicesData?.comprobantes?.length) return null;
     if (facturasPeriodType === 'month') {
       const prevMonth = facturasMonth === 0 ? 11 : facturasMonth - 1;
       const prevYear = facturasMonth === 0 ? facturasYear - 1 : facturasYear;
@@ -1334,16 +1364,16 @@ export function RepresentativeDetailPage({
       toDate.setHours(23, 59, 59, 999);
       let totalSales = 0;
       let totalPurchases = 0;
-      allInvoicesData.invoices.forEach((inv: any) => {
+      allInvoicesData.comprobantes.forEach((inv) => {
         if (!invoicePassesFacturasFilters(inv)) return;
-        const invDate = new Date(inv.emitionDate);
+        const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (invDate < fromDate || invDate > toDate) return;
-        let amount = parseFloat(inv.amount || '0');
-        if (inv.currency?.toUpperCase() === 'USD')
-          amount *= parseFloat(inv.currencyRate || '1');
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') totalSales += amount;
-        else if (dir === 'inbound') totalPurchases += amount;
+        let amount = parseFloat(inv.total || '0');
+        if (inv.moneda?.toUpperCase() === 'USD')
+          amount *= parseFloat(inv.cotizacion || '1');
+        const dir = inv.direccion;
+        if (dir === 'emitido') totalSales += amount;
+        else if (dir === 'recibido') totalPurchases += amount;
       });
       return { totalSales, totalPurchases };
     }
@@ -1357,16 +1387,16 @@ export function RepresentativeDetailPage({
       toDate.setHours(23, 59, 59, 999);
       let totalSales = 0;
       let totalPurchases = 0;
-      allInvoicesData.invoices.forEach((inv: any) => {
+      allInvoicesData.comprobantes.forEach((inv) => {
         if (!invoicePassesFacturasFilters(inv)) return;
-        const invDate = new Date(inv.emitionDate);
+        const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (invDate < fromDate || invDate > toDate) return;
-        let amount = parseFloat(inv.amount || '0');
-        if (inv.currency?.toUpperCase() === 'USD')
-          amount *= parseFloat(inv.currencyRate || '1');
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') totalSales += amount;
-        else if (dir === 'inbound') totalPurchases += amount;
+        let amount = parseFloat(inv.total || '0');
+        if (inv.moneda?.toUpperCase() === 'USD')
+          amount *= parseFloat(inv.cotizacion || '1');
+        const dir = inv.direccion;
+        if (dir === 'emitido') totalSales += amount;
+        else if (dir === 'recibido') totalPurchases += amount;
       });
       return { totalSales, totalPurchases };
     }
@@ -1413,15 +1443,15 @@ export function RepresentativeDetailPage({
     ventas: number;
     compras: number;
   }[] => {
-    const invoices = allInvoicesData?.invoices;
+    const invoices = allInvoicesData?.comprobantes;
     if (!invoices?.length) return [];
-    const filtered = invoices.filter((inv: any) =>
+    const filtered = invoices.filter((inv) =>
       invoicePassesFacturasFilters(inv)
     );
-    const getAmount = (inv: any): number => {
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD') {
-        const rate = parseFloat(inv.currencyRate || '1');
+    const getAmount = (inv: ComprobanteRow): number => {
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD') {
+        const rate = parseFloat(inv.cotizacion || '1');
         amount = amount * rate;
       }
       return amount;
@@ -1431,14 +1461,14 @@ export function RepresentativeDetailPage({
     if (facturasPeriodType === 'year') {
       const byMonth: Record<number, { ventas: number; compras: number }> = {};
       for (let i = 0; i < 12; i++) byMonth[i] = { ventas: 0, compras: 0 };
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (d.getFullYear() !== facturasYear) return;
         const m = d.getMonth();
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') byMonth[m].ventas += amount;
-        else if (dir === 'inbound') byMonth[m].compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') byMonth[m].ventas += amount;
+        else if (dir === 'recibido') byMonth[m].compras += amount;
       });
       return Array.from({ length: 12 }, (_, i) => ({
         period: MONTH_NAMES_SHORT[i],
@@ -1451,14 +1481,14 @@ export function RepresentativeDetailPage({
     if (facturasPeriodType === 'month') {
       let ventas = 0;
       let compras = 0;
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         if (d.getFullYear() !== facturasYear || d.getMonth() !== facturasMonth)
           return;
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') ventas += amount;
-        else if (dir === 'inbound') compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') ventas += amount;
+        else if (dir === 'recibido') compras += amount;
       });
       const periodLabel = `${MONTH_NAMES[facturasMonth]} ${facturasYear}`;
       return [{ period: periodLabel, ventas, compras }];
@@ -1488,14 +1518,14 @@ export function RepresentativeDetailPage({
         d.setMonth(d.getMonth() + 1);
         t = d.getTime();
       }
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonthKey[key]) return;
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') byMonthKey[key].ventas += amount;
-        else if (dir === 'inbound') byMonthKey[key].compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') byMonthKey[key].ventas += amount;
+        else if (dir === 'recibido') byMonthKey[key].compras += amount;
       });
       return Object.entries(byMonthKey)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -1515,14 +1545,14 @@ export function RepresentativeDetailPage({
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         byMonthKey[key] = { ventas: 0, compras: 0 };
       }
-      filtered.forEach((inv: any) => {
-        const d = new Date(inv.emitionDate);
+      filtered.forEach((inv) => {
+        const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
         if (!byMonthKey[key]) return;
         const amount = getAmount(inv);
-        const dir = inv.direction?.toLowerCase();
-        if (dir === 'outbound') byMonthKey[key].ventas += amount;
-        else if (dir === 'inbound') byMonthKey[key].compras += amount;
+        const dir = inv.direccion;
+        if (dir === 'emitido') byMonthKey[key].ventas += amount;
+        else if (dir === 'recibido') byMonthKey[key].compras += amount;
       });
       return Object.entries(byMonthKey)
         .sort(([a], [b]) => a.localeCompare(b))
@@ -1551,7 +1581,7 @@ export function RepresentativeDetailPage({
     ventas: number;
     compras: number;
   }[] => {
-    const invoices = allInvoicesData?.invoices;
+    const invoices = allInvoicesData?.comprobantes;
     if (!invoices?.length) return [];
     // Build the 12 month buckets: from (currentYear, currentMonth - 11) to (currentYear, currentMonth)
     const currentYear = now.getFullYear();
@@ -1571,23 +1601,23 @@ export function RepresentativeDetailPage({
       }
       buckets.push({ year: y, month: m, ventas: 0, compras: 0 });
     }
-    invoices.forEach((inv: any) => {
+    invoices.forEach((inv) => {
       if (
         effectiveResumenProfileId &&
-        inv.profileId !== effectiveResumenProfileId
+        inv.clienteId !== effectiveResumenProfileId
       )
         return;
-      const d = new Date(inv.emitionDate);
+      const d = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       const bucket = buckets.find(
         (b) => b.year === d.getFullYear() && b.month === d.getMonth()
       );
       if (!bucket) return;
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD')
-        amount *= parseFloat(inv.currencyRate || '1');
-      const dir = inv.direction?.toLowerCase();
-      if (dir === 'outbound') bucket.ventas += amount;
-      else if (dir === 'inbound') bucket.compras += amount;
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD')
+        amount *= parseFloat(inv.cotizacion || '1');
+      const dir = inv.direccion;
+      if (dir === 'emitido') bucket.ventas += amount;
+      else if (dir === 'recibido') bucket.compras += amount;
     });
     return buckets.map((b) => ({
       period: MONTH_NAMES_SHORT[b.month],
@@ -1598,7 +1628,7 @@ export function RepresentativeDetailPage({
 
   /** Totales del mes actual para el Resumen. */
   const resumenCurrentMonthStats = useMemo(() => {
-    const invoices = allInvoicesData?.invoices;
+    const invoices = allInvoicesData?.comprobantes;
     if (!invoices?.length) return { totalSales: 0, totalPurchases: 0 };
     const now = new Date();
     const { from, to } = getMonthBounds(now.getFullYear(), now.getMonth());
@@ -1618,20 +1648,20 @@ export function RepresentativeDetailPage({
     );
     let totalSales = 0;
     let totalPurchases = 0;
-    invoices.forEach((inv: any) => {
+    invoices.forEach((inv) => {
       if (
         effectiveResumenProfileId &&
-        inv.profileId !== effectiveResumenProfileId
+        inv.clienteId !== effectiveResumenProfileId
       )
         return;
-      const invDate = new Date(inv.emitionDate);
+      const invDate = parseLocalDateOnly(inv.fechaEmision.slice(0, 10));
       if (invDate < fromDate || invDate > toDate) return;
-      let amount = parseFloat(inv.amount || '0');
-      if (inv.currency?.toUpperCase() === 'USD')
-        amount *= parseFloat(inv.currencyRate || '1');
-      const dir = inv.direction?.toLowerCase();
-      if (dir === 'outbound') totalSales += amount;
-      else if (dir === 'inbound') totalPurchases += amount;
+      let amount = parseFloat(inv.total || '0');
+      if (inv.moneda?.toUpperCase() === 'USD')
+        amount *= parseFloat(inv.cotizacion || '1');
+      const dir = inv.direccion;
+      if (dir === 'emitido') totalSales += amount;
+      else if (dir === 'recibido') totalPurchases += amount;
     });
     return { totalSales, totalPurchases };
   }, [allInvoicesData, effectiveResumenProfileId]);
@@ -1648,37 +1678,37 @@ export function RepresentativeDetailPage({
     next30Days.setDate(today.getDate() + 30);
 
     const futureDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today;
     });
 
     const overdueDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate < today;
     });
 
     const next7DaysDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today && dueDate <= next7Days;
     });
 
     const next15DaysDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today && dueDate <= next15Days;
     });
 
     const next30DaysDueDates = dueDates.filter((dd) => {
-      const dueDate = new Date(dd.dueDate);
+      const dueDate = new Date(dd.venceAt);
       dueDate.setHours(0, 0, 0, 0);
       return dueDate >= today && dueDate <= next30Days;
     });
 
     const sortedFuture = [...futureDueDates].sort(
-      (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+      (a, b) => new Date(a.venceAt).getTime() - new Date(b.venceAt).getTime()
     );
     const nextDueDate = sortedFuture.length > 0 ? sortedFuture[0] : null;
 
@@ -1710,7 +1740,8 @@ export function RepresentativeDetailPage({
   }
 
   // Compute avatar initials from selected profile or representative name
-  const headerDisplayName = selectedProfile?.name ?? client.name ?? '?';
+  const headerDisplayName =
+    selectedProfile?.razonSocial ?? client.nombre ?? '?';
   const clientInitials = headerDisplayName
     .split(/[\s\-]+/)
     .filter(Boolean)
@@ -1721,12 +1752,9 @@ export function RepresentativeDetailPage({
   // Shared tab trigger style (overrides shadcn defaults for this page-level nav)
   const tabTriggerCls = (hasError?: boolean) =>
     cn(
-      // shape overrides
-      'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-      // inactive
-      'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-      // active
-      'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px',
+      'relative h-auto flex-none whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 pb-2.5 text-[13px] gap-[7px] cursor-pointer',
+      'font-medium text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink-2)]',
+      'data-[state=active]:border-[var(--arca-accent)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-none',
       hasError && 'data-[state=inactive]:text-[var(--arca-accent-warn-fg)]'
     );
 
@@ -1734,15 +1762,22 @@ export function RepresentativeDetailPage({
     <div>
       {aiAgentEnabled && client && (
         <CopilotReadableEntity
-          description="Cliente actualmente visible en pantalla y la sección que está mirando el usuario. Usá tabActiva para entender el foco actual: resumen=overview, deudas=AFIP debts, vencimientos=próximos, notificaciones=AFIP, facturas=invoices, iva=IVA scrape, convenio-multilateral=Multilateral, solicitudes=requests."
+          description="Ficha abierta en pantalla. `empresa` es la empresa que el usuario está mirando: cuando pida algo sin nombrar ninguna otra ('cómo está', 'actualizá el IVA', 'llevame a facturas'), es ésta, y a las tools se les pasa su `nombre`, nunca un id. `loginArca` es el acceso por el que se la consulta, y agrupa varias empresas. `tabActiva` dice qué sección está mirando."
           value={{
             modulo: 'cliente-detalle',
             tabActiva: activeTab,
-            id: client.id,
-            name: client.name,
-            cuit: client.cuit,
-            fiscalCondition: client.fiscalCondition,
-            status: client.status,
+            empresa: selectedProfile
+              ? {
+                  nombre: selectedProfile.razonSocial,
+                  cuit: selectedProfile.cuit,
+                  condicionIva: selectedProfile.condicionIva ?? null,
+                }
+              : null,
+            loginArca: {
+              nombre: client.nombre,
+              cuit: client.cuit,
+              estado: client.estado,
+            },
           }}
         />
       )}
@@ -1765,7 +1800,7 @@ export function RepresentativeDetailPage({
                 <ArrowLeft className="h-[14px] w-[14px]" />
               </button>
               {/* Avatar */}
-              <div className="w-[36px] h-[36px] shrink-0 rounded-[var(--arca-r-md)] bg-[var(--arca-navy-900)] text-white text-[13px] font-bold inline-flex items-center justify-center select-none">
+              <div className="w-[36px] h-[36px] shrink-0 rounded-[var(--arca-r-md)] bg-[var(--arca-accent)] text-white text-[13px] font-bold inline-flex items-center justify-center select-none">
                 {clientInitials}
               </div>
               {/* Name + meta */}
@@ -1782,51 +1817,110 @@ export function RepresentativeDetailPage({
                         className="group h-auto w-fit max-w-full gap-2 border-0 bg-transparent p-0 shadow-none rounded-md hover:opacity-70 focus-visible:ring-0 transition-opacity [&>svg]:!size-[18px] [&>svg]:!opacity-40 [&>svg]:text-[var(--arca-ink-3)] group-hover:[&>svg]:!opacity-70"
                       >
                         <span className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                          {toTitleCase(selectedProfile?.name ?? client.name)}
+                          {toTitleCase(
+                            selectedProfile?.razonSocial ?? client.nombre
+                          )}
                         </span>
                       </SelectTrigger>
                       <SelectContent>
                         {profiles.map((p) => (
                           <SelectItem key={p.id} value={p.id}>
-                            {toTitleCase(p.name) || p.identityNumber || p.id}
+                            {toTitleCase(p.razonSocial) || p.cuit || p.id}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   ) : (
                     <h1 className="font-display text-[24px] font-semibold tracking-tight text-[var(--arca-ink)] leading-none truncate">
-                      {toTitleCase(selectedProfile?.name ?? client.name)}
+                      {toTitleCase(
+                        selectedProfile?.razonSocial ?? client.nombre
+                      )}
                     </h1>
+                  )}
+                  {client.estado === 'clave_invalida' && (
+                    <span
+                      className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)] cursor-help"
+                      title="AFIP rechaza la clave de este login: los datos de sus empresas no se actualizan. Cargá la clave nueva (desde el Inicio o editando la credencial) y la actualización se reanuda sola."
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      Clave de AFIP desactualizada
+                    </span>
+                  )}
+                  {(() => {
+                    const faltantes = Object.entries(
+                      selectedProfile?.delegacionesAfip ?? {}
+                    )
+                      .filter(([, v]) => v?.estado === 'sin_delegacion')
+                      .map(([k]) => SERVICIO_AFIP_LABEL[k] ?? k);
+                    if (faltantes.length === 0) return null;
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
+                        title={`AFIP no le muestra esta empresa a la credencial para: ${faltantes.join(', ')}. Se resuelve delegando el servicio en «Administrador de Relaciones de Clave Fiscal»; la plataforma lo detecta sola en la próxima actualización.`}
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        No conectada en AFIP · {faltantes.join(' · ')}
+                      </span>
+                    );
+                  })()}
+                  {selectedProfile?.estadoAfip === 'irregularidades' && (
+                    <span
+                      className="inline-flex items-center gap-1 shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] cursor-help"
+                      title={`AFIP bloquea la consulta de esta empresa: debe presentarse en la dependencia donde está inscripta para regularizar su situación. Hasta entonces no se pueden traer comprobantes ni IVA.${
+                        selectedProfile.estadoAfipAt
+                          ? ` Detectado el ${new Date(selectedProfile.estadoAfipAt).toLocaleDateString('es-AR', { day: 'numeric', month: 'short', year: 'numeric' })}.`
+                          : ''
+                      }`}
+                    >
+                      <AlertTriangle className="h-3 w-3" />
+                      Irregularidades en AFIP
+                    </span>
                   )}
                 </div>
                 <div className="mt-[4px] flex flex-wrap items-center gap-x-[10px] gap-y-[2px] text-[11.5px] text-[var(--arca-ink-3)]">
-                  {selectedProfile?.identityNumber && (
+                  {selectedProfile?.cuit && (
                     <span className="font-mono">
-                      CUIT {selectedProfile.identityNumber}
+                      CUIT {selectedProfile.cuit}
                     </span>
                   )}
                   <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
                   <span className="truncate max-w-[220px]">
-                    Representante: {toTitleCase(client.name)}
+                    Representante: {toTitleCase(client.nombre)}
                   </span>
-                  {client.fiscalCondition && (
-                    <>
-                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>{client.fiscalCondition}</span>
-                    </>
-                  )}
-                  {client.regimenLocal && (
-                    <>
-                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
-                      <span>{client.regimenLocal}</span>
-                    </>
-                  )}
-                  {client.registeredAt && (
+                  {selectedProfile?.condicionIva && (
                     <>
                       <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
                       <span>
-                        Alta{' '}
-                        {new Date(client.registeredAt).toLocaleDateString(
+                        {CONDICION_IVA_LABELS[selectedProfile.condicionIva] ??
+                          selectedProfile.condicionIva}
+                      </span>
+                    </>
+                  )}
+                  {selectedProfile?.iibbRegimen && (
+                    <>
+                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                      <span>
+                        {selectedProfile.iibbRegimen === 'convenio_multilateral'
+                          ? 'Convenio multilateral'
+                          : 'Régimen local'}
+                      </span>
+                    </>
+                  )}
+                  <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                  <span>
+                    Alta{' '}
+                    {new Date(client.createdAt).toLocaleDateString('es-AR', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </span>
+                  {client.claveActualizadaAt && (
+                    <>
+                      <span className="w-[3px] h-[3px] rounded-full bg-[var(--arca-ink-4)] shrink-0" />
+                      <span title="Última vez que se cambió la clave fiscal de este login">
+                        Clave actualizada{' '}
+                        {new Date(client.claveActualizadaAt).toLocaleDateString(
                           'es-AR',
                           { day: 'numeric', month: 'short', year: 'numeric' }
                         )}
@@ -1837,13 +1931,26 @@ export function RepresentativeDetailPage({
               </div>
               {/* Actions */}
               <div className="flex items-center gap-1.5 shrink-0">
+                {scrapingPausado && (
+                  <span
+                    className="inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]"
+                    title="El servicio de actualización está pausado; se reanuda pronto."
+                  >
+                    Actualizaciones en pausa temporal
+                  </span>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={scrapingAll || !!scrapingSection}
+                  disabled={scrapingAll || !!scrapingSection || scrapingPausado}
+                  title={
+                    scrapingPausado
+                      ? AVISO_SCRAPING_PAUSADO
+                      : 'Traer de ARCA todo: deudas, vencimientos, IVA, notificaciones y facturas'
+                  }
                   onClick={async () => {
                     setScrapingAll(true);
-                    toast('Iniciando scrapeo');
+                    toast('Iniciando la actualización');
                     const jobTypes = [
                       'deuda',
                       'vencimientos',
@@ -1856,47 +1963,53 @@ export function RepresentativeDetailPage({
                       for (const jobType of jobTypes) {
                         try {
                           await scrapSingleJob({
-                            data: { representativeId, jobType },
+                            data: { credencialId: representativeId, jobType },
                           });
                         } catch {
                           failed++;
                         }
                       }
                       if (failed === 0) {
-                        toast.success('Scraping completado');
+                        toast.success('Actualización completada');
                       } else if (failed < jobTypes.length) {
                         toast.warning(
-                          `Scraping parcial: ${failed} job(s) fallaron`
+                          `Actualización parcial: ${failed} de ${jobTypes.length} pasos fallaron`
                         );
                       } else {
-                        toast.error('Todos los jobs fallaron');
+                        toast.error('No se pudo actualizar ningún dato');
                       }
                     } catch (err) {
                       toast.error(
                         err instanceof Error
                           ? err.message
-                          : 'Error al encolar scraping'
+                          : 'No se pudo iniciar la actualización'
                       );
                     } finally {
                       setScrapingAll(false);
                     }
                   }}
-                  title="Scrapear todo (deuda, vencimientos, IVA, notificaciones)"
                 >
                   {scrapingAll ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
                     <Play className="h-3 w-3" />
                   )}
-                  Scrapear todo
+                  Actualizar todo
                 </Button>
-                <button
-                  onClick={() => setEditRepresentativeDialogOpen(true)}
-                  className="w-[24px] h-[24px] shrink-0 rounded-[var(--arca-r-sm)] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink-3)] inline-flex items-center justify-center hover:bg-[var(--arca-surface-2)] transition-colors"
-                  title="Editar"
-                >
-                  <Edit className="h-3 w-3" />
-                </button>
+                <UiTooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      // 30px para que case con "Actualizar todo", que es `sm`.
+                      className="size-[30px] rounded-[7px]"
+                      onClick={() => setEditRepresentativeDialogOpen(true)}
+                      aria-label="Editar representante"
+                    >
+                      <Edit className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Editar representante</TooltipContent>
+                </UiTooltip>
               </div>
             </div>
 
@@ -1967,12 +2080,19 @@ export function RepresentativeDetailPage({
                 <UserCheck className="h-[14px] w-[14px]" />
                 Portal
               </TabsTrigger>
+              <TabsTrigger value="perfiles" className={tabTriggerCls()}>
+                <Building2 className="h-[14px] w-[14px]" />
+                Perfiles
+              </TabsTrigger>
             </TabsList>
           </div>
         </div>
 
         {/* ── Content area ── */}
-        <div className="px-4 md:px-[28px] pt-3 pb-[60px]">
+        {/* Sin `pb` propio: el layout autenticado ya reserva `pb-28` para que
+          la barra flotante del asistente no tape el final de la página, y los
+          dos juntos dejaban 156px de vacío. */}
+        <div className="px-4 pt-3 md:px-[28px]">
           {/* Resumen Tab */}
           <TabsContent value="resumen" className="mt-4 space-y-[14px]">
             {/* Row 1: Estado general (3fr) | Facturación (2fr) | IVA (2fr) */}
@@ -2020,7 +2140,7 @@ export function RepresentativeDetailPage({
                     <span className="flex-1 font-display font-semibold text-[14px] leading-none tracking-tight tabular-nums text-right text-[var(--arca-ink)]">
                       {dueDateStats.nextDueDate
                         ? new Date(
-                            dueDateStats.nextDueDate.dueDate
+                            dueDateStats.nextDueDate.venceAt
                           ).toLocaleDateString('es-AR', {
                             day: 'numeric',
                             month: 'short',
@@ -2048,7 +2168,7 @@ export function RepresentativeDetailPage({
                         clientId: representativeId,
                         profileId: selectedResumenProfile.id,
                       }}
-                      className="text-[12px] font-medium text-[var(--arca-navy-700)] hover:underline"
+                      className="text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
                     >
                       Ver perfil completo →
                     </Link>
@@ -2168,16 +2288,14 @@ export function RepresentativeDetailPage({
                       <span
                         className={cn(
                           'flex-1 font-display font-semibold text-[15px] leading-none tracking-tight tabular-nums text-right',
-                          Number(
-                            resumenClientIva.data
-                              .saldoTecnicoFavorContribuyente ?? 0
-                          ) > 0
+                          Number(resumenClientIva.data.saldoTecnicoFavor ?? 0) >
+                            0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
                         )}
                       >
                         {formatIvaCurrency(
-                          resumenClientIva.data.saldoTecnicoFavorContribuyente
+                          resumenClientIva.data.saldoTecnicoFavor
                         )}
                       </span>
                     </div>
@@ -2191,16 +2309,14 @@ export function RepresentativeDetailPage({
                           'flex-1 font-display font-semibold text-[20px] leading-none tracking-tight tabular-nums text-right',
                           Number(
                             resumenClientIva.data
-                              .saldoLibreDisponibilidadFavorContribuyentePeriodo ??
-                              0
+                              .saldoLibreDisponibilidadFavor ?? 0
                           ) > 0
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-[var(--arca-ink-3)]'
                         )}
                       >
                         {formatIvaCurrency(
-                          resumenClientIva.data
-                            .saldoLibreDisponibilidadFavorContribuyentePeriodo
+                          resumenClientIva.data.saldoLibreDisponibilidadFavor
                         )}
                       </span>
                     </div>
@@ -2228,11 +2344,11 @@ export function RepresentativeDetailPage({
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-[5px] text-[11px] text-[var(--arca-ink-3)]">
-                      <span className="w-2 h-2 rounded-[2px] bg-[#1E3460] shrink-0" />
+                      <span className="w-2 h-2 rounded-[2px] bg-[var(--arca-chart-1)] shrink-0" />
                       Ventas
                     </span>
                     <span className="inline-flex items-center gap-[5px] text-[11px] text-[var(--arca-ink-3)]">
-                      <span className="w-2 h-2 rounded-[2px] bg-[#7AA2C8] shrink-0" />
+                      <span className="w-2 h-2 rounded-[2px] bg-[var(--arca-chart-2)] shrink-0" />
                       Compras
                     </span>
                   </div>
@@ -2248,18 +2364,18 @@ export function RepresentativeDetailPage({
                       <CartesianGrid
                         vertical={false}
                         strokeDasharray="3 4"
-                        stroke="#ECEAE3"
+                        stroke="var(--arca-border)"
                       />
                       <XAxis
                         dataKey="period"
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fill: '#6E7079', fontSize: 9 }}
+                        tick={{ fill: 'var(--arca-ink-3)', fontSize: 9 }}
                       />
                       <YAxis
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                        tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
                         tickFormatter={(v) =>
                           v >= 1e6
                             ? `${(v / 1e6).toFixed(1)}M`
@@ -2271,17 +2387,20 @@ export function RepresentativeDetailPage({
                       <Tooltip
                         cursor={{ fill: 'rgba(30,52,96,0.06)' }}
                         contentStyle={{
-                          background: '#12131A',
+                          background: 'var(--arca-ink)',
                           border: 'none',
                           borderRadius: 8,
                           padding: '8px 12px',
                         }}
                         labelStyle={{
-                          color: '#9B9CA3',
+                          color: 'var(--arca-ink-4)',
                           fontSize: 10,
                           marginBottom: 4,
                         }}
-                        itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
+                        itemStyle={{
+                          color: 'var(--arca-sidebar-fg)',
+                          fontSize: 11,
+                        }}
                         formatter={(value) =>
                           new Intl.NumberFormat('es-AR', {
                             style: 'currency',
@@ -2315,12 +2434,19 @@ export function RepresentativeDetailPage({
                 <div className="flex items-center gap-2 shrink-0">
                   <Bell className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
                   <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-                    Notificaciones
+                    Notificaciones sin leer
                   </span>
                   <div className="flex-1" />
                   <span className="text-[11px] font-mono text-[var(--arca-ink-4)]">
                     {unreadNotifications?.notifications.length ?? 0}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => onTabChange('notificaciones')}
+                    className="text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] hover:underline"
+                  >
+                    Ver todas →
+                  </button>
                 </div>
                 <div className="relative flex-1 min-h-0">
                   {loadingUnreadNotifications ? (
@@ -2337,7 +2463,7 @@ export function RepresentativeDetailPage({
                         Sin notificaciones pendientes
                       </p>
                       <p className="text-[11.5px] text-[var(--arca-ink-4)]">
-                        Te avisaremos cuando AFIP publique novedades.
+                        Te avisaremos cuando ARCA publique novedades.
                       </p>
                     </div>
                   ) : (
@@ -2349,20 +2475,20 @@ export function RepresentativeDetailPage({
                         >
                           <button
                             className="flex-1 min-w-0 text-left"
-                            onClick={() => setResumenNotifSelected(notif)}
+                            onClick={() => setNotifAbierta(notif.id)}
                           >
-                            {notif.profileName && (
+                            {notif.clienteRazonSocial && (
                               <div className="text-[9.5px] text-[var(--arca-ink-4)] mb-0.5 font-semibold uppercase tracking-[0.06em]">
-                                {notif.profileName}
+                                {notif.clienteRazonSocial}
                               </div>
                             )}
                             <p className="text-[var(--arca-ink)] text-[12px] line-clamp-2 leading-snug">
-                              {notif.message}
+                              {notif.mensaje}
                             </p>
                             <p className="text-[10px] font-mono text-[var(--arca-ink-4)] mt-0.5">
-                              {notif.publicationDate
+                              {notif.publicadaAt
                                 ? format(
-                                    new Date(notif.publicationDate),
+                                    new Date(notif.publicadaAt),
                                     'dd/MM/yyyy',
                                     { locale: es }
                                   )
@@ -2372,7 +2498,7 @@ export function RepresentativeDetailPage({
                           <button
                             onClick={() => markOpenedMutation.mutate(notif.id)}
                             disabled={markOpenedMutation.isPending}
-                            className="shrink-0 mt-0.5 text-[var(--arca-accent-pos)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
+                            className="shrink-0 mt-0.5 text-[var(--arca-accent-pos-fg)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
                             title="Marcar como leída"
                           >
                             <Check className="h-3.5 w-3.5" />
@@ -2385,267 +2511,131 @@ export function RepresentativeDetailPage({
               </div>
             </div>
 
-            {/* Row 3: Cierre de ejercicio */}
-            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_20px] flex flex-col gap-[14px]">
-              <div className="flex items-center gap-2">
-                <BookOpen className="h-3.5 w-3.5 shrink-0 text-[var(--arca-ink-3)]" />
-                <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-                  Cierre de ejercicio
-                </span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-[14px]">
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Mes de cierre
-                  </label>
-                  <Select value={balanceMonth} onValueChange={setBalanceMonth}>
-                    <SelectTrigger size="sm" className="w-full text-[12.5px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[
-                        'Enero',
-                        'Febrero',
-                        'Marzo',
-                        'Abril',
-                        'Mayo',
-                        'Junio',
-                        'Julio',
-                        'Agosto',
-                        'Septiembre',
-                        'Octubre',
-                        'Noviembre',
-                        'Diciembre',
-                      ].map((m, i) => (
-                        <SelectItem key={i + 1} value={String(i + 1)}>
-                          {m}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Día de cierre
-                  </label>
-                  <Select value={balanceDay} onValueChange={setBalanceDay}>
-                    <SelectTrigger size="sm" className="w-full text-[12.5px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                        <SelectItem key={d} value={String(d)}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Días para presentación
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    placeholder="Opcional"
-                    value={balancePresentationDays}
-                    onChange={(e) => setBalancePresentationDays(e.target.value)}
-                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
-                  />
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[var(--arca-ink-4)]">
-                    Alertas (días antes)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="60,30,15,7"
-                    value={balanceAlertDays}
-                    onChange={(e) => setBalanceAlertDays(e.target.value)}
-                    className="h-8 rounded-[var(--arca-r-md)] border border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-2 text-[12.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-navy-700)]"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  disabled={upsertBalanceConfigMutation.isPending}
-                  onClick={() => {
-                    const month = parseInt(balanceMonth, 10);
-                    const day = parseInt(balanceDay, 10);
-                    const presentationDays = balancePresentationDays
-                      ? parseInt(balancePresentationDays, 10)
-                      : null;
-                    const alertDays = balanceAlertDays
-                      .split(',')
-                      .map((s) => parseInt(s.trim(), 10))
-                      .filter((n) => !isNaN(n) && n > 0);
-                    if (isNaN(month) || isNaN(day)) {
-                      toast.error('Mes y día son obligatorios');
-                      return;
-                    }
-                    upsertBalanceConfigMutation.mutate({
-                      fiscalYearEndMonth: month,
-                      fiscalYearEndDay: day,
-                      presentationDueDays: presentationDays,
-                      alertDaysBefore:
-                        alertDays.length > 0 ? alertDays : [60, 30, 15, 7],
-                    });
-                  }}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[var(--arca-r-md)] text-[12px] font-semibold bg-[var(--arca-ink)] text-[#F7F6F2] hover:bg-[var(--arca-ink)]/90 transition-colors disabled:opacity-50"
-                >
-                  {upsertBalanceConfigMutation.isPending
-                    ? 'Guardando...'
-                    : 'Guardar'}
-                </button>
-                {balanceConfig && (
-                  <span className="text-[11px] text-[var(--arca-ink-4)]">
-                    Cierre: {balanceConfig.fiscalYearEndDay}/
-                    {balanceConfig.fiscalYearEndMonth}
-                  </span>
-                )}
-              </div>
-            </div>
-          </TabsContent>
+            {/*
+              La configuración de cierre de ejercicio se eliminó: la tabla
+              `representative_balance_config` no existe en el modelo nuevo.
+            */}
 
-          {/* Dialog: detalle de notificación no leída (Resumen) */}
-          <Dialog
-            open={!!resumenNotifSelected}
-            onOpenChange={(open) => {
-              if (!open) setResumenNotifSelected(null);
-            }}
-          >
-            <DialogContent className="max-w-lg">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-base">
-                  <Bell className="h-4 w-4 shrink-0" />
-                  {resumenNotifSelected?.profileName
-                    ? `Notificación — ${resumenNotifSelected.profileName}`
-                    : 'Notificación'}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 text-sm">
-                {/* Fechas */}
-                <div className="flex gap-6 text-xs text-muted-foreground">
-                  {resumenNotifSelected?.publicationDate && (
-                    <span>
-                      <span className="font-medium text-foreground">
-                        Publicación:{' '}
-                      </span>
-                      {format(
-                        new Date(resumenNotifSelected.publicationDate),
-                        'dd/MM/yyyy',
-                        { locale: es }
-                      )}
-                    </span>
-                  )}
-                  {resumenNotifSelected?.expirationDate && (
-                    <span>
-                      <span className="font-medium text-foreground">
-                        Vencimiento:{' '}
-                      </span>
-                      {format(
-                        new Date(resumenNotifSelected.expirationDate),
-                        'dd/MM/yyyy',
-                        { locale: es }
-                      )}
-                    </span>
-                  )}
-                </div>
-                {/* Mensaje completo */}
-                <p className="leading-relaxed whitespace-pre-wrap">
-                  {resumenNotifSelected?.message}
-                </p>
-                {/* Acciones */}
-                <div className="flex justify-between items-center pt-2 border-t">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      if (resumenNotifSelected)
-                        markOpenedMutation.mutate(resumenNotifSelected.id);
-                      setResumenNotifSelected(null);
-                    }}
-                    disabled={markOpenedMutation.isPending}
-                    className="gap-1.5"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                    Marcar como leída
-                  </Button>
-                  <DialogClose asChild>
-                    <Button variant="ghost" size="sm">
-                      Cerrar
-                    </Button>
-                  </DialogClose>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {/* Deudas Tab */}
-          <TabsContent value="deudas" className="space-y-[14px]">
-            {/* KPI Cards */}
-            {!loadingDebts && debts.length > 0 && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-[14px]">
-                {(
-                  [
-                    {
-                      label: 'Total Deudas',
-                      value: debtStats.totalBalance,
-                      sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`,
-                      accent: 'var(--arca-accent-neg)',
-                    },
-                    {
-                      label: 'Total con Intereses',
-                      value: debtStats.totalDebt,
-                      sub: `+ ${new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`,
-                      accent: 'var(--arca-accent-neg)',
-                    },
-                    {
-                      label: 'Int. Compensatorio',
-                      value: debtStats.totalCompensatoryInterest,
-                      sub: null,
-                      accent: 'var(--arca-accent-warn)',
-                    },
-                    {
-                      label: 'Int. Punitorio',
-                      value: debtStats.totalPunitiveInterest,
-                      sub: null,
-                      accent: 'var(--arca-accent-warn)',
-                    },
-                  ] as const
-                ).map((kpi) => (
-                  <div
-                    key={kpi.label}
-                    className="relative overflow-hidden bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[16px_18px] flex flex-col gap-2"
-                  >
-                    <div
-                      className="absolute left-0 top-[14px] bottom-[14px] w-[2px] rounded-[0_2px_2px_0]"
-                      style={{ background: kpi.accent }}
-                    />
-                    <span className="pl-[6px] text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-                      {kpi.label}
-                    </span>
-                    <div className="pl-[6px] font-display font-semibold text-[22px] leading-none tracking-tight text-[var(--arca-ink)] tabular-nums">
-                      {new Intl.NumberFormat('es-AR', {
-                        style: 'currency',
-                        currency: 'ARS',
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 0,
-                      }).format(kpi.value)}
-                    </div>
-                    {kpi.sub && (
-                      <div className="pl-[6px] text-[11.5px] text-[var(--arca-ink-4)]">
-                        {kpi.sub}
-                      </div>
-                    )}
-                  </div>
-                ))}
+            {/* Banco vs Facturación (TIN-1634): el semáforo del mes pasado.
+                Solo aparece si la empresa tiene cuentas bancarias cargadas. */}
+            {selectedClientId && (
+              <div className="max-w-[560px]">
+                <BancoVsFacturacionCard clienteId={selectedClientId} compacto />
               </div>
             )}
 
-            {/* Actualizar deudas (acción) + última actualización */}
-            <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[var(--arca-r-lg)] shadow-[var(--arca-shadow-sm)] p-[12px_18px] flex flex-col gap-[12px]">
+            {/* Datos fiscales para el módulo de Balances (norma RT 54/RT 6,
+                actividad e inscripción). Por empresa seleccionada. */}
+            {selectedClientId && (
+              <div className="max-w-[560px]">
+                <FiscalDataCard clientId={selectedClientId} />
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Dialog: la notificación del Resumen, con el panel de lectura real */}
+          <Dialog
+            open={!!notifAbierta}
+            onOpenChange={(open) => {
+              if (!open) setNotifAbierta(null);
+            }}
+          >
+            <DialogContent className="!max-w-5xl w-[92vw] p-0 overflow-hidden gap-0">
+              <DialogHeader className="sr-only">
+                <DialogTitle>Notificación</DialogTitle>
+              </DialogHeader>
+              <div className="flex h-[72vh] min-h-[420px] flex-col">
+                <PanelLectura
+                  notificacionId={notifAbierta}
+                  onCrearTarea={() => setCreandoTareaDesdeNotif(true)}
+                  onIrATarea={(tareaId) => {
+                    setNotifAbierta(null);
+                    void navigate({
+                      to: '/tareas',
+                      search: { tarea: tareaId },
+                    });
+                  }}
+                  onAnterior={() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    if (i > 0) setNotifAbierta(lista[i - 1].id);
+                  }}
+                  onSiguiente={() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    if (i >= 0 && i < lista.length - 1)
+                      setNotifAbierta(lista[i + 1].id);
+                  }}
+                  hayAnterior={(() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    return lista.findIndex((n) => n.id === notifAbierta) > 0;
+                  })()}
+                  haySiguiente={(() => {
+                    const lista = unreadNotifications?.notifications ?? [];
+                    const i = lista.findIndex((n) => n.id === notifAbierta);
+                    return i >= 0 && i < lista.length - 1;
+                  })()}
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
+          <CrearTareaDesdeNotificacion
+            abierto={creandoTareaDesdeNotif}
+            onAbrirChange={setCreandoTareaDesdeNotif}
+            notificacion={
+              unreadNotifications?.notifications.find(
+                (n) => n.id === notifAbierta
+              ) ?? null
+            }
+            onCreada={(tareaId) => {
+              setNotifAbierta(null);
+              void navigate({ to: '/tareas', search: { tarea: tareaId } });
+            }}
+          />
+
+          {/* Deudas Tab */}
+          <TabsContent value="deudas" className="space-y-[14px]">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'ctacte') && (
+              <AvisoSinDelegacion
+                servicio="ctacte"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
+            {/* Resumen. La forma la pone `CardsResumen`; acá sólo qué
+                significa cada cifra y con qué acento se lee. */}
+            {!loadingDebts && debts.length > 0 && (
+              <CardsResumen
+                cards={[
+                  {
+                    label: 'Total deudas',
+                    valor: fmtPesos(debtStats.totalBalance),
+                    sub: `${debtStats.totalDebts} ${debtStats.totalDebts === 1 ? 'deuda' : 'deudas'}`,
+                    tono: 'urgente',
+                  },
+                  {
+                    label: 'Total con intereses',
+                    valor: fmtPesos(debtStats.totalDebt),
+                    sub: `+ ${fmtPesos(debtStats.totalCompensatoryInterest + debtStats.totalPunitiveInterest)} intereses`,
+                    tono: 'urgente',
+                  },
+                  {
+                    label: 'Int. compensatorio',
+                    valor: fmtPesos(debtStats.totalCompensatoryInterest),
+                    tono: 'atencion',
+                  },
+                  {
+                    label: 'Int. punitorio',
+                    valor: fmtPesos(debtStats.totalPunitiveInterest),
+                    tono: 'atencion',
+                  },
+                ]}
+              />
+            )}
+
+            {/* Barra de actualización y filtros. No es una card a propósito:
+                el marco con borde y sombra era lo que le metía el aire, para
+                dos líneas de controles que pertenecen a la tabla de abajo. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-[14px]">
                 <div className="flex flex-col gap-[2px]">
                   <span className="text-[11.5px] text-[var(--arca-ink-4)]">
@@ -2658,7 +2648,10 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)]'
                             : 'text-destructive'
                         )}
-                        title={lastDeudaJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(lastDeudaJob.failedReason) ??
+                          undefined
+                        }
                       >
                         {formatLastUpdateAt(lastDeudaJob.createdAt)}
                       </span>
@@ -2672,19 +2665,23 @@ export function RepresentativeDetailPage({
                     !lastDeudaJob.success &&
                     lastDeudaJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastDeudaJob.failedReason}
+                        {friendlyFailedReason(lastDeudaJob.failedReason)}
                       </p>
                     )}
                 </div>
                 <div className="flex-1" />
                 <Button
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('deudas');
                     try {
                       await scrapSingleJob({
-                        data: { representativeId, jobType: 'deuda' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'deuda',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -2708,7 +2705,7 @@ export function RepresentativeDetailPage({
                       setScrapingSection(null);
                     }
                   }}
-                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0"
+                  className="shrink-0"
                 >
                   {scrapingSection === 'deudas' ? (
                     <>
@@ -2723,7 +2720,7 @@ export function RepresentativeDetailPage({
 
               {/* Filtros de tabla (solo afectan la vista, no la actualización) */}
               {!loadingDebts && debts.length > 0 && (
-                <div className="flex flex-wrap items-center gap-x-[16px] gap-y-[8px] pt-[12px] border-t border-[var(--arca-border)]">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
                   <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--arca-ink-3)]">
                     <ListFilter className="h-3.5 w-3.5 text-[var(--arca-ink-4)]" />
                     Filtrar
@@ -2739,7 +2736,10 @@ export function RepresentativeDetailPage({
                         setDebtPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                      <SelectTrigger
+                        size="sm"
+                        className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors"
+                      >
                         <SelectValue placeholder="Todos" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2763,7 +2763,10 @@ export function RepresentativeDetailPage({
                         setDebtPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 min-w-[140px] text-[12px] border-[var(--arca-border)] rounded-full bg-[var(--arca-surface-2)] hover:bg-[var(--arca-surface)] data-[state=open]:bg-[var(--arca-surface)] data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors">
+                      <SelectTrigger
+                        size="sm"
+                        className="min-w-[140px] text-[12.5px] rounded-lg data-[state=open]:ring-1 data-[state=open]:ring-[var(--arca-border-strong)] transition-colors"
+                      >
                         <SelectValue placeholder="Todos" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2822,17 +2825,37 @@ export function RepresentativeDetailPage({
               ) : (
                 <div className="overflow-x-auto">
                   <table
-                    className="w-full border-collapse text-[12.5px] [&_th]:!px-[10px] [&_td]:!px-[10px]"
+                    className="w-full table-fixed border-collapse text-[12.5px] [&_th]:!px-[10px] [&_td]:!px-[10px]"
                     style={{ minWidth: 880 }}
                   >
+                    {/* `table-fixed` + anchos declarados: sin esto el ancho lo
+                        decide el contenido, y la celda de Gestión —un select de
+                        110px más el botón— empujaba la tabla 12px más allá del
+                        contenedor y aparecía una barra horizontal. Así las
+                        columnas de texto ceden y recortan, que es lo que ya
+                        hacían de todos modos. */}
+                    <colgroup>
+                      <col style={{ width: '12.5%' }} />
+                      <col style={{ width: '13.5%' }} />
+                      <col style={{ width: '6.5%' }} />
+                      <col style={{ width: '8%' }} />
+                      <col style={{ width: '7.5%' }} />
+                      <col style={{ width: '8.5%' }} />
+                      <col style={{ width: '8.5%' }} />
+                      <col style={{ width: '8.5%' }} />
+                      <col style={{ width: '7%' }} />
+                      {/* Gestión es la única que no puede ceder: adentro van un
+                          select y un botón, que no recortan como el texto. */}
+                      <col style={{ width: '19.5%' }} />
+                    </colgroup>
                     <thead>
-                      <tr className="bg-[var(--arca-surface-2)]">
+                      <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                         {[
-                          { label: 'Impuesto', key: 'tax' as const },
-                          { label: 'Concepto', key: 'concept' as const },
-                          { label: 'Período', key: 'period' as const },
-                          { label: 'Vencimiento', key: 'dueDate' as const },
-                          { label: 'Actualiz.', key: 'detectedAt' as const },
+                          { label: 'Impuesto', key: 'impuesto' as const },
+                          { label: 'Concepto', key: 'concepto' as const },
+                          { label: 'Período', key: 'periodo' as const },
+                          { label: 'Vencimiento', key: 'venceAt' as const },
+                          { label: 'Actualiz.', key: 'detectadaAt' as const },
                         ].map(({ label, key }) => (
                           <th
                             key={key}
@@ -2845,7 +2868,7 @@ export function RepresentativeDetailPage({
                               } else {
                                 setDebtSortKey(key);
                                 setDebtSortDir(
-                                  key === 'detectedAt' ? 'desc' : 'asc'
+                                  key === 'detectadaAt' ? 'desc' : 'asc'
                                 );
                               }
                               setDebtPage(1);
@@ -2877,32 +2900,30 @@ export function RepresentativeDetailPage({
                         </th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-[var(--arca-surface)]">
                       {pagedDebts.map((debt, i) => {
-                        const balance = Number(debt.balance || 0);
-                        const intC = Number(debt.compensatoryInterest || 0);
-                        const intP = Number(debt.punitiveInterest || 0);
+                        const balance = Number(debt.saldo || 0);
+                        const intC = Number(debt.interesResarcitorio || 0);
+                        const intP = Number(debt.interesPunitorio || 0);
                         const today = new Date();
                         today.setHours(0, 0, 0, 0);
-                        const due = new Date(debt.dueDate);
-                        due.setHours(0, 0, 0, 0);
-                        const debtStatus = (debt.status ?? 'open') as
-                          | 'open'
-                          | 'in_plan'
-                          | 'paid'
-                          | 'disputed';
-                        const isIntimated = debt.isIntimated ?? false;
-                        const isOverdue = due < today && balance > 0;
-                        // Row background: red=open+overdue, orange=intimated, green=paid, gray=in_plan, default=disputed
+                        const due = debt.venceAt
+                          ? new Date(debt.venceAt)
+                          : null;
+                        due?.setHours(0, 0, 0, 0);
+                        const debtStatus = debt.estado;
+                        const isIntimated = debt.intimada ?? false;
+                        const isOverdue = !!due && due < today && balance > 0;
+                        // Row background: red=abierta+vencida, orange=intimada, green=pagada, gray=plan_pago, default=prescripta
                         const rowBg =
-                          debtStatus === 'paid'
-                            ? 'rgba(34,197,94,0.06)'
-                            : debtStatus === 'in_plan'
-                              ? 'rgba(148,163,184,0.10)'
+                          debtStatus === 'pagada'
+                            ? 'color-mix(in oklab, var(--arca-accent-pos-bg), white 55%)'
+                            : debtStatus === 'plan_pago'
+                              ? 'var(--arca-surface-hover)'
                               : isIntimated
-                                ? 'rgba(249,115,22,0.08)'
+                                ? 'color-mix(in oklab, var(--arca-accent-warn-bg), white 45%)'
                                 : isOverdue
-                                  ? 'rgba(239,68,68,0.07)'
+                                  ? 'color-mix(in oklab, var(--arca-accent-neg-bg), white 50%)'
                                   : i % 2 === 1
                                     ? 'var(--arca-bg)'
                                     : undefined;
@@ -2920,31 +2941,33 @@ export function RepresentativeDetailPage({
                           >
                             <td
                               className="px-[14px] py-[10px] text-[var(--arca-ink)] font-medium"
-                              title={debt.tax || '-'}
+                              title={debt.impuesto || '-'}
                             >
                               <span className="block max-w-[150px] truncate">
-                                {debt.tax || '-'}
+                                {debt.impuesto || '-'}
                               </span>
                             </td>
                             <td
                               className="px-[14px] py-[10px] text-[var(--arca-ink-2)]"
-                              title={debt.concept || '-'}
+                              title={debt.concepto || '-'}
                             >
                               <span className="block max-w-[170px] truncate">
-                                {debt.concept || '-'}
+                                {debt.concepto || '-'}
                               </span>
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
-                              {debt.period || '-'}
+                              {periodoLegible(debt.periodo)}
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[var(--arca-ink-3)]">
-                              {new Date(debt.dueDate).toLocaleDateString(
-                                'es-AR'
-                              )}
+                              {debt.venceAt
+                                ? new Date(debt.venceAt).toLocaleDateString(
+                                    'es-AR'
+                                  )
+                                : '-'}
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap font-mono text-[10.5px] text-[var(--arca-ink-4)]">
-                              {debt.detectedAt
-                                ? new Date(debt.detectedAt).toLocaleDateString(
+                              {debt.detectadaAt
+                                ? new Date(debt.detectadaAt).toLocaleDateString(
                                     'es-AR',
                                     {
                                       day: '2-digit',
@@ -2978,24 +3001,24 @@ export function RepresentativeDetailPage({
                               {fmtD(intP)}
                             </td>
                             <td className="px-[14px] py-[10px] whitespace-nowrap">
-                              {debtStatus === 'paid' ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">
+                              {debtStatus === 'pagada' ? (
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)]">
                                   Pagada
                                 </span>
-                              ) : debtStatus === 'in_plan' ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(148,163,184,0.25)] text-[var(--arca-ink-3)]">
+                              ) : debtStatus === 'plan_pago' ? (
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]">
                                   En plan
                                 </span>
-                              ) : debtStatus === 'disputed' ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[rgba(139,92,246,0.15)] text-[rgba(139,92,246,0.9)]">
-                                  Disputada
+                              ) : debtStatus === 'prescripta' ? (
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-bg)] text-[var(--arca-accent-hover)]">
+                                  Prescripta
                                 </span>
                               ) : isOverdue ? (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]">
                                   Vencida
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10.5px] font-semibold bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
+                                <span className="inline-flex h-5 items-center rounded-md px-2 text-[11px] font-medium bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]">
                                   Abierta
                                 </span>
                               )}
@@ -3007,12 +3030,12 @@ export function RepresentativeDetailPage({
                                   onValueChange={(v) => {
                                     updateDebtStatusMutation.mutate({
                                       id: debt.id,
-                                      status: v as
-                                        | 'open'
-                                        | 'in_plan'
-                                        | 'paid'
-                                        | 'disputed',
-                                      isIntimated,
+                                      estado: v as
+                                        | 'abierta'
+                                        | 'pagada'
+                                        | 'plan_pago'
+                                        | 'prescripta',
+                                      intimada: isIntimated,
                                     });
                                   }}
                                 >
@@ -3023,15 +3046,17 @@ export function RepresentativeDetailPage({
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="open">
+                                    <SelectItem value="abierta">
                                       Abierta
                                     </SelectItem>
-                                    <SelectItem value="in_plan">
+                                    <SelectItem value="plan_pago">
                                       En plan
                                     </SelectItem>
-                                    <SelectItem value="paid">Pagada</SelectItem>
-                                    <SelectItem value="disputed">
-                                      Disputada
+                                    <SelectItem value="pagada">
+                                      Pagada
+                                    </SelectItem>
+                                    <SelectItem value="prescripta">
+                                      Prescripta
                                     </SelectItem>
                                   </SelectContent>
                                 </Select>
@@ -3039,14 +3064,14 @@ export function RepresentativeDetailPage({
                                   onClick={() =>
                                     updateDebtStatusMutation.mutate({
                                       id: debt.id,
-                                      status: debtStatus,
-                                      isIntimated: !isIntimated,
+                                      estado: debtStatus,
+                                      intimada: !isIntimated,
                                     })
                                   }
                                   className={cn(
                                     'text-[11px] font-semibold px-2 py-1 rounded-[var(--arca-r-md)] border transition-colors',
                                     isIntimated
-                                      ? 'bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-200'
+                                      ? 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)] hover:bg-[var(--arca-accent-warn)]'
                                       : 'bg-[var(--arca-surface)] text-[var(--arca-ink-3)] border-[var(--arca-border-strong)] hover:bg-[var(--arca-surface-2)]'
                                   )}
                                   title={
@@ -3067,177 +3092,79 @@ export function RepresentativeDetailPage({
                 </div>
               )}
               {debtTotalPages > 1 && (
-                <div className="px-[20px] py-[10px] border-t border-[var(--arca-border)] flex items-center gap-[10px] text-[11.5px] text-[var(--arca-ink-4)]">
-                  <span>
-                    Mostrando {pagedDebts.length} de {filteredDebts.length}
-                  </span>
-                  <div className="flex-1" />
-                  {(() => {
-                    const { startPage, endPage } = getPageRange(
-                      debtPage,
-                      debtTotalPages
-                    );
-                    const visiblePages = Array.from(
-                      { length: endPage - startPage + 1 },
-                      (_, i) => startPage + i
-                    );
-                    return (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setDebtPage((p) => Math.max(1, p - 1))}
-                          disabled={debtPage === 1}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
-                        >
-                          ←
-                        </button>
-                        {startPage > 1 && (
-                          <>
-                            <button
-                              onClick={() => setDebtPage(1)}
-                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
-                            >
-                              1
-                            </button>
-                            {startPage > 2 && (
-                              <span className="px-1 text-[var(--arca-ink-4)]">
-                                …
-                              </span>
-                            )}
-                          </>
-                        )}
-                        {visiblePages.map((page) => (
-                          <button
-                            key={page}
-                            onClick={() => setDebtPage(page)}
-                            className={cn(
-                              'px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] transition-colors',
-                              debtPage === page
-                                ? 'bg-[var(--arca-ink)] text-white font-semibold'
-                                : 'hover:bg-[var(--arca-surface-2)]'
-                            )}
-                          >
-                            {page}
-                          </button>
-                        ))}
-                        {endPage < debtTotalPages && (
-                          <>
-                            {endPage < debtTotalPages - 1 && (
-                              <span className="px-1 text-[var(--arca-ink-4)]">
-                                …
-                              </span>
-                            )}
-                            <button
-                              onClick={() => setDebtPage(debtTotalPages)}
-                              className="px-2.5 py-1 text-[12px] rounded-[var(--arca-r-md)] hover:bg-[var(--arca-surface-2)] transition-colors"
-                            >
-                              {debtTotalPages}
-                            </button>
-                          </>
-                        )}
-                        <button
-                          onClick={() =>
-                            setDebtPage((p) => Math.min(debtTotalPages, p + 1))
-                          }
-                          disabled={debtPage === debtTotalPages}
-                          className="px-2.5 py-1 text-[12px] border border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] disabled:opacity-40 hover:bg-[var(--arca-surface-2)] transition-colors"
-                        >
-                          →
-                        </button>
-                      </div>
-                    );
-                  })()}
-                </div>
+                <Paginador
+                  pagina={debtPage}
+                  totalPaginas={debtTotalPages}
+                  onPagina={setDebtPage}
+                  total={filteredDebts.length}
+                  unidad="deuda"
+                  className="px-[20px] py-[10px] border-t border-[var(--arca-border)]"
+                />
               )}
             </div>
           </TabsContent>
 
           {/* Vencimientos Tab */}
-          <TabsContent value="vencimientos" className="space-y-6">
-            {/* Due Date Summary Cards */}
+          <TabsContent value="vencimientos" className="space-y-[14px]">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'ctacte') && (
+              <AvisoSinDelegacion
+                servicio="ctacte"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
+            {/* Resumen, con la misma banda que Deudas. Los acentos los
+                elige el significado: rojo lo vencido, ámbar lo que se viene,
+                acento lo informativo. */}
             {!loadingDueDates && dueDates.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <CalendarCheck className="h-4 w-4 text-[var(--arca-ink)]" />
-                      Vencimientos Futuros
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-[var(--arca-ink)]">
-                      {dueDateStats.future}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Próximos vencimientos
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <CalendarX className="h-4 w-4 text-[var(--arca-ink)]" />
-                      Vencimientos Vencidos
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold text-[var(--arca-ink)]">
-                      {dueDateStats.overdue}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Requieren atención
-                    </p>
-                  </CardContent>
-                </Card>
-
-                {dueDateStats.nextDueDate && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-[var(--arca-ink)]" />
-                        Próximo Vencimiento
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-lg font-bold">
-                        {new Date(
-                          dueDateStats.nextDueDate.dueDate
+              <CardsResumen
+                cards={[
+                  {
+                    label: 'Vencidos',
+                    valor: String(dueDateStats.overdue),
+                    sub:
+                      dueDateStats.overdue === 1
+                        ? 'vencimiento impago'
+                        : 'vencimientos impagos',
+                    tono: 'urgente',
+                  },
+                  {
+                    label: 'Próximo vencimiento',
+                    valor: dueDateStats.nextDueDate?.venceAt
+                      ? new Date(
+                          dueDateStats.nextDueDate.venceAt
                         ).toLocaleDateString('es-AR', {
-                          day: 'numeric',
-                          month: 'short',
+                          day: '2-digit',
+                          month: '2-digit',
                           year: 'numeric',
-                        })}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {dueDateStats.nextDueDate.tax || 'Sin impuesto'}
-                      </p>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">
-                      Próximos 30 Días
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">
-                      {dueDateStats.next30Days}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Vencimientos del mes
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+                        })
+                      : '—',
+                    sub:
+                      dueDateStats.nextDueDate?.impuesto ?? 'Sin vencimientos',
+                    tono: 'atencion',
+                  },
+                  {
+                    label: 'Próximos 30 días',
+                    valor: String(dueDateStats.next30Days),
+                    sub: 'vencimientos del mes',
+                    tono: 'acento',
+                  },
+                  {
+                    label: 'Total',
+                    valor: String(dueDateStats.total),
+                    sub: 'vencimientos cargados',
+                    tono: 'neutro',
+                  },
+                ]}
+              />
             )}
 
-            <div className="rounded-lg border bg-card p-4 space-y-4">
+            {/* Franja de actualización, con la convención de Deudas: sin
+                card ni sombra, que era el marco que metía el aire. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
                     {lastVencimientosJob?.createdAt ? (
                       <span
                         className={
@@ -3245,7 +3172,11 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)] font-medium'
                             : 'text-destructive'
                         }
-                        title={lastVencimientosJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(
+                            lastVencimientosJob.failedReason
+                          ) ?? undefined
+                        }
                       >
                         {formatLastUpdateAt(lastVencimientosJob.createdAt)}
                       </span>
@@ -3257,19 +3188,23 @@ export function RepresentativeDetailPage({
                     !lastVencimientosJob.success &&
                     lastVencimientosJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastVencimientosJob.failedReason}
+                        {friendlyFailedReason(lastVencimientosJob.failedReason)}
                       </p>
                     )}
                 </div>
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('vencimientos');
                     try {
                       await scrapSingleJob({
-                        data: { representativeId, jobType: 'vencimientos' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'vencimientos',
+                        },
                       });
                       await Promise.all([
                         queryClient.invalidateQueries({
@@ -3303,202 +3238,118 @@ export function RepresentativeDetailPage({
                       Actualizando…
                     </>
                   ) : (
-                    'Actualizar Vencimientos'
+                    'Actualizar vencimientos'
                   )}
                 </Button>
               </div>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calendar className="h-5 w-5" />
-                  Vencimientos del Cliente
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {loadingDueDates ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      Cargando vencimientos...
-                    </div>
+            {/* Una sola card: la pestaña ya dice Vencimientos, y el borde de
+                adentro sumaba un segundo marco alrededor de la tabla. */}
+            <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)]">
+              {loadingDueDates ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="text-muted-foreground">
+                    Cargando vencimientos...
                   </div>
-                ) : dueDates.length === 0 ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      No hay vencimientos registrados para este cliente
-                    </div>
+                </div>
+              ) : dueDates.length === 0 ? (
+                <div className="flex items-center justify-center h-32">
+                  <div className="text-muted-foreground">
+                    No hay vencimientos registrados para este cliente
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="rounded-md border overflow-x-auto">
-                      <Table className="w-full table-fixed">
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[14%]">Impuesto</TableHead>
-                            <TableHead className="w-[16%]">Concepto</TableHead>
-                            <TableHead className="w-[16%]">
-                              Subconcepto
-                            </TableHead>
-                            <TableHead className="w-[10%]">Período</TableHead>
-                            <TableHead className="w-[7%]">Cuota</TableHead>
-                            <TableHead className="w-[12%]">
-                              Vencimiento
-                            </TableHead>
-                            <TableHead className="w-[25%]">Detalle</TableHead>
+                </div>
+              ) : (
+                <div className="[&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
+                  <div className="overflow-x-auto">
+                    <Table className="w-full table-fixed">
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[14%]">Impuesto</TableHead>
+                          <TableHead className="w-[16%]">Concepto</TableHead>
+                          <TableHead className="w-[16%]">Subconcepto</TableHead>
+                          <TableHead className="w-[10%]">Período</TableHead>
+                          <TableHead className="w-[7%]">Cuota</TableHead>
+                          <TableHead className="w-[12%]">Vencimiento</TableHead>
+                          <TableHead className="w-[25%]">Detalle</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {pagedDueDates.map((dueDate) => (
+                          <TableRow key={dueDate.id}>
+                            <TableCell
+                              className="font-medium truncate"
+                              title={dueDate.impuesto || '-'}
+                            >
+                              {dueDate.impuesto || '-'}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={dueDate.concepto || '-'}
+                            >
+                              {dueDate.concepto || '-'}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={dueDate.subConcepto || '-'}
+                            >
+                              {dueDate.subConcepto || '-'}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={periodoLegible(dueDate.periodo)}
+                            >
+                              {periodoLegible(dueDate.periodo)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-center">
+                              {dueDate.cuota || '-'}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {new Date(dueDate.venceAt).toLocaleDateString(
+                                'es-AR'
+                              )}
+                            </TableCell>
+                            <TableCell
+                              className="truncate"
+                              title={dueDate.detalle || '-'}
+                            >
+                              {dueDate.detalle || '-'}
+                            </TableCell>
                           </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pagedDueDates.map((dueDate) => (
-                            <TableRow key={dueDate.id}>
-                              <TableCell
-                                className="font-medium truncate"
-                                title={dueDate.tax || '-'}
-                              >
-                                {dueDate.tax || '-'}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={dueDate.concept || '-'}
-                              >
-                                {dueDate.concept || '-'}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={dueDate.subConcept || '-'}
-                              >
-                                {dueDate.subConcept || '-'}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={dueDate.period || '-'}
-                              >
-                                {dueDate.period || '-'}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap text-center">
-                                {dueDate.quotaNumber || '-'}
-                              </TableCell>
-                              <TableCell className="whitespace-nowrap">
-                                {new Date(dueDate.dueDate).toLocaleDateString(
-                                  'es-AR'
-                                )}
-                              </TableCell>
-                              <TableCell
-                                className="truncate"
-                                title={dueDate.detail || '-'}
-                              >
-                                {dueDate.detail || '-'}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    {dueDateTotalPages > 1 &&
-                      (() => {
-                        const { startPage, endPage } = getPageRange(
-                          dueDatePage,
-                          dueDateTotalPages
-                        );
-                        const visiblePages = Array.from(
-                          { length: endPage - startPage + 1 },
-                          (_, i) => startPage + i
-                        );
-                        return (
-                          <div className="flex justify-center w-full min-w-0">
-                            <Pagination>
-                              <PaginationContent className="flex-wrap justify-center">
-                                <PaginationItem>
-                                  <PaginationPrevious
-                                    onClick={() =>
-                                      setDueDatePage((p) => Math.max(1, p - 1))
-                                    }
-                                    className={
-                                      dueDatePage === 1
-                                        ? 'pointer-events-none opacity-50'
-                                        : 'cursor-pointer'
-                                    }
-                                  />
-                                </PaginationItem>
-                                {startPage > 1 && (
-                                  <>
-                                    <PaginationItem>
-                                      <PaginationLink
-                                        onClick={() => setDueDatePage(1)}
-                                        className="cursor-pointer"
-                                      >
-                                        1
-                                      </PaginationLink>
-                                    </PaginationItem>
-                                    {startPage > 2 && (
-                                      <PaginationItem>
-                                        <span className="px-2">...</span>
-                                      </PaginationItem>
-                                    )}
-                                  </>
-                                )}
-                                {visiblePages.map((page) => (
-                                  <PaginationItem key={page}>
-                                    <PaginationLink
-                                      onClick={() => setDueDatePage(page)}
-                                      isActive={dueDatePage === page}
-                                      className="cursor-pointer"
-                                    >
-                                      {page}
-                                    </PaginationLink>
-                                  </PaginationItem>
-                                ))}
-                                {endPage < dueDateTotalPages && (
-                                  <>
-                                    {endPage < dueDateTotalPages - 1 && (
-                                      <PaginationItem>
-                                        <span className="px-2">...</span>
-                                      </PaginationItem>
-                                    )}
-                                    <PaginationItem>
-                                      <PaginationLink
-                                        onClick={() =>
-                                          setDueDatePage(dueDateTotalPages)
-                                        }
-                                        className="cursor-pointer"
-                                      >
-                                        {dueDateTotalPages}
-                                      </PaginationLink>
-                                    </PaginationItem>
-                                  </>
-                                )}
-                                <PaginationItem>
-                                  <PaginationNext
-                                    onClick={() =>
-                                      setDueDatePage((p) =>
-                                        Math.min(dueDateTotalPages, p + 1)
-                                      )
-                                    }
-                                    className={
-                                      dueDatePage === dueDateTotalPages
-                                        ? 'pointer-events-none opacity-50'
-                                        : 'cursor-pointer'
-                                    }
-                                  />
-                                </PaginationItem>
-                              </PaginationContent>
-                            </Pagination>
-                          </div>
-                        );
-                      })()}
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+                  {dueDateTotalPages > 1 && (
+                    <Paginador
+                      pagina={dueDatePage}
+                      totalPaginas={dueDateTotalPages}
+                      onPagina={setDueDatePage}
+                      className="w-full min-w-0 border-t border-[var(--arca-border)] px-[18px] py-[11px]"
+                    />
+                  )}
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* Notificaciones Tab - mismo formato que la vista del navbar */}
-          <TabsContent value="notificaciones" className="space-y-3 mt-4">
-            <div className="rounded-lg border bg-card px-4 py-2">
+          <TabsContent value="notificaciones" className="mt-2 space-y-[14px]">
+            {sinDelegacion(
+              selectedProfile?.delegacionesAfip,
+              'domicilio_fiscal'
+            ) && (
+              <AvisoSinDelegacion
+                servicio="domicilio_fiscal"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
+            {/* Misma franja de actualización que Deudas y Vencimientos. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-0.5">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
                     {lastNotificacionesJob?.createdAt ? (
                       <span
                         className={
@@ -3506,7 +3357,11 @@ export function RepresentativeDetailPage({
                             ? 'text-[var(--arca-accent-pos-fg)] font-medium'
                             : 'text-destructive'
                         }
-                        title={lastNotificacionesJob.failedReason ?? undefined}
+                        title={
+                          friendlyFailedReason(
+                            lastNotificacionesJob.failedReason
+                          ) ?? undefined
+                        }
                       >
                         {formatLastUpdateAt(lastNotificacionesJob.createdAt)}
                       </span>
@@ -3518,7 +3373,9 @@ export function RepresentativeDetailPage({
                     !lastNotificacionesJob.success &&
                     lastNotificacionesJob.failedReason && (
                       <p className="text-[11px] text-destructive max-w-md">
-                        {lastNotificacionesJob.failedReason}
+                        {friendlyFailedReason(
+                          lastNotificacionesJob.failedReason
+                        )}
                       </p>
                     )}
                   {lastNotificacionesJob?.notificationFetchWarning && (
@@ -3530,12 +3387,16 @@ export function RepresentativeDetailPage({
                 <Button
                   variant="default"
                   size="sm"
-                  disabled={!!scrapingSection}
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
                   onClick={async () => {
                     setScrapingSection('notificaciones');
                     try {
                       await scrapSingleJob({
-                        data: { representativeId, jobType: 'notificaciones' },
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'notificaciones',
+                        },
                       });
                       await queryClient.invalidateQueries({
                         queryKey: [
@@ -3570,30 +3431,42 @@ export function RepresentativeDetailPage({
                       Actualizando…
                     </>
                   ) : (
-                    'Actualizar Notificaciones'
+                    'Actualizar notificaciones'
                   )}
                 </Button>
               </div>
             </div>
-            <NotificationsView
-              clientId={representativeId}
-              profileId={selectedClientId}
-              className="min-h-[500px]"
+            {/* La misma bandeja que /notifications, acotada a este login y
+                empresa — reemplaza a la vista vieja de filtros apilados. */}
+            <InboxEmbebido
+              credencialId={representativeId}
+              clienteId={selectedClientId}
+              className="h-[calc(100vh-330px)] min-h-[540px]"
             />
           </TabsContent>
 
           {/* Facturas Tab */}
-          <TabsContent value="facturas" className="space-y-6">
+          <TabsContent value="facturas" className="space-y-[14px]">
+            {sinDelegacion(
+              selectedProfile?.delegacionesAfip,
+              'mis_comprobantes'
+            ) && (
+              <AvisoSinDelegacion
+                servicio="mis_comprobantes"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
             {/* <div className="flex justify-end">
             <Button
               variant="default"
               size="sm"
-              disabled={!!scrapingSection}
+              disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
               onClick={async () => {
                 setScrapingSection("facturas");
                 try {
                   await scrapSingleJob({
-                    data: { representativeId, jobType: "comprobantes" },
+                    data: { credencialId: representativeId, jobType: "comprobantes" },
                   });
                   await Promise.all([
                     queryClient.invalidateQueries({ queryKey: ["clientAllInvoices", representativeId] }),
@@ -3620,300 +3493,6 @@ export function RepresentativeDetailPage({
               )}
             </Button>
           </div> */}
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              {/* Fila 1: solo botón Actualizar Facturas */}
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
-                    {lastComprobantesJob?.createdAt ? (
-                      <span
-                        className={
-                          lastComprobantesJob.success
-                            ? 'text-[var(--arca-accent-pos-fg)] font-medium'
-                            : 'text-destructive'
-                        }
-                        title={lastComprobantesJob.failedReason ?? undefined}
-                      >
-                        {formatLastUpdateAt(lastComprobantesJob.createdAt)}
-                      </span>
-                    ) : (
-                      '—'
-                    )}
-                  </p>
-                  {lastComprobantesJob &&
-                    !lastComprobantesJob.success &&
-                    lastComprobantesJob.failedReason && (
-                      <p className="text-[11px] text-destructive max-w-md">
-                        {lastComprobantesJob.failedReason}
-                      </p>
-                    )}
-                </div>
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={!!scrapingSection}
-                  onClick={async () => {
-                    setScrapingSection('facturas');
-                    try {
-                      await scrapSingleJob({
-                        data: { representativeId, jobType: 'comprobantes' },
-                      });
-                      await Promise.all([
-                        queryClient.invalidateQueries({
-                          queryKey: ['clientAllInvoices', representativeId],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: ['invoices'],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: [
-                            'lastComprobantesFullJob',
-                            representativeId,
-                          ],
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: ['lastComprobantesJob', representativeId],
-                        }),
-                      ]);
-                      toast.success(
-                        'Facturas (comprobantes) actualizadas correctamente'
-                      );
-                    } catch (err) {
-                      toast.error(
-                        err instanceof Error
-                          ? err.message
-                          : 'Error al actualizar facturas'
-                      );
-                      queryClient.invalidateQueries({
-                        queryKey: ['lastComprobantesJob', representativeId],
-                      });
-                    } finally {
-                      setScrapingSection(null);
-                    }
-                  }}
-                >
-                  {scrapingSection === 'facturas' ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Actualizando…
-                    </>
-                  ) : (
-                    'Actualizar Facturas'
-                  )}
-                </Button>
-              </div>
-
-              {/* Fila 2: filtros */}
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm text-muted-foreground shrink-0">
-                  Período:
-                </span>
-                <Select
-                  value={facturasPeriodType}
-                  onValueChange={(v) => {
-                    setFacturasPeriodType(
-                      v as 'none' | 'year' | 'month' | 'range'
-                    );
-                    setFacturasPeriodPickerOpen(false);
-                  }}
-                >
-                  <SelectTrigger className="w-[160px] h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Sin período</SelectItem>
-                    <SelectItem value="year">Por año</SelectItem>
-                    <SelectItem value="month">Por mes</SelectItem>
-                    <SelectItem value="range">Rango de días</SelectItem>
-                  </SelectContent>
-                </Select>
-                {facturasPeriodType === 'year' && (
-                  <Select
-                    value={String(facturasYear)}
-                    onValueChange={(v) => setFacturasYear(Number(v))}
-                  >
-                    <SelectTrigger className="w-[100px] h-9">
-                      <SelectValue placeholder="Año" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Array.from(
-                        { length: 8 },
-                        (_, i) => now.getFullYear() - i
-                      ).map((y) => (
-                        <SelectItem key={y} value={String(y)}>
-                          {y}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {facturasPeriodType === 'month' && (
-                  <Popover
-                    open={facturasPeriodPickerOpen}
-                    onOpenChange={setFacturasPeriodPickerOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className="h-9 min-w-[160px] justify-start text-left font-normal px-3"
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                        <span className="text-sm">{`${MONTH_NAMES[facturasMonth]} ${facturasYear}`}</span>
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-4" align="start">
-                      <div className="space-y-3">
-                        <Select
-                          value={String(facturasYear)}
-                          onValueChange={(v) => {
-                            const y = Number(v);
-                            const newMax =
-                              y === now.getFullYear() ? now.getMonth() : 11;
-                            setFacturasYear(y);
-                            setFacturasMonth((m) => Math.min(m, newMax));
-                          }}
-                        >
-                          <SelectTrigger className="w-full h-9">
-                            <SelectValue placeholder="Año" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Array.from(
-                              { length: 8 },
-                              (_, i) => now.getFullYear() - i
-                            ).map((y) => (
-                              <SelectItem key={y} value={String(y)}>
-                                {y}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <div className="grid grid-cols-3 gap-1.5">
-                          {Array.from(
-                            {
-                              length:
-                                facturasYear === now.getFullYear()
-                                  ? now.getMonth() + 1
-                                  : 12,
-                            },
-                            (_, i) => i
-                          ).map((i) => (
-                            <Button
-                              key={i}
-                              variant={
-                                facturasMonth === i ? 'default' : 'outline'
-                              }
-                              size="sm"
-                              className="text-xs h-8"
-                              onClick={() => {
-                                setFacturasMonth(i);
-                                setFacturasPeriodPickerOpen(false);
-                              }}
-                            >
-                              {MONTH_NAMES_SHORT[i]}
-                            </Button>
-                          ))}
-                        </div>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                )}
-                {facturasPeriodType === 'range' && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          'h-9 min-w-[200px] justify-start text-left font-normal',
-                          !facturasDateRange?.from && 'text-muted-foreground'
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                        {facturasDateRange?.from
-                          ? facturasDateRange?.to
-                            ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
-                            : format(facturasDateRange.from, 'dd/MM/yyyy', {
-                                locale: es,
-                              })
-                          : 'Elegir fechas'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <DateRangeCalendar
-                        mode="range"
-                        defaultMonth={facturasDateRange?.from}
-                        selected={facturasDateRange}
-                        onSelect={setFacturasDateRange}
-                        numberOfMonths={2}
-                        locale={es}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                )}
-
-                <span className="text-sm text-muted-foreground shrink-0">
-                  Tipo:
-                </span>
-                <Select
-                  value={facturasTypeFilter}
-                  onValueChange={setFacturasTypeFilter}
-                >
-                  <SelectTrigger className="w-[220px] h-9">
-                    <SelectValue placeholder="Tipo" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[300px]">
-                    <SelectItem value="all">Todas las facturas</SelectItem>
-                    {Object.entries(INVOICE_TYPE_LABELS)
-                      .sort(([a], [b]) => Number(a) - Number(b))
-                      .map(([code, label]) => (
-                        <SelectItem key={code} value={code}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-
-                <span className="text-sm text-muted-foreground shrink-0">
-                  Dirección:
-                </span>
-                <Select
-                  value={facturasDirectionFilter}
-                  onValueChange={setFacturasDirectionFilter}
-                >
-                  <SelectTrigger className="w-[130px] h-9">
-                    <SelectValue placeholder="Dirección" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="Outbound">Emitida</SelectItem>
-                    <SelectItem value="Inbound">Recibida</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Fila 3: búsqueda por emisor/receptor y exportar Excel */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Buscar mediante emisor o receptor..."
-                    value={facturasSearchTerm}
-                    onChange={(e) => setFacturasSearchTerm(e.target.value)}
-                    className="pl-8 w-full md:w-80"
-                  />
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => invoicesTableRef.current?.exportExcel()}
-                  className="h-9 gap-1.5 shrink-0 font-normal"
-                >
-                  <Download className="h-4 w-4" />
-                  <span>Excel</span>
-                </Button>
-              </div>
-            </div>
-
             {/* Resumen Ventas/Compras (1/3) + Gráfico (2/3) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full max-w-full">
               <Card className="overflow-hidden min-h-[7.25rem]">
@@ -4053,18 +3632,18 @@ export function RepresentativeDetailPage({
                         <CartesianGrid
                           vertical={false}
                           strokeDasharray="3 4"
-                          stroke="#ECEAE3"
+                          stroke="var(--arca-border)"
                         />
                         <XAxis
                           dataKey="period"
                           tickLine={false}
                           axisLine={false}
-                          tick={{ fill: '#6E7079', fontSize: 9 }}
+                          tick={{ fill: 'var(--arca-ink-3)', fontSize: 9 }}
                         />
                         <YAxis
                           tickLine={false}
                           axisLine={false}
-                          tick={{ fill: '#9B9CA3', fontSize: 9 }}
+                          tick={{ fill: 'var(--arca-ink-4)', fontSize: 9 }}
                           tickFormatter={(v) =>
                             v >= 1e6
                               ? `${(v / 1e6).toFixed(1)}M`
@@ -4076,17 +3655,20 @@ export function RepresentativeDetailPage({
                         <Tooltip
                           cursor={{ fill: 'rgba(30,52,96,0.06)' }}
                           contentStyle={{
-                            background: '#12131A',
+                            background: 'var(--arca-ink)',
                             border: 'none',
                             borderRadius: 8,
                             padding: '8px 12px',
                           }}
                           labelStyle={{
-                            color: '#9B9CA3',
+                            color: 'var(--arca-ink-4)',
                             fontSize: 10,
                             marginBottom: 4,
                           }}
-                          itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
+                          itemStyle={{
+                            color: 'var(--arca-sidebar-fg)',
+                            fontSize: 11,
+                          }}
                           formatter={(value) =>
                             new Intl.NumberFormat('es-AR', {
                               style: 'currency',
@@ -4118,65 +3700,166 @@ export function RepresentativeDetailPage({
               )}
             </div>
 
-            <InvoicesTable
-              ref={invoicesTableRef}
-              clientId={representativeId}
-              profileId={selectedClientId}
-              controlledDateFrom={facturasBounds.dateFrom}
-              controlledDateTo={facturasBounds.dateTo}
-              controlledProfileFilter={selectedClientId ?? 'all'}
-              controlledTypeFilter={facturasTypeFilter}
-              controlledDirectionFilter={facturasDirectionFilter}
-              controlledSearchTerm={facturasDebouncedSearchTerm}
-              onFiltersChange={facturasOnFiltersChange}
-            />
-          </TabsContent>
-
-          {/* Convenio Multilateral Tab */}
-          <TabsContent value="convenio-multilateral" className="space-y-6">
-            <div className="rounded-lg border bg-card p-4 space-y-4">
-              <div className="flex items-center gap-2">
-                <Receipt className="h-5 w-5 shrink-0" />
-                <h3 className="font-semibold text-lg">
-                  Convenio Multilateral (ventas por provincia)
-                </h3>
+            {/* Misma franja de actualización que el resto de las pestañas. */}
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-col gap-1">
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Últ. actualización{' '}
+                    {lastComprobantesJob?.createdAt ? (
+                      <span
+                        className={
+                          lastComprobantesJob.success
+                            ? 'text-[var(--arca-accent-pos-fg)] font-medium'
+                            : 'text-destructive'
+                        }
+                        title={
+                          friendlyFailedReason(
+                            lastComprobantesJob.failedReason
+                          ) ?? undefined
+                        }
+                      >
+                        {formatLastUpdateAt(lastComprobantesJob.createdAt)}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </p>
+                  {lastComprobantesJob &&
+                    !lastComprobantesJob.success &&
+                    lastComprobantesJob.failedReason && (
+                      <p className="text-[11px] text-destructive max-w-md">
+                        {friendlyFailedReason(lastComprobantesJob.failedReason)}
+                      </p>
+                    )}
+                </div>
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={!!scrapingSection || scrapingPausado}
+                  title={scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined}
+                  onClick={async () => {
+                    setScrapingSection('facturas');
+                    try {
+                      await scrapSingleJob({
+                        data: {
+                          credencialId: representativeId,
+                          jobType: 'comprobantes',
+                        },
+                      });
+                      await Promise.all([
+                        queryClient.invalidateQueries({
+                          queryKey: ['clientAllInvoices', representativeId],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['invoices'],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: [
+                            'lastComprobantesFullJob',
+                            representativeId,
+                          ],
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: ['lastComprobantesJob', representativeId],
+                        }),
+                      ]);
+                      toast.success(
+                        'Facturas (comprobantes) actualizadas correctamente'
+                      );
+                    } catch (err) {
+                      toast.error(
+                        err instanceof Error
+                          ? err.message
+                          : 'Error al actualizar facturas'
+                      );
+                      queryClient.invalidateQueries({
+                        queryKey: ['lastComprobantesJob', representativeId],
+                      });
+                    } finally {
+                      setScrapingSection(null);
+                    }
+                  }}
+                >
+                  {scrapingSection === 'facturas' ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Actualizando…
+                    </>
+                  ) : (
+                    'Actualizar Facturas'
+                  )}
+                </Button>
               </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground shrink-0">
-                    Período:
-                  </span>
-                  <Popover>
+
+              {/* Filtros, buscador y exportar, todo en una línea. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
+                  Período:
+                </span>
+                <Select
+                  value={facturasPeriodType}
+                  onValueChange={(v) => {
+                    setFacturasPeriodType(
+                      v as 'none' | 'year' | 'month' | 'range'
+                    );
+                    setFacturasPeriodPickerOpen(false);
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-[150px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Sin período</SelectItem>
+                    <SelectItem value="year">Por año</SelectItem>
+                    <SelectItem value="month">Por mes</SelectItem>
+                    <SelectItem value="range">Rango de días</SelectItem>
+                  </SelectContent>
+                </Select>
+                {facturasPeriodType === 'year' && (
+                  <Select
+                    value={String(facturasYear)}
+                    onValueChange={(v) => setFacturasYear(Number(v))}
+                  >
+                    <SelectTrigger size="sm" className="w-[100px]">
+                      <SelectValue placeholder="Año" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from(
+                        { length: 8 },
+                        (_, i) => now.getFullYear() - i
+                      ).map((y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {facturasPeriodType === 'month' && (
+                  <Popover
+                    open={facturasPeriodPickerOpen}
+                    onOpenChange={setFacturasPeriodPickerOpen}
+                  >
                     <PopoverTrigger asChild>
                       <Button
                         variant="outline"
-                        className="h-9 px-3 text-xs font-normal"
+                        className="h-9 min-w-[160px] justify-start text-left font-normal px-3"
                       >
-                        {multilateralPeriod
-                          ? `${MONTH_NAMES_SHORT[multilateralSelectedMonth]} ${multilateralSelectedYear}`
-                          : 'Sin filtro'}
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        <span className="text-sm">{`${MONTH_NAMES[facturasMonth]} ${facturasYear}`}</span>
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-auto p-4" align="end">
+                    <PopoverContent className="w-auto p-4" align="start">
                       <div className="space-y-3">
                         <Select
-                          value={String(multilateralSelectedYear)}
+                          value={String(facturasYear)}
                           onValueChange={(v) => {
                             const y = Number(v);
                             const newMax =
                               y === now.getFullYear() ? now.getMonth() : 11;
-                            const m = Math.min(
-                              multilateralSelectedMonth,
-                              newMax
-                            );
-                            const range = getMonthBounds(y, m);
-                            setMultilateralPeriod(range);
-                            setMultilateralDateFrom(
-                              range.from.toISOString().slice(0, 10)
-                            );
-                            setMultilateralDateTo(
-                              range.to.toISOString().slice(0, 10)
-                            );
+                            setFacturasYear(y);
+                            setFacturasMonth((m) => Math.min(m, newMax));
                           }}
                         >
                           <SelectTrigger className="w-full h-9">
@@ -4194,28 +3877,25 @@ export function RepresentativeDetailPage({
                           </SelectContent>
                         </Select>
                         <div className="grid grid-cols-3 gap-1.5">
-                          {multilateralAvailableMonthIndices.map((i) => (
+                          {Array.from(
+                            {
+                              length:
+                                facturasYear === now.getFullYear()
+                                  ? now.getMonth() + 1
+                                  : 12,
+                            },
+                            (_, i) => i
+                          ).map((i) => (
                             <Button
                               key={i}
                               variant={
-                                multilateralSelectedMonth === i
-                                  ? 'default'
-                                  : 'outline'
+                                facturasMonth === i ? 'default' : 'outline'
                               }
                               size="sm"
                               className="text-xs h-8"
                               onClick={() => {
-                                const range = getMonthBounds(
-                                  multilateralSelectedYear,
-                                  i
-                                );
-                                setMultilateralPeriod(range);
-                                setMultilateralDateFrom(
-                                  range.from.toISOString().slice(0, 10)
-                                );
-                                setMultilateralDateTo(
-                                  range.to.toISOString().slice(0, 10)
-                                );
+                                setFacturasMonth(i);
+                                setFacturasPeriodPickerOpen(false);
                               }}
                             >
                               {MONTH_NAMES_SHORT[i]}
@@ -4225,368 +3905,500 @@ export function RepresentativeDetailPage({
                       </div>
                     </PopoverContent>
                   </Popover>
+                )}
+                {facturasPeriodType === 'range' && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          'h-9 min-w-[200px] justify-start text-left font-normal',
+                          !facturasDateRange?.from && 'text-muted-foreground'
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
+                        {facturasDateRange?.from
+                          ? facturasDateRange?.to
+                            ? `${format(facturasDateRange.from, 'dd/MM/yyyy', { locale: es })} – ${format(facturasDateRange.to, 'dd/MM/yyyy', { locale: es })}`
+                            : format(facturasDateRange.from, 'dd/MM/yyyy', {
+                                locale: es,
+                              })
+                          : 'Elegir fechas'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <DateRangeCalendar
+                        mode="range"
+                        defaultMonth={facturasDateRange?.from}
+                        selected={facturasDateRange}
+                        onSelect={setFacturasDateRange}
+                        numberOfMonths={2}
+                        locale={es}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                )}
+
+                <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
+                  Tipo:
+                </span>
+                <Select
+                  value={facturasTypeFilter}
+                  onValueChange={setFacturasTypeFilter}
+                >
+                  <SelectTrigger size="sm" className="w-[170px]">
+                    <SelectValue placeholder="Tipo" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    <SelectItem value="all">Todas las facturas</SelectItem>
+                    {Object.entries(INVOICE_TYPE_LABELS)
+                      .sort(([a], [b]) => Number(a) - Number(b))
+                      .map(([code, label]) => (
+                        <SelectItem key={code} value={code}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+
+                <span className="shrink-0 text-[12.5px] text-[var(--arca-ink-3)]">
+                  Dirección:
+                </span>
+                <Select
+                  value={facturasDirectionFilter}
+                  onValueChange={setFacturasDirectionFilter}
+                >
+                  <SelectTrigger size="sm" className="w-[120px]">
+                    <SelectValue placeholder="Dirección" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="emitido">Emitida</SelectItem>
+                    <SelectItem value="recibido">Recibida</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="relative">
+                  <Search className="absolute top-[7px] left-2 size-4 text-[var(--arca-ink-4)]" />
+                  <Input
+                    placeholder="Buscar emisor o receptor..."
+                    value={facturasSearchTerm}
+                    onChange={(e) => setFacturasSearchTerm(e.target.value)}
+                    className="h-[30px] w-full pl-8 text-[12.5px] md:w-56"
+                  />
                 </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => invoicesTableRef.current?.exportExcel()}
+                  className="shrink-0 gap-1.5"
+                >
+                  <Download className="size-3.5" />
+                  <span>Excel</span>
+                </Button>
+                {facturasFiltrosPuestos > 0 && (
+                  <LimpiarFiltros
+                    onLimpiar={() => {
+                      setFacturasPeriodType('none');
+                      setFacturasTypeFilter('all');
+                      setFacturasDirectionFilter('all');
+                      setFacturasSearchTerm('');
+                      setFacturasDateRange(undefined);
+                    }}
+                  />
+                )}
               </div>
             </div>
 
-            <Card>
-              <CardContent className="pt-6">
-                {multilateralPeriod && multilateralPrevPeriod && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Provincias con actividad
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {multilateralAggCurrent.provinces}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.provinces}
-                          previous={multilateralAggPrev.provinces}
-                        />
-                      </CardContent>
-                    </Card>
+            <InvoicesTable
+              ref={invoicesTableRef}
+              clientId={representativeId}
+              profileId={selectedClientId}
+              controlledDateFrom={facturasBounds.dateFrom}
+              controlledDateTo={facturasBounds.dateTo}
+              controlledProfileFilter={selectedClientId ?? 'all'}
+              controlledTypeFilter={facturasTypeFilter}
+              controlledDirectionFilter={facturasDirectionFilter}
+              controlledSearchTerm={facturasDebouncedSearchTerm}
+              onFiltersChange={facturasOnFiltersChange}
+            />
+          </TabsContent>
 
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Cantidad de comprobantes
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {multilateralAggCurrent.invoices}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.invoices}
-                          previous={multilateralAggPrev.invoices}
-                        />
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Total IVA del período
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {formatIvaCurrency(multilateralAggCurrent.totalIVA)}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.totalIVA}
-                          previous={multilateralAggPrev.totalIVA}
-                        />
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground">
-                          Base imponible del período
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-semibold">
-                          {formatIvaCurrency(multilateralAggCurrent.totalBase)}
-                        </div>
-                        <MetricDelta
-                          current={multilateralAggCurrent.totalBase}
-                          previous={multilateralAggPrev.totalBase}
-                        />
-                      </CardContent>
-                    </Card>
-                  </div>
+          {/* Convenio Multilateral Tab */}
+          <TabsContent value="convenio-multilateral" className="space-y-[14px]">
+            {/* Sin card ni título: la pestaña ya dice "Convenio Multilateral".
+              Queda la aclaración de qué se está mirando y el período, con el
+              mismo picker que el resto de la plataforma. */}
+            <div className="flex flex-wrap items-center gap-3">
+              <SelectorPeriodo
+                periodo={aPeriodo(
+                  multilateralSelectedYear,
+                  multilateralSelectedMonth
                 )}
+                onPeriodo={(p) => {
+                  const { anio, mes } = dePeriodo(p);
+                  const range = getMonthBounds(anio, mes);
+                  setMultilateralPeriod(range);
+                  setMultilateralDateFrom(aFechaLocal(range.from));
+                  setMultilateralDateTo(aFechaLocal(range.to));
+                }}
+              />
+              <span className="text-[12.5px] font-medium text-[var(--arca-ink-3)]">
+                Ventas por provincia
+              </span>
+            </div>
 
-                {/* Gráficos: Actual vs Anterior */}
-                {multilateralPeriod && multilateralPrevPeriod && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-6">
-                    {convenioActividadChartData.length > 0 && (
-                      <Card className="overflow-hidden">
-                        <CardHeader className="py-2 px-4">
-                          <CardTitle className="text-sm font-semibold">
-                            Actividad: período actual vs anterior
-                          </CardTitle>
-                          <p className="text-xs text-muted-foreground font-normal">
-                            Provincias con actividad y cantidad de comprobantes
-                          </p>
-                        </CardHeader>
-                        <CardContent className="pt-0 px-4 pb-4">
-                          <ChartContainer
-                            config={convenioChartConfig}
-                            className="h-[180px] w-full"
-                          >
-                            <BarChart
-                              data={convenioActividadChartData}
-                              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                              barCategoryGap={12}
-                            >
-                              <CartesianGrid
-                                vertical={false}
-                                strokeDasharray="3 4"
-                                stroke="#ECEAE3"
-                              />
-                              <XAxis
-                                dataKey="metrica"
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{ fill: '#6E7079', fontSize: 10 }}
-                              />
-                              <YAxis
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{ fill: '#9B9CA3', fontSize: 9 }}
-                              />
-                              <Tooltip
-                                cursor={{ fill: 'rgba(30,52,96,0.06)' }}
-                                contentStyle={{
-                                  background: '#12131A',
-                                  border: 'none',
-                                  borderRadius: 8,
-                                  padding: '8px 12px',
-                                }}
-                                labelStyle={{
-                                  color: '#9B9CA3',
-                                  fontSize: 10,
-                                  marginBottom: 4,
-                                }}
-                                itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
-                                formatter={(value) => String(value)}
-                              />
-                              <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Bar
-                                dataKey="actual"
-                                fill="var(--color-actual)"
-                                name="Período actual"
-                                maxBarSize={36}
-                                radius={[4, 4, 0, 0]}
-                              />
-                              <Bar
-                                dataKey="anterior"
-                                fill="var(--color-anterior)"
-                                name="Período anterior"
-                                maxBarSize={36}
-                                radius={[4, 4, 0, 0]}
-                              />
-                            </BarChart>
-                          </ChartContainer>
-                        </CardContent>
-                      </Card>
-                    )}
-                    {convenioMontosChartData.length > 0 && (
-                      <Card className="overflow-hidden">
-                        <CardHeader className="py-2 px-4">
-                          <CardTitle className="text-sm font-semibold">
-                            Montos: período actual vs anterior
-                          </CardTitle>
-                          <p className="text-xs text-muted-foreground font-normal">
-                            Total IVA y base imponible (ARS)
-                          </p>
-                        </CardHeader>
-                        <CardContent className="pt-0 px-4 pb-4">
-                          <ChartContainer
-                            config={convenioChartConfig}
-                            className="h-[180px] w-full"
-                          >
-                            <BarChart
-                              data={convenioMontosChartData}
-                              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                              barCategoryGap={12}
-                            >
-                              <CartesianGrid
-                                vertical={false}
-                                strokeDasharray="3 4"
-                                stroke="#ECEAE3"
-                              />
-                              <XAxis
-                                dataKey="metrica"
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{ fill: '#6E7079', fontSize: 10 }}
-                              />
-                              <YAxis
-                                tickLine={false}
-                                axisLine={false}
-                                tick={{ fill: '#9B9CA3', fontSize: 9 }}
-                                tickFormatter={(v) =>
-                                  v >= 1e6
-                                    ? `${(v / 1e6).toFixed(1)}M`
-                                    : v >= 1e3
-                                      ? `${(v / 1e3).toFixed(0)}k`
-                                      : String(v)
-                                }
-                              />
-                              <Tooltip
-                                cursor={{ fill: 'rgba(30,52,96,0.06)' }}
-                                contentStyle={{
-                                  background: '#12131A',
-                                  border: 'none',
-                                  borderRadius: 8,
-                                  padding: '8px 12px',
-                                }}
-                                labelStyle={{
-                                  color: '#9B9CA3',
-                                  fontSize: 10,
-                                  marginBottom: 4,
-                                }}
-                                itemStyle={{ color: '#E8E6DF', fontSize: 11 }}
-                                formatter={(value) =>
-                                  new Intl.NumberFormat('es-AR', {
-                                    style: 'currency',
-                                    currency: 'ARS',
-                                    minimumFractionDigits: 0,
-                                    maximumFractionDigits: 0,
-                                  }).format(Number(value))
-                                }
-                              />
-                              <Legend wrapperStyle={{ fontSize: 10 }} />
-                              <Bar
-                                dataKey="actual"
-                                fill="var(--color-actual)"
-                                name="Período actual"
-                                maxBarSize={36}
-                                radius={[4, 4, 0, 0]}
-                              />
-                              <Bar
-                                dataKey="anterior"
-                                fill="var(--color-anterior)"
-                                name="Período anterior"
-                                radius={[4, 4, 0, 0]}
-                              />
-                            </BarChart>
-                          </ChartContainer>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
+            {multilateralPeriod && multilateralPrevPeriod && (
+              <CardsResumen
+                cards={[
+                  {
+                    label: 'Provincias con actividad',
+                    valor: String(multilateralAggCurrent.provinces),
+                    ...delta(
+                      multilateralAggCurrent.provinces,
+                      multilateralAggPrev.provinces
+                    ),
+                  },
+                  {
+                    label: 'Comprobantes',
+                    valor: String(multilateralAggCurrent.invoices),
+                    ...delta(
+                      multilateralAggCurrent.invoices,
+                      multilateralAggPrev.invoices
+                    ),
+                  },
+                  {
+                    label: 'Total IVA del período',
+                    valor: formatIvaCurrency(multilateralAggCurrent.totalIVA),
+                    ...delta(
+                      multilateralAggCurrent.totalIVA,
+                      multilateralAggPrev.totalIVA
+                    ),
+                    tono: 'acento',
+                  },
+                  {
+                    label: 'Base imponible del período',
+                    valor: formatIvaCurrency(multilateralAggCurrent.totalBase),
+                    ...delta(
+                      multilateralAggCurrent.totalBase,
+                      multilateralAggPrev.totalBase
+                    ),
+                    tono: 'acento',
+                  },
+                ]}
+              />
+            )}
+
+            {/* Gráficos: Actual vs Anterior */}
+            {multilateralPeriod && multilateralPrevPeriod && (
+              <div className="grid grid-cols-1 gap-[14px] lg:grid-cols-2">
+                {convenioActividadChartData.length > 0 && (
+                  <Card className="overflow-hidden">
+                    <CardHeader className="py-2 px-4">
+                      <CardTitle className="text-sm font-semibold">
+                        Actividad: período actual vs anterior
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground font-normal">
+                        Provincias con actividad y cantidad de comprobantes
+                      </p>
+                    </CardHeader>
+                    <CardContent className="pt-0 px-4 pb-4">
+                      <ChartContainer
+                        config={convenioChartConfig}
+                        className="h-[180px] w-full"
+                      >
+                        <BarChart
+                          data={convenioActividadChartData}
+                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                          barCategoryGap={12}
+                        >
+                          <CartesianGrid
+                            vertical={false}
+                            strokeDasharray="3 4"
+                            stroke="var(--arca-border)"
+                          />
+                          <XAxis
+                            dataKey="metrica"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-3)',
+                              fontSize: 10,
+                            }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-4)',
+                              fontSize: 9,
+                            }}
+                          />
+                          <Tooltip
+                            cursor={{ fill: 'rgba(30,52,96,0.06)' }}
+                            contentStyle={{
+                              background: 'var(--arca-ink)',
+                              border: 'none',
+                              borderRadius: 8,
+                              padding: '8px 12px',
+                            }}
+                            labelStyle={{
+                              color: 'var(--arca-ink-4)',
+                              fontSize: 10,
+                              marginBottom: 4,
+                            }}
+                            itemStyle={{
+                              color: 'var(--arca-sidebar-fg)',
+                              fontSize: 11,
+                            }}
+                            formatter={(value) => String(value)}
+                          />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          <Bar
+                            dataKey="actual"
+                            fill="var(--color-actual)"
+                            name="Período actual"
+                            maxBarSize={36}
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="anterior"
+                            fill="var(--color-anterior)"
+                            name="Período anterior"
+                            maxBarSize={36}
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
                 )}
+                {convenioMontosChartData.length > 0 && (
+                  <Card className="overflow-hidden">
+                    <CardHeader className="py-2 px-4">
+                      <CardTitle className="text-sm font-semibold">
+                        Montos: período actual vs anterior
+                      </CardTitle>
+                      <p className="text-xs text-muted-foreground font-normal">
+                        Total IVA y base imponible (ARS)
+                      </p>
+                    </CardHeader>
+                    <CardContent className="pt-0 px-4 pb-4">
+                      <ChartContainer
+                        config={convenioChartConfig}
+                        className="h-[180px] w-full"
+                      >
+                        <BarChart
+                          data={convenioMontosChartData}
+                          margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                          barCategoryGap={12}
+                        >
+                          <CartesianGrid
+                            vertical={false}
+                            strokeDasharray="3 4"
+                            stroke="var(--arca-border)"
+                          />
+                          <XAxis
+                            dataKey="metrica"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-3)',
+                              fontSize: 10,
+                            }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{
+                              fill: 'var(--arca-ink-4)',
+                              fontSize: 9,
+                            }}
+                            tickFormatter={(v) =>
+                              v >= 1e6
+                                ? `${(v / 1e6).toFixed(1)}M`
+                                : v >= 1e3
+                                  ? `${(v / 1e3).toFixed(0)}k`
+                                  : String(v)
+                            }
+                          />
+                          <Tooltip
+                            cursor={{ fill: 'rgba(30,52,96,0.06)' }}
+                            contentStyle={{
+                              background: 'var(--arca-ink)',
+                              border: 'none',
+                              borderRadius: 8,
+                              padding: '8px 12px',
+                            }}
+                            labelStyle={{
+                              color: 'var(--arca-ink-4)',
+                              fontSize: 10,
+                              marginBottom: 4,
+                            }}
+                            itemStyle={{
+                              color: 'var(--arca-sidebar-fg)',
+                              fontSize: 11,
+                            }}
+                            formatter={(value) =>
+                              new Intl.NumberFormat('es-AR', {
+                                style: 'currency',
+                                currency: 'ARS',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                              }).format(Number(value))
+                            }
+                          />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          <Bar
+                            dataKey="actual"
+                            fill="var(--color-actual)"
+                            name="Período actual"
+                            maxBarSize={36}
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="anterior"
+                            fill="var(--color-anterior)"
+                            name="Período anterior"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ChartContainer>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
 
-                {loadingMultilateralSummary ? (
-                  <div className="flex items-center justify-center h-32 text-muted-foreground gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Cargando ventas por provincia…</span>
-                  </div>
-                ) : multilateralSummary.length === 0 ? (
-                  <div className="flex items-center justify-center h-32">
-                    <div className="text-muted-foreground">
-                      No hay facturas emitidas registradas para este cliente
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Provincia</TableHead>
-                          <TableHead className="text-right">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
-                              onClick={() => toggleMultilateralSort('count')}
-                            >
-                              Cant. comprobantes
-                              {multilateralSortKey === 'count' &&
-                                (multilateralSortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                ))}
-                            </button>
-                          </TableHead>
-                          <TableHead className="text-right">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
-                              onClick={() => toggleMultilateralSort('iva')}
-                            >
-                              Total IVA
-                              {multilateralSortKey === 'iva' &&
-                                (multilateralSortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                ))}
-                            </button>
-                          </TableHead>
-                          <TableHead className="text-right">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer select-none"
-                              onClick={() => toggleMultilateralSort('base')}
-                            >
-                              Base imponible (amount_taxed)
-                              {multilateralSortKey === 'base' &&
-                                (multilateralSortDir === 'asc' ? (
-                                  <ChevronUp className="h-3 w-3" />
-                                ) : (
-                                  <ChevronDown className="h-3 w-3" />
-                                ))}
-                            </button>
-                          </TableHead>
+            {loadingMultilateralSummary ? (
+              <div className="flex h-32 items-center justify-center gap-2 text-[13px] text-[var(--arca-ink-3)]">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Cargando ventas por provincia…</span>
+              </div>
+            ) : multilateralSummary.length === 0 ? (
+              <div className="flex h-32 items-center justify-center text-[13px] text-[var(--arca-ink-3)]">
+                No hay facturas emitidas registradas para este cliente
+              </div>
+            ) : (
+              /* Una sola card: el borde de la tabla y el de la card se
+                superponían, y el `rounded-md border` de adentro sumaba un
+                tercero. */
+              <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)] [&_[data-slot=table-container]]:rounded-none [&_[data-slot=table-container]]:border-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Provincia</TableHead>
+                      <TableHead className="text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
+                          onClick={() => toggleMultilateralSort('count')}
+                        >
+                          Cant. comprobantes
+                          {multilateralSortKey === 'count' &&
+                            (multilateralSortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            ))}
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
+                          onClick={() => toggleMultilateralSort('iva')}
+                        >
+                          Total IVA
+                          {multilateralSortKey === 'iva' &&
+                            (multilateralSortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            ))}
+                        </button>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[10.5px] font-semibold tracking-[0.06em] uppercase text-[var(--arca-ink-3)] hover:text-[var(--arca-ink-2)] cursor-pointer select-none"
+                          onClick={() => toggleMultilateralSort('base')}
+                        >
+                          Base imponible (amount_taxed)
+                          {multilateralSortKey === 'base' &&
+                            (multilateralSortDir === 'asc' ? (
+                              <ChevronUp className="h-3 w-3" />
+                            ) : (
+                              <ChevronDown className="h-3 w-3" />
+                            ))}
+                        </button>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {sortedMultilateralSummary.map((row: any) => {
+                      const provinceLabel =
+                        row.receiptProvince || 'Capital Federal';
+                      const provinceValue = row.receiptProvince ?? null; // null para agrupar "Capital Federal"
+                      return (
+                        <TableRow
+                          key={provinceLabel}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => {
+                            setSelectedMultilateralProvince(provinceValue);
+                            setSelectedMultilateralProvinceLabel(provinceLabel);
+                            setMultilateralDetailOpen(true);
+                          }}
+                        >
+                          <TableCell className="font-medium">
+                            {provinceLabel}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.invoiceCount}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalIVA)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatIvaCurrency(row.totalTaxed)}
+                          </TableCell>
                         </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sortedMultilateralSummary.map((row: any) => {
-                          const provinceLabel =
-                            row.receiptProvince || 'Capital Federal';
-                          const provinceValue = row.receiptProvince ?? null; // null para agrupar "Capital Federal"
-                          return (
-                            <TableRow
-                              key={provinceLabel}
-                              className="cursor-pointer hover:bg-muted/50"
-                              onClick={() => {
-                                setSelectedMultilateralProvince(provinceValue);
-                                setSelectedMultilateralProvinceLabel(
-                                  provinceLabel
-                                );
-                                setMultilateralDetailOpen(true);
-                              }}
-                            >
-                              <TableCell className="font-medium">
-                                {provinceLabel}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {row.invoiceCount}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {formatIvaCurrency(row.totalIVA)}
-                              </TableCell>
-                              <TableCell className="text-right">
-                                {formatIvaCurrency(row.totalTaxed)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </TabsContent>
 
           {/* IVA Tab */}
           <TabsContent value="iva" className="">
-            <div className="rounded-lg border bg-card p-4 space-y-4">
+            {sinDelegacion(selectedProfile?.delegacionesAfip, 'portal_iva') && (
+              <AvisoSinDelegacion
+                servicio="portal_iva"
+                credencialNombre={client?.nombre ?? null}
+              />
+            )}
+            {/* Misma franja de actualización que el resto de las pestañas. */}
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-col gap-1">
-                  <p className="text-xs text-muted-foreground">
-                    Ult. actualización{' '}
-                    {lastIvaJob?.createdAt ? (
-                      <span
-                        className={
-                          lastIvaJob.success
-                            ? 'text-[var(--arca-accent-pos-fg)] font-medium'
-                            : 'text-destructive'
-                        }
-                        title={lastIvaJob.failedReason ?? undefined}
-                      >
-                        {formatLastUpdateAt(lastIvaJob.createdAt)}
+                  {/* La frescura de la pestaña es la de los COMPROBANTES (la
+                      fuente del estimado), no la del job del Portal IVA: son
+                      pipelines distintos y el rojo global mentía cuando el
+                      Portal fallaba con los comprobantes al día. */}
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    Comprobantes al día al{' '}
+                    {frescuraIva?.ultimaEmision ? (
+                      <span className="text-[var(--arca-accent-pos-fg)] font-medium">
+                        {new Date(frescuraIva.ultimaEmision).toLocaleDateString(
+                          'es-AR',
+                          {
+                            day: '2-digit',
+                            month: 'short',
+                            year: 'numeric',
+                          }
+                        )}
                       </span>
                     ) : (
                       '—'
@@ -4595,8 +4407,10 @@ export function RepresentativeDetailPage({
                   {lastIvaJob &&
                     !lastIvaJob.success &&
                     lastIvaJob.failedReason && (
-                      <p className="text-[11px] text-destructive max-w-md">
-                        {lastIvaJob.failedReason}
+                      <p className="text-[11px] max-w-md text-[var(--arca-accent-warn-fg)]">
+                        El último intento de traer la DDJJ del Portal IVA (
+                        {formatLastUpdateAt(lastIvaJob.createdAt)}) falló:{' '}
+                        {friendlyFailedReason(lastIvaJob.failedReason)}
                       </p>
                     )}
                 </div>
@@ -4623,7 +4437,10 @@ export function RepresentativeDetailPage({
                         <Button
                           variant="default"
                           size="sm"
-                          disabled={!!scrapingSection}
+                          disabled={!!scrapingSection || scrapingPausado}
+                          title={
+                            scrapingPausado ? AVISO_SCRAPING_PAUSADO : undefined
+                          }
                         >
                           Actualizar IVA
                         </Button>
@@ -4634,8 +4451,8 @@ export function RepresentativeDetailPage({
                             Actualizar IVA
                           </h3>
                           <p className="text-[12px] leading-relaxed text-[var(--arca-ink-4)] mt-1">
-                            Si las facturas ya están al día, podés scrapear solo
-                            IVA para ir más rápido.
+                            Si las facturas ya están al día, podés actualizar
+                            solo IVA para ir más rápido.
                           </p>
                         </div>
                         <div className="px-3 pb-3 space-y-1.5">
@@ -4647,12 +4464,15 @@ export function RepresentativeDetailPage({
                                 try {
                                   await scrapSingleJob({
                                     data: {
-                                      representativeId,
+                                      credencialId: representativeId,
                                       jobType: 'comprobantes',
                                     },
                                   });
                                   await scrapSingleJob({
-                                    data: { representativeId, jobType: 'iva' },
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
                                   });
                                   await Promise.all([
                                     queryClient.invalidateQueries({
@@ -4724,7 +4544,10 @@ export function RepresentativeDetailPage({
                                 setScrapingSection('iva');
                                 try {
                                   await scrapSingleJob({
-                                    data: { representativeId, jobType: 'iva' },
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
                                   });
                                   await Promise.all([
                                     queryClient.invalidateQueries({
@@ -4768,88 +4591,112 @@ export function RepresentativeDetailPage({
                               </div>
                             </button>
                           </DialogClose>
+                          <DialogClose asChild>
+                            <button
+                              className="w-full flex items-start gap-3 rounded-[var(--arca-r-md,10px)] px-3 py-3 text-left transition-colors duration-[120ms] hover:bg-[var(--arca-surface-2)] border border-transparent hover:border-[var(--arca-border)] cursor-pointer group"
+                              onClick={async () => {
+                                setScrapingSection('iva');
+                                try {
+                                  const { from, to } = getMonthBounds(
+                                    ivaSelectedYear,
+                                    ivaSelectedMonth
+                                  );
+                                  await scrapSingleJob({
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'comprobantes',
+                                      desde: aFechaLocal(from),
+                                      hasta: aFechaLocal(to),
+                                    },
+                                  });
+                                  await scrapSingleJob({
+                                    data: {
+                                      credencialId: representativeId,
+                                      jobType: 'iva',
+                                    },
+                                  });
+                                  await Promise.all([
+                                    queryClient.invalidateQueries({
+                                      queryKey: ['clientIva', representativeId],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'clientAllInvoices',
+                                        representativeId,
+                                      ],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: ['invoices'],
+                                    }),
+                                    queryClient.invalidateQueries({
+                                      queryKey: [
+                                        'lastIvaJob',
+                                        representativeId,
+                                      ],
+                                    }),
+                                  ]);
+                                  toast.success(
+                                    `${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear} rehecho desde ARCA`
+                                  );
+                                } catch (err) {
+                                  toast.error(
+                                    err instanceof Error
+                                      ? err.message
+                                      : 'Error al rehacer el período'
+                                  );
+                                  queryClient.invalidateQueries({
+                                    queryKey: ['lastIvaJob', representativeId],
+                                  });
+                                } finally {
+                                  setScrapingSection(null);
+                                }
+                              }}
+                            >
+                              <div className="shrink-0 mt-0.5 w-8 h-8 rounded-[var(--arca-r-sm,6px)] bg-[var(--arca-surface-2)] flex items-center justify-center text-[var(--arca-ink-3)] group-hover:text-[var(--arca-ink)]">
+                                <CalendarIcon className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-medium text-[var(--arca-ink)]">
+                                  Rehacer {MONTH_NAMES[ivaSelectedMonth]}{' '}
+                                  {ivaSelectedYear}
+                                </div>
+                                <div className="text-[11px] leading-snug text-[var(--arca-ink-4)] mt-0.5">
+                                  Vuelve a pedirle a ARCA el mes completo. Usala
+                                  si el período quedó incompleto: la
+                                  actualización normal sólo trae lo posterior a
+                                  la última factura cargada.
+                                </div>
+                              </div>
+                            </button>
+                          </DialogClose>
                         </div>
                       </DialogContent>
                     </Dialog>
                   )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => ivaResumeRef.current?.downloadExcel()}
-                    className="gap-2 font-semibold shrink-0"
-                    disabled={!effectiveIvaProfileId}
-                  >
-                    <Download className="h-4 w-4" />
-                    <span className="hidden sm:inline">Descargar Excel</span>
-                  </Button>
                 </div>
               </div>
+
+              {/* El período y la descarga, debajo de la franja: el mismo
+                picker de mes que usan IVA, IIBB y Sueldos. */}
               <div className="flex flex-wrap items-center gap-2">
-                <Popover
-                  open={ivaPeriodPickerOpen}
-                  onOpenChange={setIvaPeriodPickerOpen}
+                <SelectorPeriodo
+                  periodo={aPeriodo(ivaSelectedYear, ivaSelectedMonth)}
+                  onPeriodo={(p) => {
+                    const { anio, mes } = dePeriodo(p);
+                    setIvaResumenDateRange(getMonthBounds(anio, mes));
+                  }}
+                />
+                {/* Sin `size="sm"`: acá el compañero de fila es el
+                  `MesPicker`, que es un control de 36px. */}
+                <Button
+                  variant="outline"
+                  onClick={() => ivaResumeRef.current?.downloadExcel()}
+                  className="shrink-0 gap-1.5"
+                  disabled={!effectiveIvaProfileId}
                 >
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-9 min-w-[200px] w-auto justify-start text-left font-normal px-3"
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4 shrink-0" />
-                      <span className="text-sm">
-                        {`${MONTH_NAMES[ivaSelectedMonth]} ${ivaSelectedYear}`}
-                      </span>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-4" align="end">
-                    <div className="space-y-3">
-                      <Select
-                        value={String(ivaSelectedYear)}
-                        onValueChange={(v) => {
-                          const y = Number(v);
-                          const newMax =
-                            y === now.getFullYear() ? now.getMonth() : 11;
-                          const m = Math.min(ivaSelectedMonth, newMax);
-                          setIvaResumenDateRange(getMonthBounds(y, m));
-                        }}
-                      >
-                        <SelectTrigger className="w-full h-9">
-                          <SelectValue placeholder="Año" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Array.from(
-                            { length: 8 },
-                            (_, i) => now.getFullYear() - i
-                          ).map((y) => (
-                            <SelectItem key={y} value={String(y)}>
-                              {y}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {ivaAvailableMonthIndices.map((i) => (
-                          <Button
-                            key={i}
-                            variant={
-                              ivaSelectedMonth === i ? 'default' : 'outline'
-                            }
-                            size="sm"
-                            className="text-xs h-8"
-                            onClick={() => {
-                              setIvaResumenDateRange(
-                                getMonthBounds(ivaSelectedYear, i)
-                              );
-                              setIvaPeriodPickerOpen(false);
-                            }}
-                          >
-                            {MONTH_NAMES_SHORT[i]}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                  <Download className="size-4" />
+                  <span>Excel</span>
+                </Button>
               </div>
             </div>
             <div className="w-full mt-4">
@@ -4862,8 +4709,8 @@ export function RepresentativeDetailPage({
                 <RenderIvaResume
                   ref={ivaResumeRef}
                   representativeId={representativeId}
-                  clientName={client?.name}
-                  clientIva={clientIva ?? undefined}
+                  clientName={client?.nombre}
+                  clientIva={clientIvaResume}
                   selectedProfileId={effectiveIvaProfileId ?? undefined}
                   dateRange={ivaResumenDateRange}
                   clientIvaLoading={loadingClientIva}
@@ -4883,7 +4730,9 @@ export function RepresentativeDetailPage({
                   <Select
                     value={solicitudesStatusFilter || 'all'}
                     onValueChange={(v) =>
-                      setSolicitudesStatusFilter(v === 'all' ? '' : v)
+                      setSolicitudesStatusFilter(
+                        v === 'all' ? '' : (v as SolicitudEstado)
+                      )
                     }
                   >
                     <SelectTrigger className="h-8 gap-1.5 px-3 text-[12px] border-[var(--arca-border-strong)] rounded-[var(--arca-r-md)] bg-[var(--arca-surface)] min-w-[130px]">
@@ -4894,16 +4743,16 @@ export function RepresentativeDetailPage({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">Todos</SelectItem>
-                      <SelectItem value="open">Abierta</SelectItem>
-                      <SelectItem value="completed">Completada</SelectItem>
-                      <SelectItem value="cancelled">Cancelada</SelectItem>
+                      <SelectItem value="abierta">Abierta</SelectItem>
+                      <SelectItem value="completada">Completada</SelectItem>
+                      <SelectItem value="cancelada">Cancelada</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <Button
                   size="sm"
                   onClick={() => setNewRequestDialogOpen(true)}
-                  className="bg-[var(--arca-ink)] hover:bg-black text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0 gap-1.5"
+                  className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white text-[12.5px] h-8 px-3 rounded-[var(--arca-r-md)] shrink-0 gap-1.5"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Nueva solicitud
@@ -4930,7 +4779,7 @@ export function RepresentativeDetailPage({
                 ) : (
                   <table className="w-full border-collapse text-[12.5px]">
                     <thead>
-                      <tr className="bg-[var(--arca-surface-2)]">
+                      <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                         {(
                           [
                             'Título',
@@ -4950,160 +4799,165 @@ export function RepresentativeDetailPage({
                         ))}
                       </tr>
                     </thead>
-                    <tbody>
-                      {clientRequestsData.map((req: RequestRow, i: number) => {
-                        const statusColors: Record<
-                          string,
-                          { bg: string; color: string; label: string }
-                        > = {
-                          open: {
-                            bg: 'var(--arca-accent-warn-bg)',
-                            color: 'var(--arca-accent-warn)',
-                            label: 'Abierta',
-                          },
-                          completed: {
-                            bg: 'var(--arca-accent-pos-bg)',
-                            color: 'var(--arca-accent-pos)',
-                            label: 'Completada',
-                          },
-                          cancelled: {
-                            bg: 'var(--arca-surface-2)',
-                            color: 'var(--arca-ink-3)',
-                            label: 'Cancelada',
-                          },
-                        };
-                        const sc =
-                          statusColors[req.status] ?? statusColors.open;
-                        return (
-                          <tr
-                            key={req.id}
-                            className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
-                          >
-                            <td className="px-[14px] py-[10px]">
-                              <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
-                                {req.title}
-                                {req.metadata?.documentId && (
-                                  <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                    <tbody className="bg-[var(--arca-surface)]">
+                      {clientRequestsData.map(
+                        (req: SolicitudRow, i: number) => {
+                          const statusColors: Record<
+                            SolicitudEstado,
+                            { bg: string; color: string; label: string }
+                          > = {
+                            abierta: {
+                              bg: 'var(--arca-accent-warn-bg)',
+                              color: 'var(--arca-accent-warn)',
+                              label: 'Abierta',
+                            },
+                            completada: {
+                              bg: 'var(--arca-accent-pos-bg)',
+                              color: 'var(--arca-accent-pos)',
+                              label: 'Completada',
+                            },
+                            cancelada: {
+                              bg: 'var(--arca-surface-2)',
+                              color: 'var(--arca-ink-3)',
+                              label: 'Cancelada',
+                            },
+                          };
+                          const sc =
+                            statusColors[req.estado] ?? statusColors.abierta;
+                          return (
+                            <tr
+                              key={req.id}
+                              className={`border-b border-[var(--arca-border)] last:border-b-0 ${i % 2 === 1 ? 'bg-[var(--arca-surface-2)]' : ''}`}
+                            >
+                              <td className="px-[14px] py-[10px]">
+                                <p className="font-medium text-[var(--arca-ink)] flex items-center gap-1.5">
+                                  {req.titulo}
+                                  {req.detalle?.documentoId && (
+                                    <Paperclip className="h-3 w-3 text-[var(--arca-accent-primary)] shrink-0" />
+                                  )}
+                                </p>
+                                {req.descripcion && (
+                                  <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
+                                    {req.descripcion}
+                                  </p>
                                 )}
-                              </p>
-                              {req.description && (
-                                <p className="text-[11px] text-[var(--arca-ink-3)] mt-0.5 max-w-[280px] truncate">
-                                  {req.description}
-                                </p>
-                              )}
-                              {req.metadata?.documentName && (
-                                <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
-                                  {req.metadata?.documentName}
-                                </p>
-                              )}
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
-                              {req.type}
-                            </td>
-                            <td className="px-[14px] py-[10px]">
-                              <span
-                                className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                                style={{ background: sc.bg, color: sc.color }}
-                              >
-                                {sc.label}
-                              </span>
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
-                              {req.dueAt
-                                ? new Date(
-                                    req.dueAt as unknown as string
-                                  ).toLocaleDateString('es-AR')
-                                : '—'}
-                            </td>
-                            <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
-                              {new Date(
-                                req.createdAt as unknown as string
-                              ).toLocaleDateString('es-AR')}
-                            </td>
-                            <td className="px-[14px] py-[10px]">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {/* Document download if metadata has documentId */}
-                                {req.metadata?.documentId && (
-                                  <>
-                                    <button
-                                      onClick={async () => {
-                                        try {
-                                          const doc = await getRequestDocument({
-                                            data: { requestId: req.id },
-                                          });
-                                          if (!doc?.url) {
+                                {req.detalle?.documentoNombre && (
+                                  <p className="text-[11px] text-[var(--arca-accent-primary)] mt-0.5">
+                                    {req.detalle.documentoNombre}
+                                  </p>
+                                )}
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)]">
+                                {req.tipo}
+                              </td>
+                              <td className="px-[14px] py-[10px]">
+                                <span
+                                  className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                  style={{ background: sc.bg, color: sc.color }}
+                                >
+                                  {sc.label}
+                                </span>
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                                {req.venceAt
+                                  ? new Date(req.venceAt).toLocaleDateString(
+                                      'es-AR'
+                                    )
+                                  : '—'}
+                              </td>
+                              <td className="px-[14px] py-[10px] text-[var(--arca-ink-3)] whitespace-nowrap">
+                                {new Date(req.createdAt).toLocaleDateString(
+                                  'es-AR'
+                                )}
+                              </td>
+                              <td className="px-[14px] py-[10px]">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {/* Descarga del documento si el detalle lo trae */}
+                                  {req.detalle?.documentoId && (
+                                    <>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const doc =
+                                              await getDocumentoSolicitud({
+                                                data: { solicitudId: req.id },
+                                              });
+                                            if (!doc?.url) {
+                                              toast.error(
+                                                'Documento no encontrado'
+                                              );
+                                              return;
+                                            }
+                                            const a =
+                                              document.createElement('a');
+                                            a.href = `${doc.url}?download=1`;
+                                            a.download =
+                                              doc.nombre ?? 'documento';
+                                            a.click();
+                                          } catch {
                                             toast.error(
-                                              'Documento no encontrado'
+                                              'Error al descargar el documento'
                                             );
-                                            return;
                                           }
-                                          const a = document.createElement('a');
-                                          a.href = doc.url;
-                                          a.download = doc.name ?? 'documento';
-                                          a.click();
-                                        } catch {
-                                          toast.error(
-                                            'Error al descargar el documento'
-                                          );
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
+                                      >
+                                        <FileDown className="h-3 w-3" />
+                                        Doc
+                                      </button>
+                                      <span className="text-[var(--arca-border-strong)]">
+                                        ·
+                                      </span>
+                                    </>
+                                  )}
+                                  {req.estado === 'abierta' && (
+                                    <>
+                                      <button
+                                        onClick={() =>
+                                          updateRequestStatusMutation.mutate({
+                                            solicitudId: req.id,
+                                            estado: 'completada',
+                                          })
                                         }
-                                      }}
-                                      className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-accent-primary)] hover:underline font-medium"
-                                    >
-                                      <FileDown className="h-3 w-3" />
-                                      Doc
-                                    </button>
-                                    <span className="text-[var(--arca-border-strong)]">
-                                      ·
-                                    </span>
-                                  </>
-                                )}
-                                {req.status === 'open' && (
-                                  <>
+                                        className="text-[11px] text-[var(--arca-accent-pos-fg)] hover:underline font-medium"
+                                      >
+                                        Completar
+                                      </button>
+                                      <span className="text-[var(--arca-border-strong)]">
+                                        ·
+                                      </span>
+                                      <button
+                                        onClick={() =>
+                                          updateRequestStatusMutation.mutate({
+                                            solicitudId: req.id,
+                                            estado: 'cancelada',
+                                          })
+                                        }
+                                        className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </>
+                                  )}
+                                  {req.estado !== 'abierta' && (
                                     <button
                                       onClick={() =>
                                         updateRequestStatusMutation.mutate({
-                                          requestId: req.id,
-                                          status: 'completed',
+                                          solicitudId: req.id,
+                                          estado: 'abierta',
                                         })
                                       }
-                                      className="text-[11px] text-[var(--arca-accent-pos)] hover:underline font-medium"
+                                      className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
                                     >
-                                      Completar
+                                      Reabrir
                                     </button>
-                                    <span className="text-[var(--arca-border-strong)]">
-                                      ·
-                                    </span>
-                                    <button
-                                      onClick={() =>
-                                        updateRequestStatusMutation.mutate({
-                                          requestId: req.id,
-                                          status: 'cancelled',
-                                        })
-                                      }
-                                      className="text-[11px] text-[var(--arca-ink-3)] hover:underline"
-                                    >
-                                      Cancelar
-                                    </button>
-                                  </>
-                                )}
-                                {req.status !== 'open' && (
-                                  <button
-                                    onClick={() =>
-                                      updateRequestStatusMutation.mutate({
-                                        requestId: req.id,
-                                        status: 'open',
-                                      })
-                                    }
-                                    className="text-[11px] text-[var(--arca-accent-primary)] hover:underline"
-                                  >
-                                    Reabrir
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+                      )}
                     </tbody>
                   </table>
                 )}
@@ -5148,17 +5002,20 @@ export function RepresentativeDetailPage({
                     </label>
                     <Select
                       value={newRequestType}
-                      onValueChange={setNewRequestType}
+                      onValueChange={(v) =>
+                        setNewRequestType(v as SolicitudTipo)
+                      }
                     >
                       <SelectTrigger className="mt-1 h-9 text-sm">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="general">General</SelectItem>
-                        <SelectItem value="document">Documento</SelectItem>
-                        <SelectItem value="information">Información</SelectItem>
-                        <SelectItem value="signature">Firma</SelectItem>
-                        <SelectItem value="payment">Pago</SelectItem>
+                        <SelectItem value="documentacion">
+                          Documentación
+                        </SelectItem>
+                        <SelectItem value="informacion">Información</SelectItem>
+                        <SelectItem value="pago">Pago</SelectItem>
+                        <SelectItem value="otra">Otra</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -5166,11 +5023,11 @@ export function RepresentativeDetailPage({
                     <label className="text-[12px] font-semibold text-[var(--arca-ink-3)] uppercase tracking-[0.06em]">
                       Fecha límite
                     </label>
-                    <Input
-                      type="date"
+                    <SelectorFecha
                       value={newRequestDueAt}
-                      onChange={(e) => setNewRequestDueAt(e.target.value)}
-                      className="mt-1 h-9 text-sm"
+                      onChange={setNewRequestDueAt}
+                      placeholder="Sin fecha límite"
+                      className="mt-1"
                     />
                   </div>
                   <div className="flex justify-end gap-2 pt-2">
@@ -5188,7 +5045,7 @@ export function RepresentativeDetailPage({
                         createRequestMutation.isPending
                       }
                       onClick={() => createRequestMutation.mutate()}
-                      className="bg-[var(--arca-ink)] hover:bg-black text-white"
+                      className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white"
                     >
                       {createRequestMutation.isPending ? (
                         <>
@@ -5207,17 +5064,34 @@ export function RepresentativeDetailPage({
 
           {/* Portal Tab */}
           <TabsContent value="portal" className="mt-4">
-            <PortalAccessTab representativeId={representativeId} />
+            {/* El acceso al portal se otorga por empresa (cliente), no por login. */}
+            {selectedClientId ? (
+              <PortalAccessTab clienteId={selectedClientId} />
+            ) : (
+              <div className="flex h-24 items-center justify-center text-sm text-[var(--arca-ink-3)]">
+                Seleccioná una empresa para gestionar el acceso al portal.
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Perfiles Tab */}
+          <TabsContent value="perfiles" className="mt-4">
+            <PerfilesTab representativeId={representativeId} />
           </TabsContent>
         </div>
         {/* end content area */}
       </Tabs>
 
-      <EditRepresentativeDialog
-        representativeId={representativeId}
-        open={editRepresentativeDialogOpen}
-        onOpenChange={setEditRepresentativeDialogOpen}
-      />
+      {/* El diálogo edita la empresa (cliente) y, opcionalmente, la clave del
+          login de ARCA: sin empresa seleccionada no hay nada que editar. */}
+      {selectedClientId && (
+        <EditRepresentativeDialog
+          clienteId={selectedClientId}
+          credencialId={representativeId}
+          open={editRepresentativeDialogOpen}
+          onOpenChange={setEditRepresentativeDialogOpen}
+        />
+      )}
 
       {/* Modal de detalle de facturas por provincia (Convenio Multilateral) */}
       <Dialog
@@ -5310,13 +5184,7 @@ export function RepresentativeDetailPage({
                           Pto. venta
                         </TableHead>
                         <TableHead className="text-right whitespace-nowrap">
-                          Nro. desde
-                        </TableHead>
-                        <TableHead className="text-right whitespace-nowrap">
-                          Nro. hasta
-                        </TableHead>
-                        <TableHead className="whitespace-nowrap min-w-[180px]">
-                          Emisor
+                          Número
                         </TableHead>
                         <TableHead className="whitespace-nowrap min-w-[180px]">
                           Destinatario
@@ -5339,61 +5207,55 @@ export function RepresentativeDetailPage({
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {multilateralDetailInvoices.map((inv: any) => (
+                      {multilateralDetailInvoices.map((inv) => (
                         <TableRow
                           key={inv.id}
                           className="hover:bg-muted/50 transition-colors"
                         >
                           <TableCell className="text-[11px]">
-                            {inv.emitionDate
-                              ? new Date(inv.emitionDate).toLocaleDateString(
-                                  'es-AR',
-                                  {
-                                    day: '2-digit',
-                                    month: '2-digit',
-                                    year: 'numeric',
-                                  }
-                                )
+                            {inv.fechaEmision
+                              ? parseLocalDateOnly(
+                                  inv.fechaEmision.slice(0, 10)
+                                ).toLocaleDateString('es-AR', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })
                               : '—'}
                           </TableCell>
                           <TableCell className="text-[11px]">
-                            {getInvoiceTypeLabel(inv.type)}
+                            {inv.tipoDescripcion || inv.tipo}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {inv.salePoint || '—'}
+                            {inv.puntoVenta || '—'}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {inv.numberFrom || '—'}
-                          </TableCell>
-                          <TableCell className="text-right text-[11px]">
-                            {inv.numberTo || '—'}
+                            {inv.numero || '—'}
                           </TableCell>
                           <TableCell className="max-w-[220px]">
-                            <div className="truncate" title={inv.emitterName}>
-                              {inv.emitterName || '—'}
-                            </div>
-                          </TableCell>
-                          <TableCell className="max-w-[220px]">
-                            <div className="truncate" title={inv.recipientName}>
-                              {inv.recipientName || '—'}
+                            <div
+                              className="truncate"
+                              title={inv.contraparteNombre ?? undefined}
+                            >
+                              {inv.contraparteNombre || '—'}
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <ProvinceSourceCell inv={inv} />
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {inv.currency || 'ARS'}
+                            {inv.moneda || 'ARS'}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
                             {formatIvaCurrency(
-                              inv.baseImponible ?? inv.amountTaxed
+                              inv.baseImponible ?? inv.netoGravado
                             )}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {formatIvaCurrency(inv.totalIVA)}
+                            {formatIvaCurrency(inv.ivaTotal)}
                           </TableCell>
                           <TableCell className="text-right text-[11px]">
-                            {formatIvaCurrency(inv.amount)}
+                            {formatIvaCurrency(inv.total)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -5402,23 +5264,24 @@ export function RepresentativeDetailPage({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2">
-                  {multilateralDetailInvoices.map((inv: any) => (
+                  {multilateralDetailInvoices.map((inv) => (
                     <div
                       key={inv.id}
                       className="rounded-md border p-3 space-y-2"
                     >
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-medium">{inv.type || '—'}</span>
+                        <span className="font-medium">
+                          {inv.tipoDescripcion || inv.tipo}
+                        </span>
                         <span className="text-muted-foreground">
-                          {inv.emitionDate
-                            ? new Date(inv.emitionDate).toLocaleDateString(
-                                'es-AR',
-                                {
-                                  day: '2-digit',
-                                  month: '2-digit',
-                                  year: 'numeric',
-                                }
-                              )
+                          {inv.fechaEmision
+                            ? parseLocalDateOnly(
+                                inv.fechaEmision.slice(0, 10)
+                              ).toLocaleDateString('es-AR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                              })
                             : '—'}
                         </span>
                       </div>
@@ -5427,29 +5290,18 @@ export function RepresentativeDetailPage({
                           Pto. venta
                         </span>
                         <span className="text-right">
-                          {inv.salePoint || '—'}
+                          {inv.puntoVenta || '—'}
                         </span>
-                        <span className="text-muted-foreground">
-                          Nro. desde/hasta
-                        </span>
-                        <span className="text-right">
-                          {inv.numberFrom || '—'} / {inv.numberTo || '—'}
-                        </span>
-                        <span className="text-muted-foreground">Emisor</span>
-                        <span
-                          className="text-right truncate"
-                          title={inv.emitterName}
-                        >
-                          {inv.emitterName || '—'}
-                        </span>
+                        <span className="text-muted-foreground">Número</span>
+                        <span className="text-right">{inv.numero || '—'}</span>
                         <span className="text-muted-foreground">
                           Destinatario
                         </span>
                         <span
                           className="text-right truncate"
-                          title={inv.recipientName}
+                          title={inv.contraparteNombre ?? undefined}
                         >
-                          {inv.recipientName || '—'}
+                          {inv.contraparteNombre || '—'}
                         </span>
                         <span className="text-muted-foreground">
                           Fuente provincia
@@ -5457,25 +5309,25 @@ export function RepresentativeDetailPage({
                         <ProvinceSourceCell inv={inv} />
                         <span className="text-muted-foreground">Moneda</span>
                         <span className="text-right">
-                          {inv.currency || 'ARS'}
+                          {inv.moneda || 'ARS'}
                         </span>
                         <span className="text-muted-foreground">
                           Base imponible
                         </span>
                         <span className="text-right">
                           {formatIvaCurrency(
-                            inv.baseImponible ?? inv.amountTaxed
+                            inv.baseImponible ?? inv.netoGravado
                           )}
                         </span>
                         <span className="text-muted-foreground">Total IVA</span>
                         <span className="text-right">
-                          {formatIvaCurrency(inv.totalIVA)}
+                          {formatIvaCurrency(inv.ivaTotal)}
                         </span>
                         <span className="text-muted-foreground font-medium">
                           Total
                         </span>
                         <span className="text-right font-medium">
-                          {formatIvaCurrency(inv.amount)}
+                          {formatIvaCurrency(inv.total)}
                         </span>
                       </div>
                     </div>
@@ -5492,32 +5344,22 @@ export function RepresentativeDetailPage({
 
 // ── Portal Access Tab ────────────────────────────────────────────────────────
 
-interface PortalUser {
-  accessId: string;
-  userId: string;
-  name: string | null;
-  email: string | null;
-  canViewDebts: boolean;
-  canViewIva: boolean;
-  canViewPayroll: boolean;
-  canUploadDocuments: boolean;
-  canChatAi: boolean;
-  createdAt: Date;
-}
+/** Usuario del portal tal como lo devuelve `listPortalUsers`. */
+type PortalUser = Awaited<ReturnType<typeof listPortalUsers>>[number];
 
 type PermissionKey =
-  | 'canViewDebts'
-  | 'canViewIva'
-  | 'canViewPayroll'
-  | 'canUploadDocuments'
-  | 'canChatAi';
+  | 'puedeVerDeudas'
+  | 'puedeVerIva'
+  | 'puedeVerSueldos'
+  | 'puedeSubirDocumentos'
+  | 'puedeChatearIa';
 
 const PERMISSION_LABELS: Record<PermissionKey, string> = {
-  canViewDebts: 'Deudas',
-  canViewIva: 'IVA',
-  canViewPayroll: 'Sueldos',
-  canUploadDocuments: 'Documentos',
-  canChatAi: 'Chat IA',
+  puedeVerDeudas: 'Deudas',
+  puedeVerIva: 'IVA',
+  puedeVerSueldos: 'Sueldos',
+  puedeSubirDocumentos: 'Documentos',
+  puedeChatearIa: 'Chat IA',
 };
 
 function PermissionBadge({
@@ -5535,7 +5377,7 @@ function PermissionBadge({
   );
 }
 
-function PortalAccessTab({ representativeId }: { representativeId: string }) {
+function PortalAccessTab({ clienteId }: { clienteId: string }) {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<PortalUser | null>(null);
@@ -5547,20 +5389,20 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
     name: '',
     email: '',
     password: '',
-    canViewDebts: true,
-    canViewIva: true,
-    canViewPayroll: false,
-    canUploadDocuments: true,
-    canChatAi: true,
+    puedeVerDeudas: true,
+    puedeVerIva: true,
+    puedeVerSueldos: false,
+    puedeSubirDocumentos: true,
+    puedeChatearIa: true,
   });
 
   // Edit form state (permissions only)
   const [editPerms, setEditPerms] = useState<Record<PermissionKey, boolean>>({
-    canViewDebts: true,
-    canViewIva: true,
-    canViewPayroll: false,
-    canUploadDocuments: true,
-    canChatAi: true,
+    puedeVerDeudas: true,
+    puedeVerIva: true,
+    puedeVerSueldos: false,
+    puedeSubirDocumentos: true,
+    puedeChatearIa: true,
   });
 
   // Reset password state
@@ -5568,8 +5410,8 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
   const [showNewPassword, setShowNewPassword] = useState(false);
 
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ['portalUsers', representativeId],
-    queryFn: () => listPortalUsers({ data: { representativeId } }),
+    queryKey: ['portalUsers', clienteId],
+    queryFn: () => listPortalUsers({ data: { clienteId } }),
   });
 
   const createMutation = useMutation({
@@ -5577,7 +5419,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       createPortalUser({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['portalUsers', representativeId],
+        queryKey: ['portalUsers', clienteId],
       });
       toast.success('Usuario creado');
       setCreateOpen(false);
@@ -5585,11 +5427,11 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
         name: '',
         email: '',
         password: '',
-        canViewDebts: true,
-        canViewIva: true,
-        canViewPayroll: false,
-        canUploadDocuments: true,
-        canChatAi: true,
+        puedeVerDeudas: true,
+        puedeVerIva: true,
+        puedeVerSueldos: false,
+        puedeSubirDocumentos: true,
+        puedeChatearIa: true,
       });
     },
     onError: (e: Error) => toast.error(e.message),
@@ -5601,7 +5443,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
     ) => updatePortalUserPermissions({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['portalUsers', representativeId],
+        queryKey: ['portalUsers', clienteId],
       });
       toast.success('Permisos actualizados');
       setEditTarget(null);
@@ -5624,7 +5466,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
       revokePortalAccess({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['portalUsers', representativeId],
+        queryKey: ['portalUsers', clienteId],
       });
       toast.success('Acceso revocado');
       setRevokeTarget(null);
@@ -5634,11 +5476,11 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
 
   function openEdit(u: PortalUser) {
     setEditPerms({
-      canViewDebts: u.canViewDebts,
-      canViewIva: u.canViewIva,
-      canViewPayroll: u.canViewPayroll,
-      canUploadDocuments: u.canUploadDocuments,
-      canChatAi: u.canChatAi,
+      puedeVerDeudas: u.puedeVerDeudas,
+      puedeVerIva: u.puedeVerIva,
+      puedeVerSueldos: u.puedeVerSueldos,
+      puedeSubirDocumentos: u.puedeSubirDocumentos,
+      puedeChatearIa: u.puedeChatearIa,
     });
     setNewPassword('');
     setEditTarget(u);
@@ -5660,7 +5502,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
         <Button
           size="sm"
           onClick={() => setCreateOpen(true)}
-          className="bg-[var(--arca-ink)] hover:bg-black text-white gap-1.5"
+          className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white gap-1.5"
         >
           <UserPlus className="h-3.5 w-3.5" />
           Agregar usuario
@@ -5693,7 +5535,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(users as PortalUser[]).map((u) => (
+              {users.map((u) => (
                 <TableRow
                   key={u.accessId}
                   className="hover:bg-[var(--arca-surface-2)]/50"
@@ -5734,7 +5576,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 text-[var(--arca-accent-neg)] hover:text-[var(--arca-accent-neg)]"
+                        className="h-7 w-7 text-[var(--arca-accent-neg-fg)] hover:text-[var(--arca-accent-neg-fg)]"
                         title="Revocar acceso"
                         onClick={() => setRevokeTarget(u)}
                       >
@@ -5842,7 +5684,7 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               Cancelar
             </Button>
             <Button
-              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white"
               disabled={
                 !createForm.name ||
                 !createForm.email ||
@@ -5851,16 +5693,16 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               }
               onClick={() =>
                 createMutation.mutate({
-                  representativeId,
+                  clienteId,
                   name: createForm.name,
                   email: createForm.email,
                   password: createForm.password,
-                  permissions: {
-                    canViewDebts: createForm.canViewDebts,
-                    canViewIva: createForm.canViewIva,
-                    canViewPayroll: createForm.canViewPayroll,
-                    canUploadDocuments: createForm.canUploadDocuments,
-                    canChatAi: createForm.canChatAi,
+                  permisos: {
+                    puedeVerDeudas: createForm.puedeVerDeudas,
+                    puedeVerIva: createForm.puedeVerIva,
+                    puedeVerSueldos: createForm.puedeVerSueldos,
+                    puedeSubirDocumentos: createForm.puedeSubirDocumentos,
+                    puedeChatearIa: createForm.puedeChatearIa,
                   },
                 })
               }
@@ -5972,13 +5814,13 @@ function PortalAccessTab({ representativeId }: { representativeId: string }) {
               Cancelar
             </Button>
             <Button
-              className="bg-[var(--arca-ink)] hover:bg-black text-white"
+              className="bg-[var(--arca-accent)] hover:bg-[var(--arca-accent-hover)] text-white"
               disabled={editMutation.isPending}
               onClick={() =>
                 editTarget &&
                 editMutation.mutate({
                   accessId: editTarget.accessId,
-                  permissions: editPerms,
+                  permisos: editPerms,
                 })
               }
             >

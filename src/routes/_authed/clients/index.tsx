@@ -16,15 +16,31 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/shared/page-header';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { PageShell } from '@/components/shared/page-shell';
 import { ActiveJobsIndicator } from '@/components/active-jobs-indicator';
 import { dispatchAllJobs } from '@/actions/job';
+import {
+  AVISO_SCRAPING_PAUSADO,
+  useScrapingPausado,
+} from '@/hooks/use-scraping-status';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export const Route = createFileRoute('/_authed/clients/')({
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { filtro?: 'claves_invalidas' } =>
+    search.filtro === 'claves_invalidas' ? { filtro: 'claves_invalidas' } : {},
   component: RouteComponent,
 });
 
 function UpdateAllButton() {
   const [open, setOpen] = useState(false);
+  const scrapingPausado = useScrapingPausado();
   const queryClient = useQueryClient();
 
   const dispatchMutation = useMutation({
@@ -52,12 +68,27 @@ function UpdateAllButton() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline">
-          <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} />
-          Actualizar todos
-        </Button>
-      </DialogTrigger>
+      {/* Tooltip del sistema en vez de `title`: el nativo tarda un segundo
+        largo en aparecer y no se ve como el resto de la plataforma. */}
+      <Tooltip>
+        <DialogTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              disabled={scrapingPausado}
+              aria-label="Actualizar todos"
+            >
+              <RefreshCw className="h-3.5 w-3.5" strokeWidth={2.2} />
+            </Button>
+          </TooltipTrigger>
+        </DialogTrigger>
+        <TooltipContent>
+          {scrapingPausado
+            ? AVISO_SCRAPING_PAUSADO
+            : 'Traer de ARCA los datos de todos los clientes'}
+        </TooltipContent>
+      </Tooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Actualizar todos los clientes</DialogTitle>
@@ -93,25 +124,33 @@ function UpdateAllButton() {
 }
 
 function RouteComponent() {
+  const { filtro } = Route.useSearch();
   return (
-    <div className="p-[28px_36px_60px] max-w-[1440px]">
+    <PageShell>
       <PageHeader
         title="Clientes"
         subtitle="Gestión de clientes y sus perfiles"
         actions={
           <>
             <ActiveJobsIndicator />
+            <SelectorClienteGlobal />
             <UpdateAllButton />
-            <CreateRepresentativeDialog>
-              <Button>
-                <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
-                Nuevo cliente
-              </Button>
-            </CreateRepresentativeDialog>
+            <Tooltip>
+              <CreateRepresentativeDialog>
+                <TooltipTrigger asChild>
+                  <Button size="icon" aria-label="Nuevo cliente">
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2.2} />
+                  </Button>
+                </TooltipTrigger>
+              </CreateRepresentativeDialog>
+              <TooltipContent>Nuevo cliente</TooltipContent>
+            </Tooltip>
           </>
         }
       />
-      <RepresentativesTable />
-    </div>
+      <RepresentativesTable
+        soloClavesInvalidas={filtro === 'claves_invalidas'}
+      />
+    </PageShell>
   );
 }

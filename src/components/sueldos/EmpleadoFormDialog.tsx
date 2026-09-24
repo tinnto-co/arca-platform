@@ -19,6 +19,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -66,7 +67,6 @@ interface EmpleadoFormDialogProps {
   onOpenChange: (open: boolean) => void;
   clientId: string;
   /** Opcional; si no se pasa, el servidor elige un perfil que liquide sueldos. */
-  profileId?: string;
   convenios: Convenio[];
   editId: string | null;
   empleado?: Empleado;
@@ -77,7 +77,6 @@ export function EmpleadoFormDialog({
   open,
   onOpenChange,
   clientId,
-  profileId,
   convenios,
   editId,
   empleado,
@@ -153,7 +152,6 @@ export function EmpleadoFormDialog({
         data: {
           ...values,
           clientId,
-          profileId,
           legajo: values.legajo?.trim() || null,
         },
       });
@@ -245,7 +243,11 @@ export function EmpleadoFormDialog({
                 <FormItem>
                   <FormLabel>Fecha de ingreso</FormLabel>
                   <FormControl>
-                    <Input type="date" {...field} className="w-full max-w-xs" />
+                    <SelectorFecha
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      className="w-full max-w-xs"
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

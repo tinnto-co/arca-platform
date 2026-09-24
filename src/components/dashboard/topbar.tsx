@@ -13,6 +13,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { guardarClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { relativeTime } from './shared';
 
 export const PERIOD_OPTIONS = ['Hoy', '7d', '30d', '90d', 'YTD'] as const;
@@ -117,7 +118,7 @@ export function DashboardTopbar({
                   ? 'border-r border-[var(--arca-border)]'
                   : '',
                 activePeriod === p
-                  ? 'bg-[var(--arca-ink)] text-white'
+                  ? 'bg-[var(--arca-accent-bg)] font-medium text-[var(--arca-accent-hover)]'
                   : 'text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)]',
               ].join(' ')}
             >
@@ -185,31 +186,35 @@ export function DashboardTopbar({
                   >
                     <Link
                       to="/notifications"
-                      search={{ notificationId: n.id }}
+                      // `notificationId` no existe en el schema de la ruta:
+                      // zod lo descartaba y la notificación no se abría.
+                      search={{ n: n.id }}
+                      // La bandeja recuerda la última empresa mirada. Sin
+                      // esto, una notificación de otra empresa no aparece
+                      // siquiera en la lista.
+                      onClick={() => guardarClienteSeleccionado(n.clienteId)}
                       className="flex-1 min-w-0"
                     >
                       <p
-                        className={`text-[12.5px] leading-snug line-clamp-2 ${n.opened === false ? 'font-semibold text-[var(--arca-ink)]' : 'text-[var(--arca-ink-2)]'}`}
+                        className={`text-[12.5px] leading-snug line-clamp-2 ${n.leida === false ? 'font-semibold text-[var(--arca-ink)]' : 'text-[var(--arca-ink-2)]'}`}
                       >
-                        {n.message}
+                        {n.mensaje}
                       </p>
                       <div className="flex items-center gap-2 mt-1">
-                        {n.clientName && (
+                        {n.clienteRazonSocial && (
                           <span className="text-[11px] text-[var(--arca-ink-4)] truncate">
-                            {n.clientName}
+                            {n.clienteRazonSocial}
                           </span>
                         )}
                         <span className="text-[11px] text-[var(--arca-ink-4)] ml-auto shrink-0">
-                          {relativeTime(
-                            new Date(n.publicationDate ?? n.createdAt)
-                          )}
+                          {relativeTime(new Date(n.publicadaAt ?? n.createdAt))}
                         </span>
                       </div>
                     </Link>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (n.opened) {
+                        if (n.leida) {
                           markUnreadMutation.mutate(n.id);
                         } else {
                           markReadMutation.mutate(n.id);
@@ -217,10 +222,10 @@ export function DashboardTopbar({
                       }}
                       className="shrink-0 p-1 rounded hover:bg-[var(--arca-surface)] transition-colors mt-0.5 cursor-pointer"
                       title={
-                        n.opened ? 'Marcar como no leída' : 'Marcar como leída'
+                        n.leida ? 'Marcar como no leída' : 'Marcar como leída'
                       }
                     >
-                      {n.opened ? (
+                      {n.leida ? (
                         <Mail className="w-3 h-3 text-[var(--arca-ink-4)]" />
                       ) : (
                         <MailOpen className="w-3 h-3 text-[var(--arca-ink-4)]" />
@@ -235,6 +240,7 @@ export function DashboardTopbar({
             <div className="border-t border-[var(--arca-border)] px-4 py-2.5">
               <Link
                 to="/notifications"
+                onClick={() => guardarClienteSeleccionado(null)}
                 className="flex items-center justify-center gap-1.5 w-full text-[12.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors duration-[120ms]"
               >
                 Ver todas las notificaciones

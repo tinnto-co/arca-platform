@@ -37,6 +37,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -46,14 +47,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -65,6 +58,7 @@ import { PageHeader } from '@/components/shared/page-header';
 import {
   getJobs,
   getJobLogs,
+  getUltimaFechaScrapeo,
   dispatchAllJobs,
   type JobStatus,
   type JobType,
@@ -72,8 +66,19 @@ import {
   type JobsResponse,
   type JobLogRow,
 } from '@/actions/job';
-import { getRepresentatives } from '@/actions/client';
+import { Paginador } from '@/components/shared/paginador';
+import { getCredenciales } from '@/actions/client';
 import { JobsErrorSummary } from '@/components/jobs-error-summary';
+
+/** "2026-09-02" → "martes 2 de septiembre" (parse local: por UTC corre un día). */
+function fechaLegible(fecha: string): string {
+  const [y, m, d] = fecha.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString('es-AR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  });
+}
 
 export function JobsTable() {
   const routerNavigate = useNavigate();
@@ -90,12 +95,32 @@ export function JobsTable() {
   const setFilter = (updates: Record<string, unknown>) => {
     routerNavigate({
       to: '/jobs',
-      search: (prev: Record<string, unknown>) => ({ ...prev, ...updates, page: 'page' in updates ? (updates.page as number) : 1 }),
+      search: (prev: Record<string, unknown>) => ({
+        ...prev,
+        ...updates,
+        page: 'page' in updates ? (updates.page as number) : 1,
+      }),
     });
   };
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  // La pantalla abre filtrada en el día del último scrapeo. En la URL,
+  // date '' = ese default, 'todo' = histórico completo (elección explícita),
+  // cualquier otra cosa = fecha elegida a mano.
+  const { data: ultimoScrapeo } = useQuery({
+    queryKey: ['ultima-fecha-scrapeo'],
+    queryFn: () => getUltimaFechaScrapeo(),
+    staleTime: 60_000,
+  });
+  const fechaEfectiva =
+    date === 'todo' ? '' : date !== '' ? date : (ultimoScrapeo?.fecha ?? '');
+  // Sin esto, mientras se resuelve la última fecha se dispararía una consulta
+  // del histórico entero que enseguida se descarta.
+  const filtrosListos =
+    date === 'todo' || !!date || ultimoScrapeo !== undefined;
+
   const [selectedJob, setSelectedJob] = useState<JobRow | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
@@ -135,22 +160,31 @@ export function JobsTable() {
 
   const pageSize = 20;
 
-  const { data: representatives = [] } = useQuery({
-    queryKey: ['representatives'],
-    queryFn: () => getRepresentatives(),
+  const { data: credenciales = [] } = useQuery({
+    queryKey: ['credenciales'],
+    queryFn: () => getCredenciales(),
   });
 
   const { data, isLoading } = useQuery<JobsResponse>({
-    queryKey: ['jobs', currentPage, statusFilter, typeFilter, clientFilter, date, fromTime],
+    queryKey: [
+      'jobs',
+      currentPage,
+      statusFilter,
+      typeFilter,
+      clientFilter,
+      fechaEfectiva,
+      fromTime,
+    ],
+    enabled: filtrosListos,
     queryFn: async (): Promise<JobsResponse> => {
       const response = await getJobs({
         data: {
           page: currentPage,
           limit: pageSize,
-          representativeId: clientFilter === 'all' ? undefined : clientFilter,
+          credencialId: clientFilter === 'all' ? undefined : clientFilter,
           status: statusFilter === 'all' ? undefined : statusFilter,
           type: typeFilter === 'all' ? undefined : typeFilter,
-          date,
+          date: fechaEfectiva === '' ? undefined : fechaEfectiva,
           fromTime: fromTime || undefined,
         },
       });
@@ -158,22 +192,34 @@ export function JobsTable() {
     },
   });
 
-  const STATUS_ORDER: Record<string, number> = { running: 0, failed: 1, finished: 2, pending: 3 };
+  const STATUS_ORDER: Record<string, number> = {
+    running: 0,
+    failed: 1,
+    finished: 2,
+    pending: 3,
+  };
 
   const jobs = (data?.jobs ?? [])
     .filter((job: JobRow) => {
       if (hiddenIds.has(job.id)) return false;
-      if (hideFinished && (job.status === 'finished' || job.status === 'failed')) return false;
+      if (
+        hideFinished &&
+        (job.status === 'finished' || job.status === 'failed')
+      )
+        return false;
       if (!searchTerm.trim()) return true;
       const term = searchTerm.toLowerCase();
       return (
         job.id.toLowerCase().includes(term) ||
-        (job.representativeName ?? '').toLowerCase().includes(term) ||
-        job.clients.some((c) => c.name.toLowerCase().includes(term)) ||
+        (job.credencialNombre ?? '').toLowerCase().includes(term) ||
+        job.clientes.some((c) => c.razonSocial.toLowerCase().includes(term)) ||
         job.type.toLowerCase().includes(term)
       );
     })
-    .sort((a: JobRow, b: JobRow) => (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99));
+    .sort(
+      (a: JobRow, b: JobRow) =>
+        (STATUS_ORDER[a.status] ?? 99) - (STATUS_ORDER[b.status] ?? 99)
+    );
 
   const totalPages = data?.totalPages ?? 1;
 
@@ -234,7 +280,7 @@ export function JobsTable() {
       case 'running':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]`}
           >
             <Loader2 className="h-3 w-3 animate-spin" />
             En progreso
@@ -281,16 +327,34 @@ export function JobsTable() {
       case 'iva':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]`}
           >
             <FileWarning className="h-3 w-3" />
             IVA
           </span>
         );
+      case 'escalas':
+        return (
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
+            <Receipt className="h-3 w-3" />
+            Escalas salariales
+          </span>
+        );
+      case 'tope_imponible':
+        return (
+          <span
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]`}
+          >
+            <Receipt className="h-3 w-3" />
+            Tope imponible
+          </span>
+        );
       case 'notificaciones':
         return (
           <span
-            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-navy-700)]`}
+            className={`${baseClass} bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent)]`}
           >
             <Bell className="h-3 w-3" />
             Notificaciones
@@ -329,10 +393,17 @@ export function JobsTable() {
     setLogsOpen(true);
   };
 
+  // Un job corre sobre una credencial, que puede dar acceso a varios clientes:
+  // se navega al primero y si no hay ninguno no hay adónde ir.
   const handleGoToClient = (job: JobRow) => {
+    const clienteId = job.clientes[0]?.id;
+    if (!clienteId) {
+      toast.error('La credencial de este job no tiene clientes asociados');
+      return;
+    }
     void navigate({
       to: '/clients/$clientId',
-      params: { clientId: job.representativeId },
+      params: { clientId: clienteId },
     });
   };
 
@@ -340,7 +411,7 @@ export function JobsTable() {
     <div className="flex flex-col h-full gap-4">
       <PageHeader
         title="Jobs"
-        subtitle="Historial de jobs de scraping por cliente, tipo y estado."
+        subtitle="Historial de actualizaciones por cliente, tipo y estado."
         actions={
           <>
             <Popover>
@@ -359,7 +430,7 @@ export function JobsTable() {
                   <div className="text-sm font-medium">Modo dev</div>
                   <p className="text-xs text-[var(--arca-ink-3)]">
                     Limita la cantidad de clientes a disparar. Útil para probar
-                    sin saturar el scrapper. Vacío = todos.
+                    sin saturar el servicio de actualización. Vacío = todos.
                   </p>
                   <div className="flex items-center gap-2">
                     <Input
@@ -394,17 +465,17 @@ export function JobsTable() {
           <div className="relative flex-[2] min-w-[200px]">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
             <Input
-              placeholder="Buscar por ID, representante, empresa o tipo..."
+              placeholder="Buscar por ID, credencial, empresa o tipo..."
               value={searchTerm}
               onChange={(e) => setFilter({ search: e.target.value })}
               className="pl-8 w-full"
             />
           </div>
 
-          <Input
-            type="date"
-            value={date}
-            onChange={(e) => setFilter({ date: e.target.value })}
+          <SelectorFecha
+            value={date === 'todo' ? '' : fechaEfectiva}
+            onChange={(v) => setFilter({ date: v })}
+            placeholder="Fecha"
             className="flex-1 min-w-[140px]"
           />
 
@@ -419,16 +490,16 @@ export function JobsTable() {
           <div className="flex-[2] min-w-[180px]">
             <SearchableSelect
               options={[
-                { value: 'all', label: 'Todos los representantes' },
-                ...representatives.map((c) => ({
+                { value: 'all', label: 'Todas las credenciales' },
+                ...credenciales.map((c) => ({
                   value: c.id,
-                  label: c.name ?? 'Sin nombre',
+                  label: c.nombre ?? c.cuit,
                 })),
               ]}
               value={clientFilter}
               onValueChange={(value) => setFilter({ clientId: value })}
-              placeholder="Filtrar por representante"
-              searchPlaceholder="Buscar representante..."
+              placeholder="Filtrar por credencial"
+              searchPlaceholder="Buscar credencial..."
               width="100%"
             />
           </div>
@@ -460,6 +531,8 @@ export function JobsTable() {
                 { value: 'notificaciones', label: 'Notificaciones' },
                 { value: 'deuda', label: 'Deuda' },
                 { value: 'vencimientos', label: 'Vencimientos' },
+                { value: 'escalas', label: 'Escalas salariales' },
+                { value: 'tope_imponible', label: 'Tope imponible' },
               ]}
               value={typeFilter}
               onValueChange={(value) => setFilter({ type: value })}
@@ -503,10 +576,43 @@ export function JobsTable() {
         </div>
       </div>
 
+      {/* Qué se está mirando: el último scrapeo (default) o el histórico. */}
+      {date !== 'todo' && !date && ultimoScrapeo?.fecha && (
+        <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-3)]">
+          <span>
+            Mostrando la última actualización ·{' '}
+            <span className="font-semibold text-[var(--arca-ink)]">
+              {fechaLegible(ultimoScrapeo.fecha)}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setFilter({ date: 'todo' })}
+            className="underline cursor-pointer hover:text-[var(--arca-ink)]"
+          >
+            Ver histórico completo
+          </button>
+        </div>
+      )}
+      {date === 'todo' && (
+        <div className="flex items-center gap-2 text-[12.5px] text-[var(--arca-ink-3)]">
+          <span>
+            Mostrando el histórico completo (todas las actualizaciones)
+          </span>
+          <button
+            type="button"
+            onClick={() => setFilter({ date: '' })}
+            className="underline cursor-pointer hover:text-[var(--arca-ink)]"
+          >
+            Volver a la última actualización
+          </button>
+        </div>
+      )}
+
       <JobsErrorSummary
-        representativeId={clientFilter === 'all' ? undefined : clientFilter}
+        credencialId={clientFilter === 'all' ? undefined : clientFilter}
         type={typeFilter === 'all' ? undefined : (typeFilter as JobType)}
-        date={date || undefined}
+        date={fechaEfectiva === '' ? undefined : fechaEfectiva}
         fromTime={fromTime || undefined}
       />
 
@@ -517,7 +623,7 @@ export function JobsTable() {
               <TableHead className="w-10">
                 <input
                   type="checkbox"
-                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                  className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                   checked={
                     jobs.length > 0 &&
                     jobs.every((j: JobRow) => selectedIds.has(j.id))
@@ -532,7 +638,7 @@ export function JobsTable() {
                 />
               </TableHead>
               <TableHead className="w-[90px]">ID</TableHead>
-              <TableHead>Representante</TableHead>
+              <TableHead>Credencial</TableHead>
               <TableHead>Tipo</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead>Creado</TableHead>
@@ -562,7 +668,7 @@ export function JobsTable() {
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
-                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-navy-900)]"
+                      className="h-3.5 w-3.5 rounded cursor-pointer accent-[var(--arca-accent)]"
                       checked={selectedIds.has(job.id)}
                       onChange={() => toggleRow(job.id)}
                     />
@@ -573,30 +679,32 @@ export function JobsTable() {
                     </code>
                   </TableCell>
                   <TableCell>
-                    {job.representativeName ? (
+                    {job.credencialNombre ? (
                       <div className="flex flex-col">
                         <span className="font-medium">
-                          {job.representativeName}
+                          {job.credencialNombre}
                         </span>
-                        {job.clients.length > 0 && (
+                        {job.clientes.length > 0 && (
                           <span
                             className="max-w-[260px] truncate text-xs text-[var(--arca-ink-3)]"
-                            title={job.clients.map((c) => c.name).join(', ')}
+                            title={job.clientes
+                              .map((c) => c.razonSocial)
+                              .join(', ')}
                           >
-                            {job.clients.map((c) => c.name).join(', ')}
+                            {job.clientes.map((c) => c.razonSocial).join(', ')}
                           </span>
                         )}
                       </div>
                     ) : (
                       <span className="text-[var(--arca-ink-3)] text-sm">
-                        Representante desconocido
+                        {job.type === 'escalas' || job.type === 'tope_imponible'
+                          ? 'Sin credencial (páginas públicas)'
+                          : 'Credencial desconocida'}
                       </span>
                     )}
                   </TableCell>
                   <TableCell>{renderTypeBadge(job.type)}</TableCell>
-                  <TableCell>
-                    {renderStatusBadge(job.status)}
-                  </TableCell>
+                  <TableCell>{renderStatusBadge(job.status)}</TableCell>
                   <TableCell>{formatDateTime(job.createdAt)}</TableCell>
                   <TableCell>
                     {getDurationMinutes(job.startedAt, job.finishedAt)}
@@ -647,69 +755,12 @@ export function JobsTable() {
       </div>
 
       {totalPages > 1 && (
-        <div className="flex justify-center">
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={() => setFilter({ page: Math.max(1, currentPage - 1) })}
-                  className={
-                    currentPage === 1
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-
-              {/* Mostrar solo primeras 3, últimas 1 y ventana alrededor de la actual */}
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter((page) => {
-                  if (page <= 3) return true;
-                  if (page === totalPages) return true;
-                  if (Math.abs(page - currentPage) <= 1) return true;
-                  return false;
-                })
-                .flatMap((page, index, visiblePages) => {
-                  const prevPage = visiblePages[index - 1];
-                  const showEllipsis = prevPage && page - prevPage > 1;
-
-                  const items = [];
-                  if (showEllipsis) {
-                    items.push(
-                      <PaginationItem key={`ellipsis-${page}`}>
-                        <span className="px-2 text-[var(--arca-ink-3)]">
-                          ...
-                        </span>
-                      </PaginationItem>
-                    );
-                  }
-                  items.push(
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        onClick={() => setFilter({ page })}
-                        isActive={currentPage === page}
-                        className="cursor-pointer"
-                      >
-                        {page}
-                      </PaginationLink>
-                    </PaginationItem>
-                  );
-                  return items;
-                })}
-
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() => setFilter({ page: Math.min(totalPages, currentPage + 1) })}
-
-                  className={
-                    currentPage === totalPages
-                      ? 'pointer-events-none opacity-50'
-                      : 'cursor-pointer'
-                  }
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+        <div className="w-full">
+          <Paginador
+            pagina={currentPage}
+            totalPaginas={totalPages}
+            onPagina={(page) => setFilter({ page })}
+          />
         </div>
       )}
 
@@ -737,18 +788,23 @@ export function JobsTable() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-[var(--arca-ink-3)]">
-                    Representante
+                    Credencial
                   </p>
                   <p className="text-sm font-semibold">
-                    {selectedJob.representativeName ??
-                      'Representante desconocido'}
+                    {selectedJob.credencialNombre ??
+                      (selectedJob.type === 'escalas' ||
+                      selectedJob.type === 'tope_imponible'
+                        ? 'Sin credencial (páginas públicas)'
+                        : 'Credencial desconocida')}
                   </p>
                   <p className="text-xs text-[var(--arca-ink-3)] font-mono">
-                    {selectedJob.representativeId}
+                    {selectedJob.credencialId}
                   </p>
-                  {selectedJob.clients.length > 0 && (
+                  {selectedJob.clientes.length > 0 && (
                     <p className="text-xs text-[var(--arca-ink-3)]">
-                      {selectedJob.clients.map((c) => c.name).join(', ')}
+                      {selectedJob.clientes
+                        .map((c) => c.razonSocial)
+                        .join(', ')}
                     </p>
                   )}
                 </div>
@@ -811,7 +867,7 @@ export function JobsTable() {
                   <div className="flex flex-col">
                     <p className="font-medium">Resultado</p>
                     <p className="text-[11px] text-[var(--arca-ink-3)]">
-                      Resumen de lo que devolvió el scrapper
+                      Resumen de lo que devolvió la actualización
                     </p>
                   </div>
                   {selectedJob.result && (
@@ -906,13 +962,13 @@ export function JobsTable() {
                       colorClasses =
                         'border-[var(--arca-accent-warn)]/30 bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]';
                       icon = (
-                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn)]" />
+                        <AlertTriangle className="h-3.5 w-3.5 text-[var(--arca-accent-warn-fg)]" />
                       );
                     } else if (level === 'error') {
                       colorClasses =
                         'border-[var(--arca-accent-neg)]/30 bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]';
                       icon = (
-                        <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg)]" />
+                        <AlertCircle className="h-3.5 w-3.5 text-[var(--arca-accent-neg-fg)]" />
                       );
                     } else if (level === 'debug') {
                       colorClasses =

@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge, BadgeDot } from '@/components/ui/badge';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronLeft,
@@ -7,18 +9,14 @@ import {
   AlertTriangle,
   CheckCircle2,
   Circle,
-  Filter,
-  ChevronDown,
 } from 'lucide-react';
 import { getCalendarDueDates } from '@/actions/dashboard';
-import { markDueDateCompleted } from '@/actions/client';
+import { getClientes } from '@/actions/client';
+import { markVencimientoCompletado } from '@/actions/client';
 import { cn } from '@/lib/utils';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from '@/components/ui/select';
+import { PageHeader } from '@/components/shared/page-header';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 
 /* ─── Types ─── */
 
@@ -28,6 +26,7 @@ interface CalendarEvent {
   title: string;
   subtitle: string;
   kind: 'due' | 'debt';
+  clienteId: string | null;
   clientName: string | null;
   balance?: string;
   completedAt?: Date | null;
@@ -85,6 +84,23 @@ function buildCalendarGrid(year: number, month: number): Date[] {
 
 /* ─── Main component ─── */
 
+/**
+ * Los vencimientos vienen titulados "301 - SUSS": el código de impuesto es
+ * una cifra y va en mono, el nombre en sans. Si el título no trae código,
+ * se dibuja tal cual.
+ */
+function CodigoYNombre({ titulo }: { titulo: string }) {
+  const m = /^(\d+)\s*-\s*(.+)$/.exec(titulo);
+  if (!m) return <>{titulo}</>;
+  return (
+    <>
+      <span className="tabular-nums [font-family:var(--ff-mono)]">{m[1]}</span>
+      <span className="opacity-60"> · </span>
+      {m[2]}
+    </>
+  );
+}
+
 export function VencimientosCalendar() {
   const today = new Date();
   const queryClient = useQueryClient();
@@ -92,7 +108,20 @@ export function VencimientosCalendar() {
     () => new Date(today.getFullYear(), today.getMonth(), 1)
   );
   const [selectedDate, setSelectedDate] = useState<Date | null>(today);
-  const [clientFilter, setClientFilter] = useState<string>('__all__');
+  // El filtro es el selector global de empresa del header: la elección viaja
+  // con el usuario a las demás vistas (mismo patrón que Contabilidad).
+  const [clienteGlobal] = useClienteSeleccionado();
+
+  // Solo para nombrar la empresa en el subtítulo: decir "toda tu cartera"
+  // mientras se ve una sola empresa es mentir sobre lo que hay en pantalla.
+  const { data: clientes = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getClientes(),
+    staleTime: 60_000,
+  });
+  const nombreCliente = clienteGlobal
+    ? (clientes.find((c) => c.id === clienteGlobal)?.razonSocial ?? null)
+    : null;
 
   // Fetch a bit extra for the grid edges (prev/next month days visible in grid)
   const gridDays = useMemo(
@@ -122,7 +151,7 @@ export function VencimientosCalendar() {
 
   const completeMutation = useMutation({
     mutationFn: ({ id, completed }: { id: string; completed: boolean }) =>
-      markDueDateCompleted({ data: { id, completed } }),
+      markVencimientoCompletado({ data: { id, completed } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: calendarQueryKey });
     },
@@ -133,41 +162,44 @@ export function VencimientosCalendar() {
     const map = new Map<string, CalendarEvent[]>();
     if (!data) return map;
 
-    for (const dd of data.dueDates) {
-      const d = new Date(dd.dueDate);
+    for (const dd of data.vencimientos) {
+      const d = new Date(dd.venceAt);
       const key = dateKey(d);
       const list = map.get(key) ?? [];
       list.push({
         id: dd.id,
         date: d,
-        title: dd.tax || 'Vencimiento',
-        subtitle: dd.concept || '',
+        title: dd.impuesto || 'Vencimiento',
+        subtitle: dd.concepto || '',
         kind: 'due',
-        clientName: dd.clientName,
-        completedAt: dd.completedAt ? new Date(dd.completedAt) : null,
+        clienteId: dd.clienteId,
+        clientName: dd.clienteNombre,
+        completedAt: dd.completadoAt ? new Date(dd.completadoAt) : null,
       });
       map.set(key, list);
     }
 
-    for (const debt of data.debts) {
-      const d = new Date(debt.dueDate);
+    for (const debt of data.deudas) {
+      // `deuda.vence_at` es nullable: sin fecha no hay día donde ubicarla.
+      if (!debt.venceAt) continue;
+      const d = new Date(debt.venceAt);
       const key = dateKey(d);
       const list = map.get(key) ?? [];
       list.push({
         id: debt.id,
         date: d,
-        title: debt.tax || 'Deuda',
-        subtitle: debt.concept || '',
+        title: debt.impuesto || 'Deuda',
+        subtitle: debt.concepto || '',
         kind: 'debt',
-        clientName: debt.clientName,
-        balance: debt.balance,
+        clienteId: debt.clienteId,
+        clientName: debt.clienteNombre,
+        balance: debt.saldo,
       });
       map.set(key, list);
     }
 
     return map;
   }, [data]);
-
 
   function prevMonth() {
     setCurrentMonth((m) => new Date(m.getFullYear(), m.getMonth() - 1, 1));
@@ -179,28 +211,30 @@ export function VencimientosCalendar() {
     setSelectedDate(null);
   }
 
+  /**
+   * "Hoy" es navegación, no una acción sobre los datos: va en secundario,
+   * junto a las flechas de mes, y no en el acento —que queda para la acción
+   * principal de cada pantalla—.
+   *
+   * Queda siempre habilitado a propósito: deshabilitarlo en el mes actual
+   * lo dejaba gris apenas entrabas, que se lee como roto, y encima no es un
+   * no-op: estando en el mes actual con otro día elegido, vuelve a hoy.
+   */
   function goToday() {
     setCurrentMonth(new Date(today.getFullYear(), today.getMonth(), 1));
     setSelectedDate(today);
   }
 
-  // Unique client names from events for filter
-  const clientNames = useMemo(() => {
-    const names = new Set<string>();
-    eventsByDay.forEach((events) => events.forEach((e) => { if (e.clientName) names.add(e.clientName); }));
-    return Array.from(names).sort();
-  }, [eventsByDay]);
-
   // Filtered events
   const filteredEventsByDay = useMemo(() => {
-    if (clientFilter === '__all__') return eventsByDay;
+    if (!clienteGlobal) return eventsByDay;
     const filtered = new Map<string, CalendarEvent[]>();
     eventsByDay.forEach((events, key) => {
-      const f = events.filter((e) => e.clientName === clientFilter);
+      const f = events.filter((e) => e.clienteId === clienteGlobal);
       if (f.length > 0) filtered.set(key, f);
     });
     return filtered;
-  }, [eventsByDay, clientFilter]);
+  }, [eventsByDay, clienteGlobal]);
 
   const filteredSelectedEvents = useMemo(() => {
     if (!selectedDate) return [];
@@ -209,77 +243,79 @@ export function VencimientosCalendar() {
 
   const totalDue = useMemo(() => {
     let count = 0;
-    filteredEventsByDay.forEach((events) => events.forEach((e) => { if (e.kind === 'due') count++; }));
+    filteredEventsByDay.forEach((events) =>
+      events.forEach((e) => {
+        if (e.kind === 'due') count++;
+      })
+    );
     return count;
   }, [filteredEventsByDay]);
 
   const totalDebt = useMemo(() => {
     let count = 0;
-    filteredEventsByDay.forEach((events) => events.forEach((e) => { if (e.kind === 'debt') count++; }));
+    filteredEventsByDay.forEach((events) =>
+      events.forEach((e) => {
+        if (e.kind === 'debt') count++;
+      })
+    );
     return count;
   }, [filteredEventsByDay]);
 
   return (
-    <div>
-      {/* ── Page header ── */}
-      <div className="flex items-start justify-between gap-6 mb-8">
-        <div>
-          <h1 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)] leading-tight">
-            Calendario de vencimientos
-          </h1>
-          <p className="text-[13px] text-[var(--arca-ink-3)] mt-0.5">
-            Obligaciones fiscales y deudas de toda tu cartera, por fecha
-          </p>
-        </div>
-        {/* Client filter */}
-        <Select value={clientFilter} onValueChange={setClientFilter}>
-          <SelectTrigger className="bg-white border border-[#DFDCD3] rounded-[10px] px-[14px] py-[9px] h-auto w-auto min-w-[180px] gap-2 shadow-none focus:ring-0 [&>svg]:hidden">
-            <div className="flex items-center gap-2">
-              <Filter className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
-              <span className="text-[13.5px] text-[#9B9CA3]">Cliente</span>
-              <span className="text-[13.5px] font-semibold text-[#12131A]">
-                {clientFilter === '__all__' ? 'Todos' : clientFilter}
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
-            </div>
-          </SelectTrigger>
-          <SelectContent className="max-h-[300px]">
-            <SelectItem value="__all__">Todos</SelectItem>
-            {clientNames.map((name) => (
-              <SelectItem key={name} value={name}>{name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader
+        title="Calendario de vencimientos"
+        subtitle={
+          nombreCliente
+            ? `Obligaciones fiscales y deudas de ${nombreCliente}, por fecha`
+            : 'Obligaciones fiscales y deudas de toda tu cartera, por fecha'
+        }
+        actions={<SelectorClienteGlobal />}
+      />
 
-      {/* ── Body grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[26px] lg:items-start">
+      {/* ── Body grid ──
+          Alto completo y recorte acá: cada columna scrollea por dentro, como
+          la bandeja de notificaciones. Antes la columna era `sticky` y el
+          scroll lo hacía la página entera, así que leer el detalle de un día
+          cargado te movía el calendario de al lado. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-[26px] overflow-y-auto lg:grid-cols-[320px_1fr] lg:overflow-hidden">
         {/* ── Left column: summary + day detail ── */}
-        <div className="flex flex-col gap-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-140px)]">
+        <div className="flex min-h-0 flex-col gap-0 lg:h-full lg:overflow-hidden">
           {/* Month summary */}
           <div>
-            <h3 className="font-[family-name:var(--ff-display)] font-semibold text-[15px] text-[#12131A] mb-3">
+            <h3 className="font-[family-name:var(--ff-display)] font-semibold text-[15px] text-[var(--arca-ink)] mb-1.5">
               Resumen del mes
             </h3>
             {isLoading ? (
-              <div className="text-[12.5px] text-[#9B9CA3]">Cargando...</div>
+              <div className="text-[12.5px] text-[var(--arca-ink-4)]">
+                Cargando...
+              </div>
             ) : (
               <div>
-                <div className="flex items-center justify-between py-[11px] border-b border-[#ECEAE3]">
-                  <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
-                    <Clock className="w-4 h-4" style={{ color: 'oklch(0.55 0.10 240)' }} />
+                <div className="flex items-center justify-between py-[5px]">
+                  <div className="flex items-center gap-2 text-[13px] text-[var(--arca-ink-2)]">
+                    <Clock
+                      className="w-4 h-4"
+                      style={{ color: 'var(--arca-accent)' }}
+                    />
                     Vencimientos
                   </div>
-                  <span className="font-[family-name:var(--ff-display)] font-bold text-[20px] tabular-nums text-[#12131A]">
+                  <span className="text-[20px] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-mono)]">
                     {totalDue}
                   </span>
                 </div>
-                <div className="flex items-center justify-between py-[11px] border-b border-[#ECEAE3]">
-                  <div className="flex items-center gap-2 text-[13px] text-[#3E404A]">
-                    <AlertTriangle className="w-4 h-4" style={{ color: 'oklch(0.58 0.15 25)' }} />
+                <div className="flex items-center justify-between py-[5px]">
+                  <div className="flex items-center gap-2 text-[13px] text-[var(--arca-ink-2)]">
+                    <AlertTriangle
+                      className="w-4 h-4"
+                      style={{ color: 'var(--arca-accent-neg)' }}
+                    />
                     Deudas
                   </div>
-                  <span className="font-[family-name:var(--ff-display)] font-bold text-[20px] tabular-nums" style={{ color: 'oklch(0.50 0.15 25)' }}>
+                  <span
+                    className="text-[20px] font-semibold tabular-nums [font-family:var(--ff-mono)]"
+                    style={{ color: 'var(--arca-accent-neg-fg)' }}
+                  >
                     {totalDebt}
                   </span>
                 </div>
@@ -288,9 +324,9 @@ export function VencimientosCalendar() {
           </div>
 
           {/* Selected day detail */}
-          <div className="pt-[18px] border-t border-[#ECEAE3] mt-[18px] flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div className="mb-3 shrink-0">
-              <span className="text-[13px] font-medium text-[#6E7079]">
+          <div className="pt-[12px] pb-[12px] border-t border-b border-[var(--arca-border)] mt-[12px] flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="mb-2 shrink-0">
+              <span className="text-[13px] font-medium text-[var(--arca-ink-3)]">
                 {selectedDate
                   ? selectedDate.toLocaleDateString('es-AR', {
                       weekday: 'long',
@@ -301,63 +337,89 @@ export function VencimientosCalendar() {
               </span>
             </div>
             {!selectedDate ? (
-              <div className="py-8 text-center text-[13px] text-[#9B9CA3]">
+              <div className="py-8 text-center text-[13px] text-[var(--arca-ink-4)]">
                 Hacé clic en un día del calendario
               </div>
             ) : filteredSelectedEvents.length === 0 ? (
-              <div className="py-8 text-center text-[13px] text-[#9B9CA3]">
+              <div className="py-8 text-center text-[13px] text-[var(--arca-ink-4)]">
                 Sin vencimientos ni deudas este día.
               </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto flex-1 min-h-0 pr-1">
+              <div className="space-y-2 overflow-y-auto overscroll-contain flex-1 min-h-0 pr-1">
                 {filteredSelectedEvents.map((ev) => {
                   const isCompleted = ev.kind === 'due' && !!ev.completedAt;
                   return (
                     <div
                       key={ev.id}
                       className={cn(
-                        'bg-white border border-[#ECEAE3] rounded-[10px] p-[13px_14px]',
+                        'bg-white border border-[var(--arca-border)] rounded-[10px] p-[13px_14px]',
                         isCompleted && 'opacity-60'
                       )}
                     >
                       {/* Top: client name + status tag */}
                       <div className="flex items-center gap-2 mb-1.5">
-                        <span className="text-[13px] font-semibold text-[#12131A] truncate flex-1">
+                        <span className="text-[13px] font-semibold text-[var(--arca-ink)] truncate flex-1">
                           {ev.clientName || 'General'}
                         </span>
-                        <span
-                          className="text-[10.5px] font-semibold rounded-full px-[8px] py-[2px] shrink-0"
-                          style={ev.kind === 'due'
-                            ? { color: 'oklch(0.42 0.12 240)', backgroundColor: 'oklch(0.94 0.04 240)' }
-                            : { color: 'oklch(0.47 0.14 25)', backgroundColor: 'oklch(0.94 0.04 25)' }
-                          }
+                        <Badge
+                          variant={ev.kind === 'due' ? 'info' : 'error'}
+                          size="sm"
+                          className="shrink-0"
                         >
+                          <BadgeDot />
                           {ev.kind === 'due' ? 'Vencimiento' : 'Deuda'}
-                        </span>
+                        </Badge>
                       </div>
                       {/* Obligation */}
                       <div className="flex items-start gap-2">
                         {ev.kind === 'due' && (
                           <button
-                            onClick={() => completeMutation.mutate({ id: ev.id, completed: !isCompleted })}
+                            onClick={() =>
+                              completeMutation.mutate({
+                                id: ev.id,
+                                completed: !isCompleted,
+                              })
+                            }
                             disabled={completeMutation.isPending}
-                            className="shrink-0 mt-0.5 cursor-pointer text-[#9B9CA3] hover:text-[#2f7d55] transition-colors"
-                            title={isCompleted ? 'Marcar como pendiente' : 'Marcar como completado'}
+                            className="shrink-0 mt-0.5 cursor-pointer text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-pos-fg)] transition-colors"
+                            title={
+                              isCompleted
+                                ? 'Marcar como pendiente'
+                                : 'Marcar como completado'
+                            }
                           >
-                            {isCompleted ? <CheckCircle2 className="w-4 h-4 text-[#2f7d55]" /> : <Circle className="w-4 h-4" />}
+                            {isCompleted ? (
+                              <CheckCircle2 className="w-4 h-4 text-[var(--arca-accent-pos-fg)]" />
+                            ) : (
+                              <Circle className="w-4 h-4" />
+                            )}
                           </button>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className={cn('text-[14px] font-semibold text-[#12131A]', isCompleted && 'line-through text-[#9B9CA3]')}>
-                            {ev.title}
+                          <div
+                            className={cn(
+                              'text-[14px] font-semibold text-[var(--arca-ink)]',
+                              isCompleted &&
+                                'line-through text-[var(--arca-ink-4)]'
+                            )}
+                          >
+                            <CodigoYNombre titulo={ev.title} />
                           </div>
                           {ev.subtitle && (
-                            <div className={cn('text-[12.5px] text-[#9B9CA3] mt-0.5', isCompleted && 'line-through')}>
+                            <div
+                              className={cn(
+                                'text-[12.5px] text-[var(--arca-ink-4)] mt-0.5',
+                                isCompleted && 'line-through'
+                              )}
+                            >
                               {ev.subtitle}
                             </div>
                           )}
                           {ev.balance && (
-                            <div className="text-[12px] font-semibold mt-1" style={{ color: 'oklch(0.50 0.15 25)' }}>
+                            <div
+                              className="mt-1 text-[12px] font-semibold tabular-nums [font-family:var(--ff-mono)]"
+                              style={{ color: 'var(--arca-accent-neg-fg)' }}
+                            >
                               $ {parseFloat(ev.balance).toLocaleString('es-AR')}
                             </div>
                           )}
@@ -371,129 +433,154 @@ export function VencimientosCalendar() {
           </div>
         </div>
 
-      {/* Calendar grid */}
-      <div className="bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px] overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--arca-border)]">
-          <div className="flex items-center gap-3">
-            <h2
-              className="text-[17px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]"
-              style={{ fontFamily: 'var(--ff-display)' }}
-            >
-              {MONTH_NAMES[currentMonth.getMonth()]}{' '}
-              {currentMonth.getFullYear()}
-            </h2>
-            <div className="flex items-center gap-0.5">
-              <button
-                onClick={prevMonth}
-                className="w-7 h-7 rounded-[var(--arca-r-sm)] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink)] transition-colors cursor-pointer"
+        {/* Calendar grid */}
+        <div className="min-h-0 self-start max-h-full overflow-y-auto overscroll-contain bg-[var(--arca-surface)] border border-[var(--arca-border)] rounded-[14px]">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--arca-border)]">
+            <div className="flex items-center gap-3">
+              <h2
+                className="text-[17px] font-semibold tracking-[-0.01em] text-[var(--arca-ink)]"
+                style={{ fontFamily: 'var(--ff-display)' }}
               >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={nextMonth}
-                className="w-7 h-7 rounded-[var(--arca-r-sm)] inline-flex items-center justify-center text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink)] transition-colors cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+                {MONTH_NAMES[currentMonth.getMonth()]}{' '}
+                {currentMonth.getFullYear()}
+              </h2>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={prevMonth}
+                  aria-label="Mes anterior"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={nextMonth}
+                  aria-label="Mes siguiente"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
             </div>
+            <Button variant="outline" size="sm" onClick={goToday}>
+              Hoy
+            </Button>
           </div>
-          <button
-            onClick={goToday}
-            className="px-3 py-1.5 rounded-[var(--arca-r-md)] text-[12.5px] font-medium border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)] transition-colors cursor-pointer"
-          >
-            Hoy
-          </button>
-        </div>
 
-        {/* Weekday headers */}
-        <div className="grid grid-cols-7 border-b border-[var(--arca-border)]">
-          {WEEKDAY_LABELS.map((d) => (
-            <div
-              key={d}
-              className="text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] py-2"
-            >
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* Day cells */}
-        <div className="grid grid-cols-7">
-          {gridDays.map((day, i) => {
-            const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
-            const isToday = isSameDay(day, today);
-            const isSelected = selectedDate && isSameDay(day, selectedDate);
-            const events = eventsByDay.get(dateKey(day)) ?? [];
-            const isPast = day < today && !isToday;
-
-            return (
-              <button
-                key={i}
-                onClick={() => setSelectedDate(day)}
-                className={cn(
-                  'relative min-h-[80px] p-1.5 border-b border-r border-[var(--arca-border)] text-left transition-colors cursor-pointer',
-                  i % 7 === 0 && 'border-l-0',
-                  !isCurrentMonth && 'bg-[var(--arca-surface-2)]',
-                  isSelected && 'bg-[var(--arca-accent-info-bg)]',
-                  !isSelected &&
-                    isCurrentMonth &&
-                    'hover:bg-[var(--arca-surface-2)]'
-                )}
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 border-b border-[var(--arca-border)]">
+            {WEEKDAY_LABELS.map((d) => (
+              <div
+                key={d}
+                className="text-center text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)] py-2"
               >
-                {/* Day number */}
-                <span
+                {d}
+              </div>
+            ))}
+          </div>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7">
+            {gridDays.map((day, i) => {
+              const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
+              const isToday = isSameDay(day, today);
+              const isSelected = selectedDate && isSameDay(day, selectedDate);
+              const events = filteredEventsByDay.get(dateKey(day)) ?? [];
+              const isPast = day < today && !isToday;
+              const isFinde = day.getDay() === 0 || day.getDay() === 6;
+
+              return (
+                <button
+                  key={i}
+                  onClick={() => setSelectedDate(day)}
                   className={cn(
-                    'inline-flex items-center justify-center w-6 h-6 rounded-full text-[12.5px] font-medium',
-                    isToday && 'bg-[var(--arca-ink)] text-white',
-                    !isToday && isCurrentMonth && 'text-[var(--arca-ink)]',
-                    !isToday && !isCurrentMonth && 'text-[var(--arca-ink-4)]'
+                    'relative min-h-[80px] p-1.5 border-b border-r border-[var(--arca-border)] text-left transition-colors cursor-pointer',
+                    i % 7 === 0 && 'border-l-0',
+                    !isCurrentMonth && 'bg-[var(--arca-surface-2)]',
+                    isCurrentMonth &&
+                      isFinde &&
+                      !isToday &&
+                      'bg-[var(--arca-surface-hover)]',
+                    // Hoy gana sobre el finde y sobre el hover.
+                    isToday && 'bg-[var(--arca-accent-bg)]',
+                    isSelected && 'bg-[var(--arca-accent-bg)]',
+                    !isSelected &&
+                      !isToday &&
+                      isCurrentMonth &&
+                      'hover:bg-[var(--arca-surface-hover)]'
                   )}
                 >
-                  {day.getDate()}
-                </span>
+                  {isToday && (
+                    <span
+                      aria-hidden
+                      className="absolute top-0 right-0 left-0 h-[3px] bg-[var(--arca-accent)]"
+                    />
+                  )}
 
-                {/* Event dots / pills */}
-                {events.length > 0 && (
-                  <div className="mt-0.5 flex flex-col gap-0.5">
-                    {events.slice(0, 2).map((ev) => {
-                      const evCompleted = ev.kind === 'due' && !!ev.completedAt;
-                      return (
-                        <div
-                          key={ev.id}
-                          className={cn(
-                            'text-[9.5px] font-medium leading-tight px-1 py-px rounded truncate',
-                            evCompleted &&
-                              'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] line-through',
-                            !evCompleted &&
-                              ev.kind === 'due' &&
-                              !isPast &&
-                              'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
-                            !evCompleted &&
-                              ev.kind === 'due' &&
-                              isPast &&
-                              'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
-                            ev.kind === 'debt' &&
-                              'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
-                          )}
-                        >
-                          {ev.title}
-                        </div>
-                      );
-                    })}
-                    {events.length > 2 && (
-                      <span className="text-[9px] text-[var(--arca-ink-4)] px-1">
-                        +{events.length - 2} más
-                      </span>
+                  {/* Day number */}
+                  <span
+                    className={cn(
+                      'inline-flex h-6 w-6 items-center justify-center rounded-full text-[12.5px] tabular-nums [font-family:var(--ff-mono)]',
+                      isToday &&
+                        'bg-[var(--arca-accent)] font-semibold text-white',
+                      !isToday &&
+                        isCurrentMonth &&
+                        !isFinde &&
+                        'font-medium text-[var(--arca-ink)]',
+                      !isToday &&
+                        isCurrentMonth &&
+                        isFinde &&
+                        'font-medium text-[var(--arca-ink-4)]',
+                      !isCurrentMonth && 'font-medium text-[var(--arca-ink-4)]'
                     )}
-                  </div>
-                )}
-              </button>
-            );
-          })}
+                  >
+                    {day.getDate()}
+                  </span>
+
+                  {/* Event dots / pills */}
+                  {events.length > 0 && (
+                    <div className="mt-0.5 flex flex-col gap-0.5">
+                      {events.slice(0, 2).map((ev) => {
+                        const evCompleted =
+                          ev.kind === 'due' && !!ev.completedAt;
+                        return (
+                          <div
+                            key={ev.id}
+                            className={cn(
+                              'truncate rounded-md px-1.5 py-px text-[10px] leading-tight font-medium',
+                              evCompleted &&
+                                'bg-[var(--arca-accent-pos-bg)] text-[var(--arca-accent-pos-fg)] line-through',
+                              !evCompleted &&
+                                ev.kind === 'due' &&
+                                !isPast &&
+                                'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
+                              !evCompleted &&
+                                ev.kind === 'due' &&
+                                isPast &&
+                                'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+                              ev.kind === 'debt' &&
+                                'bg-[var(--arca-accent-neg-bg)] text-[var(--arca-accent-neg-fg)]'
+                            )}
+                          >
+                            <CodigoYNombre titulo={ev.title} />
+                          </div>
+                        );
+                      })}
+                      {events.length > 2 && (
+                        <span className="px-1 text-[10px] tabular-nums text-[var(--arca-ink-3)] [font-family:var(--ff-mono)]">
+                          +{events.length - 2} más
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
-    </div>
     </div>
   );
 }

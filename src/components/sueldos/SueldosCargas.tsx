@@ -20,13 +20,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   Table,
   TableBody,
   TableCell,
@@ -42,6 +35,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { MesPicker } from '@/components/shared/mes-picker';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
@@ -59,7 +53,6 @@ import { EmpleadorConfigDialog } from '@/components/sueldos/EmpleadorConfigDialo
 
 interface SueldosCargasProps {
   clientId: string;
-  profileId: string;
 }
 
 const MONTHS = [
@@ -84,20 +77,6 @@ function getPeriodoDefecto(): { year: string; month: string } {
     year: String(d.getFullYear()),
     month: String(d.getMonth() + 1).padStart(2, '0'),
   };
-}
-
-function getYearOptions(): string[] {
-  const current = new Date().getFullYear();
-  return [current - 1, current, current + 1].map(String);
-}
-
-function formatPesos(value: string | number | null | undefined): string {
-  if (value == null) return '—';
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-    maximumFractionDigits: 0,
-  }).format(parseFloat(String(value)));
 }
 
 function formatDateTime(date: Date | string | null | undefined): string {
@@ -125,17 +104,15 @@ function triggerDownload(contenido: string, filename: string) {
 
 function ValidacionPanel({
   clientId,
-  profileId,
   periodo,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
 }) {
   const { data: validacion, isLoading } = useQuery({
-    queryKey: ['lsd-validacion', profileId, periodo],
-    queryFn: () => validarLsd({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-validacion', clientId, periodo],
+    queryFn: () => validarLsd({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   if (isLoading || !validacion) return null;
@@ -165,7 +142,7 @@ function ValidacionPanel({
         ) : (
           <Badge
             variant="outline"
-            className="ml-auto text-[11px] text-amber-700 border-amber-300 bg-amber-50"
+            className="ml-auto text-[11px] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)]"
           >
             {warnings.length} aviso{warnings.length > 1 ? 's' : ''}
           </Badge>
@@ -199,9 +176,9 @@ function IssueRow({
   return (
     <div className="flex items-start gap-3 px-4 py-2.5">
       {isError ? (
-        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-red-500" />
+        <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--arca-accent-neg-fg)]" />
       ) : (
-        <TriangleAlert className="h-3.5 w-3.5 mt-0.5 shrink-0 text-amber-500" />
+        <TriangleAlert className="h-3.5 w-3.5 mt-0.5 shrink-0 text-[var(--arca-accent-warn-fg)]" />
       )}
       <div className="flex-1 min-w-0">
         {issue.empleadoNombre && (
@@ -223,32 +200,36 @@ function IssueRow({
 type OverrideRow = {
   reciboId: string;
   empleadoNombre: string;
-  rem4y8Override: string | null;
-  rem9Override: string | null;
+  remuneracion4Y8Override: string | null;
+  remuneracion9Override: string | null;
   rem4y8Sugerido: string | null;
   rem9Sugerido: string | null;
-  contribucionAdicionalOS: string | null;
+  contribucionAdicionalOs: string | null;
   importeADetraerLey27430: string | null;
   importeMaternidadArt13: string | null;
 };
 
 function LsdOverridesDialog({
   clientId,
-  profileId,
   row,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   row: OverrideRow;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [rem4y8, setRem4y8] = useState(row.rem4y8Override ?? row.rem4y8Sugerido ?? '');
-  const [rem9, setRem9] = useState(row.rem9Override ?? row.rem9Sugerido ?? '');
-  const [aporteOS, setAporteOS] = useState(row.contribucionAdicionalOS ?? '');
+  const [rem4y8, setRem4y8] = useState(
+    row.remuneracion4Y8Override ?? row.rem4y8Sugerido ?? ''
+  );
+  const [rem9, setRem9] = useState(
+    row.remuneracion9Override ?? row.rem9Sugerido ?? ''
+  );
+  const [aporteOS, setAporteOS] = useState(row.contribucionAdicionalOs ?? '');
   const [detraer, setDetraer] = useState(row.importeADetraerLey27430 ?? '');
-  const [maternidad, setMaternidad] = useState(row.importeMaternidadArt13 ?? '');
+  const [maternidad, setMaternidad] = useState(
+    row.importeMaternidadArt13 ?? ''
+  );
 
   const parseMonto = (s: string) => {
     const v = parseFloat(s.replace(',', '.'));
@@ -260,13 +241,14 @@ function LsdOverridesDialog({
       updateReciboLsdOverrides({
         data: {
           clientId,
-          profileId,
           reciboId: row.reciboId,
-          rem4y8Override: rem4y8 === '' ? null : parseMonto(rem4y8),
-          rem9Override: rem9 === '' ? null : parseMonto(rem9),
-          contribucionAdicionalOS: aporteOS === '' ? null : parseMonto(aporteOS),
+          remuneracion4Y8Override: rem4y8 === '' ? null : parseMonto(rem4y8),
+          remuneracion9Override: rem9 === '' ? null : parseMonto(rem9),
+          contribucionAdicionalOs:
+            aporteOS === '' ? null : parseMonto(aporteOS),
           importeADetraerLey27430: detraer === '' ? null : parseMonto(detraer),
-          importeMaternidadArt13: maternidad === '' ? null : parseMonto(maternidad),
+          importeMaternidadArt13:
+            maternidad === '' ? null : parseMonto(maternidad),
         },
       }),
     onSuccess: () => {
@@ -282,18 +264,45 @@ function LsdOverridesDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-[15px]">Bases LSD — {row.empleadoNombre}</DialogTitle>
+          <DialogTitle className="text-[15px]">
+            Bases LSD — {row.empleadoNombre}
+          </DialogTitle>
         </DialogHeader>
         <p className="text-[12px] text-[var(--arca-ink-3)] -mt-2">
           Dejá en blanco para usar la remuneración bruta del recibo como base.
         </p>
         <div className="space-y-3 pt-1">
           {[
-            { label: 'Base OS aportes y contrib (rem4y8)', value: rem4y8, set: setRem4y8, hint: 'B4 y B8 en el LSD' },
-            { label: 'Base ART (rem9)', value: rem9, set: setRem9, hint: 'B9 en el LSD' },
-            { label: 'Remuneración maternidad Art. 13 LRT', value: maternidad, set: setMaternidad, hint: 'Campo remunMaternidad' },
-            { label: 'Contribución adicional OS', value: aporteOS, set: setAporteOS, hint: 'Campo aporteAdicOS' },
-            { label: 'Importe a detraer Ley 27.430', value: detraer, set: setDetraer, hint: 'Campo detraer27430' },
+            {
+              label: 'Base OS aportes y contrib (rem4y8)',
+              value: rem4y8,
+              set: setRem4y8,
+              hint: 'B4 y B8 en el LSD',
+            },
+            {
+              label: 'Base ART (rem9)',
+              value: rem9,
+              set: setRem9,
+              hint: 'B9 en el LSD',
+            },
+            {
+              label: 'Remuneración maternidad Art. 13 LRT',
+              value: maternidad,
+              set: setMaternidad,
+              hint: 'Campo remunMaternidad',
+            },
+            {
+              label: 'Contribución adicional OS',
+              value: aporteOS,
+              set: setAporteOS,
+              hint: 'Campo aporteAdicOS',
+            },
+            {
+              label: 'Importe a detraer Ley 27.430',
+              value: detraer,
+              set: setDetraer,
+              hint: 'Campo detraer27430',
+            },
           ].map(({ label, value, set, hint }) => (
             <div key={label} className="space-y-1">
               <Label className="text-[12px]">{label}</Label>
@@ -311,7 +320,12 @@ function LsdOverridesDialog({
           ))}
         </div>
         <DialogFooter className="pt-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={isPending}
+          >
             Cancelar
           </Button>
           <Button size="sm" onClick={() => mutate()} disabled={isPending}>
@@ -327,26 +341,24 @@ function LsdOverridesDialog({
 
 function HistorialPresentaciones({
   clientId,
-  profileId,
   periodo,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
 }) {
   const [reDescargando, setReDescargando] = useState<string | null>(null);
 
   const { data: presentaciones = [], isLoading } = useQuery({
-    queryKey: ['lsd-presentaciones', profileId, periodo],
-    queryFn: () => listLsdPresentaciones({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-presentaciones', clientId, periodo],
+    queryFn: () => listLsdPresentaciones({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   const handleReDescargar = async (id: string) => {
     setReDescargando(id);
     try {
       const pres = await getLsdPresentacionContenido({
-        data: { clientId, profileId, presentacionId: id },
+        data: { clientId, presentacionId: id },
       });
       triggerDownload(pres.contenido, pres.filename);
       toast.success(`Presentación nro ${pres.nroPresentacion} descargada`);
@@ -368,7 +380,10 @@ function HistorialPresentaciones({
   if (presentaciones.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-10 text-center">
-        <Upload className="h-7 w-7 text-[var(--arca-ink-3)] mb-3" strokeWidth={1.5} />
+        <Upload
+          className="h-7 w-7 text-[var(--arca-ink-3)] mb-3"
+          strokeWidth={1.5}
+        />
         <p className="text-[13px] font-medium text-[var(--arca-ink)]">
           Sin presentaciones para este período
         </p>
@@ -403,20 +418,20 @@ function HistorialPresentaciones({
                 variant="outline"
                 className={
                   p.nroPresentacion === 1
-                    ? 'text-[11px] text-emerald-700 border-emerald-300 bg-emerald-50'
-                    : 'text-[11px] text-amber-700 border-amber-300 bg-amber-50'
+                    ? 'text-[11px] text-[var(--arca-accent-pos-fg)] border-[var(--arca-accent-pos)] bg-[var(--arca-accent-pos-bg)]'
+                    : 'text-[11px] text-[var(--arca-accent-warn-fg)] border-[var(--arca-accent-warn)] bg-[var(--arca-accent-warn-bg)]'
                 }
               >
                 {p.nroPresentacion === 1 ? 'Original' : 'Rectificativa'}
               </Badge>
             </TableCell>
-            <TableCell className="text-[13px] text-[var(--arca-ink-2)] tabular-nums">
+            <TableCell className="text-[13px] text-[var(--arca-ink-2)] tabular-nums [font-family:var(--ff-mono)]">
               {formatDateTime(p.generadoEn)}
             </TableCell>
-            <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">
+            <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
               {p.empleados}
             </TableCell>
-            <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">
+            <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
               {p.conceptos}
             </TableCell>
             <TableCell className="text-[12px] font-mono text-[var(--arca-ink-3)] truncate max-w-[200px]">
@@ -449,26 +464,30 @@ function HistorialPresentaciones({
 
 function GenerarPresentacionDialog({
   clientId,
-  profileId,
   periodo,
   nroPresentacion,
   onClose,
 }: {
   clientId: string;
-  profileId: string;
   periodo: string;
   nroPresentacion: number;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [editingOverride, setEditingOverride] = useState<OverrideRow | null>(null);
+  const [editingOverride, setEditingOverride] = useState<OverrideRow | null>(
+    null
+  );
   const [selectedCuils, setSelectedCuils] = useState<Set<string> | null>(null);
   const [showEmpleadorConfig, setShowEmpleadorConfig] = useState(false);
 
-  const { data: preview, isLoading: loadingPreview, error } = useQuery({
-    queryKey: ['lsd-preview', profileId, periodo],
-    queryFn: () => previewLsd({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+  const {
+    data: preview,
+    isLoading: loadingPreview,
+    error,
+  } = useQuery({
+    queryKey: ['lsd-preview', clientId, periodo],
+    queryFn: () => previewLsd({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   const allCuils = useMemo(
@@ -479,7 +498,8 @@ function GenerarPresentacionDialog({
   const effectiveCuils = selectedCuils ?? new Set(allCuils);
   const allSelected = effectiveCuils.size === allCuils.length;
   const someSelected = effectiveCuils.size > 0 && !allSelected;
-  const isFiltered = selectedCuils !== null && selectedCuils.size < allCuils.length;
+  const isFiltered =
+    selectedCuils !== null && selectedCuils.size < allCuils.length;
 
   const toggleCuil = (cuil: string) => {
     const next = new Set(effectiveCuils);
@@ -494,9 +514,9 @@ function GenerarPresentacionDialog({
   };
 
   const { data: validacion } = useQuery({
-    queryKey: ['lsd-validacion', profileId, periodo],
-    queryFn: () => validarLsd({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-validacion', clientId, periodo],
+    queryFn: () => validarLsd({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
   const { mutate: generar, isPending: isGenerating } = useMutation({
@@ -504,7 +524,6 @@ function GenerarPresentacionDialog({
       generarArchivoLsd({
         data: {
           clientId,
-          profileId,
           periodo,
           cuils: isFiltered ? [...effectiveCuils] : undefined,
         },
@@ -514,7 +533,9 @@ function GenerarPresentacionDialog({
       toast.success(
         `Presentación nro ${result.nroPresentacion} generada — ${result.empleados} empleados, ${result.conceptos} conceptos`
       );
-      queryClient.invalidateQueries({ queryKey: ['lsd-presentaciones', profileId, periodo] });
+      queryClient.invalidateQueries({
+        queryKey: ['lsd-presentaciones', clientId, periodo],
+      });
       onClose();
     },
     onError: (err) => {
@@ -522,61 +543,87 @@ function GenerarPresentacionDialog({
     },
   });
 
-  const { mutate: generarConceptos, isPending: isGeneratingConceptos } = useMutation({
-    mutationFn: () => generarConceptosLsd({ data: { clientId, profileId, periodo } }),
-    onSuccess: (result) => {
-      triggerDownload(result.contenido, result.filename);
-      toast.success(`Conceptos LSD descargados — ${result.conceptos} conceptos`);
-    },
-    onError: (err) => {
-      toast.error(`Error al generar conceptos: ${(err as Error).message}`);
-    },
-  });
+  const { mutate: generarConceptos, isPending: isGeneratingConceptos } =
+    useMutation({
+      mutationFn: () => generarConceptosLsd({ data: { clientId, periodo } }),
+      onSuccess: (result) => {
+        triggerDownload(result.contenido, result.filename);
+        toast.success(
+          `Conceptos LSD descargados — ${result.conceptos} conceptos`
+        );
+      },
+      onError: (err) => {
+        toast.error(`Error al generar conceptos: ${(err as Error).message}`);
+      },
+    });
 
   const hasData = preview && preview.empleados.length > 0;
-  const puedeDescargar = validacion?.puedeDescargar !== false && effectiveCuils.size > 0;
+  const puedeDescargar =
+    validacion?.puedeDescargar !== false && effectiveCuils.size > 0;
 
   return (
     <>
-      <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <Dialog
+        open
+        onOpenChange={(open) => {
+          if (!open) onClose();
+        }}
+      >
         <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-[95vw] max-h-[90vh] flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-[15px]">
               Generar presentación
               {nroPresentacion > 1 && (
-                <span className="ml-2 text-[13px] font-normal text-amber-600">(rectificativa)</span>
+                <span className="ml-2 text-[13px] font-normal text-[var(--arca-accent-warn-fg)]">
+                  (rectificativa)
+                </span>
               )}
             </DialogTitle>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto space-y-4 pr-1">
             {/* Panel de validación */}
-            <ValidacionPanel clientId={clientId} profileId={profileId} periodo={periodo} />
+            <ValidacionPanel clientId={clientId} periodo={periodo} />
 
             {/* Error de carga */}
             {error && (
               <div
                 className="flex items-start gap-3 p-3.5 rounded-[var(--arca-r-md)] text-[13px]"
-                style={{ background: 'var(--arca-surface)', border: '1px solid var(--arca-border)' }}
+                style={{
+                  background: 'var(--arca-surface)',
+                  border: '1px solid var(--arca-border)',
+                }}
               >
-                <AlertCircle className="h-4 w-4 mt-0.5 text-red-500 shrink-0" />
-                <p className="text-[var(--arca-ink-2)]">{(error as Error).message}</p>
+                <AlertCircle className="h-4 w-4 mt-0.5 text-[var(--arca-accent-neg-fg)] shrink-0" />
+                <p className="text-[var(--arca-ink-2)]">
+                  {(error as Error).message}
+                </p>
               </div>
             )}
 
             {/* Stats */}
             {preview && (
               <div className="grid grid-cols-4 gap-3">
-                <StatCard icon={<Building2 className="h-4 w-4" />} label="Empresa" value={preview.employer.cuit} sub={preview.employer.nombre} />
+                <StatCard
+                  icon={<Building2 className="h-4 w-4" />}
+                  label="Empresa"
+                  value={preview.employer.cuit}
+                  sub={preview.employer.nombre}
+                />
                 {/* Tipo empleador con botón de configuración */}
                 <div
                   className="flex flex-col gap-1.5 p-4 rounded-[var(--arca-r-lg)] relative group"
-                  style={{ background: 'var(--arca-surface)', border: '1px solid var(--arca-border)' }}
+                  style={{
+                    background: 'var(--arca-surface)',
+                    border: '1px solid var(--arca-border)',
+                  }}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-[var(--arca-ink-3)]">
                       <FileText className="h-4 w-4" />
-                      <span className="text-[11px] font-medium uppercase tracking-wide">Tipo empleador</span>
+                      <span className="text-[11px] font-medium uppercase tracking-wide">
+                        Tipo empleador
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -590,19 +637,37 @@ function GenerarPresentacionDialog({
                   <p className="text-[18px] font-semibold text-[var(--arca-ink)] font-mono leading-tight">
                     {preview.employer.codigoLsd ?? '—'}
                   </p>
-                  <p className={`text-[11px] truncate ${!preview.employer.tipoEmpresaNombre ? 'text-amber-500' : 'text-[var(--arca-ink-3)]'}`}>
+                  <p
+                    className={`text-[11px] truncate ${!preview.employer.tipoEmpresaNombre ? 'text-[var(--arca-accent-warn-fg)]' : 'text-[var(--arca-ink-3)]'}`}
+                  >
                     {preview.employer.tipoEmpresaNombre ?? 'Sin configurar'}
                   </p>
                 </div>
-                <StatCard icon={<Users className="h-4 w-4" />} label="Empleados" value={String(isFiltered ? effectiveCuils.size : preview.empleados.length)} sub={isFiltered ? `de ${preview.empleados.length} en el período` : 'en este período'} />
-                <StatCard icon={<Hash className="h-4 w-4" />} label="Conceptos" value={String(preview.conceptos)} sub="líneas en el archivo" />
+                <StatCard
+                  icon={<Users className="h-4 w-4" />}
+                  label="Empleados"
+                  value={String(
+                    isFiltered ? effectiveCuils.size : preview.empleados.length
+                  )}
+                  sub={
+                    isFiltered
+                      ? `de ${preview.empleados.length} en el período`
+                      : 'en este período'
+                  }
+                />
+                <StatCard
+                  icon={<Hash className="h-4 w-4" />}
+                  label="Conceptos"
+                  value={String(preview.conceptos)}
+                  sub="líneas en el archivo"
+                />
               </div>
             )}
 
             <EmpleadorConfigDialog
               open={showEmpleadorConfig}
               onOpenChange={setShowEmpleadorConfig}
-              clientId={profileId}
+              clientId={clientId}
               empresaNombre={preview?.employer.nombre ?? ''}
             />
 
@@ -615,28 +680,45 @@ function GenerarPresentacionDialog({
 
             {/* Tabla de empleados */}
             {!loadingPreview && hasData && (
-              <div className="rounded-[var(--arca-r-md)] overflow-hidden" style={{ border: '1px solid var(--arca-border)' }}>
+              <div
+                className="rounded-[var(--arca-r-md)] overflow-hidden"
+                style={{ border: '1px solid var(--arca-border)' }}
+              >
                 {/* Barra de selección */}
                 <div
                   className="flex items-center gap-3 px-3 py-2 border-b text-[12px]"
-                  style={{ borderColor: 'var(--arca-border)', background: 'var(--arca-surface)' }}
+                  style={{
+                    borderColor: 'var(--arca-border)',
+                    background: 'var(--arca-surface)',
+                  }}
                 >
                   <Checkbox
-                    checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                    checked={
+                      allSelected
+                        ? true
+                        : someSelected
+                          ? 'indeterminate'
+                          : false
+                    }
                     onCheckedChange={toggleAll}
                   />
                   <span className="text-[var(--arca-ink-2)]">
                     {isFiltered ? (
                       <>
-                        <span className="font-medium text-[var(--arca-ink)]">{effectiveCuils.size}</span>
-                        <span> de {allCuils.length} empleados seleccionados</span>
+                        <span className="font-medium text-[var(--arca-ink)]">
+                          {effectiveCuils.size}
+                        </span>
+                        <span>
+                          {' '}
+                          de {allCuils.length} empleados seleccionados
+                        </span>
                       </>
                     ) : (
                       `Todos los empleados seleccionados (${allCuils.length})`
                     )}
                   </span>
                   {isFiltered && (
-                    <span className="flex items-center gap-1 text-amber-600">
+                    <span className="flex items-center gap-1 text-[var(--arca-accent-warn-fg)]">
                       <Filter className="h-3 w-3" />
                       Rectificativa parcial
                     </span>
@@ -657,10 +739,18 @@ function GenerarPresentacionDialog({
                       <TableHead className="text-[12px]">Legajo</TableHead>
                       <TableHead className="text-[12px]">Empleado</TableHead>
                       <TableHead className="text-[12px]">CUIL</TableHead>
-                      <TableHead className="text-[12px] max-w-[180px]">Situación revista</TableHead>
-                      <TableHead className="text-[12px] w-28">Modalidad</TableHead>
-                      <TableHead className="text-[12px] text-right">Días</TableHead>
-                      <TableHead className="text-[12px] text-right">Conceptos</TableHead>
+                      <TableHead className="text-[12px] max-w-[180px]">
+                        Situación revista
+                      </TableHead>
+                      <TableHead className="text-[12px] w-28">
+                        Modalidad
+                      </TableHead>
+                      <TableHead className="text-[12px] text-right">
+                        Días
+                      </TableHead>
+                      <TableHead className="text-[12px] text-right">
+                        Conceptos
+                      </TableHead>
                       <TableHead className="w-8" />
                     </TableRow>
                   </TableHeader>
@@ -668,52 +758,97 @@ function GenerarPresentacionDialog({
                     {preview.empleados.map((emp) => {
                       const tieneError =
                         validacion?.issues.some(
-                          (i) => i.tipo === 'error' && i.empleadoCuil === emp.empleadoCuil
+                          (i) =>
+                            i.tipo === 'error' &&
+                            i.empleadoCuil === emp.empleadoCuil
                         ) ?? false;
                       const checked = effectiveCuils.has(emp.empleadoCuil);
                       return (
                         <TableRow
                           key={emp.reciboId}
-                          className={!checked ? 'opacity-40' : tieneError ? 'bg-red-50/50' : undefined}
+                          className={
+                            !checked
+                              ? 'opacity-40'
+                              : tieneError
+                                ? 'bg-[var(--arca-accent-neg-bg)]/50'
+                                : undefined
+                          }
                         >
                           <TableCell className="w-8 pl-3 pr-0">
-                            <Checkbox checked={checked} onCheckedChange={() => toggleCuil(emp.empleadoCuil)} />
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={() =>
+                                toggleCuil(emp.empleadoCuil)
+                              }
+                            />
                           </TableCell>
-                          <TableCell className="text-[13px] font-mono">{legajoParaMostrar(emp.empleadoLegajo)}</TableCell>
-                          <TableCell className="text-[13px] font-medium">{emp.empleadoNombre}</TableCell>
-                          <TableCell className="text-[13px] font-mono text-[var(--arca-ink-2)]">{emp.empleadoCuil}</TableCell>
+                          <TableCell className="text-[13px] font-mono">
+                            {legajoParaMostrar(emp.empleadoLegajo)}
+                          </TableCell>
+                          <TableCell className="text-[13px] font-medium">
+                            {emp.empleadoNombre}
+                          </TableCell>
+                          <TableCell className="text-[13px] font-mono text-[var(--arca-ink-2)]">
+                            {emp.empleadoCuil}
+                          </TableCell>
                           <TableCell className="max-w-[180px]">
                             {emp.situacionCodigo ? (
-                              <span className="text-[12px] font-mono text-[var(--arca-ink-2)] block truncate" title={`${emp.situacionCodigo} — ${emp.situacionNombre}`}>
+                              <span
+                                className="text-[12px] font-mono text-[var(--arca-ink-2)] block truncate"
+                                title={`${emp.situacionCodigo} — ${emp.situacionNombre}`}
+                              >
                                 {emp.situacionCodigo} — {emp.situacionNombre}
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[12px] text-amber-600"><TriangleAlert className="h-3 w-3" />Sin situación</span>
+                              <span className="inline-flex items-center gap-1 text-[12px] text-[var(--arca-accent-warn-fg)]">
+                                <TriangleAlert className="h-3 w-3" />
+                                Sin situación
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>
                             {emp.modalidadCodigo ? (
-                              <span className="text-[12px] font-mono text-[var(--arca-ink-2)]">{emp.modalidadCodigo}</span>
+                              <span className="text-[12px] font-mono text-[var(--arca-ink-2)]">
+                                {emp.modalidadCodigo}
+                              </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[12px] text-amber-600"><TriangleAlert className="h-3 w-3" />Sin modalidad</span>
+                              <span className="inline-flex items-center gap-1 text-[12px] text-[var(--arca-accent-warn-fg)]">
+                                <TriangleAlert className="h-3 w-3" />
+                                Sin modalidad
+                              </span>
                             )}
                           </TableCell>
-                          <TableCell className="text-[13px] text-right tabular-nums text-[var(--arca-ink-2)]">{emp.diasTrabajados ?? '—'}</TableCell>
-                          <TableCell className="text-[13px] text-right tabular-nums font-medium">{emp.cantidadConceptos}</TableCell>
+                          <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
+                            {emp.diasTrabajados ?? '—'}
+                          </TableCell>
+                          <TableCell className="text-[13px] text-right tabular-nums [font-family:var(--ff-mono)] font-medium">
+                            {emp.cantidadConceptos}
+                          </TableCell>
                           <TableCell className="w-8 pr-2">
                             <Button
-                              variant="ghost" size="icon" className="h-6 w-6" title="Editar bases LSD" tabIndex={-1}
-                              onClick={() => setEditingOverride({
-                                reciboId: emp.reciboId,
-                                empleadoNombre: emp.empleadoNombre,
-                                rem4y8Override: emp.rem4y8Override,
-                                rem9Override: emp.rem9Override,
-                                rem4y8Sugerido: emp.rem4y8Sugerido ?? null,
-                                rem9Sugerido: emp.rem9Sugerido ?? null,
-                                contribucionAdicionalOS: emp.contribucionAdicionalOS,
-                                importeADetraerLey27430: emp.importeADetraerLey27430,
-                                importeMaternidadArt13: emp.importeMaternidadArt13,
-                              })}
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              title="Editar bases LSD"
+                              tabIndex={-1}
+                              onClick={() =>
+                                setEditingOverride({
+                                  reciboId: emp.reciboId,
+                                  empleadoNombre: emp.empleadoNombre,
+                                  remuneracion4Y8Override:
+                                    emp.remuneracion4Y8Override,
+                                  remuneracion9Override:
+                                    emp.remuneracion9Override,
+                                  rem4y8Sugerido: emp.rem4y8Sugerido ?? null,
+                                  rem9Sugerido: emp.rem9Sugerido ?? null,
+                                  contribucionAdicionalOs:
+                                    emp.contribucionAdicionalOs,
+                                  importeADetraerLey27430:
+                                    emp.importeADetraerLey27430,
+                                  importeMaternidadArt13:
+                                    emp.importeMaternidadArt13,
+                                })
+                              }
                             >
                               <Pencil className="h-3 w-3" />
                             </Button>
@@ -729,33 +864,65 @@ function GenerarPresentacionDialog({
             {!loadingPreview && preview && preview.empleados.length === 0 && (
               <div
                 className="flex flex-col items-center justify-center py-10 text-center rounded-[var(--arca-r-md)]"
-                style={{ background: 'var(--arca-surface)', border: '1px solid var(--arca-border)' }}
+                style={{
+                  background: 'var(--arca-surface)',
+                  border: '1px solid var(--arca-border)',
+                }}
               >
-                <FileText className="h-7 w-7 text-[var(--arca-ink-3)] mb-2" strokeWidth={1.5} />
-                <p className="text-[13px] text-[var(--arca-ink)]">Sin recibos confirmados para este período</p>
+                <FileText
+                  className="h-7 w-7 text-[var(--arca-ink-3)] mb-2"
+                  strokeWidth={1.5}
+                />
+                <p className="text-[13px] text-[var(--arca-ink)]">
+                  Sin recibos confirmados para este período
+                </p>
               </div>
             )}
           </div>
 
-          <DialogFooter className="shrink-0 pt-2 border-t" style={{ borderColor: 'var(--arca-border)' }}>
-            <Button variant="outline" onClick={() => generarConceptos()} disabled={isGeneratingConceptos} className="gap-2 mr-auto">
-              {isGeneratingConceptos ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          <DialogFooter
+            className="shrink-0 pt-2 border-t"
+            style={{ borderColor: 'var(--arca-border)' }}
+          >
+            <Button
+              variant="outline"
+              onClick={() => generarConceptos()}
+              disabled={isGeneratingConceptos}
+              className="gap-2 mr-auto"
+            >
+              {isGeneratingConceptos ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
               {isGeneratingConceptos ? 'Generando…' : 'Descargar Conceptos LSD'}
             </Button>
-            <Button variant="outline" onClick={onClose}>Cancelar</Button>
+            <Button variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
             {puedeDescargar ? (
-              <Button onClick={() => generar()} disabled={isGenerating || !hasData} className="gap-2">
-                {isGenerating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <Button
+                onClick={() => generar()}
+                disabled={isGenerating || !hasData}
+                className="gap-2"
+              >
+                {isGenerating ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
                 {isGenerating
                   ? 'Generando…'
                   : isFiltered
-                  ? `Generar presentación (${effectiveCuils.size} empleados)`
-                  : 'Generar presentación'}
+                    ? `Generar presentación (${effectiveCuils.size} empleados)`
+                    : 'Generar presentación'}
               </Button>
             ) : (
               <Button disabled className="gap-2">
                 <AlertCircle className="h-4 w-4" />
-                {effectiveCuils.size === 0 ? 'Seleccioná al menos un empleado' : 'Corrija los errores para continuar'}
+                {effectiveCuils.size === 0
+                  ? 'Seleccioná al menos un empleado'
+                  : 'Corrija los errores para continuar'}
               </Button>
             )}
           </DialogFooter>
@@ -765,7 +932,6 @@ function GenerarPresentacionDialog({
       {editingOverride && (
         <LsdOverridesDialog
           clientId={clientId}
-          profileId={profileId}
           row={editingOverride}
           onClose={() => setEditingOverride(null)}
         />
@@ -776,7 +942,7 @@ function GenerarPresentacionDialog({
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
-export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
+export function SueldosCargas({ clientId }: SueldosCargasProps) {
   const def = getPeriodoDefecto();
   const [year, setYear] = useState(def.year);
   const [month, setMonth] = useState(def.month);
@@ -786,53 +952,26 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
   const mesNombre = MONTHS.find((m) => m.value === month)?.label ?? '';
 
   const { data: presentaciones = [] } = useQuery({
-    queryKey: ['lsd-presentaciones', profileId, periodo],
-    queryFn: () => listLsdPresentaciones({ data: { clientId, profileId, periodo } }),
-    enabled: !!(clientId && profileId),
+    queryKey: ['lsd-presentaciones', clientId, periodo],
+    queryFn: () => listLsdPresentaciones({ data: { clientId, periodo } }),
+    enabled: !!clientId,
   });
 
-  const nroPresentacionSiguiente = (presentaciones[presentaciones.length - 1]?.nroPresentacion ?? 0) + 1;
+  const nroPresentacionSiguiente =
+    (presentaciones[presentaciones.length - 1]?.nroPresentacion ?? 0) + 1;
 
   return (
     <div className="space-y-4">
-      {/* Selector de período */}
-      <div
-        className="flex flex-col sm:flex-row sm:items-center gap-3 p-4 rounded-[var(--arca-r-lg)]"
-        style={{
-          background: 'var(--arca-surface)',
-          border: '1px solid var(--arca-border)',
+      {/* Un solo control de período —el `MesPicker` de siempre— en vez de dos
+        selects dentro de una card que no contenía nada más. */}
+      <MesPicker
+        ano={year}
+        mes={month}
+        onChange={(a, m) => {
+          setYear(a);
+          setMonth(m);
         }}
-      >
-        <span className="text-[13px] font-medium text-[var(--arca-ink-2)] min-w-max">
-          Período
-        </span>
-        <div className="flex items-center gap-2">
-          <Select value={month} onValueChange={setMonth}>
-            <SelectTrigger className="w-[150px] h-8 text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MONTHS.map((m) => (
-                <SelectItem key={m.value} value={m.value} className="text-[13px]">
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={year} onValueChange={setYear}>
-            <SelectTrigger className="w-[100px] h-8 text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {getYearOptions().map((y) => (
-                <SelectItem key={y} value={y} className="text-[13px]">
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      />
 
       {/* Historial de presentaciones */}
       <div
@@ -858,11 +997,7 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
           )}
         </div>
 
-        <HistorialPresentaciones
-          clientId={clientId}
-          profileId={profileId}
-          periodo={periodo}
-        />
+        <HistorialPresentaciones clientId={clientId} periodo={periodo} />
       </div>
 
       {/* Botón generar presentación */}
@@ -876,7 +1011,6 @@ export function SueldosCargas({ clientId, profileId }: SueldosCargasProps) {
       {showGenerarDialog && (
         <GenerarPresentacionDialog
           clientId={clientId}
-          profileId={profileId}
           periodo={periodo}
           nroPresentacion={nroPresentacionSiguiente}
           onClose={() => setShowGenerarDialog(false)}
@@ -907,7 +1041,9 @@ function StatCard({
     >
       <div className="flex items-center gap-1.5 text-[var(--arca-ink-3)]">
         {icon}
-        <span className="text-[11px] font-medium uppercase tracking-wide">{label}</span>
+        <span className="text-[11px] font-medium uppercase tracking-wide">
+          {label}
+        </span>
       </div>
       <p className="text-[18px] font-semibold text-[var(--arca-ink)] font-mono leading-tight">
         {value}

@@ -11,6 +11,8 @@ const CLIENT_DETAIL_TABS = [
   'iva',
   'convenio-multilateral',
   'solicitudes',
+  'portal',
+  'perfiles',
 ] as const;
 
 export const Route = createFileRoute('/_authed/clients/$clientId/')({

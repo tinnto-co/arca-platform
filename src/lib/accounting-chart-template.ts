@@ -112,17 +112,17 @@ const COL_WIDTHS = [16, 42, 14, 28, 16, 20, 34];
 const RUBRO_LABELS: string[] = ACCOUNT_GROUP_SECTIONS.flatMap((s) =>
   s.groups.map((g) => ACCOUNT_GROUP_LABELS[g])
 );
-const TIPO_LABELS = [ACCOUNT_TYPE_LABELS.group, ACCOUNT_TYPE_LABELS.imputable];
+const TIPO_LABELS = [ACCOUNT_TYPE_LABELS.grupo, ACCOUNT_TYPE_LABELS.imputable];
 const SALDO_LABELS = [
-  EXPECTED_BALANCE_LABELS.debit,
-  EXPECTED_BALANCE_LABELS.credit,
-  EXPECTED_BALANCE_LABELS.both,
+  EXPECTED_BALANCE_LABELS.deudor,
+  EXPECTED_BALANCE_LABELS.acreedor,
+  EXPECTED_BALANCE_LABELS.ambos,
 ];
 const FUNCION_LABELS = [
-  EXPENSE_FUNCTION_LABELS.administration,
-  EXPENSE_FUNCTION_LABELS.sales,
-  EXPENSE_FUNCTION_LABELS.financial,
-  EXPENSE_FUNCTION_LABELS.other,
+  EXPENSE_FUNCTION_LABELS.administracion,
+  EXPENSE_FUNCTION_LABELS.comercializacion,
+  EXPENSE_FUNCTION_LABELS.financiero,
+  EXPENSE_FUNCTION_LABELS.otro,
 ];
 
 /* ─────────────────────────────── Helpers ─────────────────────────────── */
@@ -130,9 +130,9 @@ const FUNCION_LABELS = [
 export interface ChartTemplateAccount {
   code: string;
   name: string;
-  type: 'group' | 'imputable';
+  type: 'grupo' | 'imputable';
   accountGroup?: string | null;
-  expectedBalance?: 'debit' | 'credit' | 'both' | null;
+  expectedBalance?: 'deudor' | 'acreedor' | 'ambos' | null;
   expenseFunction?: string | null;
   description?: string | null;
 }
@@ -180,11 +180,11 @@ function compareCode(a: string, b: string): number {
 /** Esqueleto de agrupaciones estándar (excluye la clase de sistema "0"). */
 function skeletonGroups(): ChartTemplateAccount[] {
   return BASE_CHART.filter(
-    (a) => a.type === 'group' && !a.code.startsWith('0')
+    (a) => a.type === 'grupo' && !a.code.startsWith('0')
   ).map((a) => ({
     code: a.code,
     name: a.name,
-    type: 'group' as const,
+    type: 'grupo' as const,
     accountGroup: a.accountGroup ?? null,
     expectedBalance: null,
     expenseFunction: null,
@@ -262,11 +262,11 @@ function writePlanSheet(
 
   // Escribe una fila de cuenta (esqueleto o plan actual).
   const writeAccount = (a: ChartTemplateAccount) => {
-    const isGroup = a.type === 'group';
+    const isGroup = a.type === 'grupo';
     const row = ws.addRow([
       a.code,
       a.name,
-      isGroup ? ACCOUNT_TYPE_LABELS.group : ACCOUNT_TYPE_LABELS.imputable,
+      isGroup ? ACCOUNT_TYPE_LABELS.grupo : ACCOUNT_TYPE_LABELS.imputable,
       a.accountGroup
         ? (ACCOUNT_GROUP_LABELS[a.accountGroup as AccountGroup] ?? '')
         : '',
@@ -321,7 +321,7 @@ function writePlanSheet(
       currentRubro = null;
     }
     writeAccount(a);
-    if (a.type === 'group' && a.accountGroup) currentRubro = a.code;
+    if (a.type === 'grupo' && a.accountGroup) currentRubro = a.code;
   }
   if (currentRubro) writeBlanks(BLANK_ROWS_PER_RUBRO);
 

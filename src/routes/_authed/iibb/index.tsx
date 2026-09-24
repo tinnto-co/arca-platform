@@ -1,43 +1,32 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Globe, MapPin } from 'lucide-react';
+import { Globe, Info, MapPin, Plus, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  SelectorPeriodo,
+  dePeriodo,
+  nombrePeriodo,
+} from '@/components/shared/selector-periodo';
 import { PageHeader } from '@/components/shared/page-header';
-import { SearchableSelect } from '@/components/ui/searchable-select';
+import { PageShell } from '@/components/shared/page-shell';
+import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
+import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
+import { getClientesForIIBB } from '@/actions/client';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { getRepresentativesForIIBB } from '@/actions/client';
-import {
-  getClientMultilateralSummary,
-  getIibbLiquidacion,
-  saveIibbLiquidacion,
-} from '@/actions/invoice';
+  deleteLiquidacionIibbFila,
+  renameLiquidacionIibbFila,
+  getClienteMultilateralResumen,
+  getIibbResumenPorEmpresa,
+  getLiquidacionIibb,
+  saveLiquidacionIibb,
+} from '@/actions/comprobante';
 import { cn } from '@/lib/utils';
 
 export const Route = createFileRoute('/_authed/iibb/')({
   component: RouteComponent,
 });
-
-const MONTH_NAMES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
-];
 
 function formatARS(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—';
@@ -53,9 +42,9 @@ function formatARS(value: string | number | null | undefined): string {
 
 const tabCls = () =>
   cn(
-    'relative h-auto flex-none px-[18px] py-[10px] text-[13px] font-medium rounded-[8px_8px_0_0] border whitespace-nowrap gap-[7px] cursor-pointer',
-    'border-transparent text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink)]',
-    'data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:border-[var(--arca-border)] data-[state=active]:[border-bottom-color:var(--arca-bg)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:font-semibold data-[state=active]:shadow-none data-[state=active]:top-px'
+    'relative h-auto flex-none whitespace-nowrap rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 pb-2.5 text-[13px] gap-[7px] cursor-pointer',
+    'font-medium text-[var(--arca-ink-3)] hover:bg-transparent hover:text-[var(--arca-ink-2)]',
+    'data-[state=active]:border-[var(--arca-accent)] data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-none'
   );
 
 interface LiqRow {
@@ -65,6 +54,10 @@ interface LiqRow {
   percepcionesAduaneras: number;
   retencionesAgentes: number;
   retencionesBancarias: number;
+  /** Solo filas manuales («Otro Capital Federal»): de qué provincia restan. */
+  provinciaPadre?: string;
+  /** Base cargada a mano de la fila manual. */
+  baseManual?: number;
 }
 
 const DEFAULT_LIQ: LiqRow = {
@@ -77,83 +70,118 @@ const DEFAULT_LIQ: LiqRow = {
 };
 
 const inputCls =
-  'w-[100px] rounded border border-[var(--arca-border)] bg-[var(--arca-surface)] px-1.5 py-0.5 text-right text-[12px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-accent,#2563eb)] tabular-nums';
+  'w-[82px] rounded border border-[var(--arca-border)] bg-[var(--arca-surface)] px-1 py-0.5 text-right text-[11.5px] text-[var(--arca-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--arca-accent,#2563eb)] tabular-nums';
+
+/**
+ * Input numérico que no pelea con el usuario. Con type=number controlado y
+ * valor formateado, tipear «3» sobre un «1,00» o escribir 3755223 de corrido
+ * era imposible: cada tecla re-renderizaba el valor parseado y el refetch del
+ * autoguardado pisaba el campo. Mientras está enfocado muestra el borrador
+ * tal cual se tipea (coma o punto decimal); al salir vuelve al canónico.
+ */
+function InputNumero({
+  valor,
+  onValor,
+  placeholder = '0,00',
+  ancho,
+}: {
+  valor: number;
+  onValor: (n: number) => void;
+  placeholder?: string;
+  ancho?: string;
+}) {
+  const [borrador, setBorrador] = useState<string | null>(null);
+
+  const parsear = (raw: string): number | undefined => {
+    // «3.755.223,50» estilo es-AR: si hay coma, los puntos son de miles.
+    const conComa = raw.includes(',');
+    const limpio = (conComa ? raw.replace(/\./g, '') : raw)
+      .trim()
+      .replace(',', '.');
+    if (limpio === '') return 0;
+    const n = Number(limpio);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={borrador ?? (valor === 0 ? '' : String(valor))}
+      placeholder={placeholder}
+      onFocus={(e) => setBorrador(e.target.value)}
+      onChange={(e) => {
+        setBorrador(e.target.value);
+        const n = parsear(e.target.value);
+        if (n !== undefined) onValor(n);
+      }}
+      onBlur={() => setBorrador(null)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+      }}
+      className={ancho ? inputCls.replace('w-[82px]', ancho) : inputCls}
+    />
+  );
+}
+
+/** Cliente con régimen de IIBB que alimenta el selector. */
+type ClienteIIBB = Awaited<ReturnType<typeof getClientesForIIBB>>[number];
 
 /** Selector de empresa + periodo + tabla de desglose + liquidación IIBB por provincia. */
 function IIBBDesglose({
   clients,
-  emptyMessage,
+  regimen,
 }: {
-  clients: {
-    id: string;
-    name: string | null;
-    cuit: string | null;
-    clients: {
-      id: string;
-      name: string | null;
-      identityNumber: string | null;
-    }[];
-  }[];
-  emptyMessage: string;
+  clients: ClienteIIBB[];
+  regimen: 'local' | 'convenio_multilateral';
 }) {
   const now = new Date();
   const queryClient = useQueryClient();
+  const regimenLabel =
+    regimen === 'local' ? 'régimen local' : 'convenio multilateral';
 
-  const [selectedRepId, setSelectedRepId] = useState('');
-  const [selectedProfileId, setSelectedProfileId] = useState('');
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth());
-
-  const selectedRep = clients.find((c) => c.id === selectedRepId);
-
-  const profileOptions = useMemo(() => {
-    if (!selectedRep) return [];
-    return (selectedRep.clients ?? []).map((c) => ({
-      value: c.id,
-      label: c.name ?? c.identityNumber ?? c.id,
-    }));
-  }, [selectedRep]);
-
-  const effectiveProfileId =
-    selectedProfileId || profileOptions[0]?.value || '';
+  // La empresa viene del selector global del header. Solo vale si está en el
+  // subset de este régimen (local o multilateral): sin empresa (o con una del
+  // otro régimen) la tab muestra la portada agrupada por empresa.
+  const [clienteGlobal, setClienteGlobal] = useClienteSeleccionado();
+  const selectedRepId =
+    clienteGlobal && clients.some((c) => c.id === clienteGlobal)
+      ? clienteGlobal
+      : '';
+  // Default: mes anterior, como IVA — es el período que se está liquidando;
+  // el mes en curso casi no tiene comprobantes los primeros días.
+  const prevMes = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const [selectedYear, setSelectedYear] = useState(prevMes.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(prevMes.getMonth());
 
   const dateFrom = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-01`;
   const lastDay = new Date(selectedYear, selectedMonth + 1, 0).getDate();
   const dateTo = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
   const periodo = `${selectedYear}-${String(selectedMonth + 1).padStart(2, '0')}`;
 
-  const { data: provinceSummary = [], isLoading: loadingInvoices } = useQuery({
-    queryKey: [
-      'iibb',
-      'summary',
-      selectedRepId,
-      effectiveProfileId,
-      dateFrom,
-      dateTo,
-    ],
+  // Portada sin empresa elegida: el período agrupado por empresa. Entrar a la
+  // pantalla tiene que chocar con información, no con la orden de elegir.
+  const { data: resumenEmpresas = [], isLoading: cargandoResumen } = useQuery({
+    queryKey: ['iibb', 'resumen-empresas', regimen, dateFrom, dateTo],
     queryFn: () =>
-      getClientMultilateralSummary({
-        data: {
-          clientId: selectedRepId,
-          profileId: effectiveProfileId,
-          dateFrom,
-          dateTo,
-        },
+      getIibbResumenPorEmpresa({ data: { regimen, dateFrom, dateTo } }),
+    enabled: !selectedRepId,
+  });
+
+  const { data: provinceSummary = [], isLoading: loadingInvoices } = useQuery({
+    queryKey: ['iibb', 'summary', selectedRepId, dateFrom, dateTo],
+    queryFn: () =>
+      getClienteMultilateralResumen({
+        data: { clienteId: selectedRepId, dateFrom, dateTo },
       }),
-    enabled: !!selectedRepId && !!effectiveProfileId,
+    enabled: !!selectedRepId,
   });
 
   const { data: liqData, isLoading: loadingLiq } = useQuery({
-    queryKey: ['iibb', 'liq', selectedRepId, effectiveProfileId, periodo],
+    queryKey: ['iibb', 'liq', selectedRepId, periodo],
     queryFn: () =>
-      getIibbLiquidacion({
-        data: {
-          representativeId: selectedRepId,
-          profileId: effectiveProfileId,
-          periodo,
-        },
-      }),
-    enabled: !!selectedRepId && !!effectiveProfileId,
+      getLiquidacionIibb({ data: { clienteId: selectedRepId, periodo } }),
+    enabled: !!selectedRepId,
   });
 
   // Local editable state keyed by provincia
@@ -175,6 +203,8 @@ function IIBBDesglose({
         percepcionesAduaneras: r.percepcionesAduaneras,
         retencionesAgentes: r.retencionesAgentes,
         retencionesBancarias: r.retencionesBancarias,
+        provinciaPadre: r.provinciaPadre ?? undefined,
+        baseManual: r.baseManual ?? undefined,
       };
     }
     setLocalLiq(next);
@@ -182,10 +212,9 @@ function IIBBDesglose({
 
   const saveMutation = useMutation({
     mutationFn: (vars: { provincia: string } & LiqRow) =>
-      saveIibbLiquidacion({
+      saveLiquidacionIibb({
         data: {
-          representativeId: selectedRepId,
-          profileId: effectiveProfileId,
+          clienteId: selectedRepId,
           periodo,
           provincia: vars.provincia,
           alicuota: vars.alicuota,
@@ -194,11 +223,13 @@ function IIBBDesglose({
           percepcionesAduaneras: vars.percepcionesAduaneras,
           retencionesAgentes: vars.retencionesAgentes,
           retencionesBancarias: vars.retencionesBancarias,
+          provinciaPadre: vars.provinciaPadre,
+          baseManual: vars.baseManual,
         },
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['iibb', 'liq', selectedRepId, effectiveProfileId, periodo],
+        queryKey: ['iibb', 'liq', selectedRepId, periodo],
       });
     },
   });
@@ -231,22 +262,113 @@ function IIBBDesglose({
     return { ...DEFAULT_LIQ, saldoAFavor: carry };
   };
 
-  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
-  const maxMonth = selectedYear === now.getFullYear() ? now.getMonth() : 11;
-  const repOptions = clients.map((c) => ({
-    value: c.id,
-    label: `${c.name}${c.cuit ? ` (${c.cuit})` : ''}`,
-  }));
+  // Cambiar de empresa descarta la liquidación local a medio editar, igual
+  // que hacía el selector propio que este componente tenía antes. Ajuste
+  // durante el render, no en un efecto.
+  const [prevRep, setPrevRep] = useState(selectedRepId);
+  if (prevRep !== selectedRepId) {
+    setPrevRep(selectedRepId);
+    setLocalLiq({});
+  }
 
-  const rows = provinceSummary as any[];
+  const rows = provinceSummary;
   const isLoading = loadingInvoices || loadingLiq;
 
+  /**
+   * Filas a mostrar: cada provincia con su base calculada MENOS lo asignado a
+   * sus filas manuales, seguida de esas filas («Otro Capital Federal», parte
+   * de la base a otra alícuota según la actividad). El total no cambia: la
+   * base solo se reparte.
+   */
+  const filasManuales = (liqData?.rows ?? []).filter(
+    (r) => r.provinciaPadre != null
+  );
+  const filasDisplay = useMemo(() => {
+    const baseManualDe = (etiqueta: string, servidor: number | null) =>
+      localLiq[etiqueta]?.baseManual ?? servidor ?? 0;
+    const out: {
+      key: string;
+      esManual: boolean;
+      id?: string;
+      cantidad: number | null;
+      base: number;
+    }[] = [];
+    for (const row of rows) {
+      const prov = row.provincia ?? '';
+      const subs = filasManuales.filter((m) => m.provinciaPadre === prov);
+      const restar = subs.reduce(
+        (a, m) => a + baseManualDe(m.provincia, m.baseManual),
+        0
+      );
+      out.push({
+        key: prov,
+        esManual: false,
+        cantidad: row.cantidad,
+        base: Number(row.totalBase ?? 0) - restar,
+      });
+      for (const m of subs)
+        out.push({
+          key: m.provincia,
+          esManual: true,
+          id: m.id,
+          cantidad: null,
+          base: baseManualDe(m.provincia, m.baseManual),
+        });
+    }
+    // Manuales cuya provincia no facturó este período: se muestran igual.
+    for (const m of filasManuales)
+      if (!out.some((f) => f.key === m.provincia))
+        out.push({
+          key: m.provincia,
+          esManual: true,
+          id: m.id,
+          cantidad: null,
+          base: baseManualDe(m.provincia, m.baseManual),
+        });
+    return out;
+  }, [rows, filasManuales, localLiq]);
+
+  const agregarFila = (provPadre: string) => {
+    const labelPadre = provPadre || 'Capital Federal';
+    let etiqueta = `Otro ${labelPadre}`;
+    let n = 2;
+    const existentes = new Set(filasDisplay.map((f) => f.key));
+    while (existentes.has(etiqueta)) etiqueta = `Otro ${labelPadre} ${n++}`;
+    const nueva: LiqRow = {
+      ...DEFAULT_LIQ,
+      alicuota: getLiq(provPadre).alicuota,
+      provinciaPadre: provPadre,
+      baseManual: 0,
+    };
+    setLocalLiq((prev) => ({ ...prev, [etiqueta]: nueva }));
+    saveMutation.mutate({ provincia: etiqueta, ...nueva });
+  };
+
+  const borrarFila = useMutation({
+    mutationFn: (id: string) => deleteLiquidacionIibbFila({ data: { id } }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['iibb', 'liq', selectedRepId, periodo],
+      });
+    },
+  });
+
+  const renombrarFila = useMutation({
+    mutationFn: (v: { id: string; nombre: string }) =>
+      renameLiquidacionIibbFila({ data: v }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['iibb', 'liq', selectedRepId, periodo],
+      });
+    },
+    onError: (e: Error) => toast.error(e.message || 'No se pudo renombrar'),
+  });
+
   const totals = useMemo(() => {
-    return rows.reduce(
-      (acc, row) => {
-        const prov = row.receiptProvince ?? '';
-        const liq = getLiq(prov);
-        const base = Number(row.totalTaxed ?? 0);
+    return filasDisplay.reduce(
+      (acc, fila) => {
+        const liq = getLiq(fila.key);
+        const base = fila.base;
         const impDet = base * liq.alicuota;
         const liquidacion =
           impDet -
@@ -256,7 +378,7 @@ function IIBBDesglose({
           liq.retencionesAgentes -
           liq.retencionesBancarias;
         return {
-          count: acc.count + (row.invoiceCount ?? 0),
+          count: acc.count + (fila.cantidad ?? 0),
           base: acc.base + base,
           impDet: acc.impDet + impDet,
           saldoAFavor: acc.saldoAFavor + liq.saldoAFavor,
@@ -287,150 +409,187 @@ function IIBBDesglose({
 
   return (
     <div>
-      {/* Selectors */}
-      <div className="flex flex-wrap gap-3 mb-6">
-        <SearchableSelect
-          options={repOptions}
-          value={selectedRepId}
-          onValueChange={(v) => {
-            setSelectedRepId(v);
-            setSelectedProfileId('');
+      {/* Selectors — la empresa se elige en el selector global del header. */}
+      <div className="mb-4 flex flex-wrap gap-3">
+        <SelectorPeriodo
+          periodo={periodo}
+          onPeriodo={(p) => {
+            const { anio, mes } = dePeriodo(p);
+            setSelectedYear(anio);
+            setSelectedMonth(mes);
             setLocalLiq({});
           }}
-          placeholder="Seleccionar empresa..."
-          width={320}
         />
-        {profileOptions.length > 1 && (
-          <SearchableSelect
-            options={profileOptions}
-            value={effectiveProfileId}
-            onValueChange={setSelectedProfileId}
-            placeholder="Seleccionar perfil..."
-            width={260}
-          />
-        )}
-        <div className="flex items-center gap-2">
-          <Select
-            value={String(selectedMonth)}
-            onValueChange={(v) => {
-              setSelectedMonth(Number(v));
-              setLocalLiq({});
-            }}
-          >
-            <SelectTrigger className="w-[140px] text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {Array.from({ length: maxMonth + 1 }, (_, i) => (
-                <SelectItem key={i} value={String(i)}>
-                  {MONTH_NAMES[i]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={String(selectedYear)}
-            onValueChange={(v) => {
-              const y = Number(v);
-              setSelectedYear(y);
-              setLocalLiq({});
-              if (y === now.getFullYear() && selectedMonth > now.getMonth()) {
-                setSelectedMonth(now.getMonth());
-              }
-            }}
-          >
-            <SelectTrigger className="w-[100px] text-[13px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
-      {/* Tabla */}
+      {/* Sin empresa: portada del período agrupada por empresa. Click en una
+          fila la elige (escribe el selector global) y baja al detalle. */}
       {!selectedRepId ? (
-        <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
-          {clients.length === 0
-            ? emptyMessage
-            : 'Seleccioná una empresa para ver el desglose por provincia.'}
-        </div>
+        clients.length === 0 ? (
+          <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+            {`No hay clientes con ${regimenLabel} configurado.`}
+          </div>
+        ) : cargandoResumen ? (
+          <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
+            Cargando...
+          </div>
+        ) : (
+          <div>
+            {/* Es un aviso sobre lo que se está viendo —la empresa elegida no
+                entra en esta pantalla— no una leyenda de la tabla: va como
+                banner tonal, con el ícono y el color del sistema. */}
+            {clienteGlobal && (
+              <div
+                role="status"
+                className="mb-3 flex items-start gap-2 rounded-[var(--arca-r-md)] border border-[var(--arca-accent-info)]/25 bg-[var(--arca-accent-info-bg)] px-3 py-2 text-[12.5px] text-[var(--arca-accent-info-fg)]"
+              >
+                <Info className="mt-[1px] size-3.5 shrink-0" />
+                <span>
+                  La empresa elegida no tiene {regimenLabel} configurado — estas
+                  son las que sí. Click en una fila para ver su detalle.
+                </span>
+              </div>
+            )}
+            <div
+              style={{
+                border: '1px solid var(--arca-border)',
+                borderRadius: 12,
+                background: 'var(--arca-surface)',
+                overflowX: 'auto',
+              }}
+            >
+              <table
+                className="text-[12px]"
+                style={{ width: '100%', borderCollapse: 'collapse' }}
+              >
+                <thead>
+                  <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">
+                      Empresa
+                    </th>
+                    <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">
+                      CUIT
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
+                      Comprobantes
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
+                      Provincias
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
+                      Base imponible
+                    </th>
+                    <th className="px-3 py-2.5 text-right font-semibold whitespace-nowrap">
+                      IVA
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-[var(--arca-surface)]">
+                  {resumenEmpresas.map((r, i) => (
+                    <tr
+                      key={r.clienteId}
+                      onClick={() => setClienteGlobal(r.clienteId)}
+                      className="cursor-pointer transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
+                      style={{
+                        borderTop:
+                          i === 0 ? undefined : '1px solid var(--arca-border)',
+                      }}
+                    >
+                      <td className="px-3 py-2 font-medium text-[var(--arca-ink)] whitespace-nowrap">
+                        {r.razonSocial}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-[var(--arca-ink-3)] tabular-nums whitespace-nowrap"
+                        style={{ fontFamily: 'var(--ff-mono)' }}
+                      >
+                        {r.cuit}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
+                        {r.comprobantes}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
+                        {r.provincias}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] font-medium text-[var(--arca-ink)]">
+                        {formatARS(r.totalBase)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums [font-family:var(--ff-mono)] text-[var(--arca-ink-2)]">
+                        {formatARS(r.totalIva)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
       ) : isLoading ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
           Cargando...
         </div>
       ) : rows.length === 0 ? (
         <div className="text-center py-12 text-[13px] text-[var(--arca-ink-3)]">
-          Sin comprobantes outbound para el período seleccionado.
+          {`Sin comprobantes emitidos en ${nombrePeriodo(periodo)} para esta empresa — probá con otro período.`}
         </div>
       ) : (
         <div
           style={{
             border: '1px solid var(--arca-border)',
-            borderRadius: 8,
+            borderRadius: 12,
+            background: 'var(--arca-surface)',
             overflowX: 'auto',
           }}
         >
           <table
             className="text-[12px]"
             style={{
-              minWidth: 1100,
+              minWidth: 960,
               width: '100%',
               borderCollapse: 'collapse',
             }}
           >
             <thead>
-              <tr
-                style={{
-                  borderBottom: '1px solid var(--arca-border)',
-                  background: 'var(--arca-surface-2)',
-                }}
-              >
-                <th className="text-left px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+              <tr className="bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] border-b border-[var(--arca-border)]">
+                <th className="text-left px-2 py-2.5 font-semibold whitespace-nowrap">
                   Provincia
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Comp.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Base imponible
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Alícuota %
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
-                  Imp. determinado
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
+                  Imp. determ.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Saldo a favor
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Perc. Agentes
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
-                  Perc. Aduaneras
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
+                  Perc. Aduan.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Ret. Agentes
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
-                  Ret. Bancarias
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
+                  Ret. Banc.
                 </th>
-                <th className="text-right px-3 py-2.5 font-semibold text-[var(--arca-ink-2)] whitespace-nowrap">
+                <th className="text-right px-2 py-2.5 font-semibold whitespace-nowrap">
                   Liquidación
                 </th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((row, i) => {
-                const prov = row.receiptProvince ?? '';
+            <tbody className="bg-[var(--arca-surface)]">
+              {filasDisplay.map((fila, i) => {
+                const prov = fila.key;
                 const liq = getLiq(prov);
-                const base = Number(row.totalTaxed ?? 0);
+                const base = fila.base;
                 const impDet = base * liq.alicuota;
                 const liquidacion =
                   impDet -
@@ -448,153 +607,153 @@ function IIBBDesglose({
                         i === 0 ? undefined : '1px solid var(--arca-border)',
                     }}
                   >
-                    <td className="px-3 py-2 text-[var(--arca-ink)] whitespace-nowrap">
-                      {prov || 'Capital Federal'}
+                    <td className="px-2 py-2 text-[var(--arca-ink)] whitespace-nowrap">
+                      {fila.esManual ? (
+                        <span className="inline-flex items-center gap-1.5 pl-4 text-[var(--arca-ink-2)]">
+                          {/* Nace «Otro …» pero el nombre es libre: la fila
+                              suele ser una actividad («Servicios CABA 3%»). */}
+                          <input
+                            key={fila.id}
+                            type="text"
+                            defaultValue={prov}
+                            aria-label="Nombre de la fila manual"
+                            title="Editable: poné el nombre que quieras (ej. la actividad)"
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur();
+                              if (e.key === 'Escape') {
+                                e.currentTarget.value = prov;
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={(e) => {
+                              const nombre = e.target.value.trim();
+                              if (!nombre || nombre === prov) {
+                                e.target.value = prov;
+                                return;
+                              }
+                              if (fila.id)
+                                renombrarFila.mutate({ id: fila.id, nombre });
+                            }}
+                            className="w-[150px] rounded border border-transparent bg-transparent px-1 py-0.5 text-[11.5px] text-[var(--arca-ink-2)] hover:border-[var(--arca-border)] focus:border-[var(--arca-border-strong)] focus:bg-[var(--arca-surface)] focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            aria-label={`Quitar ${prov}`}
+                            title="Quitar esta fila manual"
+                            onClick={() =>
+                              fila.id && borrarFila.mutate(fila.id)
+                            }
+                            className="cursor-pointer text-[var(--arca-ink-4)] hover:text-[var(--arca-accent-neg-fg)]"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          {prov || 'Capital Federal'}
+                          <button
+                            type="button"
+                            aria-label={`Agregar fila manual en ${prov || 'Capital Federal'}`}
+                            title="Agregar fila manual: parte de la base a otra alícuota (ej. otra actividad)"
+                            onClick={() => agregarFila(prov)}
+                            className="cursor-pointer text-[var(--arca-ink-4)] hover:text-[var(--arca-ink)]"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        </span>
+                      )}
                     </td>
-                    <td className="px-3 py-2 text-right text-[var(--arca-ink-3)] tabular-nums">
-                      {row.invoiceCount}
+                    <td className="px-2 py-2 text-right text-[var(--arca-ink-3)] tabular-nums [font-family:var(--ff-mono)]">
+                      {fila.cantidad ?? '—'}
                     </td>
                     <td
-                      className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
+                      className="px-2 py-2 text-right text-[var(--arca-ink)] tabular-nums"
                       style={{ fontFamily: 'var(--ff-mono)' }}
                     >
-                      {formatARS(row.totalTaxed)}
+                      {fila.esManual ? (
+                        // La base manual resta de la calculada de su provincia.
+                        <InputNumero
+                          valor={base}
+                          onValor={(n) =>
+                            handleChange(prov, 'baseManual', String(n))
+                          }
+                          ancho="w-[110px]"
+                        />
+                      ) : (
+                        formatARS(base)
+                      )}
                     </td>
                     {/* Alícuota editable — ingreso en % (ej. "1" = 1%) */}
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={0.01}
-                        value={(liq.alicuota * 100).toFixed(2)}
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'alicuota',
-                            String(parseFloat(e.target.value || '0') / 100)
-                          )
+                    <td className="px-2 py-2 text-right">
+                      <InputNumero
+                        valor={liq.alicuota * 100}
+                        onValor={(n) =>
+                          handleChange(prov, 'alicuota', String(n / 100))
                         }
-                        className={inputCls}
+                        placeholder="0"
+                        ancho="w-[64px]"
                       />
                     </td>
                     <td
-                      className="px-3 py-2 text-right text-[var(--arca-ink)] tabular-nums"
+                      className="px-2 py-2 text-right text-[var(--arca-ink)] tabular-nums"
                       style={{ fontFamily: 'var(--ff-mono)' }}
                     >
                       {formatARS(impDet)}
                     </td>
                     {/* Saldo a favor editable */}
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={liq.saldoAFavor === 0 ? '' : liq.saldoAFavor}
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(prov, 'saldoAFavor', e.target.value)
+                    <td className="px-2 py-2 text-right">
+                      <InputNumero
+                        valor={liq.saldoAFavor}
+                        onValor={(n) =>
+                          handleChange(prov, 'saldoAFavor', String(n))
                         }
-                        className={inputCls}
                       />
                     </td>
                     {/* Percepciones Agentes */}
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.percepcionesAgentes === 0
-                            ? ''
-                            : liq.percepcionesAgentes
+                    <td className="px-2 py-2 text-right">
+                      <InputNumero
+                        valor={liq.percepcionesAgentes}
+                        onValor={(n) =>
+                          handleChange(prov, 'percepcionesAgentes', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'percepcionesAgentes',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Percepciones Aduaneras */}
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.percepcionesAduaneras === 0
-                            ? ''
-                            : liq.percepcionesAduaneras
+                    <td className="px-2 py-2 text-right">
+                      <InputNumero
+                        valor={liq.percepcionesAduaneras}
+                        onValor={(n) =>
+                          handleChange(prov, 'percepcionesAduaneras', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'percepcionesAduaneras',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Retenciones Agentes */}
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.retencionesAgentes === 0
-                            ? ''
-                            : liq.retencionesAgentes
+                    <td className="px-2 py-2 text-right">
+                      <InputNumero
+                        valor={liq.retencionesAgentes}
+                        onValor={(n) =>
+                          handleChange(prov, 'retencionesAgentes', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'retencionesAgentes',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Retenciones Bancarias */}
-                    <td className="px-3 py-2 text-right">
-                      <input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={
-                          liq.retencionesBancarias === 0
-                            ? ''
-                            : liq.retencionesBancarias
+                    <td className="px-2 py-2 text-right">
+                      <InputNumero
+                        valor={liq.retencionesBancarias}
+                        onValor={(n) =>
+                          handleChange(prov, 'retencionesBancarias', String(n))
                         }
-                        placeholder="0,00"
-                        onChange={(e) =>
-                          handleChange(
-                            prov,
-                            'retencionesBancarias',
-                            e.target.value
-                          )
-                        }
-                        className={inputCls}
                       />
                     </td>
                     {/* Liquidación final */}
                     <td
-                      className="px-3 py-2 text-right font-semibold tabular-nums"
+                      className="px-2 py-2 text-right font-semibold tabular-nums"
                       style={{
                         fontFamily: 'var(--ff-mono)',
                         color:
                           liquidacion >= 0
                             ? 'var(--arca-ink)'
-                            : 'var(--arca-green, #16a34a)',
+                            : 'var(--arca-green, var(--arca-accent-pos))',
                       }}
                     >
                       {formatARS(liquidacion)}
@@ -610,63 +769,63 @@ function IIBBDesglose({
                   background: 'var(--arca-surface-2)',
                 }}
               >
-                <td className="px-3 py-2 font-semibold text-[var(--arca-ink)]">
+                <td className="px-2 py-2 font-semibold text-[var(--arca-ink)]">
                   Total
                 </td>
-                <td className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums">
+                <td className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums [font-family:var(--ff-mono)]">
                   {totals.count}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.base)}
                 </td>
                 <td className="px-3 py-2" />
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.impDet)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.saldoAFavor)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.percepcionesAgentes)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.percepcionesAduaneras)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.retencionesAgentes)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
+                  className="px-2 py-2 text-right font-semibold text-[var(--arca-ink)] tabular-nums"
                   style={{ fontFamily: 'var(--ff-mono)' }}
                 >
                   {formatARS(totals.retencionesBancarias)}
                 </td>
                 <td
-                  className="px-3 py-2 text-right font-semibold tabular-nums"
+                  className="px-2 py-2 text-right font-semibold tabular-nums"
                   style={{
                     fontFamily: 'var(--ff-mono)',
                     color:
                       totals.liquidacion >= 0
                         ? 'var(--arca-ink)'
-                        : 'var(--arca-green, #16a34a)',
+                        : 'var(--arca-green, var(--arca-accent-pos))',
                   }}
                 >
                   {formatARS(totals.liquidacion)}
@@ -683,17 +842,21 @@ function IIBBDesglose({
 function RouteComponent() {
   const { data: allClients = [] } = useQuery({
     queryKey: ['iibb', 'representatives'],
-    queryFn: () => getRepresentativesForIIBB(),
+    queryFn: () => getClientesForIIBB(),
   });
 
-  const localClients = allClients.filter((c) => c.regimenLocal);
-  const multilateralClients = allClients.filter((c) => c.convenioMultilateral);
+  // `iibbRegimen` reemplazó a los dos booleanos regimenLocal/convenioMultilateral.
+  const localClients = allClients.filter((c) => c.iibbRegimen === 'local');
+  const multilateralClients = allClients.filter(
+    (c) => c.iibbRegimen === 'convenio_multilateral'
+  );
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
+    <PageShell>
       <PageHeader
         title="IIBB / Convenio Multilateral"
         subtitle="Ingresos brutos por régimen local y convenio multilateral"
+        actions={<SelectorClienteGlobal />}
       />
 
       <Tabs defaultValue="local">
@@ -710,20 +873,17 @@ function RouteComponent() {
           </TabsList>
         </div>
 
-        <TabsContent value="local" className="mt-6">
-          <IIBBDesglose
-            clients={localClients}
-            emptyMessage="No hay clientes con régimen local configurado."
-          />
+        <TabsContent value="local" className="mt-3">
+          <IIBBDesglose clients={localClients} regimen="local" />
         </TabsContent>
 
-        <TabsContent value="multilateral" className="mt-6">
+        <TabsContent value="multilateral" className="mt-3">
           <IIBBDesglose
             clients={multilateralClients}
-            emptyMessage="No hay clientes con convenio multilateral configurado."
+            regimen="convenio_multilateral"
           />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }

@@ -45,7 +45,7 @@ export function useActiveJobs() {
 
     const finishedById = new Map(data.recentlyFinished.map((j) => [j.id, j]));
 
-    // Agrupar por representante para no spamear toasts.
+    // Agrupar por credencial para no spamear toasts.
     const byRep = new Map<
       string,
       {
@@ -57,8 +57,8 @@ export function useActiveJobs() {
     >();
     for (const j of disappeared) {
       const final = finishedById.get(j.id);
-      const entry = byRep.get(j.representativeId) ?? {
-        name: j.representativeName ?? 'Cliente',
+      const entry = byRep.get(j.credencialId) ?? {
+        name: j.credencialNombre ?? 'Cliente',
         finished: 0,
         failed: 0,
         failedReason: null,
@@ -69,7 +69,7 @@ export function useActiveJobs() {
       } else {
         entry.finished += 1;
       }
-      byRep.set(j.representativeId, entry);
+      byRep.set(j.credencialId, entry);
     }
 
     const entries = [...byRep.values()];
@@ -106,12 +106,14 @@ export function useActiveJobs() {
     void queryClient.invalidateQueries({ queryKey: ['jobs'] });
   }, [data, queryClient]);
 
+  // Mapa de jobs activos indexado por credencial de AFIP (el job corre sobre
+  // un login, no sobre un cliente).
   const activeByRepresentative = useMemo(() => {
     const map = new Map<string, ActiveJobRow[]>();
     for (const j of data?.active ?? []) {
-      const list = map.get(j.representativeId);
+      const list = map.get(j.credencialId);
       if (list) list.push(j);
-      else map.set(j.representativeId, [j]);
+      else map.set(j.credencialId, [j]);
     }
     return map;
   }, [data]);

@@ -46,7 +46,10 @@ describe('numeración', () => {
   it('la composición de rubros deja de ser siempre la Nota 3', () => {
     // Era el choque original: el bloque decía "Nota 3" en duro y la tercera
     // nota del contador también.
-    const primero = numberNotes(['composicion', ...notas.map((n) => `note:${n.id}` as LayoutEntry)], notas);
+    const primero = numberNotes(
+      ['composicion', ...notas.map((n) => `note:${n.id}` as LayoutEntry)],
+      notas
+    );
     expect(noteNumberOf(primero, 'composicion')).toBe(1);
 
     const ultimo = numberNotes(defaultNoteLayout(notas), notas);
@@ -223,6 +226,7 @@ describe('orden completo del documento', () => {
       'anexo_i',
       'anexo_ii',
       'anexo_cmv',
+      'inventario',
       'informe_auditor',
     ]);
   });
@@ -241,6 +245,7 @@ describe('orden completo del documento', () => {
       ['anexo_i', null],
       ['anexo_ii', null],
       ['anexo_cmv', null],
+      ['inventario', null],
       ['informe_auditor', null],
     ]);
   });
@@ -261,17 +266,21 @@ describe('orden completo del documento', () => {
       'anexo_cmv',
     ];
     const r = resolveDocumentLayout(layout, notas);
-    // Lo que el layout no menciona —el informe— se agrega al final.
-    expect(r.map((x) => x.entry)).toEqual([...layout, 'informe_auditor']);
+    // Lo que el layout no menciona —inventario e informe— se agrega al final.
+    expect(r.map((x) => x.entry)).toEqual([
+      ...layout,
+      'inventario',
+      'informe_auditor',
+    ]);
     // Y la numeración sigue el orden del documento, no el de carga.
-    expect(r.filter((x) => x.isNote).map((x) => [x.entry, x.noteNumber])).toEqual(
-      [
-        ['note:n-1', 1],
-        ['note:n-2', 2],
-        ['composicion', 3],
-        ['note:n-3', 4],
-      ]
-    );
+    expect(
+      r.filter((x) => x.isNote).map((x) => [x.entry, x.noteNumber])
+    ).toEqual([
+      ['note:n-1', 1],
+      ['note:n-2', 2],
+      ['composicion', 3],
+      ['note:n-3', 4],
+    ]);
   });
 
   it('una sección que falta en el layout se agrega al final', () => {

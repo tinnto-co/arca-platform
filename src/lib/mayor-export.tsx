@@ -14,6 +14,10 @@ import {
 } from '@react-pdf/renderer';
 import { MONTH_NAMES, JOURNAL_ORIGIN_LABELS } from '@/lib/accounting-labels';
 import type { NumberedNote } from '@/lib/accounting-document';
+import {
+  fillAuditReport,
+  type AuditReportVars,
+} from '@/lib/accounting-audit-report';
 import type {
   EspResult,
   ErResult,
@@ -257,7 +261,7 @@ function writeTitle(ws: XLWorksheet, data: MayorExportData) {
 
 function setWidths(ws: XLWorksheet) {
   [13, 11, 42, 16, 15, 15, 16].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 }
 
@@ -330,7 +334,7 @@ function writeFlatMayor(ws: XLWorksheet, data: MayorExportData) {
     to: { row: lastRow, column: FNCOLS },
   };
   [16, 34, 13, 11, 40, 16, 15, 15, 16].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 }
 
@@ -590,7 +594,7 @@ export async function exportBalanceExcel(
   }
 
   [12, 40, 16, 16, 16, 16].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -878,7 +882,9 @@ export interface AnexoIMembrete {
   cuit: string;
   domicilio: string;
   actividadPrincipal: string;
-  /** Fecha de inscripción Registro Público, ya formateada (dd/mm/aaaa) o ''. */
+  /** Fechas ya formateadas (dd/mm/aaaa) o ''. Constitución e inscripción son
+   *  hechos distintos y la carátula y la Nota 1 piden los dos. */
+  fechaConstitucion: string;
   fechaInscripcion: string;
   numeroInscripcion: string;
   /** Fecha inicio del ejercicio, formateada. */
@@ -965,6 +971,8 @@ async function anexoIWorkbookBuffer(
   if (m?.domicilio) leftRow(m.domicilio);
   if (m?.actividadPrincipal)
     leftRow(`Actividad Principal: ${m.actividadPrincipal}`);
+  if (m?.fechaConstitucion)
+    leftRow(`Fecha de Constitución: ${m.fechaConstitucion}`);
   if (m?.fechaInscripcion)
     leftRow(
       `Fecha de Inscripción en el Registro Público de Comercio: ${m.fechaInscripcion}`
@@ -1142,14 +1150,14 @@ async function anexoIWorkbookBuffer(
       const r = ws.addRow(['']);
       mergeRange(r.number, 8, NC);
       const cell = r.getCell(8);
-      cell.value = line as string;
+      cell.value = line;
       cell.alignment = { horizontal: 'center' };
       cell.font = { size: 9 };
     }
   }
 
   [30, 14, 13, 13, 14, 14, 13, 8, 14, 14, 14].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 
   return await wb.xlsx.writeBuffer();
@@ -1318,6 +1326,11 @@ function AnexoIDoc({ data }: { data: AnexoIExportData }) {
         {m?.actividadPrincipal ? (
           <Text style={ax.mbLine}>
             Actividad Principal: {m.actividadPrincipal}
+          </Text>
+        ) : null}
+        {m?.fechaConstitucion ? (
+          <Text style={ax.mbLine}>
+            Fecha de Constitución: {m.fechaConstitucion}
           </Text>
         ) : null}
         {m?.fechaInscripcion ? (
@@ -1641,6 +1654,11 @@ function MembreteHeader({
           Actividad Principal: {m.actividadPrincipal}
         </Text>
       ) : null}
+      {m?.fechaConstitucion ? (
+        <Text style={ax.mbLine}>
+          Fecha de Constitución: {m.fechaConstitucion}
+        </Text>
+      ) : null}
       {m?.fechaInscripcion ? (
         <Text style={ax.mbLine}>
           Fecha de Inscripción en el Registro Público de Comercio:{' '}
@@ -1789,6 +1807,12 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
   if (m?.domicilio) banner(m.domicilio, { size: 10 }, false);
   if (m?.actividadPrincipal)
     banner(`Actividad Principal: ${m.actividadPrincipal}`, { size: 10 }, false);
+  if (m?.fechaConstitucion)
+    banner(
+      `Fecha de Constitución: ${m.fechaConstitucion}`,
+      { size: 10 },
+      false
+    );
   if (m?.fechaInscripcion)
     banner(
       `Fecha de Inscripción en el Registro Público de Comercio: ${m.fechaInscripcion}`,
@@ -1877,12 +1901,12 @@ export async function exportCmvExcel(data: CmvExportData): Promise<void> {
         .filter(Boolean)
         .join(' '),
     ].filter(Boolean)) {
-      banner(l as string, { size: 9 });
+      banner(l, { size: 9 });
     }
   }
 
   [58, 22].forEach((w, i) => {
-    if (ws.columns[i]) ws.columns[i].width = w;
+    ws.getColumn(i + 1).width = w;
   });
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -1957,6 +1981,14 @@ export interface EeccPackageData {
    * Sin esto se usa el orden clásico.
    */
   sections?: string[];
+  /** Datos del membrete para la carátula del PDF. */
+  domicilio?: string;
+  actividadPrincipal?: string;
+  fechaConstitucion?: string | null;
+  fechaInscripcion?: string | null;
+  numeroInscripcion?: string;
+  /** Variables para reemplazar `{{empresa}}` etc. en el contenido de las notas. */
+  noteVars?: Partial<AuditReportVars>;
 }
 
 /** Valores del Anexo CMV para el bloque embebido en el paquete EECC. */
@@ -1991,7 +2023,15 @@ const pk = StyleSheet.create({
     fontFamily: 'Helvetica',
     color: '#1a1a1a',
   },
-  cover: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  // Arriba y no centrada verticalmente (TIN-1439). El centrado horizontal se
+  // mantiene: es lo habitual en una carátula y el ticket solo objeta que el
+  // contenido «flote» en el medio de la hoja.
+  cover: {
+    flexGrow: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingTop: 48,
+  },
   coverKicker: {
     fontSize: 9,
     color: '#888',
@@ -2449,12 +2489,7 @@ function EfeBlock({ efe }: { efe: EfeResult | null }) {
         <View key={a.key}>
           <Text style={pk.subTitle}>{a.label}</Text>
           {a.lines.map((l) => row(l.name, l))}
-          {row(
-            `Flujo neto por ${a.label.toLowerCase()}`,
-            a,
-            pk.totalRow,
-            false
-          )}
+          {row(`Flujo neto de ${a.label.toLowerCase()}`, a, pk.totalRow, false)}
         </View>
       ))}
       {row(
@@ -2501,7 +2536,7 @@ function Nota3Block({
       {rubros.map((r, i) => (
         <View key={r.group}>
           <Text style={pk.subTitle}>
-            3.{i + 1} — {r.label}
+            {numero ?? 3}.{i + 1} — {r.label}
           </Text>
           {r.accounts.map((a) => (
             <View key={a.accountId} style={pk.row}>
@@ -2724,12 +2759,15 @@ function NotesBlock({
   notes,
   sequence,
   soloUna = false,
+  vars = {},
 }: {
   notes: FsNote[];
   /** Números resueltos por posición. Sin esto se numeran por orden de carga. */
   sequence?: NumberedNote[];
   /** Intercalada entre estados: se imprime sin el título del bloque. */
   soloUna?: boolean;
+  /** Variables para reemplazar `{{empresa}}` etc. en el contenido de cada nota. */
+  vars?: Partial<AuditReportVars>;
 }) {
   // La composición de rubros se imprime en su propio bloque: acá solo van las
   // notas de texto, pero con el número que les tocó en la secuencia completa.
@@ -2750,12 +2788,12 @@ function NotesBlock({
         <Text style={pk.empty}>Sin notas cargadas.</Text>
       ) : (
         ordenadas.map((note, idx) => (
-          <View key={note.id} wrap={false}>
+          <View key={note.id}>
             <Text style={pk.noteTitle}>
               {numeroDe(note.id) ?? idx + 1}.{' '}
               {note.title || `Nota ${numeroDe(note.id) ?? idx + 1}`}
             </Text>
-            {mdLines(note.content).map((l, i) =>
+            {mdLines(fillAuditReport(note.content, vars)).map((l, i) =>
               l.type === 'h' ? (
                 <Text key={i} style={pk.noteH}>
                   {l.text}
@@ -2818,6 +2856,7 @@ const DEFAULT_PACKAGE_SECTIONS: string[] = [
   'anexo_ii',
   'anexo_i',
   'anexo_cmv',
+  'inventario',
   'informe_auditor',
 ];
 
@@ -2866,7 +2905,31 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
           <Text style={pk.coverKicker}>ESTADOS CONTABLES</Text>
           <Text style={pk.coverEmpresa}>{data.empresaName}</Text>
           <Text style={pk.coverCuit}>CUIT {data.cuit}</Text>
-          <Text style={pk.coverTitle}>
+          {!!data.domicilio && (
+            <Text style={pk.coverMeta}>{data.domicilio}</Text>
+          )}
+          {!!data.actividadPrincipal && (
+            <Text style={pk.coverMeta}>
+              Actividad principal: {data.actividadPrincipal}
+            </Text>
+          )}
+          {!!data.fechaConstitucion && (
+            <Text style={pk.coverMeta}>
+              Fecha de constitución: {data.fechaConstitucion}
+            </Text>
+          )}
+          {!!(data.fechaInscripcion || data.numeroInscripcion) && (
+            <Text style={pk.coverMeta}>
+              {[
+                data.fechaInscripcion &&
+                  `Inscripción RPC: ${data.fechaInscripcion}`,
+                data.numeroInscripcion && `N° IGJ: ${data.numeroInscripcion}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
+          )}
+          <Text style={[pk.coverTitle, { marginTop: 24 }]}>
             Ejercicio Económico N°{data.fiscalYearNumber}
           </Text>
           <Text style={pk.coverMeta}>{data.periodLabel}</Text>
@@ -2919,6 +2982,15 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
               return <AnexoIBlock key={entry} anexoI={data.anexoI} />;
             case 'anexo_cmv':
               return <AnexoCMVBlock key={entry} cmv={data.cmv} />;
+            case 'inventario':
+              return (
+                <View key={entry}>
+                  <InventarioBlock esp={data.esp} />
+                  <View break>
+                    <InventarioPnBlock esp={data.esp} />
+                  </View>
+                </View>
+              );
             case 'informe_auditor':
               return (
                 <InformeAuditorBlock key={entry} informe={data.auditReport} />
@@ -2933,6 +3005,7 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
                   notes={[note]}
                   sequence={data.noteSequence}
                   soloUna
+                  vars={data.noteVars}
                 />
               );
             }
@@ -2960,13 +3033,17 @@ function EeccPackageDoc({ data }: { data: EeccPackageData }) {
 
 /** Genera el PDF del paquete EECC, lo descarga y devuelve el Blob (para persistir). */
 export async function exportEeccPackagePdf(
-  data: EeccPackageData
+  data: EeccPackageData,
+  /** `descargar: false` genera el blob sin bajar el archivo (vista previa). */
+  opts: { descargar?: boolean } = {}
 ): Promise<Blob> {
   const blob = await pdf(<EeccPackageDoc data={data} />).toBlob();
-  triggerDownload(
-    blob,
-    `eecc_${data.empresaName.replace(/\s+/g, '_')}_ej${data.fiscalYearNumber}.pdf`
-  );
+  if (opts.descargar !== false) {
+    triggerDownload(
+      blob,
+      `eecc_${data.empresaName.replace(/\s+/g, '_')}_ej${data.fiscalYearNumber}.pdf`
+    );
+  }
   return blob;
 }
 
@@ -3093,10 +3170,15 @@ function LibroMayorDoc({ data }: { data: MayorExportData }) {
 }
 
 export async function exportLibroMayorPdf(
-  data: MayorExportData
-): Promise<void> {
+  data: MayorExportData,
+  /** `descargar: false` genera el blob sin bajar el archivo (vista previa). */
+  opts: { descargar?: boolean } = {}
+): Promise<Blob> {
   const blob = await pdf(<LibroMayorDoc data={data} />).toBlob();
-  triggerDownload(blob, `libro_mayor_ej${data.fiscalYearNumber ?? ''}.pdf`);
+  if (opts.descargar !== false) {
+    triggerDownload(blob, `libro_mayor_ej${data.fiscalYearNumber ?? ''}.pdf`);
+  }
+  return blob;
 }
 
 /* ── Libro Inventarios y Balances — US 7.1.3 ── */
@@ -3297,13 +3379,18 @@ function LibroInventariosDoc({ data }: { data: LibroInventariosData }) {
 }
 
 export async function exportLibroInventariosPdf(
-  data: LibroInventariosData
-): Promise<void> {
+  data: LibroInventariosData,
+  /** `descargar: false` genera el blob sin bajar el archivo (vista previa). */
+  opts: { descargar?: boolean } = {}
+): Promise<Blob> {
   const blob = await pdf(<LibroInventariosDoc data={data} />).toBlob();
-  triggerDownload(
-    blob,
-    `libro_inventarios_balances_ej${data.fiscalYearNumber}.pdf`
-  );
+  if (opts.descargar !== false) {
+    triggerDownload(
+      blob,
+      `libro_inventarios_balances_ej${data.fiscalYearNumber}.pdf`
+    );
+  }
+  return blob;
 }
 
 /* ═════ Excel de los estados nuevos: EEPN, EFE y Nota 3 (AXI-6/7/8) ═════ */
@@ -3349,10 +3436,13 @@ export async function exportEstadosExcel(
     const d = ws.addRow([disclaimer]);
     d.getCell(1).font = { size: 9, italic: true };
     ws.addRow([]);
-    if (ws.columns[0]) ws.columns[0].width = 46;
-    for (let i = 1; i < cols; i++) {
-      if (ws.columns[i]) ws.columns[i].width = 20;
-    }
+    // `getColumn` y no `columns[i]`: acá la hoja todavía tiene una sola
+    // columna —las filas del encabezado son de una celda— así que
+    // `columns[i]` es undefined para el resto y los anchos no se aplicaban.
+    // Las columnas de importe quedaban en el ancho por defecto y los números
+    // de siete cifras se veían cortados.
+    ws.getColumn(1).width = 46;
+    for (let i = 2; i <= cols; i++) ws.getColumn(i).width = 20;
   };
 
   const money = (row: XLRow, from: number, to: number, bold = false) => {
@@ -3484,8 +3574,8 @@ export async function exportEstadosExcel(
         : 'Anterior',
     ]);
     for (let c = 1; c <= 4; c++) hr.getCell(c).font = { bold: true };
-    if (ws.columns[0]) ws.columns[0].width = 8;
-    if (ws.columns[1]) ws.columns[1].width = 46;
+    ws.getColumn(1).width = 8;
+    ws.getColumn(2).width = 46;
 
     rubros.forEach((r, i) => {
       const t = ws.addRow([`${n ?? 3}.${i + 1}`, r.label]);
@@ -3499,15 +3589,98 @@ export async function exportEstadosExcel(
     });
   };
 
+  /**
+   * Inventario al cierre (TIN-1440). El criterio dice «PDF/Excel» y el Excel
+   * no tenía esta solapa: como el orden se filtra por las secciones conocidas,
+   * pedir Inventario en el documento no hacía nada acá.
+   *
+   * Las cuatro columnas de importe replican el escalonado del PDF —cuenta,
+   * rubro, total de sección, total de macro— porque así se lee un libro de
+   * inventarios: cada nivel de suma en su propia columna.
+   */
+  const hojaInventario = () => {
+    const macros = [
+      {
+        macro: 'activo' as const,
+        title: 'Activo',
+        total: data.esp.totals.activo,
+      },
+      {
+        macro: 'pasivo' as const,
+        title: 'Pasivo',
+        total: data.esp.totals.pasivo,
+      },
+      {
+        macro: 'pn' as const,
+        title: 'Patrimonio Neto',
+        total: data.esp.totals.pn,
+      },
+    ];
+    if (
+      macros.every(({ macro }) =>
+        data.esp.sections
+          .filter((s) => s.macro === macro)
+          .every((s) => s.rubros.length === 0)
+      )
+    )
+      return;
+
+    const ws = wb.addWorksheet('Inventario', {
+      views: [{ showGridLines: false }],
+    });
+    header(ws, 'Inventario al cierre del ejercicio', 5);
+    const hr = ws.addRow(['Conceptos', '$', '$', '$', '$']);
+    for (let c = 1; c <= 5; c++) hr.getCell(c).font = { bold: true };
+    ws.getColumn(1).width = 52;
+
+    /** `col` es en cuál de las cuatro columnas de importe cae el número. */
+    const fila = (
+      label: string,
+      col: 0 | 1 | 2 | 3 | 4,
+      amount?: number,
+      opts: { indent?: number; bold?: boolean } = {}
+    ) => {
+      const celdas: (string | number)[] = [
+        '  '.repeat(opts.indent ?? 0) + label,
+        '',
+        '',
+        '',
+        '',
+      ];
+      if (col > 0 && amount !== undefined) celdas[col] = amount;
+      const row = ws.addRow(celdas);
+      if (opts.bold) row.getCell(1).font = { bold: true };
+      money(row, 2, 5, opts.bold);
+      return row;
+    };
+
+    for (const { macro, title, total } of macros) {
+      const secs = data.esp.sections.filter((s) => s.macro === macro);
+      if (secs.every((sec) => sec.rubros.length === 0)) continue;
+      fila(title, 0, undefined, { bold: true });
+      for (const sec of secs) {
+        if (sec.label !== title) fila(sec.label, 0, undefined, { indent: 1 });
+        for (const r of sec.rubros) {
+          fila(r.label, 2, r.current, { indent: 2 });
+          for (const a of r.accounts) fila(a.name, 1, a.current, { indent: 3 });
+        }
+        if (sec.rubros.length > 0 && sec.label !== title)
+          fila(`Total ${sec.label}`, 3, sec.current, { indent: 1 });
+      }
+      fila(`Total ${title}`, 4, total.current, { bold: true });
+    }
+  };
+
   // Las solapas salen en el orden del documento, igual que el PDF.
   const porSeccion: Record<string, () => void> = {
     eepn: hojaEepn,
     efe: hojaEfe,
     composicion: hojaComposicion,
+    inventario: hojaInventario,
   };
-  const orden = (data.sections ?? ['eepn', 'efe', 'composicion']).filter(
-    (k) => k in porSeccion
-  );
+  const orden = (
+    data.sections ?? ['eepn', 'efe', 'composicion', 'inventario']
+  ).filter((k) => k in porSeccion);
   for (const k of orden) porSeccion[k]();
 
   const buffer = await wb.xlsx.writeBuffer();

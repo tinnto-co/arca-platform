@@ -37,10 +37,19 @@ export const Route = createRootRoute({
         content: 'width=device-width, initial-scale=1',
       },
       {
-        title: 'Contable',
+        title: 'Ordo · Suite Contable',
       },
     ],
     links: [
+      {
+        rel: 'icon',
+        type: 'image/svg+xml',
+        href: '/brand/favicon.svg',
+      },
+      {
+        rel: 'apple-touch-icon',
+        href: '/brand/apple-touch-icon.png',
+      },
       {
         rel: 'preconnect',
         href: 'https://fonts.googleapis.com',
@@ -52,7 +61,7 @@ export const Route = createRootRoute({
       },
       {
         rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Inter+Tight:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap',
+        href: 'https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap',
       },
       {
         rel: 'stylesheet',

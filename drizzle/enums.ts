@@ -1,5 +1,3 @@
-import { pgEnum } from "drizzle-orm/pg-core";
-
 export const CURRENCIES = {
   USD: "USD",
   EUR: "EUR",

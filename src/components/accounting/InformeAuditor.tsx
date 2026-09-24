@@ -21,6 +21,7 @@ import {
 import { ArcaCard } from '@/components/dashboard/shared';
 import {
   AUDIT_REPORT_DEFAULT,
+  AUDIT_REPORT_RT54,
   AUDIT_REPORT_VARS,
   fillAuditReport,
   missingVars,
@@ -130,7 +131,7 @@ export function InformeAuditor({
             <button
               onClick={() => guardar.mutate()}
               disabled={!dirty || guardar.isPending || body.trim() === ''}
-              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-ink)] text-white disabled:opacity-40 inline-flex items-center gap-1.5"
+              className="text-[12px] px-3 h-7 rounded-[6px] bg-[var(--arca-accent)] text-white disabled:opacity-40 inline-flex items-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" strokeWidth={2} />
               {guardar.isPending ? 'Guardando…' : 'Guardar'}
@@ -161,9 +162,16 @@ export function InformeAuditor({
           <button
             onClick={() => aplicar(AUDIT_REPORT_DEFAULT)}
             className="text-[12px] px-2.5 h-7 rounded-[6px] border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)]"
-            title="Modelo RT 37 con opinión favorable"
+            title="Modelo RT 37 con opinión favorable — norma general"
           >
-            Modelo estándar (RT 37)
+            Modelo RT 37
+          </button>
+          <button
+            onClick={() => aplicar(AUDIT_REPORT_RT54)}
+            className="text-[12px] px-2.5 h-7 rounded-[6px] border border-dashed border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface)]"
+            title="Modelo RT 54 (T.O. RT 59) — entes pequeños, con opinión favorable"
+          >
+            Modelo RT 54
           </button>
           <div className="flex-1" />
           <input
@@ -187,7 +195,7 @@ export function InformeAuditor({
       )}
 
       {faltantes.length > 0 && (
-        <div className="flex items-start gap-2 px-5 py-2.5 border-b border-[var(--arca-border)] bg-amber-50 text-[12px] text-amber-800">
+        <div className="flex items-start gap-2 px-5 py-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-accent-warn-bg)] text-[12px] text-[var(--arca-accent-warn-fg)]">
           <AlertTriangle className="w-4 h-4 mt-px shrink-0" strokeWidth={1.9} />
           <div>
             Quedaron variables sin completar:{' '}

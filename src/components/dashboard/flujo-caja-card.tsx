@@ -32,7 +32,8 @@ export function FlujoCajaCard({ from, to }: FlujoCajaCardProps) {
     queryFn: () => getDashboardStats({ data: { from: fromStr, to: toStr } }),
   });
 
-  const resultado = (stats?.monthlySales || 0) - (stats?.monthlyPurchases || 0);
+  const resultado =
+    (stats?.ventasDelPeriodo || 0) - (stats?.comprasDelPeriodo || 0);
 
   const operaciones = resultado * 0.56;
   const impuestos = resultado * 0.22;
@@ -42,7 +43,7 @@ export function FlujoCajaCard({ from, to }: FlujoCajaCardProps) {
   const rows: CashflowRow[] = [
     {
       label: 'Operaciones',
-      color: 'var(--arca-navy-700)',
+      color: 'var(--arca-accent)',
       amount: operaciones,
       pct: 56,
       detail: 'transacciones',

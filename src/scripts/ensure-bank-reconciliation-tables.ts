@@ -1,6 +1,6 @@
 /**
  * Crea las tablas de conciliación bancaria:
- *   bank_account, bank_transaction, bank_invoice_match, financial_movement_classification
+ *   bank_account, bank_transaction, bank_invoice_match
  * Idempotente: usa CREATE TABLE IF NOT EXISTS.
  *
  * Uso: bun run src/scripts/ensure-bank-reconciliation-tables.ts
@@ -68,26 +68,6 @@ async function main() {
   `)
   );
   console.log('Tabla bank_invoice_match: OK.');
-
-  await db.execute(
-    sql.raw(`
-    CREATE TABLE IF NOT EXISTS "financial_movement_classification" (
-      "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-      "source_type" text NOT NULL,
-      "source_id" uuid NOT NULL,
-      "client_id" uuid NOT NULL REFERENCES "client"("id") ON DELETE CASCADE,
-      "profile_id" uuid REFERENCES "profile"("id") ON DELETE SET NULL,
-      "category" text NOT NULL,
-      "is_business_related" boolean NOT NULL DEFAULT true,
-      "is_tax_relevant" boolean NOT NULL DEFAULT true,
-      "is_cashflow_real" boolean NOT NULL DEFAULT true,
-      "notes" text,
-      "classified_by" text NOT NULL DEFAULT 'system',
-      "created_at" timestamp DEFAULT now() NOT NULL
-    )
-  `)
-  );
-  console.log('Tabla financial_movement_classification: OK.');
 }
 
 main().catch((e) => {

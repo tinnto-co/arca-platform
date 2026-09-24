@@ -6,7 +6,7 @@ export default {
   schema: ["./drizzle/schema.ts", "./drizzle/auth.ts"],
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.MIGRATION_URL!,
+    url: process.env.MIGRATION_URL ?? process.env.DATABASE_URL!,
   },
   tablesFilter: ["!empleados_categorias"],
 } satisfies Config;

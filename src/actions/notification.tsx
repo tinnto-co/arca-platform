@@ -3,144 +3,243 @@ import z from 'zod';
 import { GoogleGenAI } from '@google/genai';
 import { db } from '@/lib/db';
 import {
-  notification,
-  representative,
-  client,
-  invoiceAttachment,
-  document,
-  dataSourceEvent,
+  notificacion,
+  notificacionAdjunto,
+  notificacionCategoriaPrioridad,
+  credencialAfip,
+  cliente,
+  documento,
+  evento,
+  notificacionSeveridad,
+  tarea,
+  tareaNotificacion,
 } from '@/drizzle/schema';
 import { member, user } from '@/drizzle/auth';
 import {
   getSessionWithOrg,
   assertCanWrite,
   getMemberRole,
-  getOrgRepresentativeIds,
 } from '@/actions/helpers';
-import { eq, desc, and, gte, lte, sql, inArray, isNull } from 'drizzle-orm';
+import {
+  eq,
+  desc,
+  and,
+  gte,
+  lte,
+  sql,
+  isNull,
+  isNotNull,
+  ilike,
+  or,
+  inArray,
+} from 'drizzle-orm';
+
+/**
+ * Las notificaciones cuelgan del login de AFIP (`credencial_afip`), no del
+ * cliente: AFIP las publica por CUIT del representante y recién después se
+ * atribuyen a un cliente, si se puede. `notificacion.org_id` resuelve el
+ * multi-tenancy sin pasar por ninguna tabla intermedia.
+ */
+
+type Severidad = (typeof notificacionSeveridad.enumValues)[number];
+
+/**
+ * La severidad que se muestra. Si el estudio le fijó una prioridad a la
+ * categoría, esa manda sobre lo que haya dicho el clasificador: la regla se
+ * aplica en lectura, así que vale para todo el historial y se puede cambiar o
+ * sacar sin tocar ninguna notificación.
+ */
+const severidadEfectiva = sql<Severidad>`coalesce(${notificacionCategoriaPrioridad.severidad}, ${notificacion.severidad})`;
+
+/** Para ordenar de más a menos importante. */
+const rangoSeveridad = sql`case ${severidadEfectiva}
+  when 'urgente' then 3
+  when 'accion_requerida' then 2
+  when 'informativa' then 1
+  else 0 end`;
 
 export const getNotifications = createServerFn({
   method: 'GET',
 })
-  .inputValidator(
+  .validator(
     z.object({
       page: z.number().default(1),
       limit: z.number().default(10),
-      representativeFilter: z.string().optional(),
+      credencialFilter: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
-      clientId: z.string().optional(),
+      clienteId: z.string().optional(),
       search: z.string().optional(),
-      opened: z.boolean().optional(),
-      category: z.string().optional(),
+      leida: z.boolean().optional(),
+      categoria: z.string().optional(),
+      /** Nivel de importancia. Enum `notificacion_severidad`. */
+      severidad: z.string().optional(),
       onlyUnresolved: z.boolean().optional(),
+      /** El inverso: sólo las ya resueltas. Es el tab `Resueltas`. */
+      soloResueltas: z.boolean().optional(),
+      /** Sólo las que traen archivo adjunto. */
+      soloConAdjunto: z.boolean().optional(),
+      /** `prioridad` ordena por importancia; por defecto, por fecha. */
+      orden: z.enum(['fecha', 'prioridad']).optional(),
     })
   )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
 
     const {
       page,
       limit,
-      representativeFilter,
+      credencialFilter,
       dateFrom,
       dateTo,
-      clientId,
-      opened,
-      category,
+      clienteId,
+      leida,
+      categoria,
+      severidad,
       onlyUnresolved,
+      soloResueltas,
+      search,
+      soloConAdjunto,
+      orden,
     } = ctx.data;
     const offset = (page - 1) * limit;
 
-    if (orgRepresentativeIds.length === 0) {
-      return {
-        notifications: [],
-        totalCount: 0,
-        totalPages: 0,
-        currentPage: page,
-      };
+    const conditions = [eq(notificacion.orgId, orgId)];
+
+    if (credencialFilter && credencialFilter !== 'all') {
+      conditions.push(eq(notificacion.credencialId, credencialFilter));
     }
-
-    // Build where conditions (always scoped to active organization via clients)
-    const conditions = [inArray(notification.representativeId, orgRepresentativeIds)];
-
-    if (representativeFilter && representativeFilter !== 'all') {
-      if (!orgRepresentativeIds.includes(representativeFilter)) {
-        return {
-          notifications: [],
-          totalCount: 0,
-          totalPages: 0,
-          currentPage: page,
-        };
-      }
-      conditions.push(eq(notification.representativeId, representativeFilter));
+    if (clienteId && clienteId !== 'all') {
+      conditions.push(eq(notificacion.clienteId, clienteId));
     }
-
-    if (clientId && clientId !== 'all') {
-      conditions.push(eq(notification.clientId, clientId));
-    }
-
     if (dateFrom) {
-      conditions.push(gte(notification.publicationDate, new Date(dateFrom)));
+      conditions.push(gte(notificacion.publicadaAt, new Date(dateFrom)));
     }
-
     if (dateTo) {
-      conditions.push(lte(notification.publicationDate, new Date(dateTo)));
+      conditions.push(lte(notificacion.publicadaAt, new Date(dateTo)));
     }
-
-    if (opened !== undefined) {
-      conditions.push(eq(notification.opened, opened));
+    if (leida !== undefined) {
+      conditions.push(eq(notificacion.leida, leida));
     }
-
-    if (category && category !== 'all') {
-      conditions.push(eq(notification.category, category));
+    if (categoria && categoria !== 'all') {
+      conditions.push(eq(notificacion.categoria, categoria));
     }
-
+    if (severidad && severidad !== 'all') {
+      conditions.push(
+        sql`${severidadEfectiva} = ${severidad}::notificacion_severidad`
+      );
+    }
     if (onlyUnresolved) {
-      conditions.push(isNull(notification.resolvedAt));
+      conditions.push(isNull(notificacion.resueltaAt));
+    }
+    if (soloResueltas) {
+      conditions.push(isNotNull(notificacion.resueltaAt));
+    }
+
+    // El texto busca sobre el cuerpo, el resumen y la razón social. Estaba
+    // declarado en el validator pero nunca se aplicaba: el buscador de la
+    // pantalla devolvía la lista entera.
+    const termino = search?.trim();
+    if (termino) {
+      const patron = `%${termino}%`;
+      const porTexto = or(
+        ilike(notificacion.mensaje, patron),
+        ilike(notificacion.aiResumen, patron),
+        ilike(cliente.razonSocial, patron),
+        ilike(cliente.cuit, patron),
+        ilike(credencialAfip.nombre, patron)
+      );
+      if (porTexto) conditions.push(porTexto);
+    }
+
+    if (soloConAdjunto) {
+      conditions.push(
+        sql`exists (select 1 from ${notificacionAdjunto} a where a.notificacion_id = ${notificacion.id})`
+      );
     }
 
     const whereCondition = and(...conditions);
 
-    // Get total count for pagination
+    // Los mismos joins que el listado: el filtro de texto toca `cliente` y
+    // `credencial_afip`, así que sin ellos el count no compila.
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)` })
-      .from(notification)
-      .leftJoin(representative, eq(notification.representativeId, representative.id))
+      .from(notificacion)
+      .innerJoin(
+        credencialAfip,
+        eq(notificacion.credencialId, credencialAfip.id)
+      )
+      .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
+      .leftJoin(
+        notificacionCategoriaPrioridad,
+        and(
+          eq(notificacionCategoriaPrioridad.orgId, notificacion.orgId),
+          eq(notificacionCategoriaPrioridad.categoria, notificacion.categoria)
+        )
+      )
       .where(whereCondition);
 
-    // Get notifications with client + profile data
     const notifications = await db
       .select({
-        id: notification.id,
-        externalId: notification.externalId,
-        message: notification.message,
-        expirationDate: notification.expirationDate,
-        publicationDate: notification.publicationDate,
-        opened: notification.opened,
-        clientId: notification.representativeId,
-        clientName: representative.name,
-        clientEmail: representative.email,
-        profileId: notification.clientId,
-        profileName: client.name,
-        profileIdentityNumber: client.identityNumber,
-        severity: notification.severity,
-        category: notification.category,
-        aiSummary: notification.aiSummary,
-        assignedToUserId: notification.assignedToUserId,
-        resolvedAt: notification.resolvedAt,
-        resolvedByUserId: notification.resolvedByUserId,
-        createdAt: notification.createdAt,
-        updatedAt: notification.updatedAt,
+        id: notificacion.id,
+        externalId: notificacion.externalId,
+        mensaje: notificacion.mensaje,
+        publicadaAt: notificacion.publicadaAt,
+        venceAt: notificacion.venceAt,
+        leida: notificacion.leida,
+        credencialId: notificacion.credencialId,
+        credencialNombre: credencialAfip.nombre,
+        credencialCuit: credencialAfip.cuit,
+        credencialEmail: credencialAfip.email,
+        clienteId: notificacion.clienteId,
+        clienteRazonSocial: cliente.razonSocial,
+        clienteCuit: cliente.cuit,
+        // La que manda para la UI: chips, filtro y orden.
+        severidad: severidadEfectiva.as('severidad'),
+        /** La del clasificador, por si hace falta contrastarla con la regla. */
+        severidadClasificador: notificacion.severidad,
+        categoria: notificacion.categoria,
+        aiResumen: notificacion.aiResumen,
+        asignadaA: notificacion.asignadaA,
+        resueltaAt: notificacion.resueltaAt,
+        resueltaPor: notificacion.resueltaPor,
+        createdAt: notificacion.createdAt,
+        updatedAt: notificacion.updatedAt,
+
+        // Subconsultas y no joins: con `left join` sobre dos hijas el conteo
+        // de una multiplica al de la otra.
+        adjuntos: sql<number>`(
+          select count(*)::int from ${notificacionAdjunto} a
+           where a.notificacion_id = ${notificacion.id}
+        )`,
+        tareas: sql<number>`(
+          select count(*)::int from ${tareaNotificacion} tn
+           where tn.notificacion_id = ${notificacion.id}
+        )`,
       })
-      .from(notification)
-      .leftJoin(representative, eq(notification.representativeId, representative.id))
-      .leftJoin(client, eq(notification.clientId, client.id))
+      .from(notificacion)
+      .innerJoin(
+        credencialAfip,
+        eq(notificacion.credencialId, credencialAfip.id)
+      )
+      .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
+      .leftJoin(
+        notificacionCategoriaPrioridad,
+        and(
+          eq(notificacionCategoriaPrioridad.orgId, notificacion.orgId),
+          eq(notificacionCategoriaPrioridad.categoria, notificacion.categoria)
+        )
+      )
       .where(whereCondition)
-      .orderBy(desc(notification.publicationDate))
+      // Con `prioridad`, la fecha sigue desempatando dentro de cada nivel.
+      .orderBy(
+        ...(orden === 'prioridad'
+          ? [desc(rangoSeveridad), desc(notificacion.publicadaAt)]
+          : [desc(notificacion.publicadaAt)])
+      )
       .limit(limit)
       .offset(offset);
+
     return {
       notifications,
       totalCount: count,
@@ -152,320 +251,162 @@ export const getNotifications = createServerFn({
 export const getNotification = createServerFn({
   method: 'GET',
 })
-  .inputValidator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
 
-    // Get notification with client and profile data (only if client belongs to org)
     const [notificationData] = await db
       .select({
-        id: notification.id,
-        externalId: notification.externalId,
-        message: notification.message,
-        expirationDate: notification.expirationDate,
-        publicationDate: notification.publicationDate,
-        opened: notification.opened,
-        clientId: notification.representativeId,
-        clientName: representative.name,
-        clientEmail: representative.email,
-        profileId: notification.clientId,
-        profileName: client.name,
-        profileIdentityNumber: client.identityNumber,
-        severity: notification.severity,
-        category: notification.category,
-        aiSummary: notification.aiSummary,
-        assignedToUserId: notification.assignedToUserId,
-        resolvedAt: notification.resolvedAt,
-        resolvedByUserId: notification.resolvedByUserId,
-        createdAt: notification.createdAt,
-        updatedAt: notification.updatedAt,
+        id: notificacion.id,
+        externalId: notificacion.externalId,
+        mensaje: notificacion.mensaje,
+        publicadaAt: notificacion.publicadaAt,
+        venceAt: notificacion.venceAt,
+        leida: notificacion.leida,
+        credencialId: notificacion.credencialId,
+        credencialNombre: credencialAfip.nombre,
+        credencialCuit: credencialAfip.cuit,
+        credencialEmail: credencialAfip.email,
+        clienteId: notificacion.clienteId,
+        clienteRazonSocial: cliente.razonSocial,
+        clienteCuit: cliente.cuit,
+        severidad: notificacion.severidad,
+        categoria: notificacion.categoria,
+        aiResumen: notificacion.aiResumen,
+        asignadaA: notificacion.asignadaA,
+        resueltaAt: notificacion.resueltaAt,
+        resueltaPor: notificacion.resueltaPor,
+        createdAt: notificacion.createdAt,
+        updatedAt: notificacion.updatedAt,
       })
-      .from(notification)
-      .leftJoin(representative, eq(notification.representativeId, representative.id))
-      .leftJoin(client, eq(notification.clientId, client.id))
+      .from(notificacion)
+      .innerJoin(
+        credencialAfip,
+        eq(notificacion.credencialId, credencialAfip.id)
+      )
+      .leftJoin(cliente, eq(notificacion.clienteId, cliente.id))
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .limit(1);
 
     if (!notificationData) throw new Error('Notificación no encontrada');
 
-    // Get attachments for this notification
-    const attachments = await db
+    const adjuntos = await db
       .select({
-        id: invoiceAttachment.id,
-        externalId: invoiceAttachment.externalId,
-        documentId: invoiceAttachment.document,
-        documentName: document.name,
-        documentUrl: document.url,
-        documentType: document.type,
-        createdAt: invoiceAttachment.createdAt,
+        id: notificacionAdjunto.id,
+        externalId: notificacionAdjunto.externalId,
+        documentoId: notificacionAdjunto.documentoId,
+        nombre: documento.nombre,
+        mimeType: documento.mimeType,
+        tamanoBytes: documento.tamanoBytes,
+        createdAt: notificacionAdjunto.createdAt,
       })
-      .from(invoiceAttachment)
-      .leftJoin(document, eq(invoiceAttachment.document, document.id))
-      .where(eq(invoiceAttachment.notification, ctx.data.id));
+      .from(notificacionAdjunto)
+      .innerJoin(documento, eq(notificacionAdjunto.documentoId, documento.id))
+      .where(eq(notificacionAdjunto.notificacionId, ctx.data.id));
 
     return {
       ...notificationData,
-      attachments,
+      adjuntos: adjuntos.map((a) => ({
+        ...a,
+        // El archivo vive en R2 (bucket privado): se sirve por endpoint autenticado.
+        url: `/api/documents/${a.documentoId}`,
+      })),
     };
-  });
-
-export const getNotificationAttachments = createServerFn({
-  method: 'GET',
-})
-  .inputValidator(z.object({ id: z.string() }))
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) return [];
-
-    const [n] = await db
-      .select({ id: notification.id })
-      .from(notification)
-      .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
-      )
-      .limit(1);
-    if (!n) return [];
-
-    const attachments = await db
-      .select({
-        id: invoiceAttachment.id,
-        externalId: invoiceAttachment.externalId,
-        documentId: document.id,
-        documentName: document.name,
-        documentUrl: document.url,
-        documentType: document.type,
-        createdAt: invoiceAttachment.createdAt,
-      })
-      .from(invoiceAttachment)
-      .leftJoin(document, eq(invoiceAttachment.document, document.id))
-      .where(eq(invoiceAttachment.notification, ctx.data.id));
-
-    return attachments;
-  });
-
-export const createNotification = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(
-    z.object({
-      externalId: z.string().min(1, 'El ID externo es requerido'),
-      representativeId: z.string().uuid('ID de cliente inválido'),
-      clientId: z.string().uuid('ID de perfil inválido').optional(),
-      message: z.string().min(1, 'El mensaje es requerido'),
-      expirationDate: z.string().transform((str) => new Date(str)),
-      publicationDate: z.string().transform((str) => new Date(str)),
-    })
-  )
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    const {
-      externalId,
-      representativeId,
-      clientId,
-      message,
-      expirationDate,
-      publicationDate,
-    } = ctx.data;
-
-    if (!orgRepresentativeIds.includes(representativeId)) {
-      throw new Error('El cliente no pertenece a la organización activa');
-    }
-
-    const [newNotification] = await db
-      .insert(notification)
-      .values({
-        externalId,
-        representativeId,
-        clientId: clientId || null,
-        message,
-        expirationDate,
-        publicationDate,
-      })
-      .returning();
-
-    if (!newNotification) throw new Error('Error al crear la notificación');
-
-    return newNotification;
-  });
-
-export const updateNotification = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(
-    z.object({
-      id: z.string(),
-      externalId: z.string().min(1, 'El ID externo es requerido'),
-      representativeId: z.string().uuid('ID de cliente inválido'),
-      clientId: z.string().uuid('ID de perfil inválido').optional(),
-      message: z.string().min(1, 'El mensaje es requerido'),
-      expirationDate: z.string().transform((str) => new Date(str)),
-      publicationDate: z.string().transform((str) => new Date(str)),
-    })
-  )
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const role = await getMemberRole();
-    assertCanWrite(role);
-
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    const {
-      id,
-      externalId,
-      representativeId,
-      clientId,
-      message,
-      expirationDate,
-      publicationDate,
-    } = ctx.data;
-
-    if (!orgRepresentativeIds.includes(representativeId)) {
-      throw new Error('El cliente no pertenece a la organización activa');
-    }
-
-    const [updatedNotification] = await db
-      .update(notification)
-      .set({
-        externalId,
-        representativeId,
-        clientId: clientId || null,
-        message,
-        expirationDate,
-        publicationDate,
-        updatedAt: new Date(),
-      })
-      .where(
-        and(eq(notification.id, id), inArray(notification.representativeId, orgRepresentativeIds))
-      )
-      .returning();
-
-    if (!updatedNotification)
-      throw new Error('Error al actualizar la notificación');
-
-    return updatedNotification;
   });
 
 export const markNotificationOpened = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
 
-    const userRepresentatives = await db
-      .select({ id: representative.id })
-      .from(representative)
-      .where(eq(representative.organizationId, orgId));
-    const userRepresentativeIds = userRepresentatives.map((c) => c.id);
-    if (userRepresentativeIds.length === 0) throw new Error('Unauthorized');
-
     const [updated] = await db
-      .update(notification)
-      .set({ opened: true, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ leida: true, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, userRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
     if (!updated) throw new Error('Notificación no encontrada o sin acceso');
-    return { opened: true };
+    return { leida: true };
   });
 
 export const markNotificationUnread = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) throw new Error('Unauthorized');
 
     const [updated] = await db
-      .update(notification)
-      .set({ opened: false, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ leida: false, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
     if (!updated) throw new Error('Notificación no encontrada o sin acceso');
-    return { opened: false };
+    return { leida: false };
   });
 
+/**
+ * Marca leídas las no leídas. Con `ids`, sólo esas: la pantalla manda las del
+ * resultado filtrado, porque "marcar todas" tiene que significar las que se
+ * están viendo y no las mil de la bandeja entera.
+ */
 export const markAllNotificationsRead = createServerFn({
   method: 'POST',
-}).handler(async () => {
-  const { orgId } = await getSessionWithOrg();
-  const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-  if (orgRepresentativeIds.length === 0) return { count: 0 };
+})
+  .validator(
+    z.object({ ids: z.array(z.string().uuid()).optional() }).optional()
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const ids = ctx.data?.ids;
 
-  const updated = await db
-    .update(notification)
-    .set({ opened: true, updatedAt: new Date() })
-    .where(
-      and(
-        inArray(notification.representativeId, orgRepresentativeIds),
-        eq(notification.opened, false)
+    const updated = await db
+      .update(notificacion)
+      .set({ leida: true, updatedAt: new Date() })
+      .where(
+        and(
+          eq(notificacion.orgId, orgId),
+          eq(notificacion.leida, false),
+          ...(ids && ids.length > 0 ? [inArray(notificacion.id, ids)] : [])
+        )
       )
-    )
-    .returning({ id: notification.id });
+      .returning({ id: notificacion.id });
 
-  return { count: updated.length };
-});
+    return { count: updated.length };
+  });
 
 export const deleteNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string() }))
+  .validator(z.object({ id: z.string() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) {
-      throw new Error('Error al eliminar la notificación');
-    }
-
-    const [deletedNotification] = await db
-      .delete(notification)
+    const [deleted] = await db
+      .delete(notificacion)
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
-    if (!deletedNotification)
-      throw new Error('Error al eliminar la notificación');
+    if (!deleted) throw new Error('Error al eliminar la notificación');
 
     return { success: true };
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Assignment & Resolution
+// Asignación y resolución
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const listOrgMembersForAssignment = createServerFn({
@@ -489,7 +430,7 @@ export const listOrgMembersForAssignment = createServerFn({
 export const assignNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       id: z.string().uuid(),
       userId: z.string().nullable(),
@@ -500,18 +441,11 @@ export const assignNotification = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
-
     const [updated] = await db
-      .update(notification)
-      .set({ assignedToUserId: ctx.data.userId, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ asignadaA: ctx.data.userId, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
@@ -522,25 +456,18 @@ export const assignNotification = createServerFn({
 export const resolveNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId, userId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
-
     const now = new Date();
     const [updated] = await db
-      .update(notification)
-      .set({ resolvedAt: now, resolvedByUserId: userId, updatedAt: now })
+      .update(notificacion)
+      .set({ resueltaAt: now, resueltaPor: userId, updatedAt: now })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
@@ -551,24 +478,17 @@ export const resolveNotification = createServerFn({
 export const unresolveNotification = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ id: z.string().uuid() }))
+  .validator(z.object({ id: z.string().uuid() }))
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
-
     const [updated] = await db
-      .update(notification)
-      .set({ resolvedAt: null, resolvedByUserId: null, updatedAt: new Date() })
+      .update(notificacion)
+      .set({ resueltaAt: null, resueltaPor: null, updatedAt: new Date() })
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .returning();
 
@@ -576,35 +496,125 @@ export const unresolveNotification = createServerFn({
     return updated;
   });
 
+/**
+ * Los números del encabezado y las opciones de los filtros, en una sola ida.
+ * El total y las no leídas son de la bandeja entera, no del recorte: son el
+ * contexto contra el que se lee el conteo de resultados.
+ */
+/**
+ * `clienteId` acota los contadores que se muestran al lado de la lista
+ * (`total` y `sinLeer`): la bandeja filtra por empresa, y un contador global
+ * ahí decía "11 sin leer" sobre una lista que no tenía ninguna.
+ *
+ * No se acotan `sinClasificar` ni `ultimaSync` —son estado del sistema, no de
+ * la lista— ni `categorias`, que es el catálogo de opciones del filtro y
+ * quedaría vacío justo cuando hace falta para desfiltrar.
+ */
+export const getInboxResumen = createServerFn({ method: 'GET' })
+  .validator((d: unknown) => (d ?? {}) as { clienteId?: string | null })
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+    const deLaEmpresa = data.clienteId
+      ? sql`and ${notificacion.clienteId} = ${data.clienteId}`
+      : sql``;
+
+    const [[totales], categorias] = await Promise.all([
+      db
+        .select({
+          total: sql<number>`count(*) filter (where true ${deLaEmpresa})::int`,
+          sinLeer: sql<number>`count(*) filter (where ${notificacion.leida} = false ${deLaEmpresa})::int`,
+          // Mensajes distintos sin clasificar: es lo que cuesta, no las filas.
+          sinClasificar: sql<number>`count(distinct ${notificacion.mensaje}) filter (where ${notificacion.aiClasificadaAt} is null)::int`,
+          // Cuándo entró la última: es lo que el header muestra como
+          // "última sincronización".
+          ultima: sql<Date | null>`max(${notificacion.createdAt})`,
+        })
+        .from(notificacion)
+        .where(eq(notificacion.orgId, orgId)),
+      db
+        .selectDistinct({ categoria: notificacion.categoria })
+        .from(notificacion)
+        .where(
+          and(eq(notificacion.orgId, orgId), isNotNull(notificacion.categoria))
+        )
+        .orderBy(notificacion.categoria),
+    ]);
+
+    return {
+      total: totales?.total ?? 0,
+      sinLeer: totales?.sinLeer ?? 0,
+      sinClasificar: totales?.sinClasificar ?? 0,
+      ultimaSync: totales?.ultima ?? null,
+      categorias: categorias
+        .map((c) => c.categoria)
+        .filter((c): c is string => c !== null),
+    };
+  });
+
 // ─────────────────────────────────────────────────────────────────────────────
-// AI Classification helpers
+// Vínculo con tareas
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Las tareas que salieron de esta notificación, para la tira del panel. */
+export const listTareasDeNotificacion = createServerFn({
+  method: 'GET',
+})
+  .validator(z.object({ notificacionId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+
+    return db
+      .select({
+        id: tarea.id,
+        titulo: tarea.titulo,
+        estado: tarea.estado,
+        columnaId: tarea.columnaId,
+        fuente: tareaNotificacion.fuente,
+        vinculadaAt: tareaNotificacion.createdAt,
+      })
+      .from(tareaNotificacion)
+      .innerJoin(tarea, eq(tarea.id, tareaNotificacion.tareaId))
+      .where(
+        and(
+          eq(tareaNotificacion.notificacionId, ctx.data.notificacionId),
+          eq(tarea.orgId, orgId)
+        )
+      )
+      .orderBy(desc(tareaNotificacion.createdAt));
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clasificación con IA
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface ClassificationResult {
-  severity: string;
-  category: string;
-  ai_summary: string;
+  severidad: Severidad;
+  categoria: string;
+  resumen: string;
 }
 
 async function classifyWithGemini(
-  message: string
+  mensaje: string
 ): Promise<ClassificationResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY no configurada');
 
   const ai = new GoogleGenAI({ apiKey });
 
-  const prompt = `Sos un clasificador de notificaciones fiscales de AFIP Argentina.
+  // El organismo pasó a llamarse ARCA. El resumen que sale de acá se muestra
+  // en la bandeja, así que el nombre tiene que ser el actual.
+  const prompt = `Sos un clasificador de notificaciones fiscales de ARCA
+(Agencia de Recaudación y Control Aduanero, antes AFIP), Argentina.
+Al redactar el resumen nombrá al organismo como ARCA, nunca como AFIP.
 Analizá el siguiente mensaje de notificación y determiná su severidad, categoría y generá un resumen breve en español.
 
 Severidades disponibles:
-- critical: requiere acción urgente (intimaciones, inspecciones activas, deudas con embargo)
-- medium: requiere acción en los próximos días (requerimientos, vencimientos próximos)
-- low: informativo con plazo holgado (notificaciones preventivas, comunicaciones de baja urgencia)
-- informational: sin acción requerida (acuse de recibo, confirmaciones, informativos generales)
+- urgente: requiere acción inmediata (intimaciones, inspecciones activas, deudas con embargo)
+- accion_requerida: hay que hacer algo en los próximos días (requerimientos, vencimientos próximos)
+- informativa: no requiere acción (acuses de recibo, confirmaciones, comunicaciones generales)
 
 Categorías disponibles:
-- requerimiento: AFIP requiere documentación o información
+- requerimiento: ARCA requiere documentación o información
 - inspeccion: proceso de inspección o auditoría
 - deuda: deuda impositiva o previsional
 - intimacion: intimación formal o carta documento
@@ -613,7 +623,7 @@ Categorías disponibles:
 - otro: no encaja en ninguna categoría anterior
 
 Mensaje de notificación:
-${message}`;
+${mensaje}`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash',
@@ -623,11 +633,14 @@ ${message}`;
       responseSchema: {
         type: 'OBJECT',
         properties: {
-          severity: { type: 'STRING' },
-          category: { type: 'STRING' },
-          ai_summary: { type: 'STRING' },
+          severidad: {
+            type: 'STRING',
+            enum: ['urgente', 'accion_requerida', 'informativa'],
+          },
+          categoria: { type: 'STRING' },
+          resumen: { type: 'STRING' },
         },
-        required: ['severity', 'category', 'ai_summary'],
+        required: ['severidad', 'categoria', 'resumen'],
       },
     },
   });
@@ -635,68 +648,260 @@ ${message}`;
   const text = response.text ?? '';
   if (!text) throw new Error('Gemini no devolvió respuesta');
 
-  return JSON.parse(text) as ClassificationResult;
+  const parsed = JSON.parse(text) as ClassificationResult;
+  if (!notificacionSeveridad.enumValues.includes(parsed.severidad)) {
+    throw new Error(`Severidad no reconocida: ${parsed.severidad}`);
+  }
+  return parsed;
 }
 
-export const classifyNotification = createServerFn({
-  method: 'POST',
-})
-  .inputValidator(z.object({ id: z.string().uuid() }))
+/** Deja el rastro de que la clasificación la hizo la IA, no una persona. */
+async function registrarEventoClasificacion(
+  orgId: string,
+  notif: { id: string; clienteId: string | null },
+  result: ClassificationResult
+) {
+  await db.insert(evento).values({
+    orgId,
+    clienteId: notif.clienteId,
+    entidad: 'notificacion',
+    entidadId: notif.id,
+    tipo: 'cambio',
+    actorTipo: 'agent',
+    detalle: { severidad: result.severidad, categoria: result.categoria },
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prioridad por categoría
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Las categorías que asigna el clasificador, en el orden en que se muestran. */
+export const CATEGORIAS_NOTIFICACION = [
+  'intimacion',
+  'requerimiento',
+  'deuda',
+  'inspeccion',
+  'vencimiento',
+  'comunicacion_general',
+  'otro',
+] as const;
+
+/** Las prioridades que el estudio fijó, como mapa categoría → severidad. */
+export const getPrioridadesCategoria = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const { orgId } = await getSessionWithOrg();
+  const filas = await db
+    .select({
+      categoria: notificacionCategoriaPrioridad.categoria,
+      severidad: notificacionCategoriaPrioridad.severidad,
+    })
+    .from(notificacionCategoriaPrioridad)
+    .where(eq(notificacionCategoriaPrioridad.orgId, orgId));
+
+  return Object.fromEntries(filas.map((f) => [f.categoria, f.severidad]));
+});
+
+/**
+ * Fija —o saca, con `severidad: null`— la prioridad de una categoría. Sacarla
+ * devuelve esa categoría al criterio del clasificador; no hay forma de perder
+ * la clasificación original, porque la regla nunca se escribe en las
+ * notificaciones.
+ */
+export const setPrioridadCategoria = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      categoria: z.enum(CATEGORIAS_NOTIFICACION),
+      severidad: z.enum(notificacionSeveridad.enumValues).nullable(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { orgId } = await getSessionWithOrg();
+
+    if (data.severidad === null) {
+      await db
+        .delete(notificacionCategoriaPrioridad)
+        .where(
+          and(
+            eq(notificacionCategoriaPrioridad.orgId, orgId),
+            eq(notificacionCategoriaPrioridad.categoria, data.categoria)
+          )
+        );
+      return { ok: true };
+    }
+
+    await db
+      .insert(notificacionCategoriaPrioridad)
+      .values({
+        orgId,
+        categoria: data.categoria,
+        severidad: data.severidad,
+      })
+      .onConflictDoUpdate({
+        target: [
+          notificacionCategoriaPrioridad.orgId,
+          notificacionCategoriaPrioridad.categoria,
+        ],
+        set: { severidad: data.severidad, updatedAt: new Date() },
+      });
+
+    return { ok: true };
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Clasificación automática
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Copia la clasificación entre notificaciones con el MISMO texto.
+ *
+ * Las de AFIP se repiten muchísimo: en la base de un estudio hay 1.006
+ * notificaciones y 181 mensajes distintos; «SCT - Intimación» sola aparece 240
+ * veces. Clasificar cada fila sería pagarle a Gemini 825 veces por leer un
+ * texto que ya leyó.
+ *
+ * Corre antes de cualquier llamada al modelo y es sólo SQL.
+ */
+async function propagarClasificacion(orgId: string) {
+  const r = await db.execute(sql`
+    update notificacion n
+       set severidad = f.severidad,
+           categoria = f.categoria,
+           ai_resumen = f.ai_resumen,
+           ai_clasificada_at = f.ai_clasificada_at,
+           updated_at = now()
+      from (
+        select distinct on (mensaje)
+               mensaje, severidad, categoria, ai_resumen, ai_clasificada_at
+          from notificacion
+         where org_id = ${orgId} and ai_clasificada_at is not null
+         order by mensaje, ai_clasificada_at desc
+      ) f
+     where n.org_id = ${orgId}
+       and n.ai_clasificada_at is null
+       and n.mensaje = f.mensaje
+  `);
+  return r.count ?? 0;
+}
+
+/**
+ * Clasifica lo que quede pendiente, de a poco.
+ *
+ * Devuelve cuántas faltan para que la pantalla vuelva a llamar hasta llegar a
+ * cero: así el trabajo se reparte en tandas cortas en vez de un request de
+ * media hora que el servidor corta por timeout.
+ *
+ * Agrupa por texto: una llamada por mensaje distinto, aplicada a todas las
+ * filas que lo comparten.
+ */
+export const clasificarPendientes = createServerFn({ method: 'POST' })
+  .validator(
+    z
+      .object({ mensajes: z.number().int().min(1).max(20).default(8) })
+      .optional()
+  )
   .handler(async (ctx) => {
     const { orgId } = await getSessionWithOrg();
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0)
-      throw new Error('Notificación no encontrada');
+    const copiadas = await propagarClasificacion(orgId);
+
+    // Los textos distintos que siguen sin clasificar.
+    const pendientes = await db
+      .selectDistinct({ mensaje: notificacion.mensaje })
+      .from(notificacion)
+      .where(
+        and(eq(notificacion.orgId, orgId), isNull(notificacion.aiClasificadaAt))
+      )
+      .limit(ctx.data?.mensajes ?? 8);
+
+    let clasificados = 0;
+    let errores = 0;
+
+    // En paralelo: son pocas por tanda y el cuello es la latencia del modelo,
+    // no el CPU.
+    await Promise.all(
+      pendientes.map(async ({ mensaje }) => {
+        try {
+          const r = await classifyWithGemini(mensaje);
+          const now = new Date();
+          await db
+            .update(notificacion)
+            .set({
+              severidad: r.severidad,
+              categoria: r.categoria,
+              aiResumen: r.resumen,
+              aiClasificadaAt: now,
+              updatedAt: now,
+            })
+            .where(
+              and(
+                eq(notificacion.orgId, orgId),
+                eq(notificacion.mensaje, mensaje),
+                isNull(notificacion.aiClasificadaAt)
+              )
+            );
+          clasificados++;
+        } catch {
+          // Una falla no frena la tanda: la próxima vuelta lo reintenta.
+          errores++;
+        }
+      })
+    );
+
+    const [{ faltan }] = (await db
+      .select({
+        faltan: sql<number>`count(distinct ${notificacion.mensaje})::int`,
+      })
+      .from(notificacion)
+      .where(
+        and(eq(notificacion.orgId, orgId), isNull(notificacion.aiClasificadaAt))
+      )) as { faltan: number }[];
+
+    return { copiadas, clasificados, errores, faltan };
+  });
+
+export const classifyNotification = createServerFn({
+  method: 'POST',
+})
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
 
     const [notif] = await db
       .select({
-        id: notification.id,
-        message: notification.message,
-        representativeId: notification.representativeId,
-        clientId: notification.clientId,
+        id: notificacion.id,
+        mensaje: notificacion.mensaje,
+        clienteId: notificacion.clienteId,
       })
-      .from(notification)
+      .from(notificacion)
       .where(
-        and(
-          eq(notification.id, ctx.data.id),
-          inArray(notification.representativeId, orgRepresentativeIds)
-        )
+        and(eq(notificacion.id, ctx.data.id), eq(notificacion.orgId, orgId))
       )
       .limit(1);
 
     if (!notif) throw new Error('Notificación no encontrada');
 
-    const result = await classifyWithGemini(notif.message);
+    const result = await classifyWithGemini(notif.mensaje);
 
     const now = new Date();
     const [updated] = await db
-      .update(notification)
+      .update(notificacion)
       .set({
-        severity: result.severity,
-        category: result.category,
-        aiSummary: result.ai_summary,
-        aiClassifiedAt: now,
+        severidad: result.severidad,
+        categoria: result.categoria,
+        aiResumen: result.resumen,
+        aiClasificadaAt: now,
         updatedAt: now,
       })
-      .where(eq(notification.id, notif.id))
+      .where(eq(notificacion.id, notif.id))
       .returning();
 
-    await db.insert(dataSourceEvent).values({
-      organizationId: orgId,
-      representativeId: notif.representativeId ?? undefined,
-      clientId: notif.clientId ?? undefined,
-      entityType: 'notification',
-      entityId: notif.id,
-      source: 'ai',
-      action: 'classified',
-      metadata: {
-        severity: result.severity,
-        category: result.category,
-      },
-    });
+    await registrarEventoClasificacion(orgId, notif, result);
 
     return updated;
   });
@@ -704,7 +909,7 @@ export const classifyNotification = createServerFn({
 export const classifyUnclassifiedNotifications = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z
       .object({ limit: z.number().int().positive().max(500).optional() })
       .optional()
@@ -714,28 +919,22 @@ export const classifyUnclassifiedNotifications = createServerFn({
     const role = await getMemberRole();
     assertCanWrite(role);
 
-    const orgRepresentativeIds = await getOrgRepresentativeIds(orgId);
-    if (orgRepresentativeIds.length === 0) return { classified: 0, errors: 0 };
-
     const limit = ctx.data?.limit;
     const baseQuery = db
       .select({
-        id: notification.id,
-        message: notification.message,
-        representativeId: notification.representativeId,
-        clientId: notification.clientId,
+        id: notificacion.id,
+        mensaje: notificacion.mensaje,
+        clienteId: notificacion.clienteId,
       })
-      .from(notification)
+      .from(notificacion)
       .where(
         and(
-          inArray(notification.representativeId, orgRepresentativeIds),
-          eq(notification.severity, 'unclassified'),
-          isNull(notification.aiClassifiedAt)
+          eq(notificacion.orgId, orgId),
+          eq(notificacion.severidad, 'sin_clasificar'),
+          isNull(notificacion.aiClasificadaAt)
         )
       );
-    const unclassified = limit
-      ? await baseQuery.limit(limit)
-      : await baseQuery;
+    const unclassified = limit ? await baseQuery.limit(limit) : await baseQuery;
 
     let classified = 0;
     let errors = 0;
@@ -743,32 +942,20 @@ export const classifyUnclassifiedNotifications = createServerFn({
 
     for (const notif of unclassified) {
       try {
-        const result = await classifyWithGemini(notif.message);
+        const result = await classifyWithGemini(notif.mensaje);
 
         await db
-          .update(notification)
+          .update(notificacion)
           .set({
-            severity: result.severity,
-            category: result.category,
-            aiSummary: result.ai_summary,
-            aiClassifiedAt: now,
+            severidad: result.severidad,
+            categoria: result.categoria,
+            aiResumen: result.resumen,
+            aiClasificadaAt: now,
             updatedAt: now,
           })
-          .where(eq(notification.id, notif.id));
+          .where(eq(notificacion.id, notif.id));
 
-        await db.insert(dataSourceEvent).values({
-          organizationId: orgId,
-          representativeId: notif.representativeId ?? undefined,
-          clientId: notif.clientId ?? undefined,
-          entityType: 'notification',
-          entityId: notif.id,
-          source: 'ai',
-          action: 'classified',
-          metadata: {
-            severity: result.severity,
-            category: result.category,
-          },
-        });
+        await registrarEventoClasificacion(orgId, notif, result);
 
         classified++;
       } catch {

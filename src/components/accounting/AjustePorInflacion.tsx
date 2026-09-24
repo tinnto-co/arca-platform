@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
   CheckCircle2,
-  FileSpreadsheet,
+  Download,
   Info,
   Layers,
   RotateCcw,
@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { ArcaCard } from '@/components/dashboard/shared';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -302,7 +304,7 @@ export function AjustePorInflacion({
       <ArcaCard>
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-[var(--arca-border)]">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-[10px] bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-lg bg-[var(--arca-surface-2)] flex items-center justify-center shrink-0">
               <Sparkles
                 className="w-4.5 h-4.5 text-[var(--arca-ink-2)]"
                 strokeWidth={1.8}
@@ -318,7 +320,10 @@ export function AjustePorInflacion({
                     className="text-[9.5px] px-1.5 py-px rounded-full font-semibold uppercase tracking-wide"
                     style={
                       applied && preview.stale
-                        ? { background: '#fef3c7', color: '#b45309' }
+                        ? {
+                            background: 'var(--arca-accent-warn-bg)',
+                            color: 'var(--arca-accent-warn-fg)',
+                          }
                         : applied
                           ? { background: '#dcfce7', color: '#15803d' }
                           : { background: '#f1f5f9', color: '#475569' }
@@ -350,20 +355,22 @@ export function AjustePorInflacion({
                   <SelectItem key={f.id} value={f.id}>
                     Ejercicio {f.number} ·{' '}
                     {new Date(f.endDate).getUTCFullYear()}
-                    {f.status === 'closed' ? ' (cerrado)' : ''}
+                    {f.status === 'cerrado' ? ' (cerrado)' : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
             {preview && !blocked && preview.lines.length > 0 && (
-              <button
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
                 onClick={() => void exportExcel()}
-                className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink)] hover:bg-[var(--arca-surface-2)]"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" strokeWidth={2} />
-                Exportar
-              </button>
+                <Download className="size-3.5" strokeWidth={2} />
+                Excel
+              </Button>
             )}
 
             {isOwner &&
@@ -372,7 +379,7 @@ export function AjustePorInflacion({
               (applied ? (
                 <button
                   onClick={() => setConfirmVoid(true)}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-red-600 hover:bg-red-50"
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-accent-neg-fg)] hover:bg-[var(--arca-accent-neg-bg)]"
                 >
                   <RotateCcw className="w-3.5 h-3.5" strokeWidth={2} />
                   Anular ajuste
@@ -381,7 +388,7 @@ export function AjustePorInflacion({
                 <button
                   disabled={preview.entryLines.length === 0}
                   onClick={() => setConfirmApply(true)}
-                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 disabled:opacity-40"
+                  className="flex items-center gap-1.5 h-8 px-3 text-[12px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 disabled:opacity-40"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} />
                   Generar asiento
@@ -598,7 +605,7 @@ export function AjustePorInflacion({
                     type="checkbox"
                     checked={onlyAdjusted}
                     onChange={(e) => setOnlyAdjusted(e.target.checked)}
-                    className="accent-[var(--arca-navy-900)]"
+                    className="accent-[var(--arca-accent)]"
                   />
                   Solo cuentas ajustadas
                 </label>
@@ -800,9 +807,9 @@ function DetalleTable({ rows }: { rows: InflationAdjustmentPreview['lines'] }) {
             <div className="text-[var(--arca-ink)] truncate">{l.name}</div>
             <div className="text-[11.5px] text-[var(--arca-ink-2)]">
               {l.isOpening ? (
-                <span className="px-1.5 py-px rounded-full bg-[var(--arca-surface-2)] text-[10px] font-medium">
+                <Badge variant="default" size="xs">
                   Apertura
-                </span>
+                </Badge>
               ) : (
                 periodLabel(l.year, l.month)
               )}
@@ -898,9 +905,9 @@ function CoeficientesTable({
             <div className="text-[var(--arca-ink)] flex items-center gap-1.5">
               {periodLabel(c.year, c.month)}
               {isClosing && (
-                <span className="text-[9px] px-1.5 py-px rounded-full bg-[var(--arca-navy-900)] text-white font-semibold">
-                  cierre
-                </span>
+                <Badge variant="secondary" size="xs">
+                  Cierre
+                </Badge>
               )}
             </div>
             <div className="text-right tabular-nums text-[var(--arca-ink-2)]">
@@ -997,9 +1004,13 @@ function Banner({
 }) {
   const styles =
     tone === 'error'
-      ? { bg: '#fef2f2', border: '#fecaca', fg: '#b91c1c' }
+      ? { bg: '#fef2f2', border: '#fecaca', fg: 'var(--arca-accent-neg-fg)' }
       : tone === 'warn'
-        ? { bg: '#fffbeb', border: '#fde68a', fg: '#b45309' }
+        ? {
+            bg: 'var(--arca-accent-warn-bg)',
+            border: '#fde68a',
+            fg: 'var(--arca-accent-warn-fg)',
+          }
         : {
             bg: 'var(--arca-surface-2)',
             border: 'var(--arca-border)',

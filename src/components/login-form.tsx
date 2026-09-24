@@ -70,7 +70,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
   };
 
   const inputClasses =
-    'h-[46px] w-full rounded-[10px] border border-[var(--arca-border-strong)] bg-white pr-3.5 pl-10 font-sans text-sm text-[var(--arca-ink)] outline-none transition-[border-color,box-shadow] duration-150 ease-linear placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-navy-600)] focus:shadow-[0_0_0_3px_rgba(42,70,128,0.14)]';
+    'h-[46px] w-full rounded-lg border border-[var(--arca-border-strong)] bg-white pr-3.5 pl-10 font-sans text-sm text-[var(--arca-ink)] outline-none transition-[border-color,box-shadow] duration-150 ease-linear placeholder:text-[var(--arca-ink-4)] focus:border-[var(--arca-accent)] focus:shadow-[0_0_0_3px_rgba(42,70,128,0.14)]';
 
   return (
     <div className={cn('w-full max-w-[380px]', className)}>
@@ -91,7 +91,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
         </label>
         <div className="group relative mb-[18px]">
           <Mail
-            className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-[var(--arca-ink-4)] transition-colors duration-150 group-focus-within:text-[var(--arca-navy-600)]"
+            className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-[var(--arca-ink-4)] transition-colors duration-150 group-focus-within:text-[var(--arca-accent)]"
             aria-hidden="true"
           />
           <input
@@ -118,14 +118,14 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
           </label>
           <a
             href="#"
-            className="text-[12.5px] font-medium text-[var(--arca-navy-600)] hover:text-[var(--arca-navy-800)]"
+            className="text-[12.5px] font-medium text-[var(--arca-accent)] hover:text-[var(--arca-accent-hover)]"
           >
             ¿Olvidaste tu contraseña?
           </a>
         </div>
         <div className="group relative mb-[18px]">
           <Lock
-            className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-[var(--arca-ink-4)] transition-colors duration-150 group-focus-within:text-[var(--arca-navy-600)]"
+            className="pointer-events-none absolute top-1/2 left-[13px] size-4 -translate-y-1/2 text-[var(--arca-ink-4)] transition-colors duration-150 group-focus-within:text-[var(--arca-accent)]"
             aria-hidden="true"
           />
           <input
@@ -167,7 +167,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
             className={cn(
               'flex size-[18px] flex-none items-center justify-center rounded-[5px] border transition-all duration-[120ms] ease-linear',
               remember
-                ? 'border-[var(--arca-ink)] bg-[var(--arca-ink)]'
+                ? 'border-[var(--arca-accent)] bg-[var(--arca-accent)]'
                 : 'border-[var(--arca-border-strong)] bg-white'
             )}
           >
@@ -195,7 +195,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="flex h-[46px] w-full items-center justify-center gap-[9px] rounded-[10px] bg-[var(--arca-ink)] text-sm font-semibold text-white transition-[background,opacity] duration-150 hover:bg-black disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[var(--arca-ink)]"
+          className="flex h-[46px] w-full items-center justify-center gap-[9px] rounded-lg bg-[var(--arca-accent)] text-sm font-semibold text-white transition-[background,opacity] duration-150 hover:bg-[var(--arca-accent-hover)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-[var(--arca-accent)]"
         >
           {loading && (
             <span
@@ -211,7 +211,7 @@ export function LoginForm({ className }: React.ComponentProps<'div'>) {
           ¿No tenés acceso?{' '}
           <a
             href="#"
-            className="font-medium text-[var(--arca-navy-600)] hover:text-[var(--arca-navy-800)]"
+            className="font-medium text-[var(--arca-accent)] hover:text-[var(--arca-accent-hover)]"
           >
             Contactá a tu estudio
           </a>

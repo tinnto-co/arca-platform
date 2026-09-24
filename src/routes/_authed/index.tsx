@@ -1,85 +1,250 @@
-import { useState } from 'react';
+/**
+ * Inicio: la pantalla administrativa del estudio.
+ *
+ * Regla de la pantalla — franja de arriba: infraestructura (lo que impide
+ * ver); izquierda: tiempo (franja de días + agenda); derecha: riesgo fiscal
+ * y equipo. Nada nuevo entra si no cae en una de esas cajas.
+ */
+import { useMemo, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
+import { getInicio } from '@/actions/inicio';
+import { cn } from '@/lib/utils';
+import { FranjaInfra } from '@/components/inicio/franja-infra';
+import { FranjaDias, type CeldaDia } from '@/components/inicio/franja-dias';
+import { AgendaCard } from '@/components/inicio/agenda-card';
+import { RiesgosCard } from '@/components/inicio/riesgos-card';
+import { EquipoCard } from '@/components/inicio/equipo-card';
 import {
-  DashboardTopbar,
-  periodToRange,
-  type Period,
-} from '@/components/dashboard/topbar';
-import { DashboardGreeting } from '@/components/dashboard/greeting';
-import { KpiCardsRow } from '@/components/dashboard/kpi-cards';
-import { MiniKpiCardsRow } from '@/components/dashboard/mini-kpi-cards';
-import { EvolucionChart } from '@/components/dashboard/evolucion-chart';
-import { FlujoCajaCard } from '@/components/dashboard/flujo-caja-card';
-import { ClientesTable } from '@/components/dashboard/clientes-table';
-import { VencimientosList } from '@/components/dashboard/vencimientos-list';
-import { ActividadFeed } from '@/components/dashboard/actividad-feed';
-import { ExceptionsBar } from '@/components/dashboard/exceptions-bar';
-import { TodayScrapedCard } from '@/components/dashboard/today-scraped';
-import { CredentialAlertBanner } from '@/components/dashboard/credential-alert-banner';
-import { ScheduleCard } from '@/components/dashboard/schedule-card';
+  MESES_CORTOS,
+  MESES_LARGOS,
+  aFechaStr,
+  diaCorto,
+  fechaLocal,
+} from '@/components/inicio/compartido';
 
 export const Route = createFileRoute('/_authed/')({
-  component: DashboardPage,
+  component: InicioPage,
 });
 
-const DEFAULT_PERIOD: Period = '30d';
+type Periodo = '14d' | 'mes' | 'trimestre';
 
-function DashboardPage() {
-  const [activePeriod, setActivePeriod] = useState<Period | null>(
-    DEFAULT_PERIOD
-  );
-  const [dateRange, setDateRange] = useState<{ from: Date; to: Date }>(() =>
-    periodToRange(DEFAULT_PERIOD)
-  );
+const PERIODOS: { clave: Periodo; label: string }[] = [
+  { clave: '14d', label: '14 días' },
+  { clave: 'mes', label: 'Mes' },
+  { clave: 'trimestre', label: 'Trimestre' },
+];
 
-  function handlePeriodChange(period: Period) {
-    setActivePeriod(period);
-    setDateRange(periodToRange(period));
+function sumarDias(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+
+function rangoDe(periodo: Periodo, hoy: Date): [string, string] {
+  if (periodo === 'mes') {
+    return [
+      aFechaStr(new Date(hoy.getFullYear(), hoy.getMonth(), 1)),
+      aFechaStr(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0)),
+    ];
+  }
+  const dias = periodo === '14d' ? 13 : 89;
+  return [aFechaStr(hoy), aFechaStr(sumarDias(hoy, dias))];
+}
+
+function tituloDe(periodo: Periodo, hoy: Date, hasta: string): string {
+  if (periodo !== 'trimestre')
+    return `${MESES_LARGOS[hoy.getMonth()]} ${hoy.getFullYear()}`;
+  const fin = fechaLocal(hasta);
+  const a = MESES_CORTOS[hoy.getMonth()];
+  const b = MESES_CORTOS[fin.getMonth()];
+  return `${a.charAt(0).toUpperCase()}${a.slice(1)} – ${b.charAt(0).toUpperCase()}${b.slice(1)} ${fin.getFullYear()}`;
+}
+
+function celdasDe(
+  periodo: Periodo,
+  hoy: Date,
+  desde: string,
+  hasta: string,
+  porDia: Map<string, number>
+): CeldaDia[] {
+  const hoyStr = aFechaStr(hoy);
+  const celdas: CeldaDia[] = [];
+
+  if (periodo === 'trimestre') {
+    // 13 semanas: la barra mide la carga de la semana entera.
+    for (
+      let d = fechaLocal(desde);
+      aFechaStr(d) <= hasta;
+      d = sumarDias(d, 7)
+    ) {
+      const ini = aFechaStr(d);
+      const fin = aFechaStr(sumarDias(d, 6));
+      let cantidad = 0;
+      for (const [f, n] of porDia) if (f >= ini && f <= fin) cantidad += n;
+      celdas.push({
+        clave: ini,
+        labelArriba: MESES_CORTOS[d.getMonth()],
+        labelNumero: String(d.getDate()),
+        cantidad,
+        esHoy: hoyStr >= ini && hoyStr <= fin,
+        esFinde: false,
+        rango: [ini, fin],
+      });
+    }
+    return celdas;
   }
 
-  function handleDateRangeChange(range: { from: Date; to: Date }) {
-    setActivePeriod(null); // custom range — no pill active
-    setDateRange(range);
+  for (let d = fechaLocal(desde); aFechaStr(d) <= hasta; d = sumarDias(d, 1)) {
+    const f = aFechaStr(d);
+    celdas.push({
+      clave: f,
+      labelArriba: diaCorto(d),
+      labelNumero: String(d.getDate()),
+      cantidad: porDia.get(f) ?? 0,
+      esHoy: f === hoyStr,
+      esFinde: d.getDay() === 0 || d.getDay() === 6,
+      rango: [f, f],
+    });
   }
+  return celdas;
+}
+
+function Esqueleto({ alto }: { alto: number }) {
+  return (
+    <div
+      className="bg-white border rounded-[14px] animate-pulse"
+      style={{ borderColor: 'var(--arca-border)', height: alto }}
+    />
+  );
+}
+
+function InicioPage() {
+  const [periodo, setPeriodo] = useState<Periodo>('14d');
+  const [seleccion, setSeleccion] = useState<string | null>(null);
+
+  const hoy = useMemo(() => new Date(), []);
+  const [desde, hasta] = useMemo(() => rangoDe(periodo, hoy), [periodo, hoy]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['inicio', desde, hasta],
+    queryFn: () => getInicio({ data: { desde, hasta } }),
+    staleTime: 60_000,
+  });
+
+  const porDia = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const v of data?.vencimientos ?? [])
+      m.set(v.venceAt, (m.get(v.venceAt) ?? 0) + 1);
+    return m;
+  }, [data?.vencimientos]);
+
+  const celdas = useMemo(
+    () => celdasDe(periodo, hoy, desde, hasta, porDia),
+    [periodo, hoy, desde, hasta, porDia]
+  );
+
+  const filtro = useMemo(
+    () => celdas.find((c) => c.clave === seleccion)?.rango ?? null,
+    [celdas, seleccion]
+  );
+
+  const sub = data
+    ? [
+        `${data.resumen.delMes} vencimiento${data.resumen.delMes !== 1 ? 's' : ''} en el mes`,
+        data.resumen.vencidos > 0
+          ? `${data.resumen.vencidos} vencido${data.resumen.vencidos !== 1 ? 's' : ''}`
+          : null,
+        `${data.resumen.empresasMes} empresa${data.resumen.empresasMes !== 1 ? 's' : ''}`,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
 
   return (
     <>
-      <DashboardTopbar
-        activePeriod={activePeriod}
-        onPeriodChange={handlePeriodChange}
-      />
-      <div className="p-[28px_36px_60px] max-w-[1440px]">
-        <DashboardGreeting
-          dateRange={dateRange}
-          onDateRangeChange={handleDateRangeChange}
-        />
-        <CredentialAlertBanner />
-        <ExceptionsBar />
-        <KpiCardsRow from={dateRange.from} to={dateRange.to} />
-        <MiniKpiCardsRow from={dateRange.from} to={dateRange.to} />
+      <FranjaInfra />
+      <div className="max-w-[1440px]" style={{ padding: '28px 36px 60px' }}>
+        {/* Header */}
+        <div className="flex items-end justify-between gap-4 mb-5">
+          <div>
+            <h1
+              className="text-[30px] font-semibold"
+              style={{
+                fontFamily: 'var(--ff-display)',
+                letterSpacing: '-0.025em',
+                color: 'var(--arca-ink)',
+              }}
+            >
+              {tituloDe(periodo, hoy, hasta)}
+            </h1>
+            <p
+              className="text-[12px] mt-0.5"
+              style={{ color: 'var(--arca-ink-3)' }}
+            >
+              {sub || ' '}
+            </p>
+          </div>
+          <div className="flex shrink-0 rounded-lg bg-[var(--arca-surface-2)] p-[3px]">
+            {PERIODOS.map((p) => (
+              <button
+                key={p.clave}
+                type="button"
+                onClick={() => {
+                  setPeriodo(p.clave);
+                  setSeleccion(null);
+                }}
+                aria-pressed={periodo === p.clave}
+                className={cn(
+                  'cursor-pointer rounded-md px-3 py-[5px] text-[12.5px] font-medium transition-colors duration-150',
+                  periodo === p.clave
+                    ? 'bg-[var(--arca-surface)] text-[var(--arca-ink)] shadow-[0_1px_2px_rgba(16,23,32,0.08)]'
+                    : 'text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]'
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
-        {/* Chart + Cashflow */}
-        <section className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-3.5 mb-3.5">
-          <EvolucionChart from={dateRange.from} to={dateRange.to} />
-          <FlujoCajaCard from={dateRange.from} to={dateRange.to} />
-        </section>
+        {/* Franja de días */}
+        <div className="mb-[14px]">
+          {isLoading ? (
+            <Esqueleto alto={141} />
+          ) : (
+            <FranjaDias
+              celdas={celdas}
+              seleccion={seleccion}
+              onSeleccionar={setSeleccion}
+              unidad={periodo === 'trimestre' ? 'semana' : 'día'}
+            />
+          )}
+        </div>
 
-        {/* Clients table + Deadlines */}
-        <section className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-3.5">
-          <ClientesTable from={dateRange.from} to={dateRange.to} />
-          <VencimientosList />
-        </section>
-
-        {/* Today's scraping + Schedule */}
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-3.5">
-          <TodayScrapedCard />
-          <ScheduleCard />
-        </section>
-
-        {/* Activity feed */}
-        <section className="mt-3.5">
-          <ActividadFeed from={dateRange.from} to={dateRange.to} />
-        </section>
+        {/* Agenda | Riesgos + Equipo */}
+        <div
+          className="grid items-start"
+          style={{ gridTemplateColumns: '1.5fr 1fr', gap: 14 }}
+        >
+          {isLoading || !data ? (
+            <>
+              <Esqueleto alto={420} />
+              <div className="flex flex-col" style={{ gap: 14 }}>
+                <Esqueleto alto={300} />
+                <Esqueleto alto={160} />
+              </div>
+            </>
+          ) : (
+            <>
+              <AgendaCard datos={data} hoy={hoy} filtro={filtro} />
+              <div className="flex flex-col" style={{ gap: 14 }}>
+                <RiesgosCard datos={data} ahora={hoy} />
+                <EquipoCard datos={data} />
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </>
   );

@@ -60,14 +60,14 @@ const XLSX = XLSXRaw as unknown as {
   };
 };
 
-type Target = 'base' | 'custom';
+type Target = 'base' | 'propia';
 type Mode = 'complementar' | 'reemplazar';
 
 /* Botones con estilo arca, consistentes con el resto del módulo. */
 const BTN_OUTLINE =
   'flex items-center gap-1.5 h-8 px-3 text-[12.5px] rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors disabled:opacity-50';
 const BTN_PRIMARY =
-  'flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-navy-900)] text-white hover:opacity-90 transition-opacity disabled:opacity-50';
+  'flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity disabled:opacity-50';
 const BTN_GHOST =
   'flex items-center gap-1.5 h-8 px-2.5 text-[12px] rounded-[8px] text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)] transition-colors';
 
@@ -280,7 +280,7 @@ export function ImportarPlanDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="base">Plan base del estudio</SelectItem>
-                    <SelectItem value="custom">
+                    <SelectItem value="propia">
                       Cuentas propias de la empresa
                     </SelectItem>
                   </SelectContent>
@@ -367,14 +367,14 @@ export function ImportarPlanDialog({
                     {summary.modified} modificada(s)
                   </span>
                   {summary.errors > 0 && (
-                    <span className="text-[var(--arca-accent-neg)] font-medium">
+                    <span className="text-[var(--arca-accent-neg-fg)] font-medium">
                       {summary.errors} con error
                     </span>
                   )}
                 </div>
 
                 {preview?.blocker && (
-                  <p className="flex items-start gap-1.5 text-[12px] text-[var(--arca-accent-neg)]">
+                  <p className="flex items-start gap-1.5 text-[12px] text-[var(--arca-accent-neg-fg)]">
                     <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
                     No se puede reemplazar: {preview.blocker}. Cambiá a modo
                     “Complementar”.
@@ -396,7 +396,7 @@ export function ImportarPlanDialog({
                             type="checkbox"
                             checked={checked.has(m.code)}
                             onChange={() => toggleChecked(m.code)}
-                            className="accent-[var(--arca-navy-900)]"
+                            className="accent-[var(--arca-accent)]"
                           />
                           <span className="font-mono">{m.code}</span>
                           <span className="text-[var(--arca-ink-3)]">
@@ -409,7 +409,7 @@ export function ImportarPlanDialog({
                 )}
 
                 {preview && preview.errors.length > 0 && (
-                  <ul className="max-h-32 overflow-y-auto space-y-0.5 text-[12px] text-[var(--arca-accent-neg)]">
+                  <ul className="max-h-32 overflow-y-auto space-y-0.5 text-[12px] text-[var(--arca-accent-neg-fg)]">
                     {preview.errors.map((e, i) => (
                       <li key={i}>
                         Fila {e.row}

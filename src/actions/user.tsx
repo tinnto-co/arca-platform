@@ -119,7 +119,7 @@ export const getOrganizations = createServerFn({
 export const setActiveOrganization = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ organizationId: z.string() }))
+  .validator(z.object({ organizationId: z.string() }))
   .handler(async (ctx) => {
     await auth.api.setActiveOrganization({
       headers: getRequestHeaders(),
@@ -130,20 +130,20 @@ export const setActiveOrganization = createServerFn({
 
 export const getCookieFn = createServerFn({
   method: 'GET',
-}).handler(async ({ context }) => {
+}).handler(async () => {
   return getCookie('sidebar_state');
 });
 
 export const getDashboardId = createServerFn({
   method: 'GET',
-}).handler(async ({ context }) => {
+}).handler(async () => {
   return getCookie('dashboard_id');
 });
 
 export const updateUser = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       name: z.string().optional(),
       image: z.string().optional(),
@@ -172,7 +172,7 @@ export const updateUser = createServerFn({
 export const setNewPassword = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       newPassword: z.string(),
     })
@@ -210,7 +210,7 @@ export const setNewPassword = createServerFn({
 
 export const signOut = createServerFn({
   method: 'POST',
-}).handler(async (ctx) => {
+}).handler(async () => {
   await auth.api.signOut({
     headers: getRequestHeaders(),
   });

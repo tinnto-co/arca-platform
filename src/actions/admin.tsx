@@ -4,31 +4,27 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { member, organization, user } from '@/drizzle/auth';
-import { organizationModule } from '@/drizzle/schema';
-import { eq, and } from 'drizzle-orm';
-import { getSessionWithOrg } from './helpers';
+import { organizationModule, orgModule } from '@/drizzle/schema';
+import { eq } from 'drizzle-orm';
+import { getMemberRole, getSessionWithOrg } from './helpers';
 import { seedBaseChartForOrg } from '@/lib/accounting-seed';
 
+/**
+ * Sesión + verificación de que quien llama es owner del estudio.
+ *
+ * Se apoya en `getSessionWithOrg()` en lugar de leer la sesión por su cuenta:
+ * ese helper es el que activa el contexto de RLS (`app.org_id`). Sin él, las
+ * escrituras sobre tablas con política —`organization_module`, por ejemplo—
+ * salían por el pool sin organización y Postgres las rechazaba.
+ */
 async function requireOwner() {
-  const session = await auth.api.getSession({ headers: getRequestHeaders() });
-  if (!session?.user?.id) throw new Error('Unauthorized');
+  const { session, orgId, userId } = await getSessionWithOrg();
 
-  const orgId = (session.session as any).activeOrganizationId as string | null;
-  if (!orgId) throw new Error('No active organization');
-
-  const [m] = await db
-    .select({ role: member.role })
-    .from(member)
-    .where(
-      and(eq(member.userId, session.user.id), eq(member.organizationId, orgId))
-    )
-    .limit(1);
-
-  if (m?.role !== 'owner') {
+  if ((await getMemberRole()) !== 'owner') {
     throw new Error('Solo el administrador puede realizar esta acción');
   }
 
-  return { session, orgId, userId: session.user.id };
+  return { session, orgId, userId };
 }
 
 export const getOrgMembers = createServerFn({
@@ -71,7 +67,7 @@ export const getOrgDetails = createServerFn({
 export const updateOrg = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       name: z.string().min(1).optional(),
       slug: z.string().min(1).optional(),
@@ -99,7 +95,7 @@ export const updateOrg = createServerFn({
 export const inviteMember = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       email: z.string().email(),
       role: z.enum(['owner', 'member', 'viewer']),
@@ -122,7 +118,7 @@ export const inviteMember = createServerFn({
 export const removeMember = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ memberIdOrEmail: z.string() }))
+  .validator(z.object({ memberIdOrEmail: z.string() }))
   .handler(async (ctx) => {
     await requireOwner();
 
@@ -139,7 +135,7 @@ export const removeMember = createServerFn({
 export const updateMemberRole = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       memberId: z.string(),
       role: z.enum(['owner', 'member', 'viewer']),
@@ -175,7 +171,7 @@ export const getOrgInvitations = createServerFn({
 export const cancelInvitation = createServerFn({
   method: 'POST',
 })
-  .inputValidator(z.object({ invitationId: z.string() }))
+  .validator(z.object({ invitationId: z.string() }))
   .handler(async (ctx) => {
     await requireOwner();
 
@@ -187,14 +183,8 @@ export const cancelInvitation = createServerFn({
     return { success: true };
   });
 
-const MODULES = [
-  'sueldos',
-  'banco',
-  'contabilidad',
-  'analytics',
-  'portal_cliente',
-  'ai_agent',
-] as const;
+/** Los módulos vienen del enum de la BD: una sola fuente de verdad. */
+const MODULES = orgModule.enumValues;
 
 export type OrgModule = (typeof MODULES)[number];
 
@@ -206,7 +196,7 @@ export const listOrgModules = createServerFn({
   const rows = await db
     .select()
     .from(organizationModule)
-    .where(eq(organizationModule.organizationId, orgId as string));
+    .where(eq(organizationModule.orgId, orgId));
 
   return MODULES.map((m) => ({
     module: m,
@@ -218,7 +208,7 @@ export const listOrgModules = createServerFn({
 export const setModuleEnabled = createServerFn({
   method: 'POST',
 })
-  .inputValidator(
+  .validator(
     z.object({
       module: z.enum(MODULES),
       enabled: z.boolean(),
@@ -230,13 +220,13 @@ export const setModuleEnabled = createServerFn({
     await db
       .insert(organizationModule)
       .values({
-        organizationId: orgId,
+        orgId,
         module: ctx.data.module,
         enabled: ctx.data.enabled,
         enabledAt: ctx.data.enabled ? new Date() : null,
       })
       .onConflictDoUpdate({
-        target: [organizationModule.organizationId, organizationModule.module],
+        target: [organizationModule.orgId, organizationModule.module],
         set: {
           enabled: ctx.data.enabled,
           enabledAt: ctx.data.enabled ? new Date() : null,

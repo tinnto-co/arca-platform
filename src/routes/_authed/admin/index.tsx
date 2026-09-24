@@ -79,8 +79,7 @@ import {
 } from 'lucide-react';
 import { userQuery } from '../../../lib/user-query';
 import { PageHeader } from '@/components/shared/page-header';
-
-const logoUrlSchema = z.union([z.string().url(), z.literal('')]);
+import { PageShell } from '@/components/shared/page-shell';
 
 export const Route = createFileRoute('/_authed/admin/')({
   beforeLoad: async () => {
@@ -99,8 +98,8 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 const ROLE_COLORS: Record<string, string> = {
-  owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn)]',
-  member: 'bg-[var(--arca-navy-700)]/10 text-[var(--arca-navy-700)]',
+  owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn-fg)]',
+  member: 'bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]',
   viewer: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
 };
 
@@ -111,9 +110,8 @@ function AdminPanel() {
   });
 
   return (
-    <div className="p-[28px_36px_60px] max-w-[1440px] space-y-6">
+    <PageShell className="space-y-6">
       <PageHeader
-        icon={Building}
         title={isLoading ? 'Administración' : (org?.name ?? 'Administración')}
         subtitle={
           isLoading
@@ -154,7 +152,7 @@ function AdminPanel() {
           <ModulesTab />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageShell>
   );
 }
 
@@ -261,7 +259,7 @@ function MembersTab() {
                       size="icon"
                       onClick={() => setRemoveMemberId(m.memberId)}
                     >
-                      <Trash2 className="size-4 text-[var(--arca-accent-neg)]" />
+                      <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
                     </Button>
                     <AlertDialog
                       open={removeMemberId === m.memberId}
@@ -393,7 +391,7 @@ function InvitationsTab() {
                         size="icon"
                         onClick={() => setCancelInviteId(inv.id)}
                       >
-                        <X className="size-4 text-[var(--arca-accent-neg)]" />
+                        <X className="size-4 text-[var(--arca-accent-neg-fg)]" />
                       </Button>
                       <AlertDialog
                         open={cancelInviteId === inv.id}
@@ -461,13 +459,7 @@ function SettingsTab() {
 
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
-  const [logoUrl, setLogoUrl] = useState('');
-
-  useEffect(() => {
-    if (org) {
-      setLogoUrl(org.logo ?? '');
-    }
-  }, [org?.id, org?.logo]);
+  const [subiendoLogo, setSubiendoLogo] = useState(false);
 
   const updateMutation = useMutation({
     mutationFn: (data: { name?: string; slug?: string; logo?: string }) =>
@@ -480,24 +472,35 @@ function SettingsTab() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const subirLogo = async (file: File) => {
+    setSubiendoLogo(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/api/org/logo', { method: 'POST', body: form });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error ?? 'No se pudo subir el logo');
+      }
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'org'] });
+      await queryClient.invalidateQueries({ queryKey: userQuery.queryKey });
+      toast.success('Logo actualizado');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'No se pudo subir el logo');
+    } finally {
+      setSubiendoLogo(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!org) return;
 
-    const parsedLogo = logoUrlSchema.safeParse(logoUrl.trim());
-    if (!parsedLogo.success) {
-      toast.error('La URL del logo no es válida');
-      return;
-    }
-
-    const updates: { name?: string; slug?: string; logo?: string } = {};
+    const updates: { name?: string; slug?: string } = {};
     if (name && name !== org.name) updates.name = name;
     if (slug && slug !== org.slug) updates.slug = slug;
-    const trimmedLogo = parsedLogo.data;
-    const currentLogo = org.logo ?? '';
-    if (trimmedLogo !== currentLogo) {
-      updates.logo = trimmedLogo;
-    }
 
     if (Object.keys(updates).length > 0) {
       updateMutation.mutate(updates);
@@ -518,14 +521,14 @@ function SettingsTab() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
             <div className="space-y-2">
-              <Label>Logo (URL)</Label>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+              <Label htmlFor="org-logo">Logo</Label>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-[var(--arca-surface-2)]">
-                  {logoUrl.trim() ? (
+                  {org?.logo ? (
                     <Avatar className="size-20 rounded-lg">
                       <AvatarImage
-                        src={logoUrl.trim()}
-                        alt="Vista previa"
+                        src={org.logo}
+                        alt="Logo de la organización"
                         className="object-cover"
                       />
                       <AvatarFallback className="rounded-lg text-xs">
@@ -536,14 +539,24 @@ function SettingsTab() {
                     <Building className="size-8 text-[var(--arca-ink-3)]" />
                   )}
                 </div>
-                <Input
-                  id="org-logo"
-                  type="url"
-                  value={logoUrl}
-                  onChange={(e) => setLogoUrl(e.target.value)}
-                  placeholder="https://…"
-                  className="flex-1"
-                />
+                <div className="flex flex-col gap-1.5">
+                  <Input
+                    id="org-logo"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    disabled={subiendoLogo}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) void subirLogo(file);
+                      e.target.value = '';
+                    }}
+                    className="flex-1 cursor-pointer"
+                  />
+                  <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+                    PNG, JPG o WebP, hasta 2 MB.
+                    {subiendoLogo && ' Subiendo…'}
+                  </p>
+                </div>
               </div>
             </div>
             <div className="space-y-2">
@@ -588,7 +601,6 @@ function AccountantSignatureCard() {
     consejo: '',
     tomo: '',
     folio: '',
-    firmaImagen: null as string | null,
   });
 
   useEffect(() => {
@@ -600,7 +612,6 @@ function AccountantSignatureCard() {
         consejo: sig.consejo ?? '',
         tomo: sig.tomo ?? '',
         folio: sig.folio ?? '',
-        firmaImagen: sig.firmaImagen ?? null,
       });
     }
   }, [sig]);
@@ -614,34 +625,6 @@ function AccountantSignatureCard() {
   const upd =
     (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [k]: e.target.value }));
-
-  /**
-   * La firma va embebida en el PDF como data URL. Se limita el tamaño porque
-   * viaja dentro de cada documento generado: una firma escaneada razonable
-   * pesa unos pocos kilobytes.
-   */
-  const MAX_FIRMA = 300 * 1024;
-  const onFirma = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('La firma tiene que ser una imagen (PNG o JPG).');
-      return;
-    }
-    if (file.size > MAX_FIRMA) {
-      toast.error(
-        `La imagen pesa ${Math.round(file.size / 1024)} KB. El máximo son 300 KB: recortala o bajale la resolución.`
-      );
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      // readAsDataURL siempre devuelve string; el tipo admite ArrayBuffer.
-      const url = typeof reader.result === 'string' ? reader.result : null;
-      if (url) setForm((f) => ({ ...f, firmaImagen: url }));
-    };
-    reader.readAsDataURL(file);
-  };
 
   return (
     <Card>
@@ -720,40 +703,6 @@ function AccountantSignatureCard() {
                   placeholder="084"
                 />
               </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ac-firma">Imagen de la firma</Label>
-              {form.firmaImagen ? (
-                <div className="flex items-center gap-3">
-                  <img
-                    src={form.firmaImagen}
-                    alt="Firma del contador"
-                    className="h-14 border rounded bg-white px-2"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setForm((f) => ({ ...f, firmaImagen: null }))
-                    }
-                  >
-                    Quitar
-                  </Button>
-                </div>
-              ) : (
-                <Input
-                  id="ac-firma"
-                  type="file"
-                  accept="image/png,image/jpeg"
-                  onChange={onFirma}
-                />
-              )}
-              <p className="text-xs text-muted-foreground">
-                Se imprime arriba del nombre, al pie de cada estado. Sin imagen
-                se deja la línea para firmar a mano. PNG con fondo transparente
-                queda mejor. Máximo 300 KB.
-              </p>
             </div>
             <Button type="submit" disabled={mut.isPending}>
               {mut.isPending ? 'Guardando...' : 'Guardar datos del contador'}

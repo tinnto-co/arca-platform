@@ -6,7 +6,7 @@ import { getSessionWithOrg } from '@/actions/helpers';
 import { eq, and, desc, ilike } from 'drizzle-orm';
 
 export const getAgentConversations = createServerFn({ method: 'GET' })
-  .inputValidator(
+  .validator(
     z
       .object({ limit: z.number().optional(), offset: z.number().optional() })
       .optional()
@@ -16,14 +16,14 @@ export const getAgentConversations = createServerFn({ method: 'GET' })
     return db
       .select({
         id: agentConversation.id,
-        title: agentConversation.title,
+        titulo: agentConversation.titulo,
         createdAt: agentConversation.createdAt,
         updatedAt: agentConversation.updatedAt,
       })
       .from(agentConversation)
       .where(
         and(
-          eq(agentConversation.organizationId, orgId),
+          eq(agentConversation.orgId, orgId),
           eq(agentConversation.userId, userId)
         )
       )
@@ -33,21 +33,21 @@ export const getAgentConversations = createServerFn({ method: 'GET' })
   });
 
 export const searchConversations = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ query: z.string() }))
+  .validator(z.object({ query: z.string() }))
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     return db
       .select({
         id: agentConversation.id,
-        title: agentConversation.title,
+        titulo: agentConversation.titulo,
         updatedAt: agentConversation.updatedAt,
       })
       .from(agentConversation)
       .where(
         and(
-          eq(agentConversation.organizationId, orgId),
+          eq(agentConversation.orgId, orgId),
           eq(agentConversation.userId, userId),
-          ilike(agentConversation.title, `%${data.query}%`)
+          ilike(agentConversation.titulo, `%${data.query}%`)
         )
       )
       .orderBy(desc(agentConversation.updatedAt))
@@ -55,7 +55,7 @@ export const searchConversations = createServerFn({ method: 'GET' })
   });
 
 export const getConversationMessages = createServerFn({ method: 'GET' })
-  .inputValidator(z.object({ conversationId: z.string().uuid() }))
+  .validator(z.object({ conversationId: z.string().uuid() }))
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     const [conv] = await db
@@ -64,7 +64,7 @@ export const getConversationMessages = createServerFn({ method: 'GET' })
       .where(
         and(
           eq(agentConversation.id, data.conversationId),
-          eq(agentConversation.organizationId, orgId),
+          eq(agentConversation.orgId, orgId),
           eq(agentConversation.userId, userId)
         )
       )
@@ -75,11 +75,9 @@ export const getConversationMessages = createServerFn({ method: 'GET' })
         id: agentMessage.id,
         conversationId: agentMessage.conversationId,
         role: agentMessage.role,
-        content: agentMessage.content,
-        metadata: agentMessage.metadata,
+        contenido: agentMessage.contenido,
         toolCalls: agentMessage.toolCalls,
-        citations: agentMessage.citations,
-        confidence: agentMessage.confidence,
+        citas: agentMessage.citas,
         createdAt: agentMessage.createdAt,
       })
       .from(agentMessage)
@@ -90,7 +88,7 @@ export const getConversationMessages = createServerFn({ method: 'GET' })
   });
 
 export const deleteConversation = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ conversationId: z.string().uuid() }))
+  .validator(z.object({ conversationId: z.string().uuid() }))
   .handler(async ({ data }) => {
     const { orgId, userId } = await getSessionWithOrg();
     const [conv] = await db
@@ -99,7 +97,7 @@ export const deleteConversation = createServerFn({ method: 'POST' })
       .where(
         and(
           eq(agentConversation.id, data.conversationId),
-          eq(agentConversation.organizationId, orgId),
+          eq(agentConversation.orgId, orgId),
           eq(agentConversation.userId, userId)
         )
       )

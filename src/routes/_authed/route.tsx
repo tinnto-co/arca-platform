@@ -4,6 +4,7 @@ import {
   setActiveOrganization,
 } from '@/actions/user';
 import { listOrgModules } from '@/actions/admin';
+import { getPortalSession } from '@/actions/client-portal';
 import { AppSidebar } from '@/components/app-sidebar';
 import { AgentInput } from '@/components/agent/AgentInput';
 import { MobileNavbar } from '@/components/mobile-navbar';
@@ -20,7 +21,8 @@ import { CopilotKit } from '@copilotkit/react-core';
 import '@copilotkit/react-ui/styles.css';
 import { CopilotActions } from '@/components/copilot/CopilotActions';
 import { CopilotAttachmentProvider } from '@/components/copilot/AttachmentContext';
-import { CopilotBottomPanel } from '@/components/copilot/CopilotBottomPanel';
+import { CopilotSidePanel } from '@/components/copilot/CopilotSidePanel';
+import { BuscadorGlobal } from '@/components/shared/buscador-global';
 import { FrontendTools } from '@/components/copilot/FrontendTools';
 import { GlobalCopilotReadables } from '@/components/copilot/GlobalCopilotReadables';
 import { VisiblePageReadable } from '@/components/copilot/VisiblePageReadable';
@@ -38,7 +40,11 @@ export const Route = createFileRoute('/_authed')({
     if (!activeOrgId) {
       const orgs = await getOrganizations();
       if (orgs.length === 0) {
-        throw redirect({ to: '/no-organization' });
+        // Un usuario del portal tampoco pertenece a ninguna organización, pero
+        // su lugar es el portal, no la pantalla de "sin organización" (sin esto
+        // cualquier deep link o refresh lo deja en un callejón sin salida).
+        const portal = await getPortalSession().catch(() => null);
+        throw redirect({ to: portal ? '/portal' : '/no-organization' });
       }
       await setActiveOrganization({ data: { organizationId: orgs[0].orgId } });
     }
@@ -52,22 +58,38 @@ function RouteComponent() {
   const isChatDetail = pathname.startsWith('/chat/');
   const isChatRoute = isChatDetail || pathname === '/chat';
 
-  const { data: orgModules = [], isLoading: isModulesLoading } = useQuery({
+  /**
+   * Pantallas que manejan su propio scroll y ocupan el alto completo: la
+   * bandeja, el tablero de tareas y el calendario de vencimientos tienen
+   * columnas que scrollean por dentro, así que no pueden convivir con el
+   * padding que deja lugar al input del asistente.
+   */
+  const altoCompleto =
+    pathname.startsWith('/notifications') ||
+    pathname.startsWith('/tareas') ||
+    pathname.startsWith('/vencimientos');
+
+  /**
+   * De las de alto completo, las que además se comen el lugar del input del
+   * asistente. Vencimientos no: ahí el input sigue flotando abajo y la
+   * pantalla deja el hueco justo para que no lo tape.
+   */
+  const sinInputAgente =
+    pathname.startsWith('/notifications') || pathname.startsWith('/tareas');
+
+  const { data: orgModules = [] } = useQuery({
     queryKey: ['orgModules'],
     queryFn: () => listOrgModules(),
   });
 
-  // Wait for the org-modules query before deciding whether to mount <CopilotKit>.
-  // Otherwise aiAgentEnabled flips false→true mid-render which unmounts/remounts
-  // the entire CopilotKit tree and triggers internal "subscribe on null" race
-  // conditions inside the library (see useCopilotChatInternal).
-  if (isModulesLoading) return null;
-
   const aiAgentEnabled =
     orgModules.find((m) => m.module === 'ai_agent')?.enabled ?? false;
-  const hideAgentInput = isChatRoute || !aiAgentEnabled;
+  const hideAgentInput = isChatRoute || sinInputAgente || !aiAgentEnabled;
 
-  const shell = (agentInputSlot: React.ReactNode) => (
+  const shell = (
+    agentInputSlot: React.ReactNode,
+    asistenteSlot: React.ReactNode
+  ) => (
     <OrgSwitchProvider>
       <SidebarProvider defaultOpen={true} className="h-svh">
         <AppSidebar />
@@ -76,7 +98,7 @@ function RouteComponent() {
             data-arca-content
             className={cn(
               'min-w-0 flex-1 min-h-0 overflow-y-auto',
-              isChatDetail
+              isChatDetail || altoCompleto
                 ? 'h-full overflow-hidden'
                 : 'bg-[var(--arca-bg)] pb-28 md:pb-24 min-h-full'
             )}
@@ -85,29 +107,52 @@ function RouteComponent() {
           </div>
           {agentInputSlot}
         </SidebarInset>
+        {/* Hermano flex del contenido: al abrirse lo empuja, no lo tapa. Vive
+            dentro del provider porque necesita colapsar el menú lateral. */}
+        {asistenteSlot}
         <MobileNavbar />
       </SidebarProvider>
     </OrgSwitchProvider>
   );
 
-  if (aiAgentEnabled) {
-    return (
-      <CopilotKit
-        runtimeUrl="/api/copilotkit"
-        showDevConsole={false}
-        enableInspector={false}
-      >
-        <CopilotAttachmentProvider>
-          <CopilotActions />
-          <FrontendTools />
-          <GlobalCopilotReadables />
-          <VisiblePageReadable />
-          {shell(!hideAgentInput ? <AgentInput /> : null)}
-          {!isChatRoute && <CopilotBottomPanel />}
-        </CopilotAttachmentProvider>
-      </CopilotKit>
-    );
-  }
-
-  return shell(null);
+  /**
+   * El provider va siempre, y lo que se gatea es la funcionalidad.
+   *
+   * Antes el árbol entero dependía de `aiAgentEnabled`: mientras
+   * `listOrgModules` no resolvía, el layout devolvía el shell sin provider y
+   * las pantallas que montan un `CopilotReadableEntity` —la ficha del
+   * cliente, la tabla de clientes, sueldos por cliente— reventaban con
+   * "useCopilotKit must be used within CopilotKitProvider". Las dos partes
+   * leen la misma query, pero no re-renderizan en el mismo instante, y esa
+   * ventana alcanzaba para romper la página.
+   *
+   * Montar el provider no habla con el runtime: eso pasa cuando alguien usa
+   * el chat. Lo que sí se sigue gateando es lo que pesa —acciones, tools,
+   * readables globales, la barra y el panel—.
+   */
+  return (
+    <CopilotKit
+      runtimeUrl="/api/copilotkit"
+      showDevConsole={false}
+      enableInspector={false}
+    >
+      <CopilotAttachmentProvider>
+        {aiAgentEnabled && (
+          <>
+            <CopilotActions />
+            <FrontendTools />
+            <GlobalCopilotReadables />
+            <VisiblePageReadable />
+          </>
+        )}
+        {shell(
+          aiAgentEnabled && !hideAgentInput ? <AgentInput /> : null,
+          aiAgentEnabled && !isChatRoute && !altoCompleto ? (
+            <CopilotSidePanel />
+          ) : null
+        )}
+        <BuscadorGlobal />
+      </CopilotAttachmentProvider>
+    </CopilotKit>
+  );
 }

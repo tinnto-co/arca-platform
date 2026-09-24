@@ -10,6 +10,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { friendlyFailedReason } from '@/lib/job-error-classifier';
 import {
   Select,
   SelectContent,
@@ -18,11 +19,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  getRepresentativeDebts,
-  updateDebtStatus,
+  getCredencialDeudas,
+  updateDeudaEstado,
   scrapSingleJob,
 } from '@/actions/client';
 import { cn } from '@/lib/utils';
+import { periodoLegible } from '@/lib/periodo';
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 const formatARS = (value: number | string | null | undefined) => {
@@ -53,21 +55,10 @@ const formatLastUpdateAt = (iso: string | Date) =>
   });
 
 // ─── Types ────────────────────────────────────────────────────────────
-type DebtStatus = 'open' | 'in_plan' | 'paid' | 'disputed';
+type DebtStatus = 'abierta' | 'plan_pago' | 'pagada' | 'prescripta';
 
-interface Debt {
-  id: string;
-  tax: string;
-  concept: string;
-  period: string;
-  dueDate: Date | string;
-  detectedAt: Date | string;
-  balance: number | string;
-  compensatoryInterest: number | string;
-  punitiveInterest: number | string;
-  status: DebtStatus;
-  isIntimated: boolean;
-}
+/** Fila de `deuda` (aplanada) tal como la devuelve `getCredencialDeudas`. */
+type Debt = Awaited<ReturnType<typeof getCredencialDeudas>>[number]['deuda'];
 
 // ─── Status pill ─────────────────────────────────────────────────────
 function StatusPill({
@@ -77,20 +68,29 @@ function StatusPill({
   status: DebtStatus;
   isOverdue: boolean;
 }) {
-  if (isOverdue && status === 'open') {
+  if (isOverdue && status === 'abierta') {
     return (
-      <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[#c0392b] whitespace-nowrap">
+      <span className="inline-flex items-center px-[9px] py-[3px] rounded-full text-[12px] font-semibold bg-[#fce8e6] text-[var(--arca-accent-neg-fg)] whitespace-nowrap">
         Vencida
       </span>
     );
   }
   const map: Record<DebtStatus, { label: string; cls: string }> = {
-    open: { label: 'Abierta', cls: 'bg-[#fef3cd] text-[#8a6d00]' },
-    in_plan: { label: 'En plan', cls: 'bg-[#F2F1EB] text-[#3E404A]' },
-    paid: { label: 'Pagada', cls: 'bg-[#E6EFE8] text-[#2f7d55]' },
-    disputed: { label: 'Disputada', cls: 'bg-[#E7E8F2] text-[#3B3F6B]' },
+    abierta: {
+      label: 'Abierta',
+      cls: 'bg-[var(--arca-accent-warn-bg)] text-[var(--arca-accent-warn-fg)]',
+    },
+    plan_pago: {
+      label: 'En plan',
+      cls: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)]',
+    },
+    pagada: {
+      label: 'Pagada',
+      cls: 'bg-[#E6EFE8] text-[var(--arca-accent-pos-fg)]',
+    },
+    prescripta: { label: 'Prescripta', cls: 'bg-[#E7E8F2] text-[#3B3F6B]' },
   };
-  const { label, cls } = map[status] ?? map.open;
+  const { label, cls } = map[status] ?? map.abierta;
   return (
     <span
       className={cn(
@@ -148,25 +148,32 @@ export function DeudasTab({
   }, [filterImpuesto, filterConcepto, sortKey, sortDir, selectedClientId]);
 
   // ── Query ──
-  const { data: debts = [], isLoading } = useQuery({
-    queryKey: ['representativeDebts', representativeId, selectedClientId],
+  // AFIP devuelve las deudas por login (credencial), no por cliente: se traen
+  // todas las del login y se filtran acá por la empresa seleccionada.
+  const { data: deudasDelLogin = [], isLoading } = useQuery({
+    queryKey: ['representativeDebts', representativeId],
     queryFn: () =>
-      getRepresentativeDebts({
-        data: { representativeId, clientId: selectedClientId || undefined },
-      }),
+      getCredencialDeudas({ data: { credencialId: representativeId } }),
     enabled: !!representativeId,
   });
 
+  const debts = useMemo(
+    () =>
+      deudasDelLogin
+        .filter(
+          (row) => !selectedClientId || row.deuda.clienteId === selectedClientId
+        )
+        .map((row) => row.deuda),
+    [deudasDelLogin, selectedClientId]
+  );
+
   // ── Mutation ──
   const updateMutation = useMutation({
-    mutationFn: (vars: {
-      id: string;
-      status: DebtStatus;
-      isIntimated: boolean;
-    }) => updateDebtStatus({ data: vars }),
+    mutationFn: (vars: { id: string; estado: DebtStatus; intimada: boolean }) =>
+      updateDeudaEstado({ data: vars }),
     onSuccess: () => {
       queryClient.invalidateQueries({
-        queryKey: ['representativeDebts', representativeId, selectedClientId],
+        queryKey: ['representativeDebts', representativeId],
       });
     },
     onError: (err) => {
@@ -200,11 +207,11 @@ export function DeudasTab({
     let totalPunitiveInterest = 0;
     let overdueCount = 0;
 
-    for (const d of debts as Debt[]) {
-      totalBalance += Number(d.balance ?? 0);
-      totalCompensatoryInterest += Number(d.compensatoryInterest ?? 0);
-      totalPunitiveInterest += Number(d.punitiveInterest ?? 0);
-      if (new Date(d.dueDate) < today) overdueCount++;
+    for (const d of debts) {
+      totalBalance += Number(d.saldo ?? 0);
+      totalCompensatoryInterest += Number(d.interesResarcitorio ?? 0);
+      totalPunitiveInterest += Number(d.interesPunitorio ?? 0);
+      if (d.venceAt && new Date(d.venceAt) < today) overdueCount++;
     }
 
     return {
@@ -222,9 +229,9 @@ export function DeudasTab({
   const debtFilterOptions = useMemo(() => {
     const impuestos = new Set<string>();
     const conceptos = new Set<string>();
-    for (const d of debts as Debt[]) {
-      if (d.tax) impuestos.add(d.tax);
-      if (d.concept) conceptos.add(d.concept);
+    for (const d of debts) {
+      if (d.impuesto) impuestos.add(d.impuesto);
+      if (d.concepto) conceptos.add(d.concepto);
     }
     return {
       impuestos: Array.from(impuestos).sort(),
@@ -234,9 +241,9 @@ export function DeudasTab({
 
   // ── Filtered & sorted debts ──
   const filteredDebts = useMemo(() => {
-    return (debts as Debt[]).filter((d) => {
-      if (filterImpuesto && d.tax !== filterImpuesto) return false;
-      if (filterConcepto && d.concept !== filterConcepto) return false;
+    return debts.filter((d) => {
+      if (filterImpuesto && d.impuesto !== filterImpuesto) return false;
+      if (filterConcepto && d.concepto !== filterConcepto) return false;
       return true;
     });
   }, [debts, filterImpuesto, filterConcepto]);
@@ -248,20 +255,20 @@ export function DeudasTab({
       let av: string | number = 0;
       let bv: string | number = 0;
       if (sortKey === 'tax') {
-        av = a.tax ?? '';
-        bv = b.tax ?? '';
+        av = a.impuesto ?? '';
+        bv = b.impuesto ?? '';
       } else if (sortKey === 'concept') {
-        av = a.concept ?? '';
-        bv = b.concept ?? '';
+        av = a.concepto ?? '';
+        bv = b.concepto ?? '';
       } else if (sortKey === 'period') {
-        av = a.period ?? '';
-        bv = b.period ?? '';
+        av = a.periodo ?? '';
+        bv = b.periodo ?? '';
       } else if (sortKey === 'dueDate') {
-        av = new Date(a.dueDate).getTime();
-        bv = new Date(b.dueDate).getTime();
+        av = a.venceAt ? new Date(a.venceAt).getTime() : 0;
+        bv = b.venceAt ? new Date(b.venceAt).getTime() : 0;
       } else if (sortKey === 'detectedAt') {
-        av = new Date(a.detectedAt).getTime();
-        bv = new Date(b.detectedAt).getTime();
+        av = a.detectadaAt ? new Date(a.detectadaAt).getTime() : 0;
+        bv = b.detectadaAt ? new Date(b.detectadaAt).getTime() : 0;
       }
       if (av === bv) return 0;
       return av > bv ? dir : -dir;
@@ -314,7 +321,9 @@ export function DeudasTab({
   const handleUpdateDeudas = async () => {
     setScrapingSection('deudas');
     try {
-      await scrapSingleJob({ data: { representativeId, jobType: 'deuda' } });
+      await scrapSingleJob({
+        data: { credencialId: representativeId, jobType: 'deuda' },
+      });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['representativeDebts'] }),
         queryClient.invalidateQueries({ queryKey: ['lastDeudaJob'] }),
@@ -364,7 +373,7 @@ export function DeudasTab({
 
   return (
     <div
-      className="bg-[#F7F6F2] border border-[#DFDCD3] rounded-2xl overflow-hidden"
+      className="bg-[var(--arca-bg)] border border-[var(--arca-border-strong)] rounded-2xl overflow-hidden"
       style={{
         boxShadow:
           '0 1px 3px rgba(18,19,26,.04), 0 8px 24px rgba(18,19,26,.05)',
@@ -373,30 +382,30 @@ export function DeudasTab({
       {/* ── KPI band ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 bg-white">
         {/* 1. Total deudas */}
-        <div className="px-[26px] py-[22px] border-r border-[#ECEAE3]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+        <div className="px-[26px] py-[22px] border-r border-[var(--arca-border)]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             TOTAL DEUDAS
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalBalance)}
           </div>
-          <div className="mt-[10px] text-[12.5px] text-[#6E7079]">
+          <div className="mt-[10px] text-[12.5px] text-[var(--arca-ink-3)]">
             {debtStats.totalDebts} deudas ·{' '}
-            <span className="text-[#c0392b] font-semibold">
+            <span className="text-[var(--arca-accent-neg-fg)] font-semibold">
               {debtStats.overdueCount} vencidas
             </span>
           </div>
         </div>
 
         {/* 2. Total con intereses */}
-        <div className="px-[26px] py-[22px] border-r border-[#ECEAE3]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+        <div className="px-[26px] py-[22px] border-r border-[var(--arca-border)]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             TOTAL CON INTERESES
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalDebt)}
           </div>
-          <div className="mt-[10px] text-[12.5px] text-[#6E7079]">
+          <div className="mt-[10px] text-[12.5px] text-[var(--arca-ink-3)]">
             +{' '}
             {formatARS(
               debtStats.totalCompensatoryInterest +
@@ -407,36 +416,38 @@ export function DeudasTab({
         </div>
 
         {/* 3. Int. compensatorio */}
-        <div className="px-[26px] py-[22px] border-r border-[#ECEAE3]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+        <div className="px-[26px] py-[22px] border-r border-[var(--arca-border)]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             INT. COMPENSATORIO
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalCompensatoryInterest)}
           </div>
         </div>
 
         {/* 4. Int. punitorio */}
         <div className="px-[26px] py-[22px]">
-          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[#9B9CA3] mb-[14px]">
+          <div className="text-[11.5px] font-bold tracking-[0.07em] uppercase text-[var(--arca-ink-4)] mb-[14px]">
             INT. PUNITORIO
           </div>
-          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[#12131A] tabular-nums whitespace-nowrap leading-none">
+          <div className="font-[family-name:var(--ff-display)] font-bold text-[28px] tracking-[-0.025em] text-[var(--arca-ink)] tabular-nums whitespace-nowrap leading-none">
             {formatARS(debtStats.totalPunitiveInterest)}
           </div>
         </div>
       </div>
 
       {/* ── Status / toolbar ── */}
-      <div className="flex items-center justify-between px-6 py-4 border-t border-b border-[#ECEAE3]">
+      <div className="flex items-center justify-between px-6 py-4 border-t border-b border-[var(--arca-border)]">
         <div className="flex items-center gap-2">
-          <p className="text-[12.5px] text-[#6E7079]">
+          <p className="text-[12.5px] text-[var(--arca-ink-3)]">
             Últ. actualización{' '}
             {lastDeudaJob?.createdAt ? (
               <span
                 className={cn(
                   'font-bold',
-                  lastDeudaJob.success ? 'text-[#2f7d55]' : 'text-[#c0392b]'
+                  lastDeudaJob.success
+                    ? 'text-[var(--arca-accent-pos-fg)]'
+                    : 'text-[var(--arca-accent-neg-fg)]'
                 )}
               >
                 {formatLastUpdateAt(lastDeudaJob.createdAt)}
@@ -450,26 +461,28 @@ export function DeudasTab({
             lastDeudaJob.failedReason && (
               <span
                 className="relative group flex items-center gap-1"
-                title={lastDeudaJob.failedReason}
+                title={
+                  friendlyFailedReason(lastDeudaJob.failedReason) ?? undefined
+                }
               >
-                <AlertTriangle className="h-4 w-4 text-[#c0392b] cursor-help" />
-                <span className="text-[12px] text-[#c0392b] max-w-[280px] truncate hidden sm:block">
-                  {lastDeudaJob.failedReason}
+                <AlertTriangle className="h-4 w-4 text-[var(--arca-accent-neg-fg)] cursor-help" />
+                <span className="text-[12px] text-[var(--arca-accent-neg-fg)] max-w-[280px] truncate hidden sm:block">
+                  {friendlyFailedReason(lastDeudaJob.failedReason)}
                 </span>
-                <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[#12131A] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
-                  {lastDeudaJob.failedReason}
+                <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 hidden group-hover:block w-max max-w-sm rounded-lg bg-[var(--arca-ink)] text-white text-[11px] leading-snug px-3 py-2 shadow-lg pointer-events-none">
+                  {friendlyFailedReason(lastDeudaJob.failedReason)}
                 </span>
               </span>
             )}
           {lastDeudaJob &&
             !lastDeudaJob.success &&
             !lastDeudaJob.failedReason && (
-              <Info className="h-4 w-4 text-[#c0392b]" />
+              <Info className="h-4 w-4 text-[var(--arca-accent-neg-fg)]" />
             )}
         </div>
 
         <button
-          className="inline-flex items-center gap-2 bg-[#12131A] text-white text-[13.5px] font-semibold rounded-[10px] px-[15px] py-[9px] hover:bg-black transition-colors disabled:opacity-50"
+          className="inline-flex items-center gap-2 bg-[var(--arca-accent)] text-white text-[13.5px] font-semibold rounded-lg px-[15px] py-[9px] hover:bg-[var(--arca-accent-hover)] transition-colors disabled:opacity-50"
           disabled={!!scrapingSection}
           onClick={handleUpdateDeudas}
         >
@@ -485,8 +498,8 @@ export function DeudasTab({
       </div>
 
       {/* ── Filter row ── */}
-      <div className="flex items-center gap-3 px-6 py-[14px] bg-[#FBFAF6] border-b border-[#ECEAE3]">
-        <div className="flex items-center gap-1.5 text-[13.5px] text-[#6E7079] shrink-0">
+      <div className="flex items-center gap-3 px-6 py-[14px] bg-[var(--arca-surface-2)] border-b border-[var(--arca-border)]">
+        <div className="flex items-center gap-1.5 text-[13.5px] text-[var(--arca-ink-3)] shrink-0">
           <ListFilter className="h-3.5 w-3.5" />
           Filtrar
         </div>
@@ -496,13 +509,13 @@ export function DeudasTab({
           value={filterImpuesto || '__all__'}
           onValueChange={(v) => setFilterImpuesto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
-              <span className="text-[#9B9CA3]">Impuesto</span>
-              <span className="font-bold text-[#12131A] truncate">
+              <span className="text-[var(--arca-ink-4)]">Impuesto</span>
+              <span className="font-bold text-[var(--arca-ink)] truncate">
                 {filterImpuesto || 'Todos'}
               </span>
-              <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 stroke-[var(--arca-ink-4)] shrink-0" />
             </div>
           </SelectTrigger>
           <SelectContent className="max-h-[260px]">
@@ -520,13 +533,13 @@ export function DeudasTab({
           value={filterConcepto || '__all__'}
           onValueChange={(v) => setFilterConcepto(v === '__all__' ? '' : v)}
         >
-          <SelectTrigger className="bg-white border-[#DFDCD3] rounded-[10px] px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
+          <SelectTrigger className="bg-white border-[var(--arca-border-strong)] rounded-lg px-[13px] py-[8px] text-[13.5px] h-auto w-auto min-w-[160px] gap-2 [&>svg]:hidden">
             <div className="flex items-center gap-2">
-              <span className="text-[#9B9CA3]">Concepto</span>
-              <span className="font-bold text-[#12131A] truncate">
+              <span className="text-[var(--arca-ink-4)]">Concepto</span>
+              <span className="font-bold text-[var(--arca-ink)] truncate">
                 {filterConcepto || 'Todos'}
               </span>
-              <ChevronDown className="h-3.5 w-3.5 stroke-[#9B9CA3] shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 stroke-[var(--arca-ink-4)] shrink-0" />
             </div>
           </SelectTrigger>
           <SelectContent className="max-h-[260px]">
@@ -541,19 +554,19 @@ export function DeudasTab({
       </div>
 
       {/* ── Table heading ── */}
-      <div className="px-6 py-3 border-b border-[#ECEAE3] text-[13px] text-[#6E7079]">
+      <div className="px-6 py-3 border-b border-[var(--arca-border)] text-[13px] text-[var(--arca-ink-3)]">
         Deudas del cliente ·{' '}
-        <span className="font-semibold text-[#12131A]">
+        <span className="font-semibold text-[var(--arca-ink)]">
           {filteredDebts.length} mostradas
         </span>{' '}
-        · {(debts as Debt[]).length} totales
+        · {debts.length} totales
       </div>
 
       {/* ── Table ── */}
-      <div className="border-t border-[#ECEAE3]">
-        {/* Navy header */}
+      <div className="border-t border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        {/* Header claro con micro-label */}
         <div
-          className="grid items-center px-6 h-12 bg-[#0B1730] text-[#E7EAF2] text-[12px] font-semibold"
+          className="grid items-center px-6 h-12 bg-[var(--arca-bg)] text-[var(--arca-ink-3)] uppercase tracking-[0.06em] text-[12px] font-semibold"
           style={{ gridTemplateColumns: GRID_COLS }}
         >
           <ColHeader label="IMPUESTO" field="tax" />
@@ -570,66 +583,68 @@ export function DeudasTab({
 
         {/* Data rows */}
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 h-28 text-[13.5px] text-[#9B9CA3]">
+          <div className="flex items-center justify-center gap-2 h-28 text-[13.5px] text-[var(--arca-ink-4)]">
             <Loader2 className="h-4 w-4 animate-spin" />
             Cargando deudas…
           </div>
         ) : paginated.length === 0 ? (
-          <div className="flex items-center justify-center h-28 text-[13.5px] text-[#9B9CA3]">
-            {(debts as Debt[]).length === 0
+          <div className="flex items-center justify-center h-28 text-[13.5px] text-[var(--arca-ink-4)]">
+            {debts.length === 0
               ? 'No hay deudas registradas para este cliente.'
               : 'No hay deudas que coincidan con los filtros aplicados.'}
           </div>
         ) : (
           paginated.map((debt) => {
-            const isOverdue = new Date(debt.dueDate) < today;
-            const compInt = Number(debt.compensatoryInterest ?? 0);
-            const punitInt = Number(debt.punitiveInterest ?? 0);
+            const isOverdue = !!debt.venceAt && new Date(debt.venceAt) < today;
+            const compInt = Number(debt.interesResarcitorio ?? 0);
+            const punitInt = Number(debt.interesPunitorio ?? 0);
 
             return (
               <div
                 key={debt.id}
                 className={cn(
-                  'grid items-center px-6 py-[13px] border-b border-[#ECEAE3] transition-colors duration-[120ms]',
-                  isOverdue ? 'bg-[#fdf5f4]' : 'hover:bg-[#FBFAF6]'
+                  'grid items-center px-6 py-[13px] border-b border-[var(--arca-border)] transition-colors duration-[120ms]',
+                  isOverdue
+                    ? 'bg-[#fdf5f4]'
+                    : 'hover:bg-[var(--arca-surface-2)]'
                 )}
                 style={{ gridTemplateColumns: GRID_COLS }}
               >
                 {/* IMPUESTO */}
-                <div className="text-[13.5px] font-semibold text-[#12131A] truncate pr-2">
-                  {debt.tax || '—'}
+                <div className="text-[13.5px] font-semibold text-[var(--arca-ink)] truncate pr-2">
+                  {debt.impuesto || '—'}
                 </div>
 
                 {/* CONCEPTO */}
-                <div className="text-[13.5px] text-[#3E404A] truncate pr-2">
-                  {debt.concept || '—'}
+                <div className="text-[13.5px] text-[var(--arca-ink-2)] truncate pr-2">
+                  {debt.concepto || '—'}
                 </div>
 
                 {/* PERÍODO */}
-                <div className="text-[13px] text-[#3E404A] tabular-nums">
-                  {debt.period || '—'}
+                <div className="text-[13px] text-[var(--arca-ink-2)] tabular-nums">
+                  {periodoLegible(debt.periodo)}
                 </div>
 
                 {/* VENCIMIENTO */}
-                <div className="text-[13px] text-[#3E404A] tabular-nums">
-                  {debt.dueDate ? formatDate(debt.dueDate) : '—'}
+                <div className="text-[13px] text-[var(--arca-ink-2)] tabular-nums">
+                  {debt.venceAt ? formatDate(debt.venceAt) : '—'}
                 </div>
 
                 {/* ACTUALIZ. */}
-                <div className="text-[13px] text-[#9B9CA3] tabular-nums">
-                  {debt.detectedAt ? formatDate(debt.detectedAt) : '—'}
+                <div className="text-[13px] text-[var(--arca-ink-4)] tabular-nums">
+                  {debt.detectadaAt ? formatDate(debt.detectadaAt) : '—'}
                 </div>
 
                 {/* SALDO */}
-                <div className="text-right text-[13.5px] font-bold text-[#12131A] tabular-nums">
-                  {formatARS(debt.balance)}
+                <div className="text-right text-[13.5px] font-bold text-[var(--arca-ink)] tabular-nums">
+                  {formatARS(debt.saldo)}
                 </div>
 
                 {/* INT. COMP. */}
                 <div
                   className={cn(
                     'text-right text-[13px] tabular-nums',
-                    compInt === 0 ? 'text-[#B4B3AC]' : 'text-[#12131A]'
+                    compInt === 0 ? 'text-[#B4B3AC]' : 'text-[var(--arca-ink)]'
                   )}
                 >
                   {formatARS(compInt)}
@@ -639,7 +654,7 @@ export function DeudasTab({
                 <div
                   className={cn(
                     'text-right text-[13px] tabular-nums',
-                    punitInt === 0 ? 'text-[#B4B3AC]' : 'text-[#12131A]'
+                    punitInt === 0 ? 'text-[#B4B3AC]' : 'text-[var(--arca-ink)]'
                   )}
                 >
                   {formatARS(punitInt)}
@@ -647,7 +662,7 @@ export function DeudasTab({
 
                 {/* ESTADO */}
                 <div>
-                  <StatusPill status={debt.status} isOverdue={isOverdue} />
+                  <StatusPill status={debt.estado} isOverdue={isOverdue} />
                 </div>
 
                 {/* GESTIÓN */}
@@ -656,12 +671,12 @@ export function DeudasTab({
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Select
-                    value={debt.status}
+                    value={debt.estado}
                     onValueChange={(v) =>
                       updateMutation.mutate({
                         id: debt.id,
-                        status: v as DebtStatus,
-                        isIntimated: debt.isIntimated,
+                        estado: v as DebtStatus,
+                        intimada: debt.intimada,
                       })
                     }
                   >
@@ -669,28 +684,28 @@ export function DeudasTab({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="open">Abierta</SelectItem>
-                      <SelectItem value="in_plan">En plan</SelectItem>
-                      <SelectItem value="paid">Pagada</SelectItem>
-                      <SelectItem value="disputed">Disputada</SelectItem>
+                      <SelectItem value="abierta">Abierta</SelectItem>
+                      <SelectItem value="plan_pago">En plan</SelectItem>
+                      <SelectItem value="pagada">Pagada</SelectItem>
+                      <SelectItem value="prescripta">Prescripta</SelectItem>
                     </SelectContent>
                   </Select>
                   <button
                     className={cn(
                       'text-[11.5px] font-semibold text-left underline underline-offset-2 transition-colors',
-                      debt.isIntimated
-                        ? 'text-[#c0392b] hover:text-[#a93226]'
-                        : 'text-[#9B9CA3] hover:text-[#6E7079]'
+                      debt.intimada
+                        ? 'text-[var(--arca-accent-neg-fg)] hover:text-[#a93226]'
+                        : 'text-[var(--arca-ink-4)] hover:text-[var(--arca-ink-3)]'
                     )}
                     onClick={() =>
                       updateMutation.mutate({
                         id: debt.id,
-                        status: debt.status,
-                        isIntimated: !debt.isIntimated,
+                        estado: debt.estado,
+                        intimada: !debt.intimada,
                       })
                     }
                   >
-                    {debt.isIntimated ? 'Intimada' : 'No intimada'}
+                    {debt.intimada ? 'Intimada' : 'No intimada'}
                   </button>
                 </div>
               </div>
@@ -701,11 +716,11 @@ export function DeudasTab({
 
       {/* ── Pagination footer ── */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-[6px] px-5 py-[22px] bg-[#FBFAF6]">
+        <div className="flex items-center justify-center gap-[6px] px-5 py-[22px] bg-[var(--arca-surface-2)]">
           {/* Anterior */}
           <button
             className={cn(
-              'inline-flex items-center gap-1 text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg transition-colors',
+              'inline-flex items-center gap-1 text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg transition-colors',
               currentPage === 1
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'
@@ -720,13 +735,15 @@ export function DeudasTab({
           {startPage > 1 && (
             <>
               <button
-                className="text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
+                className="text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
                 onClick={() => setCurrentPage(1)}
               >
                 1
               </button>
               {startPage > 2 && (
-                <span className="text-[13.5px] text-[#9B9CA3] px-2">…</span>
+                <span className="text-[13.5px] text-[var(--arca-ink-4)] px-2">
+                  …
+                </span>
               )}
             </>
           )}
@@ -737,8 +754,8 @@ export function DeudasTab({
               className={cn(
                 'text-[13.5px] px-[13px] py-[7px] rounded-lg transition-colors cursor-pointer',
                 currentPage === page
-                  ? 'font-semibold text-[#12131A] bg-white border border-[#DFDCD3]'
-                  : 'text-[#6E7079] hover:bg-white'
+                  ? 'font-semibold text-[var(--arca-ink)] bg-white border border-[var(--arca-border-strong)]'
+                  : 'text-[var(--arca-ink-3)] hover:bg-white'
               )}
               onClick={() => setCurrentPage(page)}
             >
@@ -749,10 +766,12 @@ export function DeudasTab({
           {endPage < totalPages && (
             <>
               {endPage < totalPages - 1 && (
-                <span className="text-[13.5px] text-[#9B9CA3] px-2">…</span>
+                <span className="text-[13.5px] text-[var(--arca-ink-4)] px-2">
+                  …
+                </span>
               )}
               <button
-                className="text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
+                className="text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg hover:bg-white cursor-pointer"
                 onClick={() => setCurrentPage(totalPages)}
               >
                 {totalPages}
@@ -763,7 +782,7 @@ export function DeudasTab({
           {/* Siguiente */}
           <button
             className={cn(
-              'inline-flex items-center gap-1 text-[13.5px] text-[#6E7079] px-3 py-[7px] rounded-lg transition-colors',
+              'inline-flex items-center gap-1 text-[13.5px] text-[var(--arca-ink-3)] px-3 py-[7px] rounded-lg transition-colors',
               currentPage === totalPages
                 ? 'opacity-50 pointer-events-none'
                 : 'hover:bg-white cursor-pointer'

@@ -32,6 +32,9 @@ export function parseSosLegajosRows(
   });
 
   let headerRowIdx = -1;
+  // `sheet_to_json` devuelve `unknown[]`; nos quedamos con la fila ya
+  // estrechada por `Array.isArray` en vez de re-indexar el array crudo.
+  let headerRow: unknown[] = [];
   for (let i = 0; i < Math.min(aoa.length, 15); i++) {
     const row = aoa[i];
     if (!Array.isArray(row)) continue;
@@ -41,13 +44,13 @@ export function parseSosLegajosRows(
     });
     if (hasCuil) {
       headerRowIdx = i;
+      headerRow = row;
       break;
     }
   }
 
   if (headerRowIdx === -1) return [];
 
-  const headerRow = aoa[headerRowIdx];
   const headers = headerRow.map((c) => normalizeHeaderKey(String(c ?? '')));
 
   /**

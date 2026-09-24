@@ -21,7 +21,8 @@ const COEF_BY_MONTH: Record<string, number> = {
 };
 const coefficientForMonth = (year: number, month: number) => {
   const c = COEF_BY_MONTH[`${year}-${month}`];
-  if (c === undefined) throw new Error(`falta el coeficiente de ${year}-${month}`);
+  if (c === undefined)
+    throw new Error(`falta el coeficiente de ${year}-${month}`);
   return c;
 };
 

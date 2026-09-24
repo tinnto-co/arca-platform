@@ -9,8 +9,15 @@ import { format, differenceInYears, endOfMonth, addMonths } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { FilePlus2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { legajoParaMostrar } from '@/lib/legajo';
-import { getPeriodoMaxLiquidable, getPeriodoMesAnterior } from '@/lib/payroll-period-rules';
-import { listImportEmpleadosConConfig, listSituaciones } from '@/actions/sueldos';
+import {
+  getPeriodoMaxLiquidable,
+  getPeriodoMesAnterior,
+} from '@/lib/payroll-period-rules';
+import {
+  listImportEmpleadosConConfig,
+  listSituaciones,
+} from '@/actions/sueldos';
+import { SelectorFecha } from '@/components/shared/selector-fecha';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -33,23 +40,29 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const TIPOS_RECIBO = [
-  { value: 'sueldo', label: 'Sueldo' },
+  { value: 'mensual', label: 'Sueldo' },
+  { value: 'quincenal', label: 'Quincenal' },
   { value: 'anticipo', label: 'Anticipo' },
-  { value: 'SAC', label: 'SAC' },
+  { value: 'sac', label: 'SAC' },
   { value: 'vacaciones', label: 'Vacaciones' },
-  { value: 'despido', label: 'Liquidación final' },
+  { value: 'liquidacion_final', label: 'Liquidación final' },
   { value: 'comisiones', label: 'Comisiones' },
-  { value: 'desempleo', label: 'Fondo de desempleo' },
-  { value: 'varios', label: 'Varios' },
+  { value: 'fondo_desempleo', label: 'Fondo de desempleo' },
+  { value: 'otros', label: 'Varios' },
 ] as const;
 
 const FORMA_PAGO_LABELS: Record<string, string> = {
   efectivo: 'Efectivo',
   cheque: 'Cheque',
-  acreditacion: 'Acreditación en cuenta',
+  deposito: 'Depósito en cuenta',
+  transferencia: 'Transferencia',
 };
 
-const STEPS = ['Empleado y período', 'Datos del empleado', 'Conceptos'] as const;
+const STEPS = [
+  'Empleado y período',
+  'Datos del empleado',
+  'Conceptos',
+] as const;
 
 const formSchema = z.object({
   importEmpleadoId: z
@@ -60,14 +73,15 @@ const formSchema = z.object({
   mes: z.string().min(2),
   quincena: z.enum(['0', '1', '2']),
   tipoRecibo: z.enum([
-    'sueldo',
+    'mensual',
+    'quincenal',
     'anticipo',
-    'SAC',
+    'sac',
     'vacaciones',
-    'despido',
+    'liquidacion_final',
     'comisiones',
-    'desempleo',
-    'varios',
+    'fondo_desempleo',
+    'otros',
   ]),
   fechaLiquidacion: z.string().min(1, 'Requerido'),
   fechaPago: z.string().min(1, 'Requerido'),
@@ -79,33 +93,58 @@ const formSchema = z.object({
   copiarUltimoRecibo: z.enum(['no', 'si']),
   // Situaciones de revista LSD
   situacionRevista1Id: z.string().optional(),
-  situacionRevista1DiaInicio: z.string().optional().refine(
-    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
-    { message: 'Debe ser un día entre 1 y 31' }
-  ),
+  situacionRevista1DiaInicio: z
+    .string()
+    .optional()
+    .refine(
+      (v) =>
+        !v ||
+        (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
+      { message: 'Debe ser un día entre 1 y 31' }
+    ),
   situacionRevista2Id: z.string().optional(),
-  situacionRevista2DiaInicio: z.string().optional().refine(
-    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
-    { message: 'Debe ser un día entre 1 y 31' }
-  ),
+  situacionRevista2DiaInicio: z
+    .string()
+    .optional()
+    .refine(
+      (v) =>
+        !v ||
+        (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
+      { message: 'Debe ser un día entre 1 y 31' }
+    ),
   situacionRevista3Id: z.string().optional(),
-  situacionRevista3DiaInicio: z.string().optional().refine(
-    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
-    { message: 'Debe ser un día entre 1 y 31' }
-  ),
+  situacionRevista3DiaInicio: z
+    .string()
+    .optional()
+    .refine(
+      (v) =>
+        !v ||
+        (Number.isInteger(Number(v)) && Number(v) >= 1 && Number(v) <= 31),
+      { message: 'Debe ser un día entre 1 y 31' }
+    ),
   // Datos complementarios LSD
-  diasTrabajados: z.string().optional().refine(
-    (v) => !v || (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 31),
-    { message: 'Debe ser un número entre 0 y 31' }
-  ),
-  horasTrabajadas: z.string().optional().refine(
-    (v) => !v || (Number(v) >= 0 && !isNaN(Number(v))),
-    { message: 'Debe ser un número mayor o igual a 0' }
-  ),
-  importeMaternidadArt13: z.string().optional().refine(
-    (v) => !v || (Number(v) >= 0 && !isNaN(Number(v))),
-    { message: 'El importe no puede ser negativo' }
-  ),
+  diasTrabajados: z
+    .string()
+    .optional()
+    .refine(
+      (v) =>
+        !v ||
+        (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 31),
+      { message: 'Debe ser un número entre 0 y 31' }
+    ),
+  horasTrabajadas: z
+    .string()
+    .optional()
+    .refine((v) => !v || (Number(v) >= 0 && !isNaN(Number(v))), {
+      message: 'Debe ser un número mayor o igual a 0',
+    }),
+  importeMaternidadArt13: z
+    .string()
+    .optional()
+    .refine((v) => !v || (Number(v) >= 0 && !isNaN(Number(v))), {
+      message: 'El importe no puede ser negativo',
+    }),
+  fechaBaja: z.string().optional(),
 });
 
 export type ReciboFormValues = z.infer<typeof formSchema>;
@@ -123,8 +162,7 @@ export interface ReciboFormularioSuccess {
   fechaLiquidacion: string;
   obraSocialId: string | null;
   fechaPago: string;
-  lugarPago: string | null;
-  formaPago: 'efectivo' | 'cheque' | 'acreditacion';
+  formaPago: 'efectivo' | 'deposito' | 'transferencia' | 'cheque';
   cbu: string | null;
   banco: string | null;
   periodoCargas: string;
@@ -142,11 +180,11 @@ export interface ReciboFormularioSuccess {
   diasTrabajados: number | null;
   horasTrabajadas: number | null;
   importeMaternidadArt13: string | null;
+  fechaBaja: string | null;
 }
 
 interface ReciboFormularioProps {
   clientId: string;
-  profileId: string;
   onSuccess: (payload: ReciboFormularioSuccess) => void;
   initialValues?: Partial<ReciboFormValues>;
 }
@@ -170,17 +208,15 @@ const STEP2_FIELDS = ['fechaPago'] as const;
 
 export function ReciboFormulario({
   clientId,
-  profileId,
   onSuccess,
   initialValues,
 }: ReciboFormularioProps) {
   const [step, setStep] = useState(1);
 
   const { data: empleados = [] } = useQuery({
-    queryKey: ['import-empleados-config', clientId, profileId],
-    queryFn: () =>
-      listImportEmpleadosConConfig({ data: { clientId, profileId } }),
-    enabled: !!clientId && !!profileId,
+    queryKey: ['import-empleados-config', clientId],
+    queryFn: () => listImportEmpleadosConConfig({ data: { clientId } }),
+    enabled: !!clientId,
   });
 
   const { data: situaciones = [] } = useQuery({
@@ -198,7 +234,7 @@ export function ReciboFormulario({
       ano: defaultAno,
       mes: defaultMes,
       quincena: '0',
-      tipoRecibo: 'sueldo',
+      tipoRecibo: 'mensual',
       fechaLiquidacion: format(now, 'yyyy-MM-dd'),
       fechaPago: format(now, 'yyyy-MM-dd'),
       anoCargas: defaultAno,
@@ -216,6 +252,7 @@ export function ReciboFormulario({
       diasTrabajados: '30',
       horasTrabajadas: '',
       importeMaternidadArt13: '',
+      fechaBaja: '',
       ...initialValues,
     },
   });
@@ -226,19 +263,23 @@ export function ReciboFormulario({
     [empleados, empleadoId]
   );
 
-  const antiguedadAnios = useMemo(() => {
-    const fechaAlta = empleadoSel?.empleado.fechaAlta;
-    if (!fechaAlta) return null;
-    return differenceInYears(now, new Date(fechaAlta as unknown as string));
-  }, [empleadoSel]);
-
-  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
   const ano = form.watch('ano');
   const mes = form.watch('mes');
+  const tipoRecibo = form.watch('tipoRecibo');
+
+  const antiguedadAnios = useMemo(() => {
+    const fechaAlta = empleadoSel?.empleado.fechaAlta;
+    if (!fechaAlta || !ano || !mes) return null;
+    // Antigüedad al cierre del período liquidado, no a la fecha de hoy:
+    // liquidar marzo en agosto no puede sumar el aniversario intermedio.
+    const finPeriodo = endOfMonth(new Date(Number(ano), Number(mes) - 1, 1));
+    return Math.max(0, differenceInYears(finPeriodo, new Date(fechaAlta)));
+  }, [empleadoSel, ano, mes]);
+
+  // Actualizar fechaLiquidacion y fechaDepositoCargas al cambiar año/mes
   const [maxAno, maxMes] = getPeriodoMaxLiquidable().split('-');
-  const mesesDisponibles = ano === maxAno
-    ? MESES.filter((m) => m.value <= maxMes)
-    : MESES;
+  const mesesDisponibles =
+    ano === maxAno ? MESES.filter((m) => m.value <= maxMes) : MESES;
   useEffect(() => {
     if (!ano || !mes) return;
     const periodoDate = new Date(Number(ano), Number(mes) - 1, 1);
@@ -246,7 +287,13 @@ export function ReciboFormulario({
     const ultimoDia = format(endOfMonth(periodoDate), 'yyyy-MM-dd');
     form.setValue('fechaLiquidacion', ultimoDia);
     form.setValue('fechaPago', ultimoDia);
-    form.setValue('fechaDepositoCargas', format(new Date(mesSiguiente.getFullYear(), mesSiguiente.getMonth(), 10), 'yyyy-MM-dd'));
+    form.setValue(
+      'fechaDepositoCargas',
+      format(
+        new Date(mesSiguiente.getFullYear(), mesSiguiente.getMonth(), 10),
+        'yyyy-MM-dd'
+      )
+    );
   }, [ano, mes, form]);
 
   // Pre-llenar situación de revista 1 desde el empleado si el campo está vacío
@@ -260,9 +307,13 @@ export function ReciboFormulario({
   }, [empleadoSel, form]);
 
   const onSubmit = (values: ReciboFormValues) => {
-    const emp = empleados.find((e) => e.empleado.id === values.importEmpleadoId);
+    const emp = empleados.find(
+      (e) => e.empleado.id === values.importEmpleadoId
+    );
     const periodo = `${values.ano}-${values.mes}`;
-    const periodoCargas = `${values.anoCargas} / ${values.mesCargas}`;
+    // Antes viajaba como "YYYY / MM" (la columna era texto libre). Ahora el
+    // action hace `periodoADate(periodoCargas)`, así que tiene que ser 'YYYY-MM'.
+    const periodoCargas = `${values.anoCargas}-${values.mesCargas}`;
     onSuccess({
       importEmpleadoId: values.importEmpleadoId,
       empleadoNombre: emp?.empleado.nombre ?? '',
@@ -270,21 +321,15 @@ export function ReciboFormulario({
       copiarUltimoRecibo: values.copiarUltimoRecibo === 'si',
       tipoRecibo: values.tipoRecibo,
       antiguedadAnios,
-      fechaAlta: emp?.empleado.fechaAlta
-        ? (typeof emp.empleado.fechaAlta === 'string' ? emp.empleado.fechaAlta : (emp.empleado.fechaAlta as Date).toISOString()).slice(0, 10)
-        : null,
-      fechaIngreso: emp?.empleado.fechaIngreso
-        ? (typeof emp.empleado.fechaIngreso === 'string' ? emp.empleado.fechaIngreso : (emp.empleado.fechaIngreso as Date).toISOString()).slice(0, 10)
-        : null,
+      // `empleado.fechaIngreso` desapareció en el modelo nuevo: el alta es la
+      // única fecha de ingreso (los actions también devuelven fechaAlta en ambas).
+      fechaAlta: emp?.empleado.fechaAlta?.slice(0, 10) ?? null,
+      fechaIngreso: emp?.empleado.fechaAlta?.slice(0, 10) ?? null,
       quincena: values.quincena,
       fechaLiquidacion: values.fechaLiquidacion,
       obraSocialId: emp?.empleado.obraSocialId ?? null,
       fechaPago: values.fechaPago,
-      lugarPago: emp?.empleado.lugarPago ?? null,
-      formaPago: (emp?.empleado.formaPago ?? 'efectivo') as
-        | 'efectivo'
-        | 'cheque'
-        | 'acreditacion',
+      formaPago: emp?.empleado.formaPago ?? 'efectivo',
       cbu: emp?.empleado.cbu ?? null,
       banco: emp?.empleado.banco ?? null,
       periodoCargas,
@@ -292,22 +337,31 @@ export function ReciboFormulario({
       observacionInterna: values.observacionInterna?.trim() || null,
       observacionRecibo: values.observacionRecibo?.trim() || null,
       situacionRevista1Id: values.situacionRevista1Id || null,
-      situacionRevista1DiaInicio: values.situacionRevista1DiaInicio ? parseInt(values.situacionRevista1DiaInicio, 10) : null,
+      situacionRevista1DiaInicio: values.situacionRevista1DiaInicio
+        ? parseInt(values.situacionRevista1DiaInicio, 10)
+        : null,
       situacionRevista2Id: values.situacionRevista2Id || null,
-      situacionRevista2DiaInicio: values.situacionRevista2DiaInicio ? parseInt(values.situacionRevista2DiaInicio, 10) : null,
+      situacionRevista2DiaInicio: values.situacionRevista2DiaInicio
+        ? parseInt(values.situacionRevista2DiaInicio, 10)
+        : null,
       situacionRevista3Id: values.situacionRevista3Id || null,
-      situacionRevista3DiaInicio: values.situacionRevista3DiaInicio ? parseInt(values.situacionRevista3DiaInicio, 10) : null,
-      diasTrabajados: values.diasTrabajados ? parseInt(values.diasTrabajados, 10) : null,
-      horasTrabajadas: values.horasTrabajadas ? parseInt(values.horasTrabajadas, 10) : null,
+      situacionRevista3DiaInicio: values.situacionRevista3DiaInicio
+        ? parseInt(values.situacionRevista3DiaInicio, 10)
+        : null,
+      diasTrabajados: values.diasTrabajados
+        ? parseInt(values.diasTrabajados, 10)
+        : null,
+      horasTrabajadas: values.horasTrabajadas
+        ? parseInt(values.horasTrabajadas, 10)
+        : null,
       importeMaternidadArt13: values.importeMaternidadArt13?.trim() || null,
+      fechaBaja: values.fechaBaja?.trim() || null,
     });
   };
 
   const goNext = async () => {
     const fields = step === 1 ? STEP1_FIELDS : STEP2_FIELDS;
-    const valid = await form.trigger(
-      fields as unknown as (keyof ReciboFormValues)[]
-    );
+    const valid = await form.trigger(fields);
     if (valid) setStep((s) => s + 1);
   };
 
@@ -373,7 +427,10 @@ export function ReciboFormulario({
                           Solo se muestran empleados activos. Los deshabilitados
                           aún no tienen convenio configurado.
                         </FormDescription>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Seleccione empleado" />
@@ -406,7 +463,10 @@ export function ReciboFormulario({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Tipo</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger>
                               <SelectValue />
@@ -432,7 +492,10 @@ export function ReciboFormulario({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Año (liquidado)</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger className="w-[120px]">
                               <SelectValue />
@@ -456,7 +519,10 @@ export function ReciboFormulario({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Mes</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger className="w-[170px]">
                               <SelectValue />
@@ -480,7 +546,10 @@ export function ReciboFormulario({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Periodo</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger className="w-[190px]">
                               <SelectValue />
@@ -503,12 +572,33 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Fecha de liquidación</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <SelectorFecha
+                            value={field.value ?? ''}
+                            onChange={field.onChange}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+                  {tipoRecibo === 'liquidacion_final' && (
+                    <FormField
+                      control={form.control}
+                      name="fechaBaja"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fecha de baja del empleado</FormLabel>
+                          <FormControl>
+                            <SelectorFecha
+                              value={field.value ?? ''}
+                              onChange={field.onChange}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
               </section>
             )}
@@ -536,19 +626,19 @@ export function ReciboFormulario({
                   <InfoRow
                     label="Forma de pago"
                     value={
-                      FORMA_PAGO_LABELS[empleadoSel?.empleado.formaPago ?? ''] ??
-                      null
+                      FORMA_PAGO_LABELS[
+                        empleadoSel?.empleado.formaPago ?? ''
+                      ] ?? null
                     }
                   />
-                  <InfoRow label="Banco" value={empleadoSel?.empleado.banco ?? null} />
+                  <InfoRow
+                    label="Banco"
+                    value={empleadoSel?.empleado.banco ?? null}
+                  />
                   <InfoRow
                     label="CBU"
                     value={empleadoSel?.empleado.cbu ?? null}
                     mono
-                  />
-                  <InfoRow
-                    label="Lugar de pago"
-                    value={empleadoSel?.empleado.lugarPago ?? null}
                   />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -559,7 +649,10 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Fecha de pago</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <SelectorFecha
+                            value={field.value ?? ''}
+                            onChange={field.onChange}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -573,7 +666,10 @@ export function ReciboFormulario({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Año (período cargas)</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger className="w-[120px]">
                               <SelectValue />
@@ -597,7 +693,10 @@ export function ReciboFormulario({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Mes (cargas)</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
                           <FormControl>
                             <SelectTrigger className="w-[170px]">
                               <SelectValue />
@@ -622,7 +721,10 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Fecha depósito cargas</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <SelectorFecha
+                            value={field.value ?? ''}
+                            onChange={field.onChange}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -631,14 +733,19 @@ export function ReciboFormulario({
                 </div>
                 {/* ── Datos Complementarios LSD ── */}
                 <div>
-                  <h4 className="text-sm font-semibold">Situaciones de revista del período</h4>
+                  <h4 className="text-sm font-semibold">
+                    Situaciones de revista del período
+                  </h4>
                   <p className="text-xs text-muted-foreground mb-3">
-                    Hasta 3 situaciones distintas en el mismo mes. Indicá el día de inicio de cada una.
+                    Hasta 3 situaciones distintas en el mismo mes. Indicá el día
+                    de inicio de cada una.
                   </p>
                   <div className="space-y-3">
                     {([1, 2, 3] as const).map((n) => {
-                      const idKey = `situacionRevista${n}Id` as keyof ReciboFormValues;
-                      const diaKey = `situacionRevista${n}DiaInicio` as keyof ReciboFormValues;
+                      const idKey =
+                        `situacionRevista${n}Id` as keyof ReciboFormValues;
+                      const diaKey =
+                        `situacionRevista${n}DiaInicio` as keyof ReciboFormValues;
                       return (
                         <div key={n} className="flex flex-wrap items-end gap-3">
                           <FormField
@@ -646,19 +753,43 @@ export function ReciboFormulario({
                             name={idKey}
                             render={({ field }) => (
                               <FormItem className="flex-1 min-w-[200px]">
-                                {n === 1 && <FormLabel>Situación de revista {n}</FormLabel>}
-                                {n > 1 && <FormLabel className="text-muted-foreground">Situación {n} (opcional)</FormLabel>}
+                                {n === 1 && (
+                                  <FormLabel>
+                                    Situación de revista {n}
+                                  </FormLabel>
+                                )}
+                                {n > 1 && (
+                                  <FormLabel className="text-muted-foreground">
+                                    Situación {n} (opcional)
+                                  </FormLabel>
+                                )}
                                 <Select
-                                  onValueChange={(val) => field.onChange(val === '__none__' ? '' : val)}
-                                  value={(field.value as string) || (n > 1 ? '__none__' : '')}
+                                  onValueChange={(val) =>
+                                    field.onChange(
+                                      val === '__none__' ? '' : val
+                                    )
+                                  }
+                                  value={
+                                    field.value! || (n > 1 ? '__none__' : '')
+                                  }
                                 >
                                   <FormControl>
                                     <SelectTrigger>
-                                      <SelectValue placeholder={n === 1 ? 'Seleccione situación' : 'Sin segunda situación'} />
+                                      <SelectValue
+                                        placeholder={
+                                          n === 1
+                                            ? 'Seleccione situación'
+                                            : 'Sin segunda situación'
+                                        }
+                                      />
                                     </SelectTrigger>
                                   </FormControl>
                                   <SelectContent className="max-h-[240px]">
-                                    {n > 1 && <SelectItem value="__none__">—</SelectItem>}
+                                    {n > 1 && (
+                                      <SelectItem value="__none__">
+                                        —
+                                      </SelectItem>
+                                    )}
                                     {situaciones.map((s) => (
                                       <SelectItem key={s.id} value={s.id}>
                                         {s.codigo} — {s.nombre}
@@ -676,7 +807,11 @@ export function ReciboFormulario({
                             render={({ field }) => (
                               <FormItem className="w-28">
                                 {n === 1 && <FormLabel>Día inicio</FormLabel>}
-                                {n > 1 && <FormLabel className="text-muted-foreground">Día inicio</FormLabel>}
+                                {n > 1 && (
+                                  <FormLabel className="text-muted-foreground">
+                                    Día inicio
+                                  </FormLabel>
+                                )}
                                 <FormControl>
                                   <Input
                                     type="number"
@@ -685,7 +820,12 @@ export function ReciboFormulario({
                                     step={1}
                                     placeholder="1"
                                     {...field}
-                                    disabled={n > 1 && !form.watch((`situacionRevista${n}Id`) as keyof ReciboFormValues)}
+                                    disabled={
+                                      n > 1 &&
+                                      !form.watch(
+                                        `situacionRevista${n}Id` as keyof ReciboFormValues
+                                      )
+                                    }
                                   />
                                 </FormControl>
                                 <FormMessage />
@@ -705,7 +845,14 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Días trabajados</FormLabel>
                         <FormControl>
-                          <Input type="number" min={0} max={31} step={1} placeholder="30" {...field} />
+                          <Input
+                            type="number"
+                            min={0}
+                            max={31}
+                            step={1}
+                            placeholder="30"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -718,7 +865,13 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Horas trabajadas</FormLabel>
                         <FormControl>
-                          <Input type="number" min={0} step={1} placeholder="200" {...field} />
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            placeholder="200"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -731,7 +884,13 @@ export function ReciboFormulario({
                       <FormItem>
                         <FormLabel>Maternidad Art.13 Ley 27.674</FormLabel>
                         <FormControl>
-                          <Input type="number" min={0} step="0.01" placeholder="0.00" {...field} />
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            placeholder="0.00"
+                            {...field}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -769,7 +928,6 @@ export function ReciboFormulario({
               </section>
             )}
 
-
             {/* ── Paso 3: Origen de conceptos ── */}
             {step === 3 && (
               <section className="space-y-3 rounded-lg border bg-muted/20 p-4">
@@ -782,7 +940,10 @@ export function ReciboFormulario({
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>¿Cómo cargar los conceptos?</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger className="max-w-md">
                             <SelectValue />
@@ -790,7 +951,8 @@ export function ReciboFormulario({
                         </FormControl>
                         <SelectContent>
                           <SelectItem value="no">
-                            No — cargar conceptos manualmente (empleado nuevo / sin import)
+                            No — cargar conceptos manualmente (empleado nuevo /
+                            sin import)
                           </SelectItem>
                           <SelectItem value="si">
                             Copiar último recibo de este empleado y mismo tipo
@@ -798,9 +960,9 @@ export function ReciboFormulario({
                         </SelectContent>
                       </Select>
                       <FormDescription>
-                        Si no copiás, se muestra el catálogo completo de conceptos
-                        SOS (1–699) con valores vacíos. Completá solo los que
-                        aplican al empleado.
+                        Si no copiás, se muestra el catálogo completo de
+                        conceptos SOS (1–699) con valores vacíos. Completá solo
+                        los que aplican al empleado.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

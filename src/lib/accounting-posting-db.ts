@@ -1,45 +1,52 @@
 /**
  * Helpers de DB compartidos por los motores de asientos automáticos
- * (facturas y sueldos). Server-only: toca `db` directamente, así que NO debe
- * importarse desde `src/actions/accounting.tsx` ni desde componentes — ese
- * módulo entra al bundle del cliente y arrastraría el driver de Postgres.
+ * (comprobantes y sueldos). Server-only: toca `db` directamente, así que NO debe
+ * importarse desde componentes — entrarían al bundle del cliente y arrastrarían
+ * el driver de Postgres.
  *
- * Se extrajo de `accounting-invoice-batch.ts` cuando el motor de sueldos
- * necesitó la misma lógica (US 3.3.1): resolver la cuenta pending_review,
- * ubicar el período contable de una fecha, validar que las cuentas sean
- * imputables y numerar el asiento.
+ * Se extrajo cuando el motor de sueldos necesitó la misma lógica que el de
+ * comprobantes: resolver la cuenta de pendiente de revisión, ubicar el período
+ * contable de una fecha, validar que las cuentas sean imputables y numerar el
+ * asiento.
+ *
+ * `accounting.tsx` todavía tiene su propia copia privada de varias de estas
+ * funciones. Cuando ese archivo se porte, pasa a importarlas de acá: las de este
+ * módulo son las mismas, con el mismo comportamiento y los mismos mensajes.
  */
 import { db } from '@/lib/db';
 import {
-  account,
-  accountOverride,
-  accountingPeriod,
-  fiscalYear,
-  journalEntry,
-  ledgerMappingRule,
-  ledgerMappingRuleLine,
+  asiento,
+  cuenta,
+  clienteCuenta,
+  ejercicio,
+  periodoContable,
+  reglaMapeo,
+  reglaMapeoLinea,
 } from '@/drizzle/schema';
 import { and, asc, eq, inArray, gte, lte, sql } from 'drizzle-orm';
-import type { RuleLike } from '@/lib/accounting-invoice-posting';
+import type { ReglaLike } from '@/lib/accounting-invoice-posting';
 import { PENDING_REVIEW_CODE } from '@/lib/accounting-labels';
 
-/** Cuenta de sistema `pending_review` del estudio. Lanza si falta. */
+/** Cuenta de sistema «Pendiente de revisión» del estudio. Lanza si falta. */
 export async function loadPendingReviewAccountId(
   orgId: string
 ): Promise<string> {
   const [acc] = await db
-    .select({ id: account.id })
-    .from(account)
+    .select({ id: cuenta.id })
+    .from(cuenta)
     .where(
       and(
-        eq(account.organizationId, orgId),
-        eq(account.scope, 'base'),
-        eq(account.code, PENDING_REVIEW_CODE)
+        eq(cuenta.orgId, orgId),
+        eq(cuenta.alcance, 'base'),
+        eq(cuenta.codigo, PENDING_REVIEW_CODE)
       )
     )
     .limit(1);
-  if (!acc)
-    throw new Error('Falta la cuenta de sistema "Pendiente de revisión"');
+  if (!acc) {
+    throw new Error(
+      'Falta la cuenta de sistema "Pendiente de revisión". Re-sembrá el plan base'
+    );
+  }
   return acc.id;
 }
 
@@ -49,51 +56,51 @@ export async function loadPendingReviewAccountId(
  */
 export async function loadActiveMappingRules(
   clientId: string,
-  sourceModule: 'invoice' | 'payroll'
-): Promise<RuleLike[]> {
+  modulo: 'comprobante' | 'recibo' | 'movimiento_bancario'
+): Promise<ReglaLike[]> {
   const rules = await db
     .select()
-    .from(ledgerMappingRule)
+    .from(reglaMapeo)
     .where(
       and(
-        eq(ledgerMappingRule.clientId, clientId),
-        eq(ledgerMappingRule.sourceModule, sourceModule),
-        eq(ledgerMappingRule.isActive, true)
+        eq(reglaMapeo.clienteId, clientId),
+        eq(reglaMapeo.modulo, modulo),
+        eq(reglaMapeo.activa, true)
       )
     )
-    .orderBy(asc(ledgerMappingRule.priority), asc(ledgerMappingRule.name));
+    .orderBy(asc(reglaMapeo.prioridad), asc(reglaMapeo.nombre));
   if (rules.length === 0) return [];
 
   const lines = await db
     .select()
-    .from(ledgerMappingRuleLine)
+    .from(reglaMapeoLinea)
     .where(
       inArray(
-        ledgerMappingRuleLine.ruleId,
+        reglaMapeoLinea.reglaId,
         rules.map((r) => r.id)
       )
     )
-    .orderBy(asc(ledgerMappingRuleLine.lineOrder));
+    .orderBy(asc(reglaMapeoLinea.orden));
   const byRule = new Map<string, typeof lines>();
   for (const l of lines) {
-    const arr = byRule.get(l.ruleId) ?? [];
+    const arr = byRule.get(l.reglaId) ?? [];
     arr.push(l);
-    byRule.set(l.ruleId, arr);
+    byRule.set(l.reglaId, arr);
   }
 
   return rules.map(
-    (r): RuleLike => ({
+    (r): ReglaLike => ({
       id: r.id,
-      name: r.name,
-      ruleType: r.ruleType,
-      condition: (r.condition ?? null) as Record<string, unknown> | null,
-      priority: r.priority,
-      lines: (byRule.get(r.id) ?? []).map((l) => ({
-        accountId: l.accountId,
-        side: l.side,
-        amountBasis: l.amountBasis,
-        fixedAmount: l.fixedAmount,
-        description: l.description,
+      nombre: r.nombre,
+      tipo: r.tipo,
+      condicion: (r.condicion ?? null) as Record<string, unknown> | null,
+      prioridad: r.prioridad,
+      lineas: (byRule.get(r.id) ?? []).map((l) => ({
+        cuentaId: l.cuentaId,
+        lado: l.lado,
+        base: l.base,
+        importeFijo: l.importeFijo,
+        descripcion: l.descripcion,
       })),
     })
   );
@@ -106,26 +113,31 @@ export async function loadActiveMappingRules(
 export async function resolvePeriodForDate(clientId: string, dateStr: string) {
   const date = new Date(`${dateStr}T00:00:00Z`);
   if (isNaN(date.getTime())) throw new Error('Fecha inválida');
+  // `ejercicio.fecha_desde/hasta` y `periodo_contable.periodo` son columnas
+  // `date`: se comparan como 'YYYY-MM-DD', no como Date.
+  const dia = dateStr.slice(0, 10);
   const [fy] = await db
     .select()
-    .from(fiscalYear)
+    .from(ejercicio)
     .where(
       and(
-        eq(fiscalYear.clientId, clientId),
-        lte(fiscalYear.startDate, date),
-        gte(fiscalYear.endDate, date)
+        eq(ejercicio.clienteId, clientId),
+        lte(ejercicio.fechaDesde, dia),
+        gte(ejercicio.fechaHasta, dia)
       )
     )
     .limit(1);
   if (!fy) throw new Error('no_fy');
+
+  // El período es mensual y `periodo` guarda el primer día del mes.
+  const primerDia = `${dia.slice(0, 7)}-01`;
   const [period] = await db
     .select()
-    .from(accountingPeriod)
+    .from(periodoContable)
     .where(
       and(
-        eq(accountingPeriod.fiscalYearId, fy.id),
-        eq(accountingPeriod.year, date.getUTCFullYear()),
-        eq(accountingPeriod.month, date.getUTCMonth() + 1)
+        eq(periodoContable.ejercicioId, fy.id),
+        eq(periodoContable.periodo, primerDia)
       )
     )
     .limit(1);
@@ -146,28 +158,35 @@ export async function assertPostableAccounts(
   if (ids.length === 0) return;
   const accs = await db
     .select()
-    .from(account)
-    .where(and(eq(account.organizationId, orgId), inArray(account.id, ids)));
+    .from(cuenta)
+    .where(and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ids)));
   const overrides = await db
     .select()
-    .from(accountOverride)
+    .from(clienteCuenta)
     .where(
       and(
-        eq(accountOverride.clientId, clientId),
-        inArray(accountOverride.accountId, ids)
+        eq(clienteCuenta.clienteId, clientId),
+        inArray(clienteCuenta.cuentaId, ids)
       )
     );
-  const ovMap = new Map(overrides.map((o) => [o.accountId, o]));
+  const ovMap = new Map(overrides.map((o) => [o.cuentaId, o]));
   const byId = new Map(accs.map((a) => [a.id, a]));
   for (const id of ids) {
     const a = byId.get(id);
-    if (!a) throw new Error('Cuenta inexistente o de otro estudio');
-    if (a.scope === 'custom' && a.clientId !== clientId)
-      throw new Error('Cuenta custom de otra empresa');
-    if (a.type !== 'imputable')
-      throw new Error(`La cuenta ${a.code} es de agrupación`);
-    const active = ovMap.get(id)?.isActive ?? a.isActive;
-    if (!active) throw new Error(`La cuenta ${a.code} está inactiva`);
+    if (!a)
+      throw new Error('Una de las cuentas no existe o no pertenece al estudio');
+    if (a.alcance === 'propia' && a.clienteId !== clientId) {
+      throw new Error('Una de las cuentas es custom de otra empresa');
+    }
+    if (a.tipo !== 'imputable') {
+      throw new Error(
+        `La cuenta ${a.codigo} es de agrupación; solo se imputan cuentas imputables`
+      );
+    }
+    const active = ovMap.get(id)?.activa ?? a.activa;
+    if (!active) {
+      throw new Error(`La cuenta ${a.codigo} está inactiva para esta empresa`);
+    }
   }
 }
 
@@ -179,9 +198,9 @@ export async function loadAccountLabels(
   const ids = [...new Set(accountIds)];
   if (ids.length === 0) return new Map();
   const rows = await db
-    .select({ id: account.id, code: account.code, name: account.name })
-    .from(account)
-    .where(and(eq(account.organizationId, orgId), inArray(account.id, ids)));
+    .select({ id: cuenta.id, code: cuenta.codigo, name: cuenta.nombre })
+    .from(cuenta)
+    .where(and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ids)));
   return new Map(rows.map((r) => [r.id, { code: r.code, name: r.name }]));
 }
 
@@ -196,15 +215,8 @@ export async function nextEntryNumber(
   fyId: string
 ): Promise<number> {
   const [{ maxNum }] = await tx
-    .select({
-      maxNum: sql<number>`coalesce(max(${journalEntry.number}),0)::int`,
-    })
-    .from(journalEntry)
-    .where(
-      and(
-        eq(journalEntry.clientId, clientId),
-        eq(journalEntry.fiscalYearId, fyId)
-      )
-    );
+    .select({ maxNum: sql<number>`coalesce(max(${asiento.numero}),0)::int` })
+    .from(asiento)
+    .where(and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fyId)));
   return (maxNum ?? 0) + 1;
 }

@@ -26,7 +26,7 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        'bg-muted text-muted-foreground inline-flex h-9 w-fit items-center justify-center rounded-lg p-[3px]',
+        'bg-[var(--arca-surface-2)] text-[var(--arca-ink-2)] inline-flex w-fit items-center justify-center rounded-lg p-[3px]',
         className
       )}
       {...props}
@@ -42,7 +42,7 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "data-[state=active]:bg-[var(--arca-navy-900)] data-[state=active]:text-white data-[state=active]:shadow-[var(--arca-shadow-sm)] focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:outline-ring text-[var(--arca-ink-3)] hover:bg-[var(--arca-navy-700)] hover:text-white inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-lg border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-all duration-150 focus-visible:ring-[3px] focus-visible:outline-1 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "data-[state=active]:bg-[var(--arca-surface)] data-[state=active]:text-[var(--arca-ink)] data-[state=active]:shadow-[0_1px_2px_rgba(16,23,32,0.08)] focus-visible:border-[var(--arca-accent)] focus-visible:ring-[var(--arca-accent-ring)] text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] inline-flex flex-1 items-center justify-center gap-1.5 rounded-md border border-transparent px-3 py-[5px] text-[12.5px] font-medium whitespace-nowrap transition-all duration-150 focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

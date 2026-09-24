@@ -22,7 +22,7 @@ export interface PublicInvitationPreview {
 export const getPublicInvitationPreview = createServerFn({
   method: 'GET',
 })
-  .inputValidator(
+  .validator(
     z.object({
       invitationId: z.string().min(1),
     })

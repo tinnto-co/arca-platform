@@ -4,11 +4,12 @@ import { Button } from './ui/button';
 
 interface Props {
   onFileSelected?: (file: File | null) => void;
+  /** Lo maneja el padre (es él quien procesa el archivo). */
+  isProcessing?: boolean;
 }
 
-export function DragDrop({ onFileSelected }: Props) {
+export function DragDrop({ onFileSelected, isProcessing = false }: Props) {
   const [file, setFile] = useState<File | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -45,31 +46,35 @@ export function DragDrop({ onFileSelected }: Props) {
           p-10 text-center transition
           cursor-pointer
           ${isProcessing ? 'opacity-60 cursor-not-allowed' : ''}
-          ${isDragActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 bg-gray-50'}
+          ${isDragActive ? 'border-[var(--arca-accent)] bg-[var(--arca-accent-bg)]' : 'border-[var(--arca-border-strong)] bg-[var(--arca-bg)]'}
         `}
       >
         <input {...getInputProps()} />
 
         {isDragReject && (
-          <p className="text-sm text-[var(--arca-accent-neg)]">
+          <p className="text-sm text-[var(--arca-accent-neg-fg)]">
             ❌ Solo se permiten archivos PDF
           </p>
         )}
 
         {!file && !isDragActive && (
-          <p className="text-gray-600">
+          <p className="text-[var(--arca-ink-3)]">
             📄 Arrastrá el extracto bancario (PDF) acá <br />
-            <span className="text-sm text-gray-500">
+            <span className="text-sm text-[var(--arca-ink-3)]">
               o hacé click para seleccionarlo
             </span>
           </p>
         )}
 
         {isDragActive && !file && (
-          <p className="text-indigo-600 font-medium">📥 Soltá el PDF acá</p>
+          <p className="text-[var(--arca-accent-hover)] font-medium">
+            📥 Soltá el PDF acá
+          </p>
         )}
 
-        {file && <p className="text-gray-800 font-medium">📄 {file.name}</p>}
+        {file && (
+          <p className="text-[var(--arca-ink)] font-medium">📄 {file.name}</p>
+        )}
       </div>
 
       {/* FILE INFO */}
@@ -85,7 +90,7 @@ export function DragDrop({ onFileSelected }: Props) {
 
       {/* PROCESSING */}
       {isProcessing && (
-        <p className="mt-3 text-sm text-gray-600">
+        <p className="mt-3 text-sm text-[var(--arca-ink-3)]">
           ⏳ Procesando extracto bancario...
         </p>
       )}
