@@ -267,7 +267,13 @@ export function ImprimirRecibosDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={showPreview ? 'flex h-[88vh] w-[95vw] max-w-[95vw] sm:max-w-[95vw] flex-col' : 'max-w-lg'}>
+      <DialogContent
+        className={
+          showPreview
+            ? 'flex h-[88vh] w-[95vw] max-w-[95vw] sm:max-w-[95vw] flex-col'
+            : 'flex max-h-[85vh] w-full flex-col sm:max-w-xl'
+        }
+      >
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Printer className="h-5 w-5" />
@@ -275,10 +281,10 @@ export function ImprimirRecibosDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className={showPreview ? 'flex min-h-0 flex-1 gap-6 overflow-hidden' : undefined}>
+        <div className="flex min-h-0 flex-1 gap-6 overflow-hidden">
 
           {/* ── Panel izquierdo: filtros ──────────────────────────────────── */}
-          <div className={showPreview ? 'w-72 shrink-0 space-y-4 overflow-y-auto py-2' : 'space-y-4 py-2'}>
+          <div className={showPreview ? 'w-72 shrink-0 space-y-4 overflow-y-auto py-2' : 'flex-1 space-y-4 overflow-y-auto py-2'}>
 
             {/* Año */}
             <div>
@@ -417,7 +423,7 @@ export function ImprimirRecibosDialog({
         </div>
 
         {/* ── Acciones ─────────────────────────────────────────────────────── */}
-        <div className="flex shrink-0 justify-end gap-2 pt-1">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-[var(--arca-border)] pt-3">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={generando}>
             Cancelar
           </Button>

@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Receipt,
   Trash2,
+  Copy,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -44,6 +45,8 @@ import {
   generarSacsMasivo,
   getLiqFinalPreview,
   generarLiqFinalMasivo,
+  getGenerarRecibosMasivoPreview,
+  generarRecibosMasivo,
   deleteRecibo,
 } from '@/actions/sueldos';
 import {
@@ -444,6 +447,8 @@ export function SueldosRecibo({
   const [showImprimir, setShowImprimir] = useState(false);
   const [showSacDialog, setShowSacDialog] = useState(false);
   const [showLiqFinalDialog, setShowLiqFinalDialog] = useState(false);
+  const [showGenerarRecibosDialog, setShowGenerarRecibosDialog] =
+    useState(false);
   const [reciboABorrar, setReciboABorrar] = useState<{
     id: string;
     empleadoNombre: string;
@@ -617,6 +622,17 @@ export function SueldosRecibo({
               >
                 <Receipt className="h-4 w-4" />
                 Generar Liq. Final
+              </Button>
+            )}
+            {ano && mes && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0 gap-1.5"
+                onClick={() => setShowGenerarRecibosDialog(true)}
+              >
+                <Copy className="h-4 w-4" />
+                Generar recibos
               </Button>
             )}
             {/* Es la acción de la pantalla —a esto se viene—, así que va en
@@ -1022,6 +1038,15 @@ export function SueldosRecibo({
           clientId={clientId}
           periodo={`${ano}-${mes}`}
           onClose={() => setShowLiqFinalDialog(false)}
+        />
+      )}
+
+      {/* ── Dialog: generar recibos masivo (copiando el último) ──────────── */}
+      {showGenerarRecibosDialog && ano && mes && (
+        <GenerarRecibosMasivoDialog
+          clientId={clientId}
+          periodo={`${ano}-${mes}`}
+          onClose={() => setShowGenerarRecibosDialog(false)}
         />
       )}
 
@@ -1676,6 +1701,223 @@ export function GenerarLiqFinalDialog({
             {seleccionados.length > 0
               ? `${seleccionados.length} Liq. Final`
               : 'Liq. Final'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Diálogo: Generar recibos masivo (copiando el último) ───────────────────
+
+function GenerarRecibosMasivoDialog({
+  clientId,
+  periodo,
+  onClose,
+}: {
+  clientId: string;
+  periodo: string;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const { data: preview = [], isLoading } = useQuery({
+    queryKey: ['generar-recibos-preview', clientId, periodo],
+    queryFn: () => getGenerarRecibosMasivoPreview({ data: { clientId, periodo } }),
+  });
+
+  // Pre-seleccionar empleados sin recibo en el período y con uno anterior del cual copiar.
+  useEffect(() => {
+    if (preview.length === 0) return;
+    const elegibles = preview.filter(
+      (p) => !p.yaTiene && !p.sinConvenio && !!p.ultimoPeriodo
+    );
+    setSelected(new Set(elegibles.map((p) => p.empleadoId)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview]);
+
+  const elegibles = preview.filter(
+    (p) => !p.yaTiene && !p.sinConvenio && !!p.ultimoPeriodo
+  );
+  const seleccionados = elegibles.filter((p) => selected.has(p.empleadoId));
+
+  const { mutate: generar, isPending } = useMutation({
+    mutationFn: () =>
+      generarRecibosMasivo({
+        data: {
+          clientId,
+          periodo,
+          empleadoIds: seleccionados.map((p) => p.empleadoId),
+        },
+      }),
+    onSuccess: (result) => {
+      toast.success(
+        `${result.generados} recibo${result.generados !== 1 ? 's' : ''} generado${result.generados !== 1 ? 's' : ''}, copiando el último de cada empleado.`
+      );
+      queryClient.invalidateQueries({ queryKey: ['liquidaciones-filtros'] });
+      queryClient.invalidateQueries({ queryKey: ['import-recibos'] });
+      onClose();
+    },
+    onError: (err) =>
+      toast.error(err.message ?? 'Error al generar los recibos.'),
+  });
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-[90vw] max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="text-[15px]">
+            Generar recibos — {periodo}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : preview.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No hay empleados activos.
+            </p>
+          ) : (
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b text-left text-[11px] text-muted-foreground uppercase tracking-wide">
+                  <th className="pb-2 pr-2 w-6">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5"
+                      checked={
+                        elegibles.length > 0 &&
+                        elegibles.every((p) => selected.has(p.empleadoId))
+                      }
+                      onChange={(e) => {
+                        setSelected(
+                          e.target.checked
+                            ? new Set(elegibles.map((p) => p.empleadoId))
+                            : new Set()
+                        );
+                      }}
+                    />
+                  </th>
+                  <th className="pb-2 pr-3">Empleado</th>
+                  <th className="pb-2 pr-3">Legajo</th>
+                  <th className="pb-2 pr-3">Copia de</th>
+                  <th className="pb-2 text-right">Último neto</th>
+                </tr>
+              </thead>
+              <tbody className="bg-[var(--arca-surface)]">
+                {preview.map((p) => {
+                  const noElegible = p.yaTiene || p.sinConvenio || !p.ultimoPeriodo;
+                  return (
+                    <tr
+                      key={p.empleadoId}
+                      className={`border-b last:border-0 ${noElegible ? 'opacity-50' : ''}`}
+                    >
+                      <td className="py-2 pr-2">
+                        {p.yaTiene ? (
+                          <span title="Ya tiene recibo este período">
+                            <CheckCircle2 className="h-4 w-4 text-[var(--arca-accent-pos-fg)]" />
+                          </span>
+                        ) : p.sinConvenio || !p.ultimoPeriodo ? (
+                          <span
+                            title={
+                              p.sinConvenio
+                                ? 'Sin convenio configurado'
+                                : 'Sin recibo anterior del cual copiar'
+                            }
+                          >
+                            <AlertCircle className="h-4 w-4 text-[var(--arca-accent-warn-fg)]" />
+                          </span>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={selected.has(p.empleadoId)}
+                            onChange={(e) => {
+                              const next = new Set(selected);
+                              if (e.target.checked) next.add(p.empleadoId);
+                              else next.delete(p.empleadoId);
+                              setSelected(next);
+                            }}
+                            className="h-3.5 w-3.5"
+                          />
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 font-medium">
+                        {p.nombre}
+                        {p.yaTiene && (
+                          <span className="ml-2 text-[var(--arca-accent-pos-fg)] text-[11px]">
+                            Ya tiene
+                          </span>
+                        )}
+                        {!p.yaTiene && p.sinConvenio && (
+                          <span className="ml-2 text-[var(--arca-accent-warn-fg)] text-[11px]">
+                            Sin convenio
+                          </span>
+                        )}
+                        {!p.yaTiene && !p.sinConvenio && !p.ultimoPeriodo && (
+                          <span className="ml-2 text-[var(--arca-accent-warn-fg)] text-[11px]">
+                            Sin recibo anterior
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {p.legajo || '—'}
+                      </td>
+                      <td className="py-2 pr-3 text-muted-foreground">
+                        {p.ultimoPeriodo ?? '—'}
+                      </td>
+                      <td className="py-2 text-right font-mono">
+                        {p.ultimoNeto != null ? moneyFmtSac(p.ultimoNeto) : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {!isLoading && elegibles.length > 0 && (
+          <p className="text-[12px] text-muted-foreground pt-2">
+            {seleccionados.length} de {elegibles.length} empleados
+            seleccionados. Se copian los importes y conceptos del recibo
+            mensual anterior de cada empleado; quedan como borrador para
+            revisar novedades del período antes de emitir.
+          </p>
+        )}
+
+        <DialogFooter className="pt-3 border-t">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClose}
+            disabled={isPending}
+          >
+            Cancelar
+          </Button>
+          <Button
+            size="sm"
+            disabled={isPending || seleccionados.length === 0}
+            onClick={() => generar()}
+            className="gap-1.5"
+          >
+            {isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
+            Generar{' '}
+            {seleccionados.length > 0
+              ? `${seleccionados.length} recibo${seleccionados.length !== 1 ? 's' : ''}`
+              : 'recibos'}
           </Button>
         </DialogFooter>
       </DialogContent>
