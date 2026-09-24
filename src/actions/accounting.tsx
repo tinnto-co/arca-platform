@@ -3163,25 +3163,14 @@ function validateRuleLines(
   lines: RuleLineInput[],
   sourceModule: ModuloRegla
 ): void {
-  // En banco la contrapartida la pone el motor: sale de la cuenta contable de
-  // la cuenta bancaria del movimiento, no de la regla. Pedirla acá obligaría a
-  // escribir una regla por cada cuenta bancaria del cliente.
-  const contrapartidaAutomatica = sourceModule === 'movimiento_bancario';
-
-  if (lines.length < (contrapartidaAutomatica ? 1 : 2))
+  if (lines.length < 2)
+    throw new Error('La regla debe tener al menos 2 líneas');
+  const hasDebit = lines.some((l) => l.side === 'debe');
+  const hasCredit = lines.some((l) => l.side === 'haber');
+  if (!hasDebit || !hasCredit) {
     throw new Error(
-      contrapartidaAutomatica
-        ? 'La regla necesita al menos una línea'
-        : 'La regla debe tener al menos 2 líneas'
+      'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
     );
-  if (!contrapartidaAutomatica) {
-    const hasDebit = lines.some((l) => l.side === 'debe');
-    const hasCredit = lines.some((l) => l.side === 'haber');
-    if (!hasDebit || !hasCredit) {
-      throw new Error(
-        'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
-      );
-    }
   }
   const bases = BASES_POR_MODULO[sourceModule];
   for (const l of lines) {
@@ -3199,16 +3188,6 @@ function validateRuleLines(
       );
     }
   }
-  // En banco, mientras las líneas vayan todas del mismo lado, la que falta la
-  // pone el motor y no hay cuadre que pedir. Si el estudio fijó la
-  // contrapartida a mano —una cuenta concreta en vez de "la del banco"—, la
-  // regla se comporta como cualquier otra y sí tiene que cuadrar.
-  if (
-    contrapartidaAutomatica &&
-    !(lines.some((l) => l.side === 'debe') && lines.some((l) => l.side === 'haber'))
-  )
-    return;
-
   // Un asiento que no cuadra manda la diferencia a "Pendiente de revisión" y
   // bloquea el cierre del período. Antes se avisaba y se guardaba igual.
   const cuadre = analizarCuadreRegla(

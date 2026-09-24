@@ -14,7 +14,6 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Plus,
-  Landmark,
   ChevronRight,
   ChevronDown,
   ChevronsUpDown,
@@ -7283,16 +7282,13 @@ function RuleEditorDialog({
 
   const hasDebit = lines.some((l) => l.side === 'debe');
   const hasCredit = lines.some((l) => l.side === 'haber');
-  // En banco la contrapartida la agrega el sistema —sale de la cuenta
-  // contable de la cuenta bancaria del movimiento—, así que la regla define
-  // un solo lado: el del concepto.
-  const contrapartidaAutomatica = sourceModule === 'movimiento_bancario';
-  const cuentasCompletas = lines.every(
-    (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
-  );
-  const linesOk = contrapartidaAutomatica
-    ? lines.length >= 1 && !(hasDebit && hasCredit) && cuentasCompletas
-    : lines.length >= 2 && hasDebit && hasCredit && cuentasCompletas;
+  const linesOk =
+    lines.length >= 2 &&
+    hasDebit &&
+    hasCredit &&
+    lines.every(
+      (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
+    );
   const needsDirection = sourceModule === 'comprobante';
   const cuadre =
     sourceModule === 'comprobante'
@@ -7480,20 +7476,12 @@ function RuleEditorDialog({
                 setSourceModule(modulo);
                 // Las bases cambian con el módulo: "Total del comprobante" no
                 // existe en sueldos. Sin esto, la línea quedaba sin base.
-                setLines((prev) => {
-                  const ajustadas = prev.map((l) => ({
+                setLines((prev) =>
+                  prev.map((l) => ({
                     ...l,
                     amountBasis: baseValidaEnModulo(l.amountBasis, modulo),
-                  }));
-                  // En banco la regla lleva un solo lado, así que el par
-                  // Debe/Haber con el que arranca el formulario no sirve: se
-                  // queda la primera y el resto se agrega a mano si hace falta.
-                  return modulo === 'movimiento_bancario' &&
-                    ajustadas.some((l) => l.side === 'debe') &&
-                    ajustadas.some((l) => l.side === 'haber')
-                    ? ajustadas.slice(0, 1)
-                    : ajustadas;
-                });
+                  }))
+                );
               }}
             >
               <SelectTrigger className="w-full text-[12.5px]">
@@ -7827,14 +7815,6 @@ function RuleEditorDialog({
         </div>
 
         {/* Líneas-plantilla */}
-        {contrapartidaAutomatica && (
-          <p className="-mb-1 text-[11.5px] text-[var(--arca-ink-3)]">
-            Escribí solo el lado del concepto: la contrapartida contra el banco
-            la agrega el sistema, con la cuenta contable de la cuenta bancaria
-            de cada movimiento. Por eso una sola regla sirve para todas las
-            cuentas del cliente.
-          </p>
-        )}
         <div
           className="border border-[var(--arca-border)] rounded-xl overflow-hidden"
           data-tour="regla-lineas"
@@ -7920,50 +7900,13 @@ function RuleEditorDialog({
                 onClick={() =>
                   setLines((prev) => prev.filter((_, idx) => idx !== i))
                 }
-                disabled={lines.length <= (contrapartidaAutomatica ? 1 : 2)}
+                disabled={lines.length <= 2}
                 className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
               >
                 <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
               </button>
             </div>
           ))}
-          {/* La línea que pone el motor, a la vista. Se mostraba solo como
-              texto y no se entendía que el asiento iba a tener dos lados; y
-              si el estudio necesita otra cuenta, acá la fija. */}
-          {contrapartidaAutomatica && !(hasDebit && hasCredit) && (
-            <div className="flex items-center gap-2 border-t border-dashed border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-1.5">
-              <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <Landmark
-                  className="size-3.5 shrink-0 text-[var(--arca-ink-3)]"
-                  strokeWidth={2}
-                />
-                <span className="truncate text-[12.5px] text-[var(--arca-ink-2)]">
-                  La cuenta del banco del movimiento
-                </span>
-                <HelpTip text="La cuenta contable que tenga la cuenta bancaria de cada movimiento (se configura en Banco → Cuentas y extractos). Por eso una sola regla sirve para todas las cuentas del cliente. Si preferís fijar una cuenta puntual, tocá «Fijar una cuenta»." />
-              </div>
-              <span className="w-24 text-[12.5px] text-[var(--arca-ink-3)]">
-                {lines[0]?.side === 'debe' ? 'Haber' : 'Debe'}
-              </span>
-              <span className="w-44 text-[12.5px] text-[var(--arca-ink-3)]">
-                Por la diferencia
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setLines((prev) => [
-                    ...prev,
-                    emptyRuleLine(
-                      prev[0]?.side === 'debe' ? 'haber' : 'debe'
-                    ),
-                  ])
-                }
-                className="ml-auto shrink-0 text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
-              >
-                Fijar una cuenta
-              </button>
-            </div>
-          )}
           <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
             <button
               onClick={() =>
@@ -7984,11 +7927,7 @@ function RuleEditorDialog({
                 </span>
               ) : (
                 <span className="text-[var(--arca-ink-3)]">
-                  {contrapartidaAutomatica
-                    ? hasDebit && hasCredit
-                      ? 'Todas las líneas van del mismo lado: el otro lo pone el banco'
-                      : 'Requiere al menos una línea, con su cuenta elegida'
-                    : 'Requiere ≥2 líneas, al menos una al Debe y una al Haber'}
+                  Requiere ≥2 líneas, al menos una al Debe y una al Haber
                 </span>
               )}
             </span>
