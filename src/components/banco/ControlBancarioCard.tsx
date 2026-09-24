@@ -239,10 +239,15 @@ export function ControlBancarioCard({
     setMesPropio(data.ultimoPeriodoConDatos);
   }
 
+  // En la ficha del cliente la card no se anuncia hasta saber si hay algo que
+  // mostrar: aparecer y desaparecer mueve la página bajo el cursor.
+  if (compacto && !data) return null;
+  if (compacto && data && data.ultimoPeriodoConDatos === null) return null;
+
   const desglose = data?.desglose ?? [];
 
   return (
-    <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] p-4">
+    <div className="flex h-full flex-col rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] p-4">
       <div className="flex flex-wrap items-center gap-2">
         <Scale className="size-4 text-[var(--arca-ink-2)]" strokeWidth={2} />
         <span className="text-[13px] font-semibold text-[var(--arca-ink)]">

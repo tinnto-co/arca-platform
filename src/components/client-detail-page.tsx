@@ -2516,18 +2516,13 @@ export function RepresentativeDetailPage({
               `representative_balance_config` no existe en el modelo nuevo.
             */}
 
-            {/* Control bancario: el vistazo del mes pasado, ingresos contra
-                ventas y egresos contra compras. El detalle está en Banco. */}
+            {/* Control bancario (el vistazo del mes: ingresos contra ventas y
+                egresos contra compras) y los datos fiscales, lado a lado: son
+                dos fichas cortas y apiladas dejaban media pantalla vacía. Se
+                estiran a la misma altura. */}
             {selectedClientId && (
-              <div className="max-w-[560px]">
+              <div className="grid items-stretch gap-4 lg:grid-cols-2">
                 <ControlBancarioCard clienteId={selectedClientId} compacto />
-              </div>
-            )}
-
-            {/* Datos fiscales para el módulo de Balances (norma RT 54/RT 6,
-                actividad e inscripción). Por empresa seleccionada. */}
-            {selectedClientId && (
-              <div className="max-w-[560px]">
                 <FiscalDataCard clientId={selectedClientId} />
               </div>
             )}
