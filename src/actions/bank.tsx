@@ -27,7 +27,10 @@ import {
   cuentasActivasDeCliente,
   generarSugerencias,
 } from '@/lib/sugerencias-conciliacion';
-import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
+import {
+  CATEGORIAS_MOVIMIENTO,
+  CATEGORIAS_SIN_FACTURA,
+} from '@/lib/clasificar-movimiento';
 import {
   getSessionWithOrg,
   assertCanWrite,
@@ -268,7 +271,9 @@ export const listMovimientos = createServerFn({ method: 'GET' })
           .optional(),
         categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
         /** Estados excluyentes: con cruce confirmado, solo sugerido, o nada. */
-        estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+        estado: z
+          .enum(['conciliado', 'sugerido', 'sin_conciliar', 'no_requiere'])
+          .optional(),
         /** Rango de importe, en pesos, sin importar si entró o salió. */
         importeMin: z.number().nonnegative().optional(),
         importeMax: z.number().nonnegative().optional(),
@@ -293,6 +298,7 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         egresos: 0,
         conciliados: 0,
         sugeridos: 0,
+        noRequiereFactura: 0,
         sinConciliar: 0,
       },
     };
@@ -351,8 +357,17 @@ export const listMovimientos = createServerFn({ method: 'GET' })
     if (ctx.data.estado === 'conciliado') conditions.push(conciliado);
     if (ctx.data.estado === 'sugerido')
       conditions.push(sql`${sugerido} and not ${conciliado}`);
+    // Lo que nunca va a tener factura (impuestos, comisiones, sueldos…) sale
+    // de "sin conciliar": contarlo ahí escondía lo que sí hay que revisar.
+    const sinFactura = inArray(
+      movimientoBancario.categoria,
+      CATEGORIAS_SIN_FACTURA as string[]
+    );
     if (ctx.data.estado === 'sin_conciliar')
-      conditions.push(sql`not ${conciliado} and not ${sugerido}`);
+      conditions.push(
+        sql`not ${conciliado} and not ${sugerido} and not ${sinFactura}`
+      );
+    if (ctx.data.estado === 'no_requiere') conditions.push(sinFactura);
     // Los totales usan este mismo filtro: con "Impuestos" elegido, "salió"
     // es lo que se fue en impuestos.
     const filtro = and(...conditions);
@@ -364,6 +379,7 @@ export const listMovimientos = createServerFn({ method: 'GET' })
           ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
           egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
           conciliados: sql<number>`(count(*) filter (where ${conciliado}))::int`,
+          sinFactura: sql<number>`(count(*) filter (where ${movimientoBancario.categoria} in ${CATEGORIAS_SIN_FACTURA}))::int`,
           sugeridos: sql<number>`(count(*) filter (where ${sugerido} and not ${conciliado}))::int`,
         })
         .from(movimientoBancario)
@@ -471,8 +487,15 @@ export const listMovimientos = createServerFn({ method: 'GET' })
         egresos: Number(totales?.egresos ?? 0),
         conciliados,
         sugeridos: Number(totales?.sugeridos ?? 0),
-        // Excluyente con los otros dos, igual que el filtro de estado.
-        sinConciliar: total - conciliados - Number(totales?.sugeridos ?? 0),
+        // Movimientos que nunca van a tener factura: impuestos, comisiones,
+        // sueldos, débitos automáticos, intereses y retiros de efectivo.
+        noRequiereFactura: Number(totales?.sinFactura ?? 0),
+        // Excluyente con los otros tres, igual que el filtro de estado.
+        sinConciliar:
+          total -
+          conciliados -
+          Number(totales?.sugeridos ?? 0) -
+          Number(totales?.sinFactura ?? 0),
       },
     };
   });

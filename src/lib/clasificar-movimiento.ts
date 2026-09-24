@@ -26,6 +26,30 @@ export const CATEGORIAS_MOVIMIENTO = [
 
 export type CategoriaMovimiento = (typeof CATEGORIAS_MOVIMIENTO)[number];
 
+/**
+ * Lo que nunca va a tener una factura que lo respalde: impuestos, comisiones
+ * del banco, sueldos, débitos automáticos, intereses y retiros de efectivo.
+ *
+ * Contarlos como "sin conciliar" infla el número y esconde lo que sí hay que
+ * revisar: en Gastrotecno, enero 2026, son 82 de 153 movimientos.
+ *
+ * Los cheques quedan afuera a propósito: un cheque sí puede ser el pago de una
+ * factura.
+ */
+export const CATEGORIAS_SIN_FACTURA: readonly CategoriaMovimiento[] = [
+  'impuestos',
+  'comisiones',
+  'sueldos',
+  'debitos_automaticos',
+  'intereses',
+  'efectivo',
+];
+
+/** ¿Este movimiento puede llegar a tener una factura detrás? */
+export function requiereFactura(categoria: string | null | undefined): boolean {
+  return !CATEGORIAS_SIN_FACTURA.includes(categoria as CategoriaMovimiento);
+}
+
 export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
   transferencias: 'Transferencias',
   cobros_tarjeta: 'Cobros con tarjeta',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clasificarMovimiento } from './clasificar-movimiento';
+import { clasificarMovimiento, requiereFactura } from './clasificar-movimiento';
 
 describe('clasificarMovimiento', () => {
   it('reconoce transferencias con la jerga de varios bancos', () => {
@@ -74,5 +74,31 @@ describe('clasificarMovimiento', () => {
     expect(clasificarMovimiento('PAGO VS 84512')).toBe('varios');
     expect(clasificarMovimiento('')).toBe('varios');
     expect(clasificarMovimiento(null)).toBe('varios');
+  });
+});
+
+describe('requiereFactura', () => {
+  it('lo que nunca va a tener factura no cuenta como pendiente', () => {
+    for (const d of [
+      'IMPUESTO DEBITOS S/TRANSFERENCIA LEY 25413',
+      'COM. MANTENIMIENTO CUENTA',
+      'ACREDITACION DE HABERES',
+      'DEBITO AUTOM EDENOR',
+      'RENDIMIENTO FIMA PREMIUM',
+      'Retiro de efectivo en santander Tarj nro. 3260',
+    ]) {
+      expect(requiereFactura(clasificarMovimiento(d)), d).toBe(false);
+    }
+  });
+
+  it('lo que sí puede tener factura detrás sigue contando', () => {
+    for (const d of [
+      'TRANSFERENCIA 30697293287',
+      'DEPOSITO CHEQUE 48HS',
+      'Compra con tarjeta de debito Merpago*shellbox',
+      'LIQUIDACION VISA PRISMA MEDIOS DE PAGO',
+    ]) {
+      expect(requiereFactura(clasificarMovimiento(d)), d).toBe(true);
+    }
   });
 });

@@ -114,7 +114,9 @@ const bankSearchSchema = z.object({
     .optional(),
   /** Filtros del registro de movimientos. */
   categoria: z.enum(CATEGORIAS_MOVIMIENTO).optional(),
-  estado: z.enum(['conciliado', 'sugerido', 'sin_conciliar']).optional(),
+  estado: z
+    .enum(['conciliado', 'sugerido', 'sin_conciliar', 'no_requiere'])
+    .optional(),
   /** Rango de importe en pesos, sin importar si entró o salió. */
   min: z.number().nonnegative().optional(),
   max: z.number().nonnegative().optional(),
@@ -236,6 +238,7 @@ const ESTADO_LABEL = {
   conciliado: 'Conciliados',
   sugerido: 'Sugeridos',
   sin_conciliar: 'Sin conciliar',
+  no_requiere: 'No requieren factura',
 } as const;
 
 /** "1234,5" o "1.234,50" → 1234.5. Vacío o inválido → undefined. */
@@ -1979,6 +1982,12 @@ function BankPage() {
                   {' · '}
                   {totalesRegistro?.sugeridos} sugerido
                   {totalesRegistro?.sugeridos === 1 ? '' : 's'} para revisar
+                </span>
+              )}
+              {(totalesRegistro?.noRequiereFactura ?? 0) > 0 && (
+                <span>
+                  {' · '}
+                  {totalesRegistro?.noRequiereFactura} no requieren factura
                 </span>
               )}
               {' · '}
