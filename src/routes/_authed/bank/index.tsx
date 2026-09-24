@@ -1532,9 +1532,12 @@ function TotalesDelPeriodo({
 function CuentaContableDeBanco({
   cuenta,
   clienteId,
+  compartidaCon,
 }: {
   cuenta: CuentaConResumen;
   clienteId: string;
+  /** Otras cuentas bancarias que imputan a la misma cuenta del plan. */
+  compartidaCon: string[];
 }) {
   const queryClient = useQueryClient();
   const { data: plan = [] } = useQuery({
@@ -1556,6 +1559,7 @@ function CuentaContableDeBanco({
   });
 
   const sinAsignar = !cuenta.cuentaContableId;
+  const compartida = compartidaCon.length > 0;
 
   return (
     <div className="mt-1.5 flex items-center gap-2">
@@ -1576,18 +1580,21 @@ function CuentaContableDeBanco({
         texto={
           sinAsignar
             ? 'Elegí a qué cuenta del plan se imputan los movimientos de esta cuenta bancaria. Sin esto no se pueden generar los asientos automáticos.'
-            : 'A esta cuenta del plan se imputan los movimientos de esta cuenta bancaria.'
+            : compartida
+              ? `Esta cuenta del plan también la usa ${compartidaCon.join(' y ')}. Los movimientos de las dos van a quedar sumados en el mismo mayor, así que el saldo contable no va a coincidir con el de ningún extracto por separado. Se puede hacer, pero lo normal es una cuenta del plan por cada cuenta bancaria.`
+              : 'A esta cuenta del plan se imputan los movimientos de esta cuenta bancaria.'
         }
       >
         <span
           className="shrink-0 cursor-default text-[11px]"
           style={{
-            color: sinAsignar
-              ? 'var(--arca-accent-warn-fg)'
-              : 'var(--arca-ink-4)',
+            color:
+              sinAsignar || compartida
+                ? 'var(--arca-accent-warn-fg)'
+                : 'var(--arca-ink-4)',
           }}
         >
-          {sinAsignar ? 'Sin asignar' : 'Asignada'}
+          {sinAsignar ? 'Sin asignar' : compartida ? 'Compartida' : 'Asignada'}
         </span>
       </ConAyuda>
     </div>
@@ -2006,7 +2013,21 @@ function BankPage() {
                     });
                   }}
                 />
-                <CuentaContableDeBanco cuenta={c} clienteId={clienteId} />
+                <CuentaContableDeBanco
+                  cuenta={c}
+                  clienteId={clienteId}
+                  compartidaCon={
+                    c.cuentaContableId
+                      ? accounts
+                          .filter(
+                            (o) =>
+                              o.id !== c.id &&
+                              o.cuentaContableId === c.cuentaContableId
+                          )
+                          .map((o) => `${o.banco} ${o.numero ?? ''}`.trim())
+                      : []
+                  }
+                />
               </div>
             ))}
           </div>
