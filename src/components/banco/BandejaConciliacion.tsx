@@ -38,6 +38,7 @@ import {
   getBandejaConciliacion,
 } from '@/actions/bank';
 import { excluirMovimiento } from '@/actions/extractos';
+import { Button } from '@/components/ui/button';
 import { MesPicker } from '@/components/shared/mes-picker';
 import { fechaLocal } from '@/components/inicio/compartido';
 import {
@@ -485,11 +486,11 @@ export function BandejaConciliacion({
               }}
             />
             {crucesExactos.length > 0 && (
-              <button
+              <Button
                 type="button"
+                size="sm"
                 onClick={() => setRevisandoLote(true)}
                 disabled={conciliar.isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[var(--arca-accent)] px-3 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {conciliar.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -499,7 +500,7 @@ export function BandejaConciliacion({
                 Revisar {crucesExactos.length} cruce
                 {crucesExactos.length === 1 ? '' : 's'} exacto
                 {crucesExactos.length === 1 ? '' : 's'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -537,7 +538,7 @@ export function BandejaConciliacion({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
               disabled={conciliar.isPending}
               onClick={() =>
@@ -548,7 +549,7 @@ export function BandejaConciliacion({
                   },
                 ])
               }
-              className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--arca-accent)] px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              size="sm"
             >
               {conciliar.isPending ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -556,14 +557,15 @@ export function BandejaConciliacion({
                 <Check className="size-3.5" />
               )}
               Confirmar este cruce
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setMovElegido(null)}
-              className="rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 py-1.5 text-[12px] font-medium text-[var(--arca-ink-2)]"
             >
               No es esta
-            </button>
+            </Button>
             <span className="text-[11px] text-[var(--arca-accent-pos-fg)]">
               o elegí otra factura de la derecha
             </span>

@@ -21,6 +21,7 @@ import {
   Gauge,
   Scale,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { Paginador } from '@/components/shared/paginador';
@@ -465,13 +466,10 @@ function RevisarSugerencias({
       }}
     >
       <AlertDialogTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity"
-        >
-          <Check className="w-3 h-3" strokeWidth={2.4} />
+        <Button type="button" size="sm">
+          <Check className="size-3.5" strokeWidth={2.4} />
           Revisar sugeridos
-        </button>
+        </Button>
       </AlertDialogTrigger>
       <AlertDialogContent className="!max-w-3xl">
         <AlertDialogHeader>
@@ -1888,22 +1886,23 @@ function BankPage() {
           {/* La raya al medio no separaba nada: el título y los botones son
               la misma barra. */}
           <div className="flex-1" />
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowCreateAccount((v) => !v)}
-            className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
           >
-            <Plus className="w-3 h-3" strokeWidth={2} />
+            <Plus className="size-3.5" strokeWidth={2} />
             Nueva cuenta
-          </button>
+          </Button>
           <ImportarExtractoDialog
             clienteId={clienteId}
             abierto={importarAbierto}
             onAbiertoChange={setImportarAbierto}
           >
-            <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity">
-              <Upload className="w-3.5 h-3.5" strokeWidth={2} />
+            <Button size="sm">
+              <Upload className="size-3.5" strokeWidth={2} />
               Importar extracto
-            </button>
+            </Button>
           </ImportarExtractoDialog>
         </div>
       )}
@@ -2023,28 +2022,30 @@ function BankPage() {
                     : 'Elegí una cuenta para poder cargar un movimiento a mano.'
                 }
               >
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => setShowManualMovement((v) => !v)}
                   disabled={!accountId}
-                  className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] disabled:opacity-40 disabled:hover:text-[var(--arca-ink-2)] transition-colors"
                 >
-                  <Plus className="w-3 h-3" strokeWidth={2} />
+                  <Plus className="size-3.5" strokeWidth={2} />
                   Movimiento manual
-                </button>
+                </Button>
               </ConAyuda>
               <ConAyuda
                 texto={`Busca, para cada movimiento ${accountId ? 'de esta cuenta' : 'de todas las cuentas de la empresa'} y de todos los meses, una factura con el mismo importe (cobros contra emitidas, pagos contra recibidas): hasta 5 días de diferencia, o hasta 30 días antes si es el mismo cliente o proveedor o la única factura posible. Si varios movimientos pueden ser la misma factura, se la da al que mejor corresponde: misma contraparte, después la fecha más cercana. Cada vez recalcula las sugerencias pendientes; lo confirmado y lo descartado no se toca.`}
               >
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => autoMatchMutation.mutate()}
                   disabled={autoMatchMutation.isPending}
-                  className="flex items-center gap-1.5 h-7 px-2.5 text-[11.5px] font-medium rounded-[8px] border border-[var(--arca-border)] text-[var(--arca-ink-2)] hover:bg-[var(--arca-surface-2)] disabled:opacity-50 transition-colors"
                 >
-                  <Zap className="w-3 h-3" strokeWidth={2} />
+                  <Zap className="size-3.5" strokeWidth={2} />
                   {autoMatchMutation.isPending
                     ? 'Buscando cruces…'
                     : 'Auto-conciliar'}
-                </button>
+                </Button>
               </ConAyuda>
             </div>
           </div>
