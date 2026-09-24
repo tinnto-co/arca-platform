@@ -14,6 +14,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Plus,
+  Landmark,
   ChevronRight,
   ChevronDown,
   ChevronsUpDown,
@@ -7859,29 +7860,23 @@ function RuleEditorDialog({
               key={i}
               className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
             >
-              <Select
-                value={l.accountId}
-                onValueChange={(v) => updateLine(i, { accountId: v })}
-              >
-                <SelectTrigger
+              {/* Con un plan de cuentas largo, bajar por la lista hasta
+                  encontrar la cuenta era lo más lento de escribir una regla:
+                  este trae buscador por código y por nombre. */}
+              <div className="min-w-0 flex-1">
+                <SearchableSelect
                   size="sm"
-                  className="flex-1 min-w-0 w-0 text-[12.5px]"
-                >
-                  <SelectValue placeholder="— Cuenta —" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groupedPostable(postable).map((g) => (
-                    <SelectGroup key={g.label}>
-                      <SelectLabel>{g.label}</SelectLabel>
-                      {g.items.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.code} · {a.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
+                  width="100%"
+                  value={l.accountId}
+                  onValueChange={(v) => updateLine(i, { accountId: v })}
+                  placeholder="— Cuenta —"
+                  searchPlaceholder="Buscar por código o nombre..."
+                  options={postable.map((a) => ({
+                    value: a.id,
+                    label: `${a.code} · ${a.name}`,
+                  }))}
+                />
+              </div>
               <Select
                 value={l.side}
                 onValueChange={(v) =>
@@ -7925,13 +7920,50 @@ function RuleEditorDialog({
                 onClick={() =>
                   setLines((prev) => prev.filter((_, idx) => idx !== i))
                 }
-                disabled={lines.length <= 2}
+                disabled={lines.length <= (contrapartidaAutomatica ? 1 : 2)}
                 className="w-6 h-6 flex items-center justify-center rounded-[6px] text-[var(--arca-ink-3)] hover:text-[oklch(0.55_0.18_25)] disabled:opacity-30"
               >
                 <Trash2 className="w-3.5 h-3.5" strokeWidth={1.8} />
               </button>
             </div>
           ))}
+          {/* La línea que pone el motor, a la vista. Se mostraba solo como
+              texto y no se entendía que el asiento iba a tener dos lados; y
+              si el estudio necesita otra cuenta, acá la fija. */}
+          {contrapartidaAutomatica && !(hasDebit && hasCredit) && (
+            <div className="flex items-center gap-2 border-t border-dashed border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-3 py-1.5">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                <Landmark
+                  className="size-3.5 shrink-0 text-[var(--arca-ink-3)]"
+                  strokeWidth={2}
+                />
+                <span className="truncate text-[12.5px] text-[var(--arca-ink-2)]">
+                  La cuenta del banco del movimiento
+                </span>
+                <HelpTip text="La cuenta contable que tenga la cuenta bancaria de cada movimiento (se configura en Banco → Cuentas y extractos). Por eso una sola regla sirve para todas las cuentas del cliente. Si preferís fijar una cuenta puntual, tocá «Fijar una cuenta»." />
+              </div>
+              <span className="w-24 text-[12.5px] text-[var(--arca-ink-3)]">
+                {lines[0]?.side === 'debe' ? 'Haber' : 'Debe'}
+              </span>
+              <span className="w-44 text-[12.5px] text-[var(--arca-ink-3)]">
+                Por la diferencia
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setLines((prev) => [
+                    ...prev,
+                    emptyRuleLine(
+                      prev[0]?.side === 'debe' ? 'haber' : 'debe'
+                    ),
+                  ])
+                }
+                className="ml-auto shrink-0 text-[11.5px] font-medium text-[var(--arca-accent)] hover:underline"
+              >
+                Fijar una cuenta
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-3 px-3 py-2 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)]">
             <button
               onClick={() =>

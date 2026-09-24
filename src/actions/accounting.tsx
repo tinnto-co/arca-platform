@@ -3182,14 +3182,6 @@ function validateRuleLines(
         'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
       );
     }
-  } else if (
-    lines.some((l) => l.side === 'debe') &&
-    lines.some((l) => l.side === 'haber')
-  ) {
-    // Con líneas de los dos lados no se sabe cuánto va contra el banco.
-    throw new Error(
-      'En una regla de banco todas las líneas van del mismo lado: la contrapartida contra el banco la agrega el sistema'
-    );
   }
   const bases = BASES_POR_MODULO[sourceModule];
   for (const l of lines) {
@@ -3207,8 +3199,15 @@ function validateRuleLines(
       );
     }
   }
-  // En banco no se pide cuadre: la línea que falta la pone el motor.
-  if (contrapartidaAutomatica) return;
+  // En banco, mientras las líneas vayan todas del mismo lado, la que falta la
+  // pone el motor y no hay cuadre que pedir. Si el estudio fijó la
+  // contrapartida a mano —una cuenta concreta en vez de "la del banco"—, la
+  // regla se comporta como cualquier otra y sí tiene que cuadrar.
+  if (
+    contrapartidaAutomatica &&
+    !(lines.some((l) => l.side === 'debe') && lines.some((l) => l.side === 'haber'))
+  )
+    return;
 
   // Un asiento que no cuadra manda la diferencia a "Pendiente de revisión" y
   // bloquea el cierre del período. Antes se avisaba y se guardaba igual.
