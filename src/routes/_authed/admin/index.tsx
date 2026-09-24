@@ -67,6 +67,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { pesos } from '@/components/inicio/compartido';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 import {
@@ -816,9 +817,18 @@ function UmbralBancoCard() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const pct = Number(porcentaje);
-  const mto = Number(monto);
-  const valido = pct >= 1 && pct <= 100 && mto >= 0;
+  // Un campo vacío no es un cero: `Number('')` da 0 y, en el importe, eso
+  // cambiaba el criterio a "avisá solo por porcentaje" sin que nadie lo
+  // pidiera. Los dos son obligatorios; para no poner mínimo de importe hay
+  // que escribir 0, y entonces la pantalla lo dice.
+  const pct = porcentaje.trim() === '' ? NaN : Number(porcentaje);
+  const mto = monto.trim() === '' ? NaN : Number(monto);
+  const error =
+    !Number.isFinite(pct) || pct < 1 || pct > 100
+      ? 'La diferencia va de 1 a 100%.'
+      : !Number.isFinite(mto) || mto < 0
+        ? 'Poné un importe, o 0 para avisar sin importar el monto.'
+        : null;
   const sinCambios =
     !!data && pct === data.porcentaje && mto === data.monto && !data.esDefault;
 
@@ -864,16 +874,28 @@ function UmbralBancoCard() {
             </div>
             <Button
               onClick={() => guardar.mutate()}
-              disabled={!valido || sinCambios || guardar.isPending}
+              disabled={!!error || sinCambios || guardar.isPending}
             >
               {guardar.isPending ? 'Guardando…' : 'Guardar'}
             </Button>
-            {data?.esDefault && (
-              <p className="text-[12px] text-[var(--arca-ink-3)]">
-                Todavía sin configurar: rige el valor con el que arranca el
-                sistema.
-              </p>
-            )}
+            <p
+              className="text-[12px]"
+              style={{
+                color: error
+                  ? 'var(--arca-accent-neg-fg)'
+                  : 'var(--arca-ink-3)',
+              }}
+            >
+              {/* Lo que se va a guardar, en una frase: los dos números juntos
+                  se leen distinto que por separado. */}
+              {error ??
+                (mto === 0
+                  ? `Vas a recibir aviso cuando la diferencia supere el ${pct}%, sin importar el monto.`
+                  : `Vas a recibir aviso cuando la diferencia supere el ${pct}% y ${pesos(mto)}.`)}
+              {!error && data?.esDefault
+                ? ' Todavía sin configurar: rige el valor con el que arranca el sistema.'
+                : ''}
+            </p>
           </div>
         )}
       </CardContent>
