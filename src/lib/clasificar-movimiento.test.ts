@@ -61,12 +61,27 @@ describe('clasificarMovimiento', () => {
     expect(clasificarMovimiento('RETENCION GANANCIAS SICORE')).toBe(
       'impuestos_ganancias'
     );
+  });
+
+  // Pagar el impuesto cancela una deuda; que te lo retengan deja saldo a
+  // favor. Van a cuentas distintas, asi que no comparten categoria.
+  it('el pago del impuesto no es lo mismo que la retencion', () => {
     expect(clasificarMovimiento('PAGO DE SERVICIO ARCA')).toBe(
-      'impuestos_otros'
+      'pago_impuestos'
     );
     expect(
       clasificarMovimiento('PAGO DE SERVICIOS IMP.AFIP: 30707920056924')
-    ).toBe('impuestos_otros');
+    ).toBe('pago_impuestos');
+    expect(clasificarMovimiento('PAGO VEP 1234')).toBe('pago_impuestos');
+    // Un VEP de IIBB es un pago, no una percepcion de ingresos brutos.
+    expect(clasificarMovimiento('PAGO VEP IIBB CABA')).toBe('pago_impuestos');
+    // Lo que el banco descuenta solo sigue en su impuesto.
+    expect(clasificarMovimiento('REG REC SIRCREB F:30/12/25')).toBe(
+      'impuestos_iibb'
+    );
+    expect(clasificarMovimiento('PERCEPCION IVA RG 2408')).toBe(
+      'impuestos_iva'
+    );
   });
 
   it('las cargas sociales no se cuentan como sueldos', () => {

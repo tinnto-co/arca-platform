@@ -25,6 +25,7 @@ export const CATEGORIAS_MOVIMIENTO = [
   'impuestos_iva',
   'impuestos_ganancias',
   'impuestos_otros',
+  'pago_impuestos',
   'impuestos',
   'comisiones',
   'sueldos',
@@ -58,6 +59,7 @@ export const CATEGORIAS_SIN_FACTURA: readonly CategoriaMovimiento[] = [
   'impuestos_iva',
   'impuestos_ganancias',
   'impuestos_otros',
+  'pago_impuestos',
   'impuestos',
   'cargas_sociales',
   'comisiones',
@@ -82,6 +84,7 @@ export const CATEGORIAS_IMPUESTO: readonly CategoriaMovimiento[] = [
   'impuestos_iva',
   'impuestos_ganancias',
   'impuestos_otros',
+  'pago_impuestos',
   'impuestos',
 ];
 
@@ -94,6 +97,7 @@ export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
   impuestos_iva: 'IVA y percepciones',
   impuestos_ganancias: 'Ganancias y SICORE',
   impuestos_otros: 'Otros impuestos',
+  pago_impuestos: 'Pago de impuestos',
   // Queda para los movimientos que alguien marcó a mano antes de que los
   // impuestos se abrieran: el clasificador ya no la devuelve.
   impuestos: 'Impuestos (sin detallar)',
@@ -115,6 +119,14 @@ export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
  * no transferencia; y es el impuesto al cheque, no "otros impuestos").
  */
 const REGLAS: [CategoriaMovimiento, RegExp][] = [
+  // Pagar un impuesto y que te lo retengan son cosas opuestas: el pago
+  // cancela una deuda, la retención deja un saldo a favor. Como van a cuentas
+  // contables distintas, el pago se separa acá y va primero (un "PAGO VEP
+  // IIBB" es un pago, no una percepción de ingresos brutos).
+  [
+    'pago_impuestos',
+    /\bveps?\b|pago\s+(de\s+)?(servicios?\s+)?(imp\.?\s*)?(afip|arca)\b|pagos?\s+afip|presentaci[oó]n\s+y\s+pago|pago\s+de\s+servicios?\s+gcba|pago\s+(de\s+)?impuestos?/i,
+  ],
   // Impuesto sobre los débitos y créditos (ley 25.413), el "impuesto al
   // cheque": es el más repetido de todos y el estudio lo quiere aparte para
   // ver el acumulado. Va primero porque su texto menciona "débito" y
