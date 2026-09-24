@@ -93,6 +93,7 @@ import {
 import { ImportarExtractoDialog } from '@/components/banco/ImportarExtractoDialog';
 import { AvisoExtractosEnCurso } from '@/components/banco/AvisoExtractosEnCurso';
 import { BandejaConciliacion } from '@/components/banco/BandejaConciliacion';
+import { ControlBancarioCard } from '@/components/banco/ControlBancarioCard';
 import {
   CATEGORIAS_MOVIMIENTO,
   CATEGORIA_MOVIMIENTO_LABEL,
@@ -119,6 +120,8 @@ const bankSearchSchema = z.object({
   max: z.number().nonnegative().optional(),
   /** Cuánto abarca el registro: el mes de arriba (por defecto) o más. */
   rango: z.enum(['mes', '3m', '12m', 'todo']).optional(),
+  /** La conciliación factura por factura, plegada salvo que se pida. */
+  conciliacion: z.enum(['abierta']).optional(),
 });
 type BankSearch = z.infer<typeof bankSearchSchema>;
 
@@ -1796,20 +1799,58 @@ function BankPage() {
         />
       )}
 
-      {/* La bandeja ES la vista: el trabajo del mes, no el resumen de caja. */}
-      {accounts.length > 0 && (
-        <div className="mb-5">
-          <BandejaConciliacion
+      {/* El control ES la vista (reunión del 23/9): si los totales cierran y,
+          si no, por qué. Unir pago con factura pasó a ser una herramienta
+          manual, así que la bandeja queda abajo y plegada. */}
+      {accounts.length > 0 && clienteId && (
+        <div className="mb-4">
+          <ControlBancarioCard
             clienteId={clienteId}
             periodo={search.mes}
-            onPeriodoChange={(mes, { reemplazar } = {}) =>
+            onPeriodoChange={(mes) =>
               void navigate({
                 resetScroll: false,
                 search: (prev: BankSearch) => ({ ...prev, mes }),
-                replace: reemplazar,
               })
             }
           />
+        </div>
+      )}
+
+      {accounts.length > 0 && (
+        <div className="mb-5">
+          <details open={search.conciliacion === 'abierta'}>
+            <summary
+              className="cursor-pointer list-none text-[11.5px] font-medium text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
+              onClick={(e) => {
+                e.preventDefault();
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({
+                    ...prev,
+                    conciliacion:
+                      prev.conciliacion === 'abierta' ? undefined : 'abierta',
+                  }),
+                });
+              }}
+            >
+              {search.conciliacion === 'abierta' ? 'Ocultar' : 'Ver'} la
+              conciliación factura por factura
+            </summary>
+            <div className="mt-3">
+              <BandejaConciliacion
+                clienteId={clienteId}
+                periodo={search.mes}
+                onPeriodoChange={(mes, { reemplazar } = {}) =>
+                  void navigate({
+                    resetScroll: false,
+                    search: (prev: BankSearch) => ({ ...prev, mes }),
+                    replace: reemplazar,
+                  })
+                }
+              />
+            </div>
+          </details>
         </div>
       )}
 

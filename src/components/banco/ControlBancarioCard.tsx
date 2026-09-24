@@ -1,0 +1,301 @@
+/**
+ * Control bancario: lo que entró al banco contra lo facturado, y lo que salió
+ * contra lo comprado, en el mismo período.
+ *
+ * Es la vista principal del módulo desde la reunión del 23/9: el estudio no
+ * busca cruzar factura por factura, busca ver si los totales cierran y, cuando
+ * no cierran, entender por qué. Por eso la diferencia viene acompañada del
+ * desglose por concepto, que es lo que la explica (retenciones, impuestos,
+ * comisiones).
+ *
+ * La ventana puede ser de más de un mes: lo facturado en agosto suele cobrarse
+ * en septiembre, y mes a mes la brecha asusta sin motivo.
+ */
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Scale, Loader2, ChevronDown } from 'lucide-react';
+import { getControlBancario } from '@/actions/bank';
+import { MesPicker } from '@/components/shared/mes-picker';
+import { CATEGORIA_MOVIMIENTO_LABEL } from '@/lib/clasificar-movimiento';
+import type { SemaforoIncongruencia } from '@/lib/extracto-calc';
+
+const fmt = new Intl.NumberFormat('es-AR', {
+  style: 'currency',
+  currency: 'ARS',
+  maximumFractionDigits: 0,
+});
+
+const COLOR: Record<SemaforoIncongruencia, string> = {
+  ok: 'var(--arca-accent-pos-fg, oklch(0.4 0.12 145))',
+  atencion: 'var(--arca-accent-warn-fg)',
+  alerta: 'var(--arca-accent-neg, oklch(0.5 0.18 25))',
+};
+
+/** Ventanas de comparación. Un mes solo engaña: lo de agosto se cobra en septiembre. */
+const VENTANAS = [
+  { meses: 1, label: '1 mes' },
+  { meses: 2, label: '2 meses' },
+  { meses: 3, label: '3 meses' },
+  { meses: 6, label: '6 meses' },
+  { meses: 12, label: '12 meses' },
+];
+
+type Control = Awaited<ReturnType<typeof getControlBancario>>;
+type Lado = Control['ingresos'];
+
+/** El mes anterior: los extractos se cargan a mes vencido. */
+function mesAnterior(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Una de las dos comparaciones, con su diferencia. */
+function Comparacion({
+  titulo,
+  banco,
+  etiquetaBanco,
+  etiquetaComprobantes,
+  lado,
+  explicacion,
+}: {
+  titulo: string;
+  banco: number;
+  etiquetaBanco: string;
+  etiquetaComprobantes: string;
+  lado: Lado;
+  explicacion: string;
+}) {
+  const color = COLOR[lado.nivel];
+  return (
+    <div className="rounded-[10px] border border-[var(--arca-border)] px-3 py-2.5">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+        {titulo}
+      </p>
+      <div className="mt-1.5 grid grid-cols-3 gap-2">
+        <div>
+          <p className="text-[11px] text-[var(--arca-ink-3)]">
+            {etiquetaBanco}
+          </p>
+          <p className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
+            {fmt.format(banco)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] text-[var(--arca-ink-3)]">
+            {etiquetaComprobantes}
+          </p>
+          <p className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
+            {fmt.format(lado.comprobantes)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[11px] text-[var(--arca-ink-3)]">Diferencia</p>
+          <p
+            className="text-[15px] font-semibold tabular-nums"
+            style={{ color }}
+          >
+            {lado.diferencia > 0 ? '+' : ''}
+            {fmt.format(lado.diferencia)}
+            <span className="ml-1 text-[11px] font-normal">
+              ({lado.porcentaje}%)
+            </span>
+          </p>
+        </div>
+      </div>
+      <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--arca-ink-3)]">
+        {explicacion}
+      </p>
+    </div>
+  );
+}
+
+export function ControlBancarioCard({
+  clienteId,
+  periodo,
+  onPeriodoChange,
+}: {
+  clienteId: string;
+  /** Último mes de la ventana, 'YYYY-MM'. Lo manda la URL de Banco. */
+  periodo?: string;
+  onPeriodoChange: (mes: string) => void;
+}) {
+  const [meses, setMeses] = useState(1);
+  const [verDesglose, setVerDesglose] = useState(false);
+  const mes = periodo ?? mesAnterior();
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['controlBancario', clienteId, mes, meses],
+    queryFn: () =>
+      getControlBancario({ data: { clienteId, periodo: mes, meses } }),
+    enabled: !!clienteId,
+    // Cambiar de mes deja los números anteriores atenuados en vez de vaciar la
+    // card: desaparecer y volver se lee como que algo se rompió.
+    placeholderData: (previo) => previo,
+  });
+
+  const desglose = data?.desglose ?? [];
+  const totalDesglose = desglose.reduce((s, d) => s + d.total, 0);
+
+  return (
+    <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Scale className="size-4 text-[var(--arca-ink-2)]" strokeWidth={2} />
+        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+          Control bancario
+        </span>
+        {isFetching && (
+          <span className="inline-flex items-center gap-1 text-[11px] text-[var(--arca-ink-4)]">
+            <Loader2 className="size-3 animate-spin" />
+            Actualizando…
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {/* La ventana: mirar dos meses juntos absorbe el desfase entre lo
+              facturado y lo cobrado. */}
+          <select
+            value={meses}
+            onChange={(e) => setMeses(Number(e.target.value))}
+            className="h-7 rounded-[8px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 text-[11.5px] text-[var(--arca-ink-2)]"
+          >
+            {VENTANAS.map((v) => (
+              <option key={v.meses} value={v.meses}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+          <MesPicker
+            size="sm"
+            ano={mes.slice(0, 4)}
+            mes={mes.slice(5, 7)}
+            onChange={(ano, m) => onPeriodoChange(`${ano}-${m}`)}
+          />
+        </div>
+      </div>
+
+      <div
+        className={
+          isFetching ? 'opacity-45 transition-opacity duration-150' : ''
+        }
+      >
+        {!data ? (
+          <p className="mt-3 text-[12.5px] text-[var(--arca-ink-3)]">
+            Cargando…
+          </p>
+        ) : data.movimientos === 0 ? (
+          <p className="mt-3 text-[12.5px] text-[var(--arca-ink-3)]">
+            Sin movimientos bancarios en el período. Importá el extracto para
+            comparar.
+          </p>
+        ) : (
+          <>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <Comparacion
+                titulo="Ingresos"
+                banco={data.ingresos.banco}
+                etiquetaBanco="Entró al banco"
+                etiquetaComprobantes="Se facturó"
+                lado={data.ingresos}
+                explicacion={
+                  data.ingresos.diferencia > 0
+                    ? 'Entró más de lo facturado: puede haber cobros de facturas de meses anteriores o ventas sin facturar.'
+                    : 'Se facturó más de lo que entró: puede haber facturas todavía no cobradas, retenciones o cobros en efectivo.'
+                }
+              />
+              <Comparacion
+                titulo="Egresos"
+                banco={data.egresos.banco}
+                etiquetaBanco="Salió del banco"
+                etiquetaComprobantes="Se compró"
+                lado={data.egresos}
+                explicacion={
+                  data.egresos.diferencia > 0
+                    ? 'Salió más de lo comprado: impuestos, sueldos y comisiones no tienen factura de proveedor. El desglose lo explica.'
+                    : 'Se compró más de lo que salió: puede haber facturas todavía impagas.'
+                }
+              />
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--arca-ink-4)]">
+              <span>
+                {data.movimientos} movimiento
+                {data.movimientos !== 1 ? 's' : ''} ·{' '}
+                {data.ingresos.cantidadComprobantes} emitida
+                {data.ingresos.cantidadComprobantes !== 1 ? 's' : ''} ·{' '}
+                {data.egresos.cantidadComprobantes} recibida
+                {data.egresos.cantidadComprobantes !== 1 ? 's' : ''}
+              </span>
+              <button
+                type="button"
+                onClick={() => setVerDesglose((v) => !v)}
+                className="ml-auto inline-flex items-center gap-1 font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)]"
+              >
+                {verDesglose ? 'Ocultar' : 'Ver'} el desglose por concepto
+                <ChevronDown
+                  className={`size-3 transition-transform ${verDesglose ? 'rotate-180' : ''}`}
+                />
+              </button>
+            </div>
+
+            {/* El desglose es lo que explica la diferencia: qué parte de lo que
+                entró o salió son impuestos, comisiones o sueldos. */}
+            {verDesglose && (
+              <div className="mt-2 overflow-hidden rounded-[10px] border border-[var(--arca-border)]">
+                <table className="w-full text-[12px]">
+                  <thead className="bg-[var(--arca-bg)] text-[10.5px] uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+                    <tr>
+                      <th className="px-3 py-1.5 text-left font-semibold">
+                        Concepto
+                      </th>
+                      <th className="px-3 py-1.5 text-left font-semibold">
+                        Entró o salió
+                      </th>
+                      <th className="px-3 py-1.5 text-right font-semibold">
+                        Movimientos
+                      </th>
+                      <th className="px-3 py-1.5 text-right font-semibold">
+                        Total
+                      </th>
+                      <th className="px-3 py-1.5 text-right font-semibold">
+                        % del total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {desglose.map((d) => (
+                      <tr
+                        key={`${d.categoria}-${d.direccion}`}
+                        className="border-t border-[var(--arca-border)]"
+                      >
+                        <td className="px-3 py-1.5">
+                          {CATEGORIA_MOVIMIENTO_LABEL[
+                            d.categoria as keyof typeof CATEGORIA_MOVIMIENTO_LABEL
+                          ] ?? d.categoria}
+                        </td>
+                        <td className="px-3 py-1.5 text-[var(--arca-ink-3)]">
+                          {d.direccion === 'ingreso' ? 'Entró' : 'Salió'}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">
+                          {d.movimientos}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">
+                          {fmt.format(d.total)}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-[var(--arca-ink-3)]">
+                          {totalDesglose > 0
+                            ? Math.round((d.total / totalDesglose) * 100)
+                            : 0}
+                          %
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
