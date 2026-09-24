@@ -895,7 +895,7 @@ function EmpleadoPdfDocument({
 
 // ─── Utilidades de descarga ───────────────────────────────────────────────────
 
-function triggerDownload(blob: Blob, filename: string): void {
+export function triggerDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -934,7 +934,14 @@ export async function generarPdfBlobEmpleado(
   return instance.toBlob();
 }
 
-export async function generarYDescargar({
+/**
+ * Arma el PDF (un empleado) o ZIP (varios) sin dispararlo como descarga.
+ * Lo usan tanto `generarYDescargar` como el envío por mail (que necesita el
+ * blob para adjuntarlo, no para bajarlo al disco).
+ */
+type RecibosAgrupados = { empleadoNombre: string; recibos: ReciboDetallePdf[] }[];
+
+export async function generarArchivoRecibos({
   recibosAgrupados,
   clientData,
   firmaEmpleadorUrl,
@@ -942,13 +949,13 @@ export async function generarYDescargar({
   mes,
   onProgress,
 }: {
-  recibosAgrupados: Array<{ empleadoNombre: string; recibos: ReciboDetallePdf[] }>;
+  recibosAgrupados: RecibosAgrupados;
   clientData: ClientDataPdf | null;
   firmaEmpleadorUrl: string | null;
   ano: string;
   mes: string;
   onProgress?: (current: number, total: number) => void;
-}): Promise<void> {
+}): Promise<{ blob: Blob; filename: string }> {
   if (recibosAgrupados.length === 0) {
     throw new Error('Sin recibos para imprimir');
   }
@@ -956,12 +963,11 @@ export async function generarYDescargar({
   const periodoLabel = mes ? `${ano}_${mes}` : ano;
 
   if (recibosAgrupados.length === 1) {
-    const { empleadoNombre, recibos } = recibosAgrupados[0]!;
+    const { empleadoNombre, recibos } = recibosAgrupados[0];
     onProgress?.(0, 1);
     const blob = await generarPdfBlobEmpleado(recibos, clientData, firmaEmpleadorUrl);
     onProgress?.(1, 1);
-    triggerDownload(blob, `recibos_${sanitizeFilename(empleadoNombre)}_${periodoLabel}.pdf`);
-    return;
+    return { blob, filename: `recibos_${sanitizeFilename(empleadoNombre)}_${periodoLabel}.pdf` };
   }
 
   // Múltiples empleados → ZIP (un PDF por empleado)
@@ -970,7 +976,7 @@ export async function generarYDescargar({
   const total = recibosAgrupados.length;
 
   for (let i = 0; i < recibosAgrupados.length; i++) {
-    const { empleadoNombre, recibos } = recibosAgrupados[i]!;
+    const { empleadoNombre, recibos } = recibosAgrupados[i];
     onProgress?.(i, total);
     const blob = await generarPdfBlobEmpleado(recibos, clientData, firmaEmpleadorUrl);
     zip.file(`${sanitizeFilename(empleadoNombre)}.pdf`, blob);
@@ -978,5 +984,17 @@ export async function generarYDescargar({
 
   onProgress?.(total, total);
   const zipBlob = await zip.generateAsync({ type: 'blob' });
-  triggerDownload(zipBlob, `recibos_${periodoLabel}.zip`);
+  return { blob: zipBlob, filename: `recibos_${periodoLabel}.zip` };
+}
+
+export async function generarYDescargar(args: {
+  recibosAgrupados: RecibosAgrupados;
+  clientData: ClientDataPdf | null;
+  firmaEmpleadorUrl: string | null;
+  ano: string;
+  mes: string;
+  onProgress?: (current: number, total: number) => void;
+}): Promise<void> {
+  const { blob, filename } = await generarArchivoRecibos(args);
+  triggerDownload(blob, filename);
 }

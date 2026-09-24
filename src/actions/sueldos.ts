@@ -5248,6 +5248,57 @@ export const listRecibosDetalleParaPDF = createServerFn({ method: 'GET' })
   });
 
 /**
+ * Envía por mail al empleador (cliente) el PDF/ZIP de recibos ya generado
+ * en el navegador. El adjunto viaja en base64; el servidor solo resuelve el
+ * destinatario (cliente.email) y dispara el mail vía Resend.
+ */
+export const enviarRecibosPorMail = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      ano: z.string().regex(/^\d{4}$/, 'Año inválido'),
+      mes: z
+        .string()
+        .regex(/^\d{2}$/)
+        .optional(),
+      filename: z.string().min(1),
+      contentBase64: z.string().min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+
+    const [c] = await db
+      .select({ email: cliente.email, razonSocial: cliente.razonSocial })
+      .from(cliente)
+      .where(eq(cliente.id, ctx.data.clientId))
+      .limit(1);
+
+    if (!c?.email) {
+      throw new Error(
+        'El cliente no tiene un email cargado. Agregalo en "Editar cliente" antes de enviar los recibos.'
+      );
+    }
+
+    const { ano, mes } = ctx.data;
+    const periodoLabel = mes ? `${mes}/${ano}` : ano;
+
+    const { sendRecibosEmail } = await import('@/lib/send-recibos-email');
+    await sendRecibosEmail({
+      to: c.email,
+      razonSocial: c.razonSocial,
+      periodoLabel,
+      attachment: {
+        filename: ctx.data.filename,
+        contentBase64: ctx.data.contentBase64,
+      },
+    });
+  });
+
+/**
  * Resumen agregado de la liquidación de un cliente para un período.
  * Devuelve totales (haberes, no remunerativo, descuentos, retenciones, neto)
  * + cantidad de recibos por tipo + cantidad de empleados liquidados.
