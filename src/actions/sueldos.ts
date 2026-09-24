@@ -772,6 +772,114 @@ export const agregarConvenioDesdeAfipEmpleadores = createServerFn({
 
 // ---------- Categorías por convenio ----------
 
+/**
+ * Empleados activos que no tienen básico para el período.
+ *
+ * El control existe en la pantalla del recibo, pero se ve de a un empleado: hay
+ * que abrir cada uno para enterarse. Esto lo dice antes de liquidar, para toda
+ * la empresa junta. Sin esta vista, lo de Construcción —seis empresas sin
+ * escala de septiembre— se descubría recién al armar el primer recibo, o peor,
+ * después de emitirlo en cero.
+ *
+ * Mismo orden de resolución que el recibo: sueldo del legajo, escala de la
+ * categoría, grilla publicada del convenio. Los excluidos de convenio quedan
+ * afuera de la advertencia: para un gerente no hay escala que buscar, el sueldo
+ * es el del legajo, y si tampoco está se avisa como falta de sueldo.
+ */
+export const listEmpleadosSinBasico = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      periodo: z.string(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    await ensureClientBelongsToOrg(ctx.data.clientId, orgId);
+    const periodo = normalizarPeriodoYYYYMM(ctx.data.periodo);
+
+    const filas = await db
+      .select({
+        empleadoId: empleado.id,
+        nombre: empleado.nombre,
+        legajo: empleado.legajo,
+        valorSueldo: empleado.valorSueldo,
+        categoriaId: empleado.categoriaId,
+        categoria: convenioCategoria.nombre,
+        convenio: convenio.nombre,
+        cctCodigo: convenio.cctCodigo,
+      })
+      .from(empleado)
+      .leftJoin(
+        convenioCategoria,
+        eq(convenioCategoria.id, empleado.categoriaId)
+      )
+      .leftJoin(convenio, eq(convenio.id, convenioCategoria.convenioId))
+      .where(and(eq(empleado.clienteId, ctx.data.clientId), empleado.activo))
+      .orderBy(empleado.legajo);
+
+    const problemas: {
+      empleadoId: string;
+      nombre: string;
+      legajo: string | null;
+      categoria: string | null;
+      convenio: string | null;
+      motivo: 'sin_categoria' | 'sin_escala' | 'sin_sueldo_propio';
+    }[] = [];
+
+    for (const f of filas) {
+      /*
+       * Sueldo propio en el legajo: alcanza, no se mira la escala. Solo
+       * `valorSueldo`, igual que `basicoParaRecibo`: el valor hora del legajo
+       * NO pisa el básico, así que un empleado con valor hora y sin escala
+       * igual liquida en cero. Es el caso de los 23 de Construcción, que se
+       * perderían del aviso si se contara acá.
+       */
+      const propio = Number(f.valorSueldo ?? 0);
+      if (propio > 0) continue;
+
+      const excluido =
+        extractCctCodigo(f.cctCodigo ?? f.convenio) === '9999/99';
+      if (excluido) {
+        problemas.push({
+          empleadoId: f.empleadoId,
+          nombre: f.nombre,
+          legajo: f.legajo,
+          categoria: f.categoria,
+          convenio: f.convenio,
+          motivo: 'sin_sueldo_propio',
+        });
+        continue;
+      }
+
+      if (!f.categoriaId) {
+        problemas.push({
+          empleadoId: f.empleadoId,
+          nombre: f.nombre,
+          legajo: f.legajo,
+          categoria: null,
+          convenio: f.convenio,
+          motivo: 'sin_categoria',
+        });
+        continue;
+      }
+
+      const basico = await getBasicoVigenteInternal(f.categoriaId, periodo);
+      if (!(basico > 0)) {
+        problemas.push({
+          empleadoId: f.empleadoId,
+          nombre: f.nombre,
+          legajo: f.legajo,
+          categoria: f.categoria,
+          convenio: f.convenio,
+          motivo: 'sin_escala',
+        });
+      }
+    }
+
+    return { periodo, activos: filas.length, problemas };
+  });
+
 export const listCategoriasByConvenio = createServerFn({ method: 'GET' })
   .validator(
     z.object({ convenioId: z.string().uuid(), clientId: z.string().uuid() })
