@@ -11,11 +11,10 @@
  * cada empleador, que es lo que lee el recibo) y `cct_escala` (la grilla común
  * que escribe el scrapeo).
  *
- * Los `check` van NOT VALID a propósito: `cct_escala` todavía tiene las 21
- * filas de 2031 y no son nuestras para borrar. NOT VALID no mira lo que ya
- * está, pero sí rechaza todo lo que se escriba de acá en adelante — incluida
- * la próxima corrida del scrapeo, que es justamente lo que queremos que falle
- * en vez de pasar en silencio. Avisarles antes de correr esto.
+ * El check se agrega validado cuando la tabla ya cumple, que es lo que
+ * garantiza que ninguna fila vieja quedó afuera. Si quedara alguna que no
+ * cumple se agrega NOT VALID: protege lo que venga sin trabar la migración, y
+ * el script dice cuáles son para limpiarlas después.
  *
  * Sin fecha de fin se permite: es lo normal para la última escala cargada, que
  * rige hasta que se cargue la siguiente.
@@ -91,15 +90,22 @@ if (!APPLY) {
   process.exit(0);
 }
 
-await sql.begin(async (tx) => {
-  for (const tabla of TABLAS) {
-    if (await existe(tabla)) continue;
-    await tx.unsafe(`
-      alter table ${tabla}
-      add constraint ${nombreCheck(tabla)}
-      check (${expresion}) not valid`);
-  }
-});
+for (const tabla of TABLAS) {
+  if (await existe(tabla)) continue;
+  const [fuera] = await sql.unsafe(`
+    select count(*)::int n from ${tabla}
+    where vigencia_hasta is not null
+      and (vigencia_hasta < vigencia_desde
+           or vigencia_hasta >= vigencia_desde + interval '13 months')`);
+  const validado = fuera.n === 0;
+  await sql.unsafe(`
+    alter table ${tabla}
+    add constraint ${nombreCheck(tabla)}
+    check (${expresion})${validado ? '' : ' not valid'}`);
+  console.log(
+    `  ${tabla}: check agregado ${validado ? 'y validado sobre las filas existentes' : `NOT VALID (${fuera.n} filas viejas no cumplen)`}`
+  );
+}
 
 console.log('\nVerificación:');
 let ok = true;
