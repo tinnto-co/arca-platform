@@ -325,7 +325,6 @@ import {
   reopenPayrollPeriod,
 } from '@/lib/accounting-payroll-close';
 import * as r2 from '@/lib/r2';
-import { parseISO } from 'date-fns';
 
 // ---------- Convenios ----------
 
@@ -3306,7 +3305,6 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       apellido,
       cuilCuil,
       fechaAlta,
-      fechaIngreso,
       convenioId,
       categoriaId,
       categoria,
@@ -3348,8 +3346,14 @@ export const updateEmpleado = createServerFn({ method: 'POST' })
       set.nombre = nombre;
     }
     if (cuilCuil !== undefined) set.cuil = cuilCuil;
-    if (fechaAlta) set.fechaAlta = parseISO(fechaAlta);
-    if (fechaIngreso) set.fechaIngreso = parseISO(fechaIngreso);
+    // `fecha_alta` es columna `date`, igual que `fecha_baja` más abajo: un
+    // objeto Date hace fallar la consulta entera. Esto rompía CUALQUIER
+    // guardado del empleado desde la ficha —la baja incluida—, porque el
+    // formulario siempre manda la fecha de alta.
+    if (fechaAlta) set.fechaAlta = fechaAlta.slice(0, 10);
+    // `fechaIngreso` no se escribe: la tabla `empleado` no tiene esa columna
+    // (solo fecha_alta, fecha_baja y fecha_nacimiento). Se acepta en la
+    // entrada por compatibilidad y se ignora.
     if (convenioId !== undefined) set.convenioId = convenioId;
     if (categoriaId !== undefined) set.categoriaId = categoriaId;
     if (categoria !== undefined) set.categoria = categoria?.trim() || null;
