@@ -22,11 +22,8 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { AyudaIcono } from '@/components/shared/ayuda';
+import { SearchableSelect } from '@/components/ui/searchable-select';
 import { getControlBancario } from '@/actions/bank';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -109,7 +106,6 @@ function Comparacion({
   etiquetaComprobantes,
   referencia,
   lado,
-  explicacion,
 }: {
   titulo: string;
   banco: number;
@@ -118,8 +114,6 @@ function Comparacion({
   /** Cómo se nombra la referencia dentro de una frase: "lo facturado". */
   referencia: string;
   lado: Lado;
-  /** En la ficha del cliente no va: la card es un vistazo. */
-  explicacion: string | null;
 }) {
   const color = COLOR[lado.nivel];
   // El título arriba, siempre: centrarlo dejaba "INGRESOS" flotando en el
@@ -147,16 +141,12 @@ function Comparacion({
           </p>
         </div>
         <div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <p className="w-fit cursor-help text-[11px] text-[var(--arca-ink-3)] underline decoration-dotted underline-offset-2">
-                Diferencia
-              </p>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-[260px] text-[12px] leading-snug">
-              {etiquetaBanco} menos {referencia}. El % es sobre {referencia}.
-            </TooltipContent>
-          </Tooltip>
+          <p className="flex items-center gap-1 text-[11px] text-[var(--arca-ink-3)]">
+            Diferencia
+            <AyudaIcono
+              texto={`${etiquetaBanco} menos ${referencia}. El % es sobre ${referencia}.`}
+            />
+          </p>
           <p
             className="text-[15px] font-semibold tabular-nums"
             style={{ color }}
@@ -180,11 +170,6 @@ function Comparacion({
           )}
         </div>
       </div>
-      {explicacion && (
-        <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--arca-ink-3)]">
-          {explicacion}
-        </p>
-      )}
     </div>
   );
 }
@@ -281,17 +266,20 @@ export function ControlBancarioCard({
           <div className="ml-auto flex items-center gap-2">
             {/* La ventana: mirar dos meses juntos absorbe el desfase entre lo
                 facturado y lo cobrado. */}
-            <select
-              value={meses}
-              onChange={(e) => setMeses(Number(e.target.value))}
-              className="h-7 rounded-[8px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-2 text-[11.5px] text-[var(--arca-ink-2)]"
-            >
-              {VENTANAS.map((v) => (
-                <option key={v.meses} value={v.meses}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
+            {/* Era un <select> del navegador: rompia con el resto de los
+                controles y en Mac se abria como una lista gris del sistema. */}
+            <SearchableSelect
+              size="sm"
+              buscable={false}
+              width={112}
+              align="end"
+              value={String(meses)}
+              onValueChange={(v) => setMeses(Number(v))}
+              options={VENTANAS.map((v) => ({
+                value: String(v.meses),
+                label: v.label,
+              }))}
+            />
             <MesPicker
               size="sm"
               ano={mes.slice(0, 4)}
@@ -331,13 +319,6 @@ export function ControlBancarioCard({
                 etiquetaComprobantes="Se facturó"
                 referencia="lo que se facturó"
                 lado={data.ingresos}
-                explicacion={
-                  compacto
-                    ? null
-                    : data.ingresos.diferencia > 0
-                      ? 'Entró más de lo facturado: puede haber cobros de facturas de meses anteriores o ventas sin facturar.'
-                      : 'Se facturó más de lo que entró: puede haber facturas todavía no cobradas, retenciones o cobros en efectivo.'
-                }
               />
               <Comparacion
                 titulo="Egresos"
@@ -346,13 +327,6 @@ export function ControlBancarioCard({
                 etiquetaComprobantes="Se compró"
                 referencia="lo que se compró"
                 lado={data.egresos}
-                explicacion={
-                  compacto
-                    ? null
-                    : data.egresos.diferencia > 0
-                      ? 'Salió más de lo comprado: impuestos, sueldos y comisiones no tienen factura de proveedor. El desglose lo explica.'
-                      : 'Se compró más de lo que salió: puede haber facturas todavía impagas.'
-                }
               />
             </div>
 

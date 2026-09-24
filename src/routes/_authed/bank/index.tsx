@@ -22,6 +22,7 @@ import {
   Scale,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ConAyuda } from '@/components/shared/ayuda';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
 import { Paginador } from '@/components/shared/paginador';
@@ -46,11 +47,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { SelectorClienteGlobal } from '@/components/shared/selector-cliente';
 import {
   guardarClienteSeleccionado,
@@ -184,7 +180,7 @@ function periodoDelRango(
 }
 
 /** Filas por página del registro de movimientos. */
-const MOVIMIENTOS_POR_PAGINA = 50;
+const MOVIMIENTOS_POR_PAGINA = 10;
 
 /* ─── Types ─── */
 type MovimientoRow = Awaited<
@@ -224,24 +220,6 @@ function fmtDate(d: string | Date) {
     month: '2-digit',
     year: 'numeric',
   });
-}
-
-/** Tooltip del sistema alrededor de un elemento (en vez de `title`). */
-function ConAyuda({
-  texto,
-  children,
-}: {
-  texto: React.ReactNode;
-  children: React.ReactElement;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent className="max-w-[300px] text-[12px] leading-snug">
-        {texto}
-      </TooltipContent>
-    </Tooltip>
-  );
 }
 
 const ESTADO_LABEL = {
@@ -466,7 +444,7 @@ function RevisarSugerencias({
       }}
     >
       <AlertDialogTrigger asChild>
-        <Button type="button" size="sm">
+        <Button type="button" variant="outline" size="sm">
           <Check className="size-3.5" strokeWidth={2.4} />
           Revisar sugeridos
         </Button>
@@ -2001,20 +1979,22 @@ function BankPage() {
                   ? `${cuentaElegida.banco} ${cuentaElegida.numero ?? ''}`
                   : `Todas las cuentas (${accounts.length})`}
                 {' · '}
-                {mesLabel} · {movimientosFiltrados} movimiento
-                {movimientosFiltrados === 1 ? '' : 's'}
+                {mesLabel} ·{' '}
+                {/* Es lo unico del subtitulo que cambia al filtrar: si se lee
+                    igual que el resto, el filtro parece no haber hecho nada. */}
+                <span className="font-semibold text-[var(--arca-ink)]">
+                  {movimientosFiltrados} movimiento
+                  {movimientosFiltrados === 1 ? '' : 's'}
+                </span>{' '}
+                ·{' '}
+                {totalesRegistro?.conciliados ?? 0} conciliados ·{' '}
+                {totalesRegistro?.noRequiereFactura ?? 0} sin factura ·{' '}
+                {unmatchedCount} sin conciliar
               </div>
             </div>
-            <div className="ml-auto shrink-0 flex items-center gap-3">
-              {(totalesRegistro?.sugeridos ?? 0) > 0 && (
-                <RevisarSugerencias
-                  alcance={
-                    accountId
-                      ? { cuentaBancariaId: accountId, ...periodoRegistro }
-                      : { clienteId, ...periodoRegistro }
-                  }
-                />
-              )}
+            {/* De menor a mayor peso, y el principal —Auto-conciliar, que es
+                lo que hace avanzar el trabajo— siempre ultimo a la derecha. */}
+            <div className="ml-auto shrink-0 flex items-center gap-2">
               <ConAyuda
                 texto={
                   accountId
@@ -2032,11 +2012,19 @@ function BankPage() {
                   Movimiento manual
                 </Button>
               </ConAyuda>
+              {(totalesRegistro?.sugeridos ?? 0) > 0 && (
+                <RevisarSugerencias
+                  alcance={
+                    accountId
+                      ? { cuentaBancariaId: accountId, ...periodoRegistro }
+                      : { clienteId, ...periodoRegistro }
+                  }
+                />
+              )}
               <ConAyuda
                 texto={`Busca, para cada movimiento ${accountId ? 'de esta cuenta' : 'de todas las cuentas de la empresa'} y de todos los meses, una factura con el mismo importe (cobros contra emitidas, pagos contra recibidas): hasta 5 días de diferencia, o hasta 30 días antes si es el mismo cliente o proveedor o la única factura posible. Si varios movimientos pueden ser la misma factura, se la da al que mejor corresponde: misma contraparte, después la fecha más cercana. Cada vez recalcula las sugerencias pendientes; lo confirmado y lo descartado no se toca.`}
               >
                 <Button
-                  variant="outline"
                   size="sm"
                   onClick={() => autoMatchMutation.mutate()}
                   disabled={autoMatchMutation.isPending}
@@ -2061,7 +2049,7 @@ function BankPage() {
               onValueChange={(v) => setAccountId(v === 'all' ? '' : v)}
               placeholder="Cuenta"
               searchPlaceholder="Buscar cuenta..."
-              width={230}
+              width={206}
               options={[
                 { value: 'all', label: 'Todas las cuentas' },
                 ...accounts.map((a) => ({
@@ -2083,8 +2071,8 @@ function BankPage() {
                 })
               }
               placeholder="Período"
-              searchPlaceholder="Buscar período..."
-              width={190}
+              buscable={false}
+              width={168}
               options={(Object.keys(RANGO_LABEL) as Rango[]).map((r) => ({
                 value: r,
                 // "El mes elegido arriba" no se entendía: en esta pestaña no
@@ -2110,7 +2098,7 @@ function BankPage() {
               }
               placeholder="Categoría"
               searchPlaceholder="Buscar categoría..."
-              width={210}
+              width={196}
               options={[
                 { value: 'all', label: 'Todas las categorías' },
                 ...CATEGORIAS_MOVIMIENTO.map((c) => ({
@@ -2135,8 +2123,8 @@ function BankPage() {
                 })
               }
               placeholder="Estado"
-              searchPlaceholder="Buscar estado..."
-              width={190}
+              buscable={false}
+              width={186}
               options={[
                 { value: 'all', label: 'Todos los estados' },
                 ...(
@@ -2175,43 +2163,6 @@ function BankPage() {
                 }
               />
             )}
-          </div>
-
-          {/* Los contadores que antes eran una frase larga en el encabezado.
-              Como cada uno es un estado del filtro, se tocan para filtrar. */}
-          <div className="px-5 py-2 flex flex-wrap items-center gap-1.5 border-b border-[var(--arca-border)]">
-            {(
-              [
-                ['conciliado', totalesRegistro?.conciliados ?? 0],
-                ['sugerido', totalesRegistro?.sugeridos ?? 0],
-                ['no_requiere', totalesRegistro?.noRequiereFactura ?? 0],
-                ['sin_conciliar', unmatchedCount],
-              ] as const
-            ).map(([estado, cantidad]) => {
-              const activo = search.estado === estado;
-              return (
-                <button
-                  key={estado}
-                  type="button"
-                  onClick={() =>
-                    void navigate({
-                      resetScroll: false,
-                      search: (prev: BankSearch) => ({
-                        ...prev,
-                        estado: activo ? undefined : estado,
-                      }),
-                    })
-                  }
-                  className={`h-6 px-2 rounded-[6px] text-[11.5px] border transition-colors ${
-                    activo
-                      ? 'border-[var(--arca-ink-2)] bg-[var(--arca-surface-2)] text-[var(--arca-ink)] font-medium'
-                      : 'border-[var(--arca-border)] text-[var(--arca-ink-3)] hover:bg-[var(--arca-surface-2)]'
-                  }`}
-                >
-                  {cantidad} {ESTADO_LABEL[estado].toLowerCase()}
-                </button>
-              );
-            })}
           </div>
 
           {showManualMovement && accountId && (

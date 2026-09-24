@@ -34,6 +34,11 @@ interface SearchableSelectProps {
   size?: 'default' | 'sm';
   /** Micro-label que encabeza el popover, como el "ESTADO" de la referencia. */
   label?: string;
+  /**
+   * El buscador de arriba. Con cuatro o cinco opciones a la vista estorba:
+   * se abre el teclado, roba el foco y no hay nada que buscar.
+   */
+  buscable?: boolean;
   align?: 'start' | 'end' | 'center';
   disabled?: boolean;
 }
@@ -47,6 +52,7 @@ export function SearchableSelect({
   emptyMessage = 'Sin resultados',
   width = 280,
   size = 'default',
+  buscable = true,
   label,
   align = 'start',
   disabled = false,
@@ -91,10 +97,12 @@ export function SearchableSelect({
               {label}
             </div>
           )}
-          <CommandInput
-            placeholder={searchPlaceholder}
-            className="text-[13px]"
-          />
+          {buscable && (
+            <CommandInput
+              placeholder={searchPlaceholder}
+              className="text-[13px]"
+            />
+          )}
           {/* maxHeight inline: dentro de un Dialog la clase max-h se pierde
               en la cascada y la lista se desborda sin scroll. */}
           <CommandList
