@@ -907,6 +907,22 @@ export const upsertEscala = createServerFn({ method: 'POST' })
         periodoLabel: ctx.data.periodoLabel ?? null,
         fuente: ctx.data.fuente ?? null,
       })
+      // Se llama upsert y era un insert pelado: cargar de nuevo un período ya
+      // cargado chocaba contra el índice único `(categoria_id,
+      // vigencia_desde)` y el estudio veía un error sin salida. Corregir una
+      // escala mal traída del scrapeo es exactamente lo que hay que poder
+      // hacer, así que la carga a mano pisa lo que haya.
+      .onConflictDoUpdate({
+        target: [escalaSalarial.categoriaId, escalaSalarial.vigenciaDesde],
+        set: {
+          vigenciaHasta: ctx.data.vigenciaHasta?.slice(0, 10) ?? null,
+          montoBasico: String(ctx.data.montoBasico),
+          montoNoRemunerativo: String(ctx.data.montoNoRemunerativo ?? 0),
+          periodoLabel: ctx.data.periodoLabel ?? null,
+          fuente: ctx.data.fuente ?? null,
+          updatedAt: new Date(),
+        },
+      })
       .returning();
     return row;
   });
