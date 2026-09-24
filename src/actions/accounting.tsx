@@ -3158,6 +3158,8 @@ interface RuleLineInput {
   side: 'debe' | 'haber';
   amountBasis: BaseRegla;
   fixedAmount?: number | null;
+  accountId?: string | null;
+  usesBankAccount?: boolean;
 }
 function validateRuleLines(
   lines: RuleLineInput[],
@@ -3171,6 +3173,16 @@ function validateRuleLines(
     throw new Error(
       'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
     );
+  }
+  // "La cuenta del banco" solo existe si hay un banco atrás: en facturas o
+  // sueldos no hay de dónde sacarla.
+  for (const l of lines) {
+    if (l.usesBankAccount && sourceModule !== 'movimiento_bancario')
+      throw new Error(
+        'La cuenta del banco solo se puede usar en reglas del módulo Banco'
+      );
+    if (!l.usesBankAccount && !l.accountId)
+      throw new Error('Cada línea necesita su cuenta');
   }
   const bases = BASES_POR_MODULO[sourceModule];
   for (const l of lines) {
@@ -3229,7 +3241,13 @@ function normalizeRuleCondition(
 }
 
 const mappingLineSchema = z.object({
-  accountId: z.string().uuid(),
+  /**
+   * Null cuando la línea apunta al banco del movimiento (`usesBankAccount`):
+   * la cuenta sale de `cuenta_bancaria.cuenta_contable_id` al generar.
+   */
+  accountId: z.string().uuid().nullable().optional(),
+  /** Solo en reglas de banco: la cuenta la pone la cuenta bancaria. */
+  usesBankAccount: z.boolean().optional(),
   side: z.enum(['debe', 'haber']),
   amountBasis: z.enum([
     'total',
@@ -3372,6 +3390,7 @@ export const getMappingRule = createServerFn({ method: 'GET' })
       .select({
         id: reglaMapeoLinea.id,
         accountId: reglaMapeoLinea.cuentaId,
+        usesBankAccount: reglaMapeoLinea.usaCuentaBanco,
         accountCode: cuenta.codigo,
         accountName: cuenta.nombre,
         side: reglaMapeoLinea.lado,
@@ -3381,7 +3400,7 @@ export const getMappingRule = createServerFn({ method: 'GET' })
         lineOrder: reglaMapeoLinea.orden,
       })
       .from(reglaMapeoLinea)
-      .innerJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
+      .leftJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
       .where(eq(reglaMapeoLinea.reglaId, rule.id))
       .orderBy(asc(reglaMapeoLinea.orden));
 
@@ -3468,7 +3487,7 @@ export const createMappingRule = createServerFn({ method: 'POST' })
     await assertPostableAccounts(
       d.clientId,
       orgId,
-      d.lines.map((l) => l.accountId)
+      d.lines.flatMap((l) => (l.accountId ? [l.accountId] : []))
     );
 
     const rule = await db.transaction(async (tx) => {
@@ -3494,7 +3513,8 @@ export const createMappingRule = createServerFn({ method: 'POST' })
       await tx.insert(reglaMapeoLinea).values(
         d.lines.map((l, i) => ({
           reglaId: r.id,
-          cuentaId: l.accountId,
+          cuentaId: l.usesBankAccount ? null : (l.accountId ?? null),
+          usaCuentaBanco: l.usesBankAccount ?? false,
           lado: l.side,
           base: l.amountBasis,
           importeFijo:
@@ -3536,7 +3556,7 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
     await assertPostableAccounts(
       rule.clienteId,
       orgId,
-      d.lines.map((l) => l.accountId)
+      d.lines.flatMap((l) => (l.accountId ? [l.accountId] : []))
     );
 
     // Si cambió de módulo, la prioridad vieja es de otra cola: la regla va al
@@ -3569,7 +3589,8 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
       await tx.insert(reglaMapeoLinea).values(
         d.lines.map((l, i) => ({
           reglaId: rule.id,
-          cuentaId: l.accountId,
+          cuentaId: l.usesBankAccount ? null : (l.accountId ?? null),
+          usaCuentaBanco: l.usesBankAccount ?? false,
           lado: l.side,
           base: l.amountBasis,
           importeFijo:
@@ -3744,6 +3765,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       .select({
         ruleId: reglaMapeoLinea.reglaId,
         code: cuenta.codigo,
+        usaCuentaBanco: reglaMapeoLinea.usaCuentaBanco,
         side: reglaMapeoLinea.lado,
         amountBasis: reglaMapeoLinea.base,
         fixedAmount: reglaMapeoLinea.importeFijo,
@@ -3751,7 +3773,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
         lineOrder: reglaMapeoLinea.orden,
       })
       .from(reglaMapeoLinea)
-      .innerJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
+      .leftJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
       .where(
         inArray(
           reglaMapeoLinea.reglaId,

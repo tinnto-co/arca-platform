@@ -2282,7 +2282,8 @@ export const reglaMapeo = pgTable("regla_mapeo", {
 export const reglaMapeoLinea = pgTable("regla_mapeo_linea", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	reglaId: uuid("regla_id").notNull(),
-	cuentaId: uuid("cuenta_id").notNull(),
+	cuentaId: uuid("cuenta_id"),
+	usaCuentaBanco: boolean("usa_cuenta_banco").default(false).notNull(),
 	lado: asientoLineaLado().notNull(),
 	base: reglaMapeoBase().notNull(),
 	importeFijo: numeric("importe_fijo", { precision: 15, scale:  2 }),

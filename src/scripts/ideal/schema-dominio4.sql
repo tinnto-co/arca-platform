@@ -181,18 +181,23 @@ comment on column regla_mapeo.condicion is
 create table regla_mapeo_linea (
   id uuid primary key default gen_random_uuid(),
   regla_id uuid not null references regla_mapeo(id) on delete cascade,
-  cuenta_id uuid not null references cuenta(id) on delete restrict,
+  cuenta_id uuid references cuenta(id) on delete restrict,
+  usa_cuenta_banco boolean not null default false,
   lado asiento_linea_lado not null,
   base regla_mapeo_base not null,
   importe_fijo numeric(15, 2),
   orden integer not null default 0,
   descripcion text,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint regla_mapeo_linea_cuenta_o_banco
+    check (cuenta_id is not null or usa_cuenta_banco)
 );
 create index idx_regla_mapeo_linea_regla on regla_mapeo_linea(regla_id);
 create trigger trg_set_updated_at before update on regla_mapeo_linea for each row execute function set_updated_at();
 
+comment on column regla_mapeo_linea.usa_cuenta_banco is
+  'La línea no apunta a una cuenta fija sino a la del banco del movimiento (cuenta_bancaria.cuenta_contable_id). Sin esto haría falta una regla por cada cuenta bancaria: con siete cuentas y diez conceptos, setenta reglas. Solo tiene sentido en el módulo movimiento_bancario.';
 comment on column regla_mapeo_linea.base is
   'De qué campo del hecho de origen sale el importe de esta línea (total, neto, iva…). fijo = usa importe_fijo.';
 

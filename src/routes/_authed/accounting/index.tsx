@@ -6627,6 +6627,14 @@ interface AccClient {
   name: string;
   identityNumber: string;
 }
+/**
+ * Valor del selector de cuenta cuando la línea apunta al banco del
+ * movimiento en vez de a una cuenta fija. Va en el mismo desplegable que el
+ * resto: es una cuenta más para el que escribe la regla, aunque se resuelva
+ * recién al generar el asiento.
+ */
+const CUENTA_DEL_BANCO = '__banco__';
+
 interface RuleLineDraft {
   accountId: string;
   side: 'debe' | 'haber';
@@ -7265,7 +7273,7 @@ function RuleEditorDialog({
     }
     setLines(
       existing.lines.map((l) => ({
-        accountId: l.accountId,
+        accountId: l.usesBankAccount ? CUENTA_DEL_BANCO : (l.accountId ?? ''),
         side: l.side,
         amountBasis: l.amountBasis,
         fixedAmount: l.fixedAmount != null ? String(l.fixedAmount) : '',
@@ -7339,7 +7347,8 @@ function RuleEditorDialog({
         condition = Object.keys(c).length ? c : undefined;
       }
       const payloadLines = lines.map((l) => ({
-        accountId: l.accountId,
+        accountId: l.accountId === CUENTA_DEL_BANCO ? null : l.accountId,
+        usesBankAccount: l.accountId === CUENTA_DEL_BANCO,
         side: l.side,
         amountBasis: l.amountBasis,
         fixedAmount: l.amountBasis === 'fijo' ? num(l.fixedAmount) : null,
@@ -7851,10 +7860,23 @@ function RuleEditorDialog({
                   onValueChange={(v) => updateLine(i, { accountId: v })}
                   placeholder="— Cuenta —"
                   searchPlaceholder="Buscar por código o nombre..."
-                  options={postable.map((a) => ({
-                    value: a.id,
-                    label: `${a.code} · ${a.name}`,
-                  }))}
+                  options={[
+                    // Primera de la lista en banco: es la que va en casi todas
+                    // las reglas, y evita tener una regla por cada cuenta
+                    // bancaria del cliente.
+                    ...(sourceModule === 'movimiento_bancario'
+                      ? [
+                          {
+                            value: CUENTA_DEL_BANCO,
+                            label: 'La cuenta del banco del movimiento',
+                          },
+                        ]
+                      : []),
+                    ...postable.map((a) => ({
+                      value: a.id,
+                      label: `${a.code} · ${a.name}`,
+                    })),
+                  ]}
                 />
               </div>
               <Select
