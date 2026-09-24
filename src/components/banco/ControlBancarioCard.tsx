@@ -135,12 +135,9 @@ function Comparacion({
                 Diferencia
               </p>
             </TooltipTrigger>
-            <TooltipContent className="max-w-[320px] text-[12px] leading-snug">
-              {etiquetaBanco} menos {etiquetaComprobantes.toLowerCase()}. El
-              porcentaje es esa diferencia sobre{' '}
-              {etiquetaComprobantes.toLowerCase()}, que es la referencia: lo que
-              debería haber pasado por el banco. Sin comprobantes en el período
-              no hay contra qué comparar y no se muestra.
+            <TooltipContent className="max-w-[260px] text-[12px] leading-snug">
+              {etiquetaBanco} menos {etiquetaComprobantes.toLowerCase()}. El %
+              es sobre {etiquetaComprobantes.toLowerCase()}.
             </TooltipContent>
           </Tooltip>
           <p
