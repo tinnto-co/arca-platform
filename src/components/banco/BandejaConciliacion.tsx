@@ -207,7 +207,7 @@ function FilaMovimiento({
 }) {
   return (
     <div
-      className={`flex min-h-[54px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
+      className={`flex h-[56px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 first:border-t-0 ${
         elegido
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -284,7 +284,7 @@ function FilaComprobante({
 }) {
   return (
     <div
-      className={`flex min-h-[54px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0 ${
+      className={`flex h-[56px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 first:border-t-0 ${
         esCandidato
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
