@@ -122,8 +122,10 @@ function Comparacion({
   explicacion: string | null;
 }) {
   const color = COLOR[lado.nivel];
+  // El título arriba, siempre: centrarlo dejaba "INGRESOS" flotando en el
+  // medio del bloque cuando la card se estira para igualar a la de al lado.
   return (
-    <div className="rounded-[10px] border border-[var(--arca-border)] px-3.5 py-3">
+    <div className="flex flex-col rounded-[10px] border border-[var(--arca-border)] px-3.5 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
         {titulo}
       </p>
@@ -293,9 +295,9 @@ export function ControlBancarioCard({
       </div>
 
       <div
-        className={
+        className={`flex flex-1 flex-col ${
           isFetching ? 'opacity-45 transition-opacity duration-150' : ''
-        }
+        }`}
       >
         {!data ? (
           <p className="mt-3 text-[12.5px] text-[var(--arca-ink-3)]">
@@ -312,7 +314,7 @@ export function ControlBancarioCard({
                 dejarían los números pisados, así que van apiladas y se
                 reparten el alto para no dejar un hueco abajo. */}
             <div
-              className={`mt-3 grid gap-3 ${compacto ? 'flex-1 content-between' : 'md:grid-cols-2'}`}
+              className={`mt-3 grid gap-3 ${compacto ? 'flex-1 grid-rows-2' : 'md:grid-cols-2'}`}
             >
               <Comparacion
                 titulo="Ingresos"

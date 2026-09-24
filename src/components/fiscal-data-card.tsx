@@ -76,7 +76,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
   return (
     <Card className="h-full gap-3 py-4">
       <CardHeader className="pb-0">
-        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium text-[var(--arca-ink)]">
           <Landmark className="h-4 w-4 text-[var(--arca-ink)]" />
           Datos fiscales y norma contable
         </CardTitle>

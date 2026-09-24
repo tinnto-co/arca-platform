@@ -32,8 +32,12 @@ export function PageShell({
     );
   }
 
+  // Sin `pb` grande: el layout autenticado ya reserva `pb-28` para que el
+  // input del asistente no tape el final de la página. Sumarle otro dejaba a
+  // Banco, Facturas o Balances con el doble de aire abajo que la ficha del
+  // cliente, que no lo repite.
   return (
-    <div className={cn('max-w-[1440px] px-9 pt-7 pb-14', className)}>
+    <div className={cn('max-w-[1440px] px-9 pt-7 pb-2', className)}>
       {children}
     </div>
   );
