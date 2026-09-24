@@ -137,6 +137,11 @@ const BASE_CODIGO_A_SUB: Record<string, string> = {
   bruto: 'sub1_199_plus_411_469',
   base_obra_social: 'os_base',
   no_remunerativo_con_os: 'os_norem_base',
+  // Las sumas no remunerativas anteriores al concepto que se está calculando.
+  // El acumulador llega hasta 414, pero se lee mientras se computa el 414, así
+  // que contiene 411 + 412 + 413: la antigüedad no remunerativa se calcula
+  // sobre eso en vez de que el estudio copie el total a mano en `importe`.
+  no_remunerativo_previo: 'sub411_414',
 };
 
 /** Clave de cálculo interna de la grilla derivada del modo del catálogo. */

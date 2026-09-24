@@ -139,11 +139,17 @@ export function ImprimirRecibosDialog({
       },
     });
 
-    const byEmployee = new Map<string, { empleadoNombre: string; recibos: typeof data }>();
+    const byEmployee = new Map<
+      string,
+      { empleadoNombre: string; recibos: typeof data }
+    >();
     for (const item of data) {
       const id = item.empleado.id;
       if (!byEmployee.has(id)) {
-        byEmployee.set(id, { empleadoNombre: item.empleado.nombre, recibos: [] });
+        byEmployee.set(id, {
+          empleadoNombre: item.empleado.nombre,
+          recibos: [],
+        });
       }
       byEmployee.get(id)!.recibos.push(item);
     }
@@ -162,7 +168,9 @@ export function ImprimirRecibosDialog({
     try {
       const { agrupados } = await fetchAgrupados();
       if (agrupados.length === 0) {
-        toast.error('No se encontraron recibos para los filtros seleccionados.');
+        toast.error(
+          'No se encontraron recibos para los filtros seleccionados.'
+        );
         return;
       }
 
@@ -171,11 +179,13 @@ export function ImprimirRecibosDialog({
       const blob = await generarPdfBlobEmpleado(
         todosLosRecibos,
         clientData,
-        firmaEmpleadorUrl,
+        firmaEmpleadorUrl
       );
       replacePreview(URL.createObjectURL(blob));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error al generar la vista previa.');
+      toast.error(
+        err instanceof Error ? err.message : 'Error al generar la vista previa.'
+      );
     } finally {
       setGenerandoPreview(false);
     }
@@ -200,13 +210,17 @@ export function ImprimirRecibosDialog({
       const { data, agrupados } = await fetchAgrupados();
 
       if (data.length === 0) {
-        toast.error('No se encontraron recibos para los filtros seleccionados.');
+        toast.error(
+          'No se encontraron recibos para los filtros seleccionados.'
+        );
         return;
       }
 
       const totalEmpleados = agrupados.length;
       setProgreso(
-        totalEmpleados === 1 ? 'Generando PDF…' : `Generando ${totalEmpleados} PDFs…`,
+        totalEmpleados === 1
+          ? 'Generando PDF…'
+          : `Generando ${totalEmpleados} PDFs…`
       );
 
       const { generarArchivoRecibos, triggerDownload } = await import('./recibo-pdf');
@@ -218,7 +232,8 @@ export function ImprimirRecibosDialog({
         ano,
         mes,
         onProgress: (current, total) => {
-          if (total > 1) setProgreso(`Generando PDF ${current + 1} de ${total}…`);
+          if (total > 1)
+            setProgreso(`Generando PDF ${current + 1} de ${total}…`);
         },
       });
 
@@ -229,10 +244,12 @@ export function ImprimirRecibosDialog({
       toast.success(
         totalEmpleados === 1
           ? `PDF generado: ${totalRecibos} recibo${totalRecibos !== 1 ? 's' : ''}.`
-          : `ZIP generado con ${totalEmpleados} PDFs (${totalRecibos} recibos en total).`,
+          : `PDF generado: ${totalRecibos} recibos de ${totalEmpleados} empleados.`
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error al generar el PDF.');
+      toast.error(
+        err instanceof Error ? err.message : 'Error al generar el PDF.'
+      );
     } finally {
       setGenerando(false);
       setProgreso('');
@@ -297,7 +314,9 @@ export function ImprimirRecibosDialog({
                 </SelectTrigger>
                 <SelectContent>
                   {ANOS.map((y) => (
-                    <SelectItem key={y} value={y}>{y}</SelectItem>
+                    <SelectItem key={y} value={y}>
+                      {y}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -307,7 +326,9 @@ export function ImprimirRecibosDialog({
             <div>
               <label className="mb-1.5 block text-sm font-medium">
                 Mes{' '}
-                <span className="text-xs font-normal text-muted-foreground">(opcional)</span>
+                <span className="text-xs font-normal text-muted-foreground">
+                  (opcional)
+                </span>
               </label>
               <Select
                 value={mes || '__all'}
@@ -320,7 +341,9 @@ export function ImprimirRecibosDialog({
                 <SelectContent>
                   <SelectItem value="__all">Todos los meses del año</SelectItem>
                   {MESES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -328,7 +351,9 @@ export function ImprimirRecibosDialog({
 
             {/* Empleados */}
             <div>
-              <label className="mb-2 block text-sm font-medium">Empleados</label>
+              <label className="mb-2 block text-sm font-medium">
+                Empleados
+              </label>
 
               <div className="mb-2 flex items-center gap-2">
                 <Checkbox
@@ -337,7 +362,10 @@ export function ImprimirRecibosDialog({
                   onCheckedChange={(v) => handleTodosChange(!!v)}
                   disabled={generando}
                 />
-                <label htmlFor="todos-empleados" className="cursor-pointer text-sm select-none">
+                <label
+                  htmlFor="todos-empleados"
+                  className="cursor-pointer text-sm select-none"
+                >
                   Todos los empleados
                 </label>
               </div>
@@ -345,7 +373,9 @@ export function ImprimirRecibosDialog({
               {!todosEmpleados && (
                 <div className="rounded-md border bg-muted/20">
                   {empleados.length === 0 ? (
-                    <p className="p-3 text-sm text-muted-foreground">No hay empleados disponibles.</p>
+                    <p className="p-3 text-sm text-muted-foreground">
+                      No hay empleados disponibles.
+                    </p>
                   ) : (
                     <ScrollArea className="h-[160px]">
                       <div className="divide-y">
@@ -359,7 +389,9 @@ export function ImprimirRecibosDialog({
                               onCheckedChange={() => toggleEmpleado(e.id)}
                               disabled={generando}
                             />
-                            <span className="flex-1 truncate">{toTitleCase(e.nombre)}</span>
+                            <span className="flex-1 truncate">
+                              {toTitleCase(e.nombre)}
+                            </span>
                             {e.legajo && (
                               <span className="shrink-0 text-xs text-muted-foreground">
                                 Leg. {legajoParaMostrar(e.legajo)}
@@ -372,7 +404,9 @@ export function ImprimirRecibosDialog({
                   )}
                   {selectedIds.size > 0 && (
                     <p className="border-t px-3 py-1.5 text-xs text-muted-foreground">
-                      {selectedIds.size} empleado{selectedIds.size !== 1 ? 's' : ''} seleccionado{selectedIds.size !== 1 ? 's' : ''}
+                      {selectedIds.size} empleado
+                      {selectedIds.size !== 1 ? 's' : ''} seleccionado
+                      {selectedIds.size !== 1 ? 's' : ''}
                     </p>
                   )}
                 </div>
@@ -383,7 +417,7 @@ export function ImprimirRecibosDialog({
             {!showPreview && (
               <p className="rounded-md border border-muted bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
                 {!todosEmpleados && selectedIds.size > 1
-                  ? `Se generará un ZIP con ${selectedIds.size} PDFs (uno por empleado). Cada PDF incluye todos los recibos del período con copia empleado y copia empleador.`
+                  ? `Se generará un PDF con los recibos de ${selectedIds.size} empleados. Cada recibo ocupa dos hojas: copia empleado y copia empleador.`
                   : 'Se generará un PDF con todos los recibos encontrados. Cada recibo ocupa dos hojas: copia empleado y copia empleador.'}
               </p>
             )}
@@ -433,15 +467,23 @@ export function ImprimirRecibosDialog({
             disabled={!puedeGenerar}
             className="gap-2"
           >
-            {generandoPreview
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Eye className="h-4 w-4" />}
+            {generandoPreview ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
             {generandoPreview ? 'Generando…' : 'Vista previa'}
           </Button>
-          <Button onClick={handleGenerar} disabled={!puedeGenerar} className="gap-2">
-            {generando
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : <Download className="h-4 w-4" />}
+          <Button
+            onClick={handleGenerar}
+            disabled={!puedeGenerar}
+            className="gap-2"
+          >
+            {generando ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
             {generando ? 'Generando…' : 'Generar y descargar'}
           </Button>
           {archivoVigente && (

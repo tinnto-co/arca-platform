@@ -326,6 +326,7 @@ import {
   reopenPayrollPeriod,
 } from '@/lib/accounting-payroll-close';
 import * as r2 from '@/lib/r2';
+import { describirProblemasLsd, verificarLargosLsd } from '@/lib/lsd-registro';
 
 // ---------- Convenios ----------
 
@@ -2255,6 +2256,7 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
     const plantillaMap = new Map<
       string,
       {
+        monto: string | null;
         cantidad: string | null;
         porcentaje: string | null;
         importeConceptoNumero: string | null;
@@ -2264,44 +2266,78 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       }
     >();
 
-    if (profileRow?.plantillaEmpleadoId) {
-      // Buscar el último recibo del empleado de referencia
-      const ultimoReciboRef = await db
-        .select({ id: recibo.id })
-        .from(recibo)
-        .where(eq(recibo.empleadoId, profileRow.plantillaEmpleadoId))
-        .orderBy(recibo.periodo)
-        .then((r) => r.at(-1) ?? null);
+    /*
+     * Recibo de referencia para la plantilla.
+     *
+     * Si la empresa tiene empleado de referencia configurado, su último
+     * recibo. Si no —y hoy no lo tiene ninguna de las 37—, el último recibo
+     * mensual de la empresa: sin esto `plantillaMap` queda vacío, no hay
+     * ningún concepto marcado como plantilla base y la grilla arranca con el
+     * juego fijo de `codigosActivosIniciales` (básico, antigüedad y los tres
+     * descuentos). El estudio veía un recibo sin presentismo, sin las sumas
+     * no remunerativas y sin las retenciones sindicales, aunque la empresa
+     * las tuviera cargadas en sus conceptos.
+     *
+     * Mensual a propósito: el recibo de SAC no tiene básico ni presentismo y
+     * como plantilla sería peor que no tener ninguna. Y se elige el de más
+     * conceptos, no el más reciente: en Artzeinu el último mensual es uno de
+     * julio con 5 líneas —armado con esta misma plantilla incompleta—, contra
+     * los de 17 de marzo. Tomar el más nuevo perpetuaría el recorte.
+     */
+    const ultimoReciboRef = profileRow?.plantillaEmpleadoId
+      ? await db
+          .select({ id: recibo.id })
+          .from(recibo)
+          .where(eq(recibo.empleadoId, profileRow.plantillaEmpleadoId))
+          .orderBy(desc(recibo.periodo))
+          .limit(1)
+          .then((r) => r[0] ?? null)
+      : await db
+          .select({ id: recibo.id })
+          .from(recibo)
+          .innerJoin(empleado, eq(empleado.id, recibo.empleadoId))
+          .leftJoin(reciboConcepto, eq(reciboConcepto.reciboId, recibo.id))
+          .where(
+            and(
+              eq(empleado.clienteId, ctx.data.clientId),
+              eq(recibo.tipo, 'mensual')
+            )
+          )
+          .groupBy(recibo.id, recibo.periodo)
+          .orderBy(desc(sql`count(${reciboConcepto.id})`), desc(recibo.periodo))
+          .limit(1)
+          .then((r) => r[0] ?? null);
 
-      if (ultimoReciboRef) {
-        const conceptosRef = await db
-          .select({
-            numeroSos: concepto.numero,
-            cantidad: reciboConcepto.cantidad,
-            porcentaje: reciboConcepto.porcentaje,
-            importeConceptoNumero: reciboConcepto.conceptoRef,
-            importe: reciboConcepto.importe,
-            importeMinimo: reciboConcepto.importeMin,
-            importeMaximo: reciboConcepto.importeMax,
-          })
-          .from(reciboConcepto)
-          .innerJoin(concepto, eq(reciboConcepto.conceptoId, concepto.id))
-          .where(eq(reciboConcepto.reciboId, ultimoReciboRef.id));
+    if (ultimoReciboRef) {
+      const conceptosRef = await db
+        .select({
+          numeroSos: concepto.numero,
+          monto: reciboConcepto.monto,
+          cantidad: reciboConcepto.cantidad,
+          porcentaje: reciboConcepto.porcentaje,
+          importeConceptoNumero: reciboConcepto.conceptoRef,
+          importe: reciboConcepto.importe,
+          importeMinimo: reciboConcepto.importeMin,
+          importeMaximo: reciboConcepto.importeMax,
+        })
+        .from(reciboConcepto)
+        .innerJoin(concepto, eq(reciboConcepto.conceptoId, concepto.id))
+        .where(eq(reciboConcepto.reciboId, ultimoReciboRef.id));
 
-        for (const c of conceptosRef) {
-          if (c.numeroSos >= 1 && c.numeroSos <= 699) {
-            plantillaMap.set(String(c.numeroSos), {
-              cantidad: c.cantidad ?? null,
-              porcentaje: c.porcentaje ?? null,
-              importeConceptoNumero:
-                c.importeConceptoNumero != null
-                  ? String(c.importeConceptoNumero)
-                  : null,
-              importe: c.importe ?? null,
-              importeMinimo: c.importeMinimo ?? null,
-              importeMaximo: c.importeMaximo ?? null,
-            });
-          }
+      for (const c of conceptosRef) {
+        if (c.numeroSos >= 1 && c.numeroSos <= 699) {
+          plantillaMap.set(String(c.numeroSos), {
+            monto: c.monto ?? null,
+            cantidad: c.cantidad ?? null,
+            porcentaje: c.porcentaje ?? null,
+            importeConceptoNumero:
+              c.importeConceptoNumero != null
+                ? String(c.importeConceptoNumero)
+                : null,
+            importe: c.importe ?? null,
+            importeMinimo: c.importeMinimo ?? null,
+            importeMaximo: c.importeMaximo ?? null,
+          });
         }
       }
     }
@@ -2337,10 +2373,22 @@ export const listConceptosPlantillaManualSos = createServerFn({ method: 'GET' })
       const ov = overridePorConceptoId.get(r.id);
       const modo = ov?.modo ?? r.modo;
       const baseCalculoId = ov?.baseCalculoId ?? r.baseCalculoId;
+      /*
+       * El monto del recibo de referencia se pre-carga SOLO en los conceptos
+       * de importe propio (las sumas no remunerativas de un acuerdo, por
+       * ejemplo): nada los puede derivar, y sin esto el estudio ve la línea
+       * en cero. En los que salen del básico o de un subtotal se deja vacío
+       * a propósito, para que el cálculo los arme con la escala del período
+       * y no con el monto del mes pasado.
+       */
+      const importePropio =
+        modo == null ||
+        modo === 'importe_manual' ||
+        modo === 'pct_sobre_concepto';
       return {
         id: r.id,
         codigo,
-        monto: null as string | null,
+        monto: (importePropio ? ref?.monto : null) ?? null,
         cantidad: ref?.cantidad ?? null,
         porcentaje:
           ref?.porcentaje ?? (r.pctFijo != null ? String(r.pctFijo) : null),
@@ -5957,9 +6005,19 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       const cuil = emp.cuil.replace(/[-\s]/g, '').padStart(11, '0');
       const legajo = emp.legajo;
 
-      // ── Record 02 — Empleado ─────────────────────────────────────────────
+      /*
+       * ── Record 02 — Empleado (115 chars) ───────────────────────────────
+       * Diseño de ARCA: 1-2 tipo, 3-13 CUIL, 14-23 legajo, 24-73 dependencia
+       * de revista, 74-95 CBU, 96-98 días para proporcionar tope, 99-106
+       * fecha de pago, 107-114 fecha de rúbrica, 115 forma de pago.
+       *
+       * El prefijo se rellenaba hasta 96 y corría un lugar todo lo que viene
+       * después: ARCA rechazaba días liquidados, fecha de pago, fecha de
+       * rúbrica y forma de pago, los cuatro campos del final, y la línea
+       * salía de 116.
+       */
       const r02prefix = `02${cuil}${legajo}`;
-      r02Lines.push(r02prefix.padEnd(96) + `000${fechaFin}${' '.repeat(8)}1`);
+      r02Lines.push(r02prefix.padEnd(95) + `000${fechaFin}${' '.repeat(8)}1`);
 
       // ── Record 03 — Conceptos ─────────────────────────────────────────────
       const conceptos = conceptosByRecibo.get(rec.id) ?? [];
@@ -5984,17 +6042,26 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
 
         const amountStr = String(centavos).padStart(15, '0');
 
-        if (sosNum >= 400) {
-          const qty = String(Math.round(cantidadRaw * 100)).padStart(6, '0');
-          r03Lines.push(
-            `03${cuil}${'0'.repeat(9)}${sosCode}${qty}$${amountStr}${credDeb}`
-          );
-        } else {
-          const qty = String(Math.round(cantidadRaw * 100)).padStart(5, '0');
-          r03Lines.push(
-            `03${cuil}${'0'.repeat(7)}${sosCode}${qty}$${amountStr}${credDeb}`
-          );
-        }
+        /*
+         * ── Record 03 — Concepto (51 chars) ─────────────────────────────
+         * Diseño de ARCA: 1-2 tipo, 3-13 CUIL, 14-23 código de concepto del
+         * empleador, 24-28 cantidad (3 enteros + 2 decimales), 29 unidad
+         * ('$' = moneda), 30-44 importe (13 + 2 decimales), 45 débito o
+         * crédito, 46-51 período de ajuste retroactivo (en blanco si el
+         * concepto es del período que se liquida).
+         *
+         * Había dos ramas, una para conceptos de 400 en adelante, que armaban
+         * líneas de 48 y 45 caracteres: un registro de ancho fijo no puede
+         * tener dos largos. La de 48 además corría el código de concepto y la
+         * cantidad, y ARCA rechazaba unidades, importe e indicador D/C en
+         * todas las líneas de las sumas no remunerativas y los acuerdos.
+         */
+        const qty = String(Math.round(cantidadRaw * 100)).padStart(5, '0');
+        const conceptoEmpleador = `${'0'.repeat(7)}${sosCode}`;
+        const periodoAjuste = ' '.repeat(6);
+        r03Lines.push(
+          `03${cuil}${conceptoEmpleador}${qty}$${amountStr}${credDeb}${periodoAjuste}`
+        );
       }
 
       // ── Record 04 — Bases imponibles ─────────────────────────────────────
@@ -6166,13 +6233,36 @@ export const generarArchivoLsd = createServerFn({ method: 'GET' })
       );
     const nroPresentacion = (maxPres?.maxNro ?? 0) + 1;
 
-    // R01: pos 23-27 = nroPresentacion (5 dígitos), pos 28 = '3' (tipo forma, fijo según referencia AFIP)
+    /*
+     * ── Record 01 — Encabezado (35 chars) ──────────────────────────────────
+     * 1-2 tipo, 3-13 CUIT, 14-15 identificación del envío ('SJ' = liquidación
+     * de sueldos y datos del F931), 16-21 período, 22 tipo de liquidación,
+     * 23-27 número de liquidación, 28-29 días base ('30'), 30-35 cantidad de
+     * trabajadores informados en registros '04'.
+     *
+     * Los dos últimos campos estaban escritos como un '3' suelto más siete
+     * dígitos de cantidad. Daba los mismos 35 caracteres y por casualidad los
+     * mismos bytes —el cero que sobra de la cantidad completaba el '30'—, pero
+     * dejaba de funcionar con un millón de trabajadores y no se entendía.
+     */
     const nroStr = String(nroPresentacion).padStart(5, '0');
-    // Nota: posiciones 14-15 usan 'SJ' según archivo de referencia E-Presis.
-    const r01 = `01${cuit}SJ${periodoLsd}M${nroStr}3${String(numEmpleados).padStart(7, '0')}`;
+    const diasBase = '30';
+    const cantTrabajadores = String(numEmpleados).padStart(6, '0');
+    const r01 = `01${cuit}SJ${periodoLsd}M${nroStr}${diasBase}${cantTrabajadores}`;
 
     const lines = [r01, ...r02Lines, ...r03Lines, ...r04Lines];
-    const contenido = lines.join('\r\n') + '\r\n';
+
+    // Antes de entregarlo: si algún registro no tiene su ancho, ARCA lo rechaza
+    // entero y los errores apuntan a los campos del final en vez de al
+    // corrimiento. Mejor fallar acá que después de que lo suban.
+    const problemas = verificarLargosLsd(lines);
+    if (problemas.length > 0) {
+      throw new Error(describirProblemasLsd(problemas));
+    }
+
+    // Sin salto al final: con él, ARCA lee una línea vacía de más y la rechaza
+    // como "tipo de registro inválido: ''".
+    const contenido = lines.join('\r\n');
     const filename = `${cuit}_${year}_${month}_LSD.txt`;
 
     // Guardar la presentación en la base de datos
