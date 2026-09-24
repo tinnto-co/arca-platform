@@ -122,8 +122,10 @@ const bankSearchSchema = z.object({
   max: z.number().nonnegative().optional(),
   /** Cuánto abarca el registro: el mes de arriba (por defecto) o más. */
   rango: z.enum(['mes', '3m', '12m', 'todo']).optional(),
-  /** La conciliación factura por factura, plegada salvo que se pida. */
-  conciliacion: z.enum(['abierta']).optional(),
+  /** Qué pestaña se mira. Sin esto, Banco era una sola página larga. */
+  vista: z
+    .enum(['control', 'movimientos', 'cuentas', 'conciliacion'])
+    .optional(),
 });
 type BankSearch = z.infer<typeof bankSearchSchema>;
 
@@ -1605,6 +1607,8 @@ function BankPage() {
   // dentro de la misma pantalla: por eso cada `navigate` de acá lleva
   // `resetScroll: false`, para no saltar al principio de la página.
   const search: BankSearch = Route.useSearch();
+  // El control es la vista de entrada: es lo que el estudio mira primero.
+  const vista = search.vista ?? 'control';
   const navigate = Route.useNavigate();
   const [clienteGlobal] = useClienteSeleccionado();
   const clienteId = search.clientId ?? clienteGlobal ?? '';
@@ -1649,7 +1653,6 @@ function BankPage() {
   const [showCreateAccount, setShowCreateAccount] = useState(false);
   const [showManualMovement, setShowManualMovement] = useState(false);
   // El registro completo arranca plegado: la vista es la conciliación.
-  const [showRegistro, setShowRegistro] = useState(false);
   // El importador se abre desde dos lados: el botón de Cuentas y la franja de
   // extractos en curso, que si no anuncia trabajo pendiente sin dar la puerta.
   const [importarAbierto, setImportarAbierto] = useState(false);
@@ -1802,10 +1805,41 @@ function BankPage() {
         />
       )}
 
-      {/* El control ES la vista (reunión del 23/9): si los totales cierran y,
-          si no, por qué. Unir pago con factura pasó a ser una herramienta
-          manual, así que la bandeja queda abajo y plegada. */}
-      {accounts.length > 0 && clienteId && (
+      {/* Cuatro vistas en vez de una página larga: el control (lo que pidió
+          el estudio el 23/9), los movimientos, las cuentas con sus extractos
+          y la conciliación factura por factura, que pasó a ser una
+          herramienta manual. */}
+      {accounts.length > 0 && (
+        <div className="mb-4 flex items-center gap-1 border-b border-[var(--arca-border)]">
+          {(
+            [
+              ['control', 'Control'],
+              ['movimientos', 'Movimientos'],
+              ['cuentas', 'Cuentas y extractos'],
+              ['conciliacion', 'Conciliación'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() =>
+                void navigate({
+                  resetScroll: false,
+                  search: (prev: BankSearch) => ({ ...prev, vista: id }),
+                })
+              }
+              className={`-mb-px border-b-2 px-3 pb-2 pt-1 text-[13px] transition-colors ${
+                vista === id
+                  ? 'border-[var(--arca-accent)] font-medium text-[var(--arca-ink)]'
+                  : 'border-transparent text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {vista === 'control' && accounts.length > 0 && clienteId && (
         <div className="mb-4">
           <ControlBancarioCard
             clienteId={clienteId}
@@ -1820,69 +1854,51 @@ function BankPage() {
         </div>
       )}
 
-      {accounts.length > 0 && (
+      {vista === 'conciliacion' && accounts.length > 0 && (
         <div className="mb-5">
-          <details open={search.conciliacion === 'abierta'}>
-            <summary
-              className="cursor-pointer list-none text-[11.5px] font-medium text-[var(--arca-ink-3)] hover:text-[var(--arca-ink)]"
-              onClick={(e) => {
-                e.preventDefault();
-                void navigate({
-                  resetScroll: false,
-                  search: (prev: BankSearch) => ({
-                    ...prev,
-                    conciliacion:
-                      prev.conciliacion === 'abierta' ? undefined : 'abierta',
-                  }),
-                });
-              }}
-            >
-              {search.conciliacion === 'abierta' ? 'Ocultar' : 'Ver'} la
-              conciliación factura por factura
-            </summary>
-            <div className="mt-3">
-              <BandejaConciliacion
-                clienteId={clienteId}
-                periodo={search.mes}
-                onPeriodoChange={(mes, { reemplazar } = {}) =>
-                  void navigate({
-                    resetScroll: false,
-                    search: (prev: BankSearch) => ({ ...prev, mes }),
-                    replace: reemplazar,
-                  })
-                }
-              />
-            </div>
-          </details>
+          <BandejaConciliacion
+            clienteId={clienteId}
+            periodo={search.mes}
+            onPeriodoChange={(mes, { reemplazar } = {}) =>
+              void navigate({
+                resetScroll: false,
+                search: (prev: BankSearch) => ({ ...prev, mes }),
+                replace: reemplazar,
+              })
+            }
+          />
         </div>
       )}
 
-      {/* Las cuentas: qué son y cuánto movieron. También filtran el registro. */}
-      <div className="mb-2 flex items-center gap-3">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-          Cuentas
-        </span>
-        <div className="flex-1 h-px bg-[var(--arca-border)]" />
-        <button
-          onClick={() => setShowCreateAccount((v) => !v)}
-          className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-        >
-          <Plus className="w-3 h-3" strokeWidth={2} />
-          Nueva cuenta
-        </button>
-        <ImportarExtractoDialog
-          clienteId={clienteId}
-          abierto={importarAbierto}
-          onAbiertoChange={setImportarAbierto}
-        >
-          <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity">
-            <Upload className="w-3.5 h-3.5" strokeWidth={2} />
-            Importar extracto
+      {/* Las cuentas: qué son y cuánto movieron. Al tocar una, el registro se
+          filtra por ella y la vista salta a Movimientos. */}
+      {vista === 'cuentas' && (
+        <div className="mb-2 flex items-center gap-3">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Cuentas
+          </span>
+          <div className="flex-1 h-px bg-[var(--arca-border)]" />
+          <button
+            onClick={() => setShowCreateAccount((v) => !v)}
+            className="flex items-center gap-1 text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
+          >
+            <Plus className="w-3 h-3" strokeWidth={2} />
+            Nueva cuenta
           </button>
-        </ImportarExtractoDialog>
-      </div>
+          <ImportarExtractoDialog
+            clienteId={clienteId}
+            abierto={importarAbierto}
+            onAbiertoChange={setImportarAbierto}
+          >
+            <button className="flex items-center gap-1.5 h-8 px-3 text-[12.5px] font-medium rounded-[8px] bg-[var(--arca-accent)] text-white hover:opacity-90 transition-opacity">
+              <Upload className="w-3.5 h-3.5" strokeWidth={2} />
+              Importar extracto
+            </button>
+          </ImportarExtractoDialog>
+        </div>
+      )}
 
-      {showCreateAccount && (
+      {vista === 'cuentas' && showCreateAccount && (
         <div className="mb-4 rounded-[12px] border border-[var(--arca-border)] overflow-hidden">
           <CreateAccountForm
             clienteId={clienteId}
@@ -1891,54 +1907,44 @@ function BankPage() {
         </div>
       )}
 
-      {accounts.length === 0 ? (
-        <ArcaCard>
-          <div className="flex flex-col items-center justify-center py-10 text-[var(--arca-ink-3)]">
-            <Landmark className="w-7 h-7 mb-2 opacity-40" strokeWidth={1.5} />
-            <p className="text-[13px]">
-              Esta empresa todavía no tiene cuentas bancarias
-            </p>
-            <p className="text-[12px] mt-1">
-              Importá un extracto: la cuenta se crea con los datos del PDF
-            </p>
+      {vista === 'cuentas' &&
+        (accounts.length === 0 ? (
+          <ArcaCard>
+            <div className="flex flex-col items-center justify-center py-10 text-[var(--arca-ink-3)]">
+              <Landmark className="w-7 h-7 mb-2 opacity-40" strokeWidth={1.5} />
+              <p className="text-[13px]">
+                Esta empresa todavía no tiene cuentas bancarias
+              </p>
+              <p className="text-[12px] mt-1">
+                Importá un extracto: la cuenta se crea con los datos del PDF
+              </p>
+            </div>
+          </ArcaCard>
+        ) : (
+          <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {accounts.map((c) => (
+              <TarjetaCuenta
+                key={c.id}
+                cuenta={c}
+                activa={accountId === c.id}
+                onClick={() => {
+                  // Volver a clickear la cuenta activa muestra todas de nuevo.
+                  setAccountId((prev) => (prev === c.id ? '' : c.id));
+                  setShowManualMovement(false);
+                  void navigate({
+                    resetScroll: false,
+                    search: (prev: BankSearch) => ({
+                      ...prev,
+                      vista: 'movimientos',
+                    }),
+                  });
+                }}
+              />
+            ))}
           </div>
-        </ArcaCard>
-      ) : (
-        <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {accounts.map((c) => (
-            <TarjetaCuenta
-              key={c.id}
-              cuenta={c}
-              activa={accountId === c.id}
-              onClick={() => {
-                // Volver a clickear la cuenta activa muestra todas de nuevo.
-                setAccountId((prev) => (prev === c.id ? '' : c.id));
-                setShowManualMovement(false);
-              }}
-            />
-          ))}
-        </div>
-      )}
+        ))}
 
-      {/* Totales de caja y registro: el respaldo, no el foco. */}
-      {accounts.length > 0 && (
-        <div className="mb-3 mt-5 flex items-center gap-3">
-          <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
-            Registro y totales
-          </span>
-          <div className="flex-1 h-px bg-[var(--arca-border)]" />
-          <button
-            onClick={() => setShowRegistro((v) => !v)}
-            className="text-[11.5px] font-medium text-[var(--arca-ink-2)] hover:text-[var(--arca-ink)] transition-colors"
-          >
-            {showRegistro
-              ? 'Ocultar'
-              : `Ver los ${movimientosFiltrados} movimientos de ${mesLabel}`}
-          </button>
-        </div>
-      )}
-
-      {accounts.length > 0 && showRegistro && (
+      {vista === 'movimientos' && accounts.length > 0 && (
         <div className="mb-4">
           {/* Mismo filtro que la tabla: empresa, cuenta y mes. */}
           <TotalesDelPeriodo
@@ -1964,7 +1970,7 @@ function BankPage() {
         </div>
       )}
 
-      {accounts.length > 0 && showRegistro && (
+      {vista === 'movimientos' && accounts.length > 0 && (
         <ArcaCard>
           <div className="px-5 py-3 flex flex-wrap items-center gap-3 border-b border-[var(--arca-border)]">
             <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
