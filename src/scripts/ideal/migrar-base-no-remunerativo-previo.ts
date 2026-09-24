@@ -1,18 +1,20 @@
 /**
- * Hace que el concepto 414 calcule solo la antigüedad de la parte no
- * remunerativa.
+ * Hace que los conceptos 413 y 414 se calculen solos sobre las sumas no
+ * remunerativas anteriores.
  *
  * Hoy el estudio carga 411 y 412 con las sumas del acuerdo y después, para la
  * antigüedad no remunerativa, tiene que copiar el total a mano en la columna
  * importe (los $120.000 de la captura) y recién ahí poner los años y el 1%.
  * Cada mes, en cada empleado.
  *
- * Con esto el 414 pasa a `pct_sobre_base` con una base nueva,
+ * Con esto el 413 y el 414 pasan a `pct_sobre_base` con una base nueva,
  * `no_remunerativo_previo`, que la grilla resuelve como la suma de las sumas no
- * remunerativas anteriores: 411 + 412 + 413. El estudio agrega el 414, pone
- * cantidad = años y % = 1, y el monto sale solo.
+ * remunerativas ya acumuladas: para el 413 son 411 + 412, y para el 414 esas
+ * más el 413. Es el mismo encadenado que usan en SOS —413 antigüedad no rem
+ * sobre los $120.000, 414 presentismo no rem sobre $153.600—: el estudio pone
+ * cantidad y %, y el monto sale solo.
  *
- * No rompe la carga a mano: el 414 conserva su campo importe y, cuando está
+ * No rompe la carga a mano: los dos conservan su campo importe y, cuando está
  * completo, ese valor sigue teniendo prioridad sobre la base automática.
  *
  * La fuente de verdad es `schema-dominio3.sql` (la base) y
@@ -52,18 +54,20 @@ console.log(APPLY ? 'Modo: APLICAR\n' : 'Modo: dry-run\n');
 const estado = async () => {
   const [base] = await sql`
     select id from base_calculo where codigo = ${CODIGO}`;
-  const [c414] = await sql`
-    select c.modo, bc.codigo as base
+  const conceptos = await sql`
+    select c.numero, c.modo, bc.codigo as base
     from concepto c left join base_calculo bc on bc.id = c.base_calculo_id
-    where c.numero = 414`;
-  return { base, c414 };
+    where c.numero in (413, 414) order by c.numero`;
+  return { base, conceptos };
 };
 
 const antes = await estado();
 console.log(`  base ${CODIGO}          ${antes.base ? 'ya está' : 'FALTA'}`);
-console.log(
-  `  concepto 414              modo=${antes.c414?.modo ?? '?'} base=${antes.c414?.base ?? '—'}`
-);
+for (const c of antes.conceptos) {
+  console.log(
+    `  concepto ${c.numero}              modo=${c.modo ?? '?'} base=${c.base ?? '—'}`
+  );
+}
 
 // Overrides por cliente: si alguna empresa configuró el 414 a mano, su
 // configuración pisa al catálogo y el cambio no le llega. Hay que saberlo.
@@ -73,9 +77,12 @@ const ov = await sql`
   join concepto c on c.id = cc.concepto_id
   join cliente cl on cl.id = cc.cliente_id
   left join base_calculo bc on bc.id = cc.base_calculo_id
-  where c.numero = 414 and (cc.modo is not null or cc.base_calculo_id is not null)`;
+  where c.numero in (413, 414)
+    and (cc.modo is not null or cc.base_calculo_id is not null)`;
 if (ov.length > 0) {
-  console.log(`\n  ${ov.length} empresas tienen el 414 configurado a mano:`);
+  console.log(
+    `\n  ${ov.length} empresas tienen el 413/414 configurado a mano:`
+  );
   for (const o of ov) {
     console.log(
       `    ${o.razon_social}: modo=${o.modo ?? '—'} base=${o.base ?? '—'}`
@@ -104,19 +111,23 @@ await sql.begin(async (tx) => {
       modo = 'pct_sobre_base',
       base_calculo_id = (select id from base_calculo where codigo = ${CODIGO}),
       updated_at = now()
-    where numero = 414`;
+    where numero in (413, 414)`;
 });
 
 const despues = await estado();
 console.log('\nVerificación:');
 console.log(`  base ${CODIGO}          ${despues.base ? 'ok' : 'FALTA'}`);
-console.log(
-  `  concepto 414              modo=${despues.c414?.modo} base=${despues.c414?.base}`
-);
+for (const c of despues.conceptos) {
+  console.log(
+    `  concepto ${c.numero}              modo=${c.modo} base=${c.base}`
+  );
+}
 const ok =
   !!despues.base &&
-  despues.c414?.modo === 'pct_sobre_base' &&
-  despues.c414?.base === CODIGO;
+  despues.conceptos.length === 2 &&
+  despues.conceptos.every(
+    (c) => c.modo === 'pct_sobre_base' && c.base === CODIGO
+  );
 console.log(ok ? '✓ Listo\n' : '✗ Algo falló\n');
 
 await sql.end();
