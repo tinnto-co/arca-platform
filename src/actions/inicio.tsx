@@ -340,7 +340,7 @@ export const getInicio = createServerFn({ method: 'GET' })
       notificaciones: notifs,
       monotributo: monos,
       equipo: equipoRows,
-      umbralBanco: { porcentaje: umbral.porcentaje, monto: umbral.monto },
+      umbralBanco: { porcentaje: umbral.porcentaje },
       controlBancario: (
         bancoRows as unknown as {
           clienteId: string;

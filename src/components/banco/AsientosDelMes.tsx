@@ -11,6 +11,7 @@
  */
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { ChevronDown, Loader2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -106,6 +107,9 @@ export function AsientosDelMes({
   });
 
   const asientos = data?.asientos ?? [];
+  // Sin reglas no hay propuesta posible: a qué cuenta va cada concepto lo
+  // decide el estudio. Listar un bloqueo por concepto sería ruido.
+  const sinReglas = data ? data.hayReglas === false : false;
   const generables = asientos.filter((a) => !a.bloqueo);
   const aRevisar = asientos.filter((a) => a.aRevisar && !a.bloqueo).length;
   const bloqueados = asientos.filter((a) => a.bloqueo).length;
@@ -125,9 +129,11 @@ export function AsientosDelMes({
             )}
           </div>
           <div className="truncate text-[11.5px] text-[var(--arca-ink-3)]">
-            {asientos.length === 0
-              ? 'Nada pendiente de contabilizar'
-              : `${movimientos} movimiento${movimientos === 1 ? '' : 's'} · ${asientos.length} asiento${asientos.length === 1 ? '' : 's'}`}
+            {sinReglas
+              ? 'Faltan las reglas de banco'
+              : asientos.length === 0
+                ? 'Nada pendiente de contabilizar'
+                : `${movimientos} movimiento${movimientos === 1 ? '' : 's'} · ${asientos.length} asiento${asientos.length === 1 ? '' : 's'}`}
             {aRevisar > 0 && (
               <span className="text-[var(--arca-accent-warn-fg)]">
                 {' · '}
@@ -164,7 +170,25 @@ export function AsientosDelMes({
         </div>
       </div>
 
-      {asientos.length === 0 ? (
+      {sinReglas ? (
+        <div className="px-5 py-10 text-center">
+          <p className="text-[12.5px] text-[var(--arca-ink-2)]">
+            Esta empresa todavía no tiene reglas de banco.
+          </p>
+          <p className="mx-auto mt-1 max-w-[440px] text-[11.5px] text-[var(--arca-ink-3)]">
+            La regla dice a qué cuenta del plan va cada concepto: las
+            comisiones a gastos bancarios, un cobro contra Deudores. Sin eso no
+            hay asiento que proponer.
+          </p>
+          <Link
+            to="/accounting"
+            search={{ clientId: clienteId, tab: 'reglas' }}
+            className="mt-3 inline-block text-[12px] font-medium text-[var(--arca-accent)] hover:underline"
+          >
+            Configurar las reglas →
+          </Link>
+        </div>
+      ) : asientos.length === 0 ? (
         <p className="px-5 py-10 text-center text-[12.5px] text-[var(--arca-ink-3)]">
           {isFetching
             ? 'Buscando qué hay para contabilizar…'

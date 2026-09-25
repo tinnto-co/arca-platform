@@ -1416,7 +1416,7 @@ export const getControlBancario = createServerFn({ method: 'GET' })
       },
       movimientos: Number(banco[0]?.movimientos ?? 0),
       ultimoPeriodoConDatos: ultimo?.periodo ?? null,
-      umbral: { porcentaje: umbral.porcentaje, monto: umbral.monto },
+      umbral: { porcentaje: umbral.porcentaje },
       desglose,
       /** Impuesto al cheque: lo de la ventana y lo del año, para Ganancias. */
       impuestoCheque: {
@@ -1843,4 +1843,37 @@ export const conciliarLote = createServerFn({ method: 'POST' })
       conciliados: validos.length,
       salteados: ctx.data.pares.length - validos.length,
     };
+  });
+
+/**
+ * El último mes con movimientos cargados de una empresa.
+ *
+ * Banco abría siempre en el mes en curso, que casi nunca tiene nada: los
+ * extractos llegan a mes vencido y algunas empresas están varios meses
+ * atrasadas. La pantalla arrancaba vacía y parecía rota. Con esto abre donde
+ * hay algo para ver.
+ */
+export const getUltimoMesConMovimientos = createServerFn({ method: 'GET' })
+  .validator(z.object({ clienteId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const [fila] = await db
+      .select({
+        periodo: sql<
+          string | null
+        >`to_char(max(${movimientoBancario.fecha}), 'YYYY-MM')`,
+      })
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+          eq(cuentaBancaria.activa, true)
+        )
+      );
+    return { periodo: fila?.periodo ?? null };
   });

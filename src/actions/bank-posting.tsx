@@ -39,7 +39,6 @@ import {
   resolvePeriodForDate,
 } from '@/lib/accounting-posting-db';
 import { CATEGORIA_MOVIMIENTO_LABEL } from '@/lib/clasificar-movimiento';
-import { REGLAS_BANCO_SUGERIDAS } from '@/lib/accounting-bank-rules-seed';
 
 /** Último día del mes: el asiento del período se fecha ahí, como en sueldos. */
 function fechaDelPeriodo(periodo: string): string {
@@ -110,7 +109,8 @@ async function armarPropuesta(
     .orderBy(asc(movimientoBancario.fecha));
 
   const grupos = agruparMovimientos(movimientos);
-  if (grupos.length === 0) return { grupos: [], asientos: [], cuentas: [] };
+  if (grupos.length === 0)
+    return { grupos: [], asientos: [], cuentas: [], hayReglas: true };
 
   const [reglas, pendienteId, cuentasBanco] = await Promise.all([
     loadActiveMappingRules(clienteId, 'movimiento_bancario'),
@@ -152,7 +152,9 @@ async function armarPropuesta(
         .where(inArray(cuenta.id, ids))
     : [];
 
-  return { grupos, asientos, cuentas, porCuenta };
+  // Sin ninguna regla no hay nada que proponer: la pantalla lo dice en vez
+  // de listar un asiento bloqueado por cada concepto del mes.
+  return { grupos, asientos, cuentas, porCuenta, hayReglas: reglas.length > 0 };
 }
 
 /** Qué asientos saldrían del mes, sin escribir nada. */
@@ -162,7 +164,7 @@ export const previsualizarAsientosBanco = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
     const { clienteId, periodo, cuentaBancariaId } = ctx.data;
 
-    const { asientos, cuentas, porCuenta } = await armarPropuesta(
+    const { asientos, cuentas, porCuenta, hayReglas } = await armarPropuesta(
       clienteId,
       orgId,
       periodo,
@@ -175,6 +177,7 @@ export const previsualizarAsientosBanco = createServerFn({ method: 'GET' })
 
     return {
       periodo,
+      hayReglas,
       asientos: asientos.map((a) => ({
         cuentaBancariaId: a.grupo.cuentaBancariaId,
         cuentaBancaria: (() => {
@@ -531,181 +534,4 @@ export const getControlDeSaldos = createServerFn({ method: 'GET' })
         saldoDeApertura: faltaApertura ? apertura : null,
       };
     });
-  });
-
-/**
- * Las reglas que el sistema propone, con lo que ya existe marcado.
- *
- * No se crean solas: se muestran, el estudio elige cuáles sirven y recién ahí
- * se guardan. Cada una dice por qué se propone, porque la imputación es una
- * decisión contable y no todos los estudios la toman igual.
- */
-export const listarReglasBancoSugeridas = createServerFn({ method: 'GET' })
-  .validator(z.object({ clienteId: z.string().uuid() }))
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    const { clienteId } = ctx.data;
-
-    const [cuentas, existentes] = await Promise.all([
-      db
-        .select({ id: cuenta.id, codigo: cuenta.codigo, nombre: cuenta.nombre })
-        .from(cuenta)
-        .where(
-          and(
-            eq(cuenta.orgId, orgId),
-            inArray(
-              cuenta.codigo,
-              REGLAS_BANCO_SUGERIDAS.map((r) => r.codigoCuenta)
-            )
-          )
-        ),
-      db
-        .select({ nombre: reglaMapeo.nombre })
-        .from(reglaMapeo)
-        .where(
-          and(
-            eq(reglaMapeo.clienteId, clienteId),
-            eq(reglaMapeo.modulo, 'movimiento_bancario')
-          )
-        ),
-    ]);
-
-    const porCodigo = new Map(cuentas.map((c) => [c.codigo, c]));
-    const nombresUsados = new Set(
-      existentes.map((r) => r.nombre.trim().toLowerCase())
-    );
-
-    return REGLAS_BANCO_SUGERIDAS.map((r) => {
-      const c = porCodigo.get(r.codigoCuenta);
-      return {
-        clave: r.clave,
-        nombre: r.nombre,
-        porque: r.porque,
-        direccion: r.direccion ?? null,
-        lado: r.lado,
-        conceptos: r.categorias.map(
-          (cat) => CATEGORIA_MOVIMIENTO_LABEL[cat] ?? cat
-        ),
-        cuenta: c ? `${c.codigo} · ${c.nombre}` : null,
-        /** Sin la cuenta en el plan no se puede crear: hay que crearla antes. */
-        disponible: !!c,
-        yaExiste: nombresUsados.has(r.nombre.trim().toLowerCase()),
-      };
-    });
-  });
-
-/** Crea las reglas elegidas. Las que ya existen se saltean. */
-export const crearReglasBancoSugeridas = createServerFn({ method: 'POST' })
-  .validator(
-    z.object({
-      clienteId: z.string().uuid(),
-      claves: z.array(z.string()).min(1),
-    })
-  )
-  .handler(async (ctx) => {
-    const { orgId } = await getSessionWithOrg();
-    assertCanWrite(await getMemberRole());
-    const { clienteId, claves } = ctx.data;
-
-    const elegidas = REGLAS_BANCO_SUGERIDAS.filter((r) =>
-      claves.includes(r.clave)
-    );
-    if (elegidas.length === 0) return { creadas: 0, salteadas: 0 };
-
-    const cuentas = await db
-      .select({ id: cuenta.id, codigo: cuenta.codigo })
-      .from(cuenta)
-      .where(
-        and(
-          eq(cuenta.orgId, orgId),
-          inArray(
-            cuenta.codigo,
-            elegidas.map((r) => r.codigoCuenta)
-          )
-        )
-      );
-    const porCodigo = new Map(cuentas.map((c) => [c.codigo, c.id]));
-
-    const existentes = await db
-      .select({ nombre: reglaMapeo.nombre })
-      .from(reglaMapeo)
-      .where(
-        and(
-          eq(reglaMapeo.clienteId, clienteId),
-          eq(reglaMapeo.modulo, 'movimiento_bancario')
-        )
-      );
-    const usados = new Set(
-      existentes.map((r) => r.nombre.trim().toLowerCase())
-    );
-
-    // Las nuevas van al final de la cola, como cualquier regla creada a mano.
-    const [ultima] = await db
-      .select({
-        prioridad: sql<number>`coalesce(max(${reglaMapeo.prioridad}), 0)::int`,
-      })
-      .from(reglaMapeo)
-      .where(
-        and(
-          eq(reglaMapeo.clienteId, clienteId),
-          eq(reglaMapeo.modulo, 'movimiento_bancario')
-        )
-      );
-    let prioridad = (ultima?.prioridad ?? 0) + 10;
-
-    let creadas = 0;
-    let salteadas = 0;
-
-    await db.transaction(async (tx) => {
-      for (const r of elegidas) {
-        const cuentaId = porCodigo.get(r.codigoCuenta);
-        if (!cuentaId || usados.has(r.nombre.trim().toLowerCase())) {
-          salteadas += 1;
-          continue;
-        }
-
-        const [regla] = await tx
-          .insert(reglaMapeo)
-          .values({
-            orgId,
-            clienteId,
-            nombre: r.nombre,
-            modulo: 'movimiento_bancario',
-            tipo: 'condicional',
-            condicion: {
-              categoria: r.categorias,
-              ...(r.direccion && { direccion: r.direccion }),
-            },
-            prioridad,
-            activa: true,
-          })
-          .returning({ id: reglaMapeo.id });
-
-        await tx.insert(reglaMapeoLinea).values([
-          {
-            reglaId: regla.id,
-            cuentaId,
-            usaCuentaBanco: false,
-            lado: r.lado,
-            base: 'total',
-            orden: 0,
-          },
-          {
-            reglaId: regla.id,
-            cuentaId: null,
-            // La contrapartida sale de la cuenta bancaria de cada movimiento,
-            // así que una sola regla sirve para todas las cuentas.
-            usaCuentaBanco: true,
-            lado: r.lado === 'debe' ? 'haber' : 'debe',
-            base: 'total',
-            orden: 1,
-          },
-        ]);
-
-        prioridad += 10;
-        creadas += 1;
-      }
-    });
-
-    return { creadas, salteadas };
   });

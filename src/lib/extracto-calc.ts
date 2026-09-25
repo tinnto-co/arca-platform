@@ -70,12 +70,16 @@ export function monedaIso(valor: string): string {
 
 export type SemaforoIncongruencia = 'ok' | 'atencion' | 'alerta';
 
-/** Cuándo una brecha amerita aviso. Cada estudio puede correr el número. */
+/**
+ * Cuándo una brecha amerita aviso. Cada estudio puede correr el número.
+ *
+ * Solo el porcentaje: un monto fijo envejece mal con la inflación y obliga a
+ * revisarlo todos los años, y además no significa lo mismo en una empresa que
+ * factura $2M que en una que factura $2.000M. El porcentaje se sostiene solo.
+ */
 export interface UmbralControlBancario {
   /** Diferencia sobre lo facturado, en puntos porcentuales. */
   porcentaje: number;
-  /** Diferencia en pesos. */
-  monto: number;
 }
 
 /**
@@ -85,14 +89,15 @@ export interface UmbralControlBancario {
  */
 export const UMBRAL_CONTROL_BANCARIO_DEFAULT: UmbralControlBancario = {
   porcentaje: 20,
-  monto: 1_000_000,
 };
 
 /**
- * Semáforo de Banco vs Facturación. La brecha es significativa cuando pasa
- * el porcentaje Y el monto a la vez (una brecha de 25% sobre $40.000 no
- * amerita rojo; una de $2M sobre $200M tampoco). Un solo umbral superado
- * queda en atención.
+ * Semáforo de Banco vs Facturación, por porcentaje sobre lo facturado.
+ *
+ * Tres niveles con un solo número: hasta el umbral está bien, pasarlo es para
+ * mirar, y doblarlo es para actuar. Antes hacía falta pasar también un monto
+ * en pesos, pero ese monto había que corregirlo cada año por la inflación y
+ * no quería decir lo mismo en una empresa chica que en una grande.
  */
 export function semaforoBancoVsFacturacion(
   ingresosBancarios: number,
@@ -102,10 +107,12 @@ export function semaforoBancoVsFacturacion(
   const diferencia = round2(ingresosBancarios - ventasFacturadas);
   const base = Math.max(Math.abs(ventasFacturadas), 1);
   const porcentaje = Math.round((Math.abs(diferencia) / base) * 100);
-  const pasaPct = porcentaje > umbral.porcentaje;
-  const pasaMonto = Math.abs(diferencia) > umbral.monto;
   const nivel: SemaforoIncongruencia =
-    pasaPct && pasaMonto ? 'alerta' : pasaPct || pasaMonto ? 'atencion' : 'ok';
+    porcentaje > umbral.porcentaje * 2
+      ? 'alerta'
+      : porcentaje > umbral.porcentaje
+        ? 'atencion'
+        : 'ok';
   return { diferencia, porcentaje, nivel };
 }
 

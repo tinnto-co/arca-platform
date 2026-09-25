@@ -779,9 +779,13 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
 /**
  * El desvío con el que el estudio quiere que le avisen del control bancario.
  *
- * El número que traíamos —20% y un millón— salió de mirar unas pocas
- * empresas. Un estudio con clientes grandes lo va a querer más alto y uno con
- * monotributistas, más bajo; hasta ahora había que tocar el código.
+ * El 20% con el que arranca salió de mirar unas pocas empresas. Un estudio
+ * con clientes grandes lo va a querer más alto y uno con monotributistas, más
+ * bajo; hasta ahora había que tocar el código.
+ *
+ * Solo el porcentaje: antes había también un importe mínimo en pesos, pero
+ * envejecía con la inflación y no significaba lo mismo en una empresa que
+ * factura $2M que en una que factura $2.000M.
  */
 function UmbralBancoCard() {
   const queryClient = useQueryClient();
@@ -791,20 +795,18 @@ function UmbralBancoCard() {
   });
 
   const [porcentaje, setPorcentaje] = useState('');
-  const [monto, setMonto] = useState('');
   // Los inputs se llenan con lo guardado la primera vez que llega, y no
   // vuelven a pisarse mientras la persona escribe.
   const [cargado, setCargado] = useState(false);
   if (data && !cargado) {
     setPorcentaje(String(data.porcentaje));
-    setMonto(String(data.monto));
     setCargado(true);
   }
 
   const guardar = useMutation({
     mutationFn: () =>
       setUmbralControlBancario({
-        data: { porcentaje: Number(porcentaje), monto: Number(monto) },
+        data: { porcentaje: Number(porcentaje) },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -817,20 +819,14 @@ function UmbralBancoCard() {
     onError: (e: Error) => toast.error(e.message),
   });
 
-  // Un campo vacío no es un cero: `Number('')` da 0 y, en el importe, eso
-  // cambiaba el criterio a "avisá solo por porcentaje" sin que nadie lo
-  // pidiera. Los dos son obligatorios; para no poner mínimo de importe hay
-  // que escribir 0, y entonces la pantalla lo dice.
+  // Un campo vacío no es un cero: `Number('')` da 0, que acá sería "avisame
+  // siempre".
   const pct = porcentaje.trim() === '' ? NaN : Number(porcentaje);
-  const mto = monto.trim() === '' ? NaN : Number(monto);
   const error =
     !Number.isFinite(pct) || pct < 1 || pct > 100
       ? 'La diferencia va de 1 a 100%.'
-      : !Number.isFinite(mto) || mto < 0
-        ? 'Poné un importe, o 0 para avisar sin importar el monto.'
-        : null;
-  const sinCambios =
-    !!data && pct === data.porcentaje && mto === data.monto && !data.esDefault;
+      : null;
+  const sinCambios = !!data && pct === data.porcentaje && !data.esDefault;
 
   return (
     <Card>
@@ -838,9 +834,9 @@ function UmbralBancoCard() {
         <CardTitle>Aviso de control bancario</CardTitle>
         <CardDescription>
           Con qué diferencia entre lo que entró al banco y lo que se facturó
-          querés que aparezca el aviso en Inicio. Se avisa cuando se pasan los
-          dos valores a la vez: un desvío del 30% sobre $40.000 no amerita
-          molestar, y $2.000.000 sobre $200.000.000 tampoco.
+          querés que aparezca el aviso en Inicio. Se mide sobre lo facturado,
+          así que el mismo número sirve para una empresa chica y para una
+          grande.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -860,18 +856,6 @@ function UmbralBancoCard() {
                 className="w-[140px]"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="umbral-monto">Importe mínimo ($)</Label>
-              <Input
-                id="umbral-monto"
-                type="number"
-                min={0}
-                step={100000}
-                value={monto}
-                onChange={(e) => setMonto(e.target.value)}
-                className="w-[180px]"
-              />
-            </div>
             <Button
               onClick={() => guardar.mutate()}
               disabled={!!error || sinCambios || guardar.isPending}
@@ -886,12 +870,9 @@ function UmbralBancoCard() {
                   : 'var(--arca-ink-3)',
               }}
             >
-              {/* Lo que se va a guardar, en una frase: los dos números juntos
-                  se leen distinto que por separado. */}
+              {/* Lo que se va a guardar, en una frase. */}
               {error ??
-                (mto === 0
-                  ? `Vas a recibir aviso cuando la diferencia supere el ${pct}%, sin importar el monto.`
-                  : `Vas a recibir aviso cuando la diferencia supere el ${pct}% y ${pesos(mto)}.`)}
+                `Vas a recibir aviso cuando la diferencia supere el ${pct}% de lo facturado, y en rojo cuando pase el ${pct * 2}%.`}
               {!error && data?.esDefault
                 ? ' Todavía sin configurar: rige el valor con el que arranca el sistema.'
                 : ''}
