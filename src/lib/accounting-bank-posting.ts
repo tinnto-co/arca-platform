@@ -26,6 +26,7 @@ import {
   type LineaArmada,
   type ReglaLike,
 } from './accounting-reglas';
+import { CATEGORIA_MOVIMIENTO_LABEL } from './clasificar-movimiento';
 
 /** Un movimiento del extracto, con lo que hace falta para agrupar y mapear. */
 export interface MovimientoLike {
@@ -179,37 +180,27 @@ export function armarLineasBanco(
     };
 
   /**
-   * Sin regla el asiento igual se arma: contra el banco de un lado y
-   * "Pendiente de revisión" del otro. Así la plata queda registrada, el saldo
-   * del banco cierra, y lo que falta definir queda a la vista trabando el
-   * cierre del período.
+   * Sin regla no se genera nada.
+   *
+   * Antes se armaba contra "Pendiente de revisión" para que la plata quedara
+   * registrada y el saldo del banco cerrara. En la práctica eso llenaba la
+   * pantalla de asientos que parecían listos y no imputaban nada: a qué
+   * cuenta va cada concepto lo decide el estudio, y mientras no lo haya
+   * decidido no hay asiento que generar, hay una regla que escribir.
    */
-  if (!regla) {
-    const motivo = `Sin regla para ${grupo.categoria} (${grupo.direccion === 'ingreso' ? 'entra' : 'sale'})`;
-    const entra = grupo.direccion === 'ingreso';
-    lineas.push({
-      cuentaId: entra ? cuentaDelBancoId : cuentaPendienteRevisionId,
-      debe: grupo.total,
-      haber: 0,
-      descripcion: motivo,
-      reglaId: null,
-    });
-    lineas.push({
-      cuentaId: entra ? cuentaPendienteRevisionId : cuentaDelBancoId,
-      debe: 0,
-      haber: grupo.total,
-      descripcion: motivo,
-      reglaId: null,
-    });
+  if (!regla)
     return {
       grupo,
       reglaId: null,
-      lineas,
-      usoPendienteRevision: true,
-      motivo,
-      bloqueo: null,
+      lineas: [],
+      usoPendienteRevision: false,
+      motivo: null,
+      bloqueo: `Falta la regla para "${
+        CATEGORIA_MOVIMIENTO_LABEL[
+          grupo.categoria as keyof typeof CATEGORIA_MOVIMIENTO_LABEL
+        ] ?? grupo.categoria
+      }" ${grupo.direccion === 'ingreso' ? 'que entra' : 'que sale'}`,
     };
-  }
 
   for (const l of regla.lineas) {
     const importe =

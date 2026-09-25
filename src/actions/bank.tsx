@@ -1844,3 +1844,36 @@ export const conciliarLote = createServerFn({ method: 'POST' })
       salteados: ctx.data.pares.length - validos.length,
     };
   });
+
+/**
+ * El último mes con movimientos cargados de una empresa.
+ *
+ * Banco abría siempre en el mes en curso, que casi nunca tiene nada: los
+ * extractos llegan a mes vencido y algunas empresas están varios meses
+ * atrasadas. La pantalla arrancaba vacía y parecía rota. Con esto abre donde
+ * hay algo para ver.
+ */
+export const getUltimoMesConMovimientos = createServerFn({ method: 'GET' })
+  .validator(z.object({ clienteId: z.string().uuid() }))
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const [fila] = await db
+      .select({
+        periodo: sql<
+          string | null
+        >`to_char(max(${movimientoBancario.fecha}), 'YYYY-MM')`,
+      })
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, ctx.data.clienteId),
+          eq(cuentaBancaria.activa, true)
+        )
+      );
+    return { periodo: fila?.periodo ?? null };
+  });

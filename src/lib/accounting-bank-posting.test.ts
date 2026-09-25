@@ -172,31 +172,29 @@ describe('armarLineasBanco', () => {
     expect(r.bloqueo).toContain('no tiene cuenta contable');
   });
 
-  it('sin regla, el asiento igual se arma contra el banco', () => {
-    // La plata queda registrada y el saldo del banco cierra; lo que falta
-    // definir queda en revisión, trabando el cierre del período.
+  it('sin regla no se genera nada: falta una decisión, no un asiento', () => {
+    // Antes se armaba contra "Pendiente de revisión" para que el saldo del
+    // banco cerrara. Llenaba la pantalla de asientos que parecían listos y no
+    // imputaban nada: a qué cuenta va cada concepto lo decide el estudio.
     const r = armarLineasBanco(grupo(), [], PENDIENTE, CTA_BBVA);
-    expect(r.usoPendienteRevision).toBe(true);
+    expect(r.lineas).toEqual([]);
     expect(r.reglaId).toBeNull();
-    expect(r.bloqueo).toBeNull();
-    expect(r.motivo).toContain('Sin regla');
-    expect(r.lineas).toEqual([
-      expect.objectContaining({ cuentaId: PENDIENTE, debe: 350 }),
-      expect.objectContaining({ cuentaId: CTA_BBVA, haber: 350 }),
-    ]);
+    expect(r.usoPendienteRevision).toBe(false);
+    expect(r.bloqueo).toContain('Falta la regla');
+    // El bloqueo nombra el concepto como lo ve el contador, no el código.
+    expect(r.bloqueo).toContain('Comisiones bancarias');
+    expect(r.bloqueo).toContain('que sale');
   });
 
-  it('sin regla y entrando plata, el banco va al Debe', () => {
+  it('sin regla tampoco se genera lo que entra', () => {
     const r = armarLineasBanco(
       grupo({ direccion: 'ingreso' }),
       [],
       PENDIENTE,
       CTA_BBVA
     );
-    expect(r.lineas).toEqual([
-      expect.objectContaining({ cuentaId: CTA_BBVA, debe: 350 }),
-      expect.objectContaining({ cuentaId: PENDIENTE, haber: 350 }),
-    ]);
+    expect(r.lineas).toEqual([]);
+    expect(r.bloqueo).toContain('que entra');
   });
 
   it('reparte el importe en partes con la base porcentaje', () => {

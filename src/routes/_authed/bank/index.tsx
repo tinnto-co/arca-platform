@@ -88,6 +88,7 @@ import {
   volverASugerir,
   desconciliarMovimiento,
   createCuentaBancaria,
+  getUltimoMesConMovimientos,
 } from '@/actions/bank';
 import {
   agregarMovimientoManual,
@@ -1774,6 +1775,30 @@ function BankPage() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteGlobal]);
+  /**
+   * Sin mes en la URL, Banco abre en el último con movimientos cargados.
+   *
+   * Antes abría en el mes en curso, que casi nunca tiene nada: los extractos
+   * llegan a mes vencido y algunas empresas están varios meses atrasadas. La
+   * pantalla arrancaba vacía y parecía rota. Solo lo resuelve la primera vez;
+   * después el mes lo maneja quien lo cambie. Con `replace` para no dejar un
+   * paso intermedio en el historial del navegador.
+   */
+  const { data: ultimoMes } = useQuery({
+    queryKey: ['ultimoMesBanco', clienteId],
+    queryFn: () => getUltimoMesConMovimientos({ data: { clienteId } }),
+    enabled: !!clienteId && !search.mes,
+  });
+  useEffect(() => {
+    if (search.mes || !ultimoMes?.periodo) return;
+    void navigate({
+      resetScroll: false,
+      replace: true,
+      search: (prev: BankSearch) => ({ ...prev, mes: ultimoMes.periodo! }),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ultimoMes?.periodo, search.mes]);
+
   // Vacío = todas las cuentas. El registro arranca completo.
   const [accountId, setAccountId] = useState('');
   const [showCreateAccount, setShowCreateAccount] = useState(false);

@@ -109,7 +109,8 @@ async function armarPropuesta(
     .orderBy(asc(movimientoBancario.fecha));
 
   const grupos = agruparMovimientos(movimientos);
-  if (grupos.length === 0) return { grupos: [], asientos: [], cuentas: [] };
+  if (grupos.length === 0)
+    return { grupos: [], asientos: [], cuentas: [], hayReglas: true };
 
   const [reglas, pendienteId, cuentasBanco] = await Promise.all([
     loadActiveMappingRules(clienteId, 'movimiento_bancario'),
@@ -151,7 +152,9 @@ async function armarPropuesta(
         .where(inArray(cuenta.id, ids))
     : [];
 
-  return { grupos, asientos, cuentas, porCuenta };
+  // Sin ninguna regla no hay nada que proponer: la pantalla lo dice en vez
+  // de listar un asiento bloqueado por cada concepto del mes.
+  return { grupos, asientos, cuentas, porCuenta, hayReglas: reglas.length > 0 };
 }
 
 /** Qué asientos saldrían del mes, sin escribir nada. */
@@ -161,7 +164,7 @@ export const previsualizarAsientosBanco = createServerFn({ method: 'GET' })
     const { orgId } = await getSessionWithOrg();
     const { clienteId, periodo, cuentaBancariaId } = ctx.data;
 
-    const { asientos, cuentas, porCuenta } = await armarPropuesta(
+    const { asientos, cuentas, porCuenta, hayReglas } = await armarPropuesta(
       clienteId,
       orgId,
       periodo,
@@ -174,6 +177,7 @@ export const previsualizarAsientosBanco = createServerFn({ method: 'GET' })
 
     return {
       periodo,
+      hayReglas,
       asientos: asientos.map((a) => ({
         cuentaBancariaId: a.grupo.cuentaBancariaId,
         cuentaBancaria: (() => {
