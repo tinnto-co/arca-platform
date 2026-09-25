@@ -429,6 +429,21 @@ export const getControlDeSaldos = createServerFn({ method: 'GET' })
       .from(saldoBancario)
       .where(inArray(saldoBancario.periodo, [desde, mesAnterior]));
 
+    // Con qué saldo arrancó la cuenta la primera vez que se importó un
+    // extracto. Es la plata que ya estaba y que el sistema nunca asentó: si
+    // la diferencia es justo eso, lo que falta es el asiento de apertura y no
+    // hay nada mal contabilizado.
+    const aperturas = await db
+      .select({
+        cuentaBancariaId: saldoBancario.cuentaBancariaId,
+        saldoInicial: sql<string>`(array_agg(${saldoBancario.saldoInicial} order by ${saldoBancario.periodo}))[1]`,
+      })
+      .from(saldoBancario)
+      .groupBy(saldoBancario.cuentaBancariaId);
+    const aperturaPorCuenta = new Map(
+      aperturas.map((a) => [a.cuentaBancariaId, Number(a.saldoInicial)])
+    );
+
     const delMes = new Map(
       saldos
         .filter((s) => s.periodo === desde)
@@ -456,18 +471,31 @@ export const getControlDeSaldos = createServerFn({ method: 'GET' })
           ? Math.round((mes.inicial - anterior) * 100) / 100
           : null;
 
+      // Menos de un centavo es redondeo, no una diferencia.
+      const diferencia =
+        banco == null ? null : Math.round((banco - contable) * 100) / 100;
+
+      // La diferencia es exactamente lo que había antes de empezar: falta la
+      // apertura, no hay nada mal asentado. Decirlo evita que alguien salga a
+      // buscar un error que no existe.
+      const apertura = aperturaPorCuenta.get(c.id) ?? 0;
+      const faltaApertura =
+        diferencia != null &&
+        Math.abs(apertura) >= 0.01 &&
+        Math.abs(diferencia - apertura) < 0.01;
+
       return {
         cuentaBancariaId: c.id,
         cuentaBancaria: `${c.banco} ${c.numero ?? ''}`.trim(),
         cuentaContable: c.cuentaContable,
         saldoBanco: banco,
         saldoContable: contable,
-        // Menos de un centavo es redondeo, no una diferencia.
-        diferencia:
-          banco == null ? null : Math.round((banco - contable) * 100) / 100,
+        diferencia,
         sinContabilizar: c.sinContabilizar,
         /** Diferencia entre el cierre del mes anterior y la apertura de este. */
         saltoDeSaldo: salto != null && Math.abs(salto) >= 0.01 ? salto : null,
+        /** El saldo con el que la cuenta venía antes del primer extracto. */
+        saldoDeApertura: faltaApertura ? apertura : null,
       };
     });
   });

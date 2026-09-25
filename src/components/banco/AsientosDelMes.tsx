@@ -287,6 +287,18 @@ export function AsientosDelMes({
                         anterior, entre los dos extractos falta uno. Sin esto,
                         el agujero pasa desapercibido: cada mes por separado
                         cuadra. */}
+                    {/* La diferencia es justo lo que había antes de empezar:
+                        no hay nada mal asentado, falta la apertura. Sin esto
+                        alguien sale a buscar un error que no existe. */}
+                    {s.saldoDeApertura != null && (
+                      <span
+                        className="block truncate text-[11px]"
+                        style={{ color: 'var(--arca-ink-3)' }}
+                      >
+                        La diferencia es el saldo que la cuenta ya tenía antes
+                        del primer extracto: falta el asiento de apertura
+                      </span>
+                    )}
                     {s.saltoDeSaldo != null && (
                       <span
                         className="block truncate text-[11px]"
@@ -318,7 +330,10 @@ export function AsientosDelMes({
                           ? 'var(--arca-ink-4)'
                           : cuadra
                             ? 'var(--arca-accent-pos-fg)'
-                            : 'var(--arca-accent-neg-fg)',
+                            : // Falta la apertura: es esperable, no un error.
+                              s.saldoDeApertura != null
+                              ? 'var(--arca-accent-warn-fg)'
+                              : 'var(--arca-accent-neg-fg)',
                     }}
                   >
                     {s.diferencia == null
