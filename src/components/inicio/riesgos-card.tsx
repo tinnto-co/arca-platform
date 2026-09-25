@@ -424,8 +424,8 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
               className="text-[11.5px]"
               style={{ color: 'var(--arca-ink-3)' }}
             >
-              Se avisa desde el {datos.umbralBanco.porcentaje}% de diferencia o{' '}
-              {pesos(datos.umbralBanco.monto)}
+              Se avisa desde el {datos.umbralBanco.porcentaje}% de diferencia
+              sobre lo facturado
             </span>
           </div>
         </>

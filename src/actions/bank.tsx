@@ -1416,7 +1416,7 @@ export const getControlBancario = createServerFn({ method: 'GET' })
       },
       movimientos: Number(banco[0]?.movimientos ?? 0),
       ultimoPeriodoConDatos: ultimo?.periodo ?? null,
-      umbral: { porcentaje: umbral.porcentaje, monto: umbral.monto },
+      umbral: { porcentaje: umbral.porcentaje },
       desglose,
       /** Impuesto al cheque: lo de la ventana y lo del año, para Ganancias. */
       impuestoCheque: {

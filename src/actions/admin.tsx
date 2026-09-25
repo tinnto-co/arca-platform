@@ -362,10 +362,6 @@ export const getUmbralControlBancario = createServerFn({
       typeof guardado?.porcentaje === 'number'
         ? guardado.porcentaje
         : UMBRAL_CONTROL_BANCARIO_DEFAULT.porcentaje,
-    monto:
-      typeof guardado?.monto === 'number'
-        ? guardado.monto
-        : UMBRAL_CONTROL_BANCARIO_DEFAULT.monto,
     esDefault: !fila,
   };
 });
@@ -375,7 +371,6 @@ export const setUmbralControlBancario = createServerFn({ method: 'POST' })
     z.object({
       /** Un umbral de 0% avisaría siempre; de 100%, casi nunca. */
       porcentaje: z.number().min(1).max(100),
-      monto: z.number().min(0),
     })
   )
   .handler(async (ctx) => {
@@ -386,12 +381,12 @@ export const setUmbralControlBancario = createServerFn({ method: 'POST' })
       .values({
         orgId,
         clave: CLAVE_UMBRAL_BANCO,
-        valor: { porcentaje: ctx.data.porcentaje, monto: ctx.data.monto },
+        valor: { porcentaje: ctx.data.porcentaje },
       })
       .onConflictDoUpdate({
         target: [configuracionOrg.orgId, configuracionOrg.clave],
         set: {
-          valor: { porcentaje: ctx.data.porcentaje, monto: ctx.data.monto },
+          valor: { porcentaje: ctx.data.porcentaje },
         },
       });
 
