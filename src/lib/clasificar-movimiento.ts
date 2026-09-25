@@ -194,9 +194,13 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
     'comisiones',
     /comisi[oó]n|com\.\s|^\s*com\s|mantenimiento|cargo\s|gastos?\s+(de\s+)?(mantenim|servicio|admin)|costo\s+paquete|seguro\s+de\s+vida/i,
   ],
+  // "Liquidación de dinero" es como Mercado Pago nombra la acreditación de
+  // cada venta cobrada: el extracto no dice "Mercado Pago" en la descripción
+  // porque eso está en la cuenta. Sin esto caen en "Varios" y, en un comercio
+  // que cobra solo por ahí, eso es el 100% de los ingresos.
   [
     'cobros_tarjeta',
-    /prisma|first\s*data|fiserv|payway|posnet|lapos|mercado\s*pago.*(liquidaci|cobro)|liquidaci[oó]n\s+(tarj|visa|master|cabal|naranja)|visa|mastercard|amex|cabal|naranja\s*x?/i,
+    /prisma|first\s*data|fiserv|payway|posnet|lapos|mercado\s*pago.*(liquidaci|cobro)|liquidaci[oó]n\s+de\s+dinero|liquidaci[oó]n\s+(tarj|visa|master|cabal|naranja)|visa|mastercard|amex|cabal|naranja\s*x?/i,
   ],
   [
     'sueldos',
@@ -232,7 +236,10 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
   ],
   [
     'transferencias',
-    /transferencia|transf|trf\b|cr[eé]dito\s+inmediato|debin\b|cbu|cvu|env[ií]o\s+de\s+dinero|te\s+transfirieron/i,
+    // "Servicio pago a proveedores" es el nombre que le ponen Galicia y
+    // Santander a su módulo de pagos masivos: es una transferencia hecha
+    // desde otra pantalla del homebanking.
+    /transferencia|transf|trf\b|cr[eé]dito\s+inmediato|debin\b|cbu|cvu|env[ií]o\s+de\s+dinero|te\s+transfirieron|(servicio\s+)?pago\s+a\s+proveedores/i,
   ],
 ];
 

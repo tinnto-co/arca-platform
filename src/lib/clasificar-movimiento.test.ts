@@ -135,6 +135,16 @@ describe('clasificarMovimiento', () => {
     expect(clasificarMovimiento('LIQUIDACION VISA PRISMA MEDIOS DE PAGO')).toBe(
       'cobros_tarjeta'
     );
+    // Así nombra Mercado Pago la acreditación de cada venta cobrada. La
+    // descripción no dice "Mercado Pago": eso está en la cuenta.
+    expect(clasificarMovimiento('LIQUIDACIÓN DE DINERO')).toBe(
+      'cobros_tarjeta'
+    );
+    expect(clasificarMovimiento('Liquidacion de dinero')).toBe(
+      'cobros_tarjeta'
+    );
+    // Los rendimientos de la cuenta remunerada siguen siendo resultado.
+    expect(clasificarMovimiento('RENDIMIENTOS')).toBe('intereses');
     expect(clasificarMovimiento('ACREDITACION DE HABERES')).toBe('sueldos');
     expect(clasificarMovimiento('DEPOSITO CHEQUE 48HS')).toBe('cheques');
     expect(clasificarMovimiento('EXTRACCION CAJERO ATM RED LINK')).toBe(
