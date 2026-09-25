@@ -929,8 +929,17 @@ function TransactionItem({
   const recategorizar = useMutation({
     mutationFn: (categoria: CategoriaMovimiento) =>
       recategorizarMovimiento({ data: { movimientoId: tx.id, categoria } }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['controlBancario'] });
+      // El asiento se armó con la categoría vieja y no se rehace solo:
+      // contabilizar es una decisión, no un efecto de corregir una etiqueta.
+      if (r.asientoDesactualizado)
+        toast.warning('Este movimiento ya estaba contabilizado', {
+          description:
+            'El asiento quedó con la categoría anterior. Para rehacerlo, deshacé el mes en la pestaña Asientos y generalo de nuevo.',
+          duration: 8000,
+        });
     },
     onError: () => toast.error('No se pudo cambiar la categoría'),
   });

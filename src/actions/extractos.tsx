@@ -783,9 +783,16 @@ export const recategorizarMovimiento = createServerFn({ method: 'POST' })
           )
         )
       )
-      .returning({ id: movimientoBancario.id });
+      .returning({
+        id: movimientoBancario.id,
+        asientoId: movimientoBancario.asientoId,
+      });
     if (!fila) throw new Error('Movimiento no encontrado');
-    return { ok: true };
+    // Si ya estaba contabilizado, el asiento quedó armado con la categoría
+    // vieja: se avisa para que alguien rehaga el mes. No se rehace solo
+    // porque contabilizar es una decisión, no un efecto secundario de
+    // corregir una etiqueta.
+    return { ok: true, asientoDesactualizado: fila.asientoId != null };
   });
 
 /** Excluir/incluir un movimiento de la comparación Banco vs Facturación. */
