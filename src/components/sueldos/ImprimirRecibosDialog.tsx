@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Loader2, Printer, Download, Eye, X, Mail } from 'lucide-react';
 import { toast } from 'sonner';
+import { cargarModulo, VersionVieja } from '@/lib/modulo-dinamico';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
@@ -21,7 +22,10 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { listRecibosDetalleParaPDF, enviarRecibosPorMail } from '@/actions/sueldos';
+import {
+  listRecibosDetalleParaPDF,
+  enviarRecibosPorMail,
+} from '@/actions/sueldos';
 import { legajoParaMostrar } from '@/lib/legajo';
 import { toTitleCase } from '@/lib/format-name';
 import type { ClientDataPdf } from './recibo-pdf';
@@ -33,7 +37,8 @@ function blobToBase64(blob: Blob): Promise<string> {
       const result = reader.result as string;
       resolve(result.split(',')[1] ?? '');
     };
-    reader.onerror = () => reject(new Error(reader.error?.message ?? 'Error al leer el archivo.'));
+    reader.onerror = () =>
+      reject(new Error(reader.error?.message ?? 'Error al leer el archivo.'));
     reader.readAsDataURL(blob);
   });
 }
@@ -82,9 +87,11 @@ export function ImprimirRecibosDialog({
   const [progreso, setProgreso] = useState('');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [generandoPreview, setGenerandoPreview] = useState(false);
-  const [archivoGenerado, setArchivoGenerado] = useState<
-    { blob: Blob; filename: string; filtrosKey: string } | null
-  >(null);
+  const [archivoGenerado, setArchivoGenerado] = useState<{
+    blob: Blob;
+    filename: string;
+    filtrosKey: string;
+  } | null>(null);
   const [enviandoMail, setEnviandoMail] = useState(false);
 
   // Limpiar la URL del blob al cerrar el diálogo
@@ -174,7 +181,9 @@ export function ImprimirRecibosDialog({
         return;
       }
 
-      const { generarPdfBlobEmpleado } = await import('./recibo-pdf');
+      const { generarPdfBlobEmpleado } = await cargarModulo(
+        () => import('./recibo-pdf')
+      );
       const todosLosRecibos = agrupados.flatMap((a) => a.recibos);
       const blob = await generarPdfBlobEmpleado(
         todosLosRecibos,
@@ -183,12 +192,29 @@ export function ImprimirRecibosDialog({
       );
       replacePreview(URL.createObjectURL(blob));
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : 'Error al generar la vista previa.'
-      );
+      avisarError(err, 'Error al generar la vista previa.');
     } finally {
       setGenerandoPreview(false);
     }
+  }
+
+  /**
+   * Un error de módulo faltante no se arregla reintentando: la pestaña quedó de
+   * antes del deploy y hay que recargar. Por eso ese caso lleva su propio aviso,
+   * con el botón que lo resuelve.
+   */
+  function avisarError(err: unknown, fallback: string) {
+    if (err instanceof VersionVieja) {
+      toast.error(err.message, {
+        duration: 10000,
+        action: {
+          label: 'Recargar',
+          onClick: () => window.location.reload(),
+        },
+      });
+      return;
+    }
+    toast.error(err instanceof Error ? err.message : fallback);
   }
 
   // ── Generar y descargar ───────────────────────────────────────────────────
@@ -223,7 +249,9 @@ export function ImprimirRecibosDialog({
           : `Generando ${totalEmpleados} PDFs…`
       );
 
-      const { generarArchivoRecibos, triggerDownload } = await import('./recibo-pdf');
+      const { generarArchivoRecibos, triggerDownload } = await cargarModulo(
+        () => import('./recibo-pdf')
+      );
 
       const archivo = await generarArchivoRecibos({
         recibosAgrupados: agrupados,
@@ -247,9 +275,7 @@ export function ImprimirRecibosDialog({
           : `PDF generado: ${totalRecibos} recibos de ${totalEmpleados} empleados.`
       );
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : 'Error al generar el PDF.'
-      );
+      avisarError(err, 'Error al generar el PDF.');
     } finally {
       setGenerando(false);
       setProgreso('');
@@ -274,7 +300,9 @@ export function ImprimirRecibosDialog({
       });
       toast.success('Recibos enviados por mail al cliente.');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Error al enviar el mail.');
+      toast.error(
+        err instanceof Error ? err.message : 'Error al enviar el mail.'
+      );
     } finally {
       setEnviandoMail(false);
     }
@@ -299,10 +327,14 @@ export function ImprimirRecibosDialog({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 gap-6 overflow-hidden">
-
           {/* ── Panel izquierdo: filtros ──────────────────────────────────── */}
-          <div className={showPreview ? 'w-72 shrink-0 space-y-4 overflow-y-auto py-2' : 'flex-1 space-y-4 overflow-y-auto py-2'}>
-
+          <div
+            className={
+              showPreview
+                ? 'w-72 shrink-0 space-y-4 overflow-y-auto py-2'
+                : 'flex-1 space-y-4 overflow-y-auto py-2'
+            }
+          >
             {/* Año */}
             <div>
               <label className="mb-1.5 block text-sm font-medium">
@@ -458,7 +490,11 @@ export function ImprimirRecibosDialog({
 
         {/* ── Acciones ─────────────────────────────────────────────────────── */}
         <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-[var(--arca-border)] pt-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={generando}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={generando}
+          >
             Cancelar
           </Button>
           <Button
@@ -493,9 +529,11 @@ export function ImprimirRecibosDialog({
               disabled={enviandoMail}
               className="gap-2"
             >
-              {enviandoMail
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <Mail className="h-4 w-4" />}
+              {enviandoMail ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )}
               {enviandoMail ? 'Enviando…' : 'Enviar por mail'}
             </Button>
           )}
