@@ -3014,6 +3014,37 @@ export const despachoImportacion = pgTable("despacho_importacion", {
 ]);
 
 /**
+ * Los conceptos 415 de un despacho, uno por alícuota.
+ *
+ * Un despacho puede tener varios: una Importación Directa trae un 415 por ítem
+ * y una Destinación Simplificada de courier puede consolidar varios envíos con
+ * alícuotas distintas. El libro de IVA compras los necesita discriminados, así
+ * que van acá y no en una sola columna del padre.
+ */
+export const despachoAlicuota = pgTable("despacho_alicuota", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	despachoId: uuid("despacho_id").notNull(),
+	alicuota: numeric({ precision: 5, scale: 2 }).notNull(),
+	ivaUsd: numeric("iva_usd", { precision: 15, scale: 2 }).notNull(),
+	ivaPesos: numeric("iva_pesos", { precision: 15, scale: 2 }).notNull(),
+	netoGravado: numeric("neto_gravado", { precision: 15, scale: 2 }).notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_despacho_alicuota_despacho").using("btree", table.despachoId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.despachoId],
+			foreignColumns: [despachoImportacion.id],
+			name: "despacho_alicuota_despacho_id_fkey"
+		}).onDelete("cascade"),
+	unique("despacho_alicuota_despacho_id_alicuota_key").on(table.despachoId, table.alicuota),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(EXISTS ( SELECT 1
+   FROM despacho_importacion p
+  WHERE ((p.id = despacho_alicuota.despacho_id) AND (p.org_id = current_setting('app.org_id'::text, true)))))`, withCheck: sql`(EXISTS ( SELECT 1
+   FROM despacho_importacion p
+  WHERE ((p.id = despacho_alicuota.despacho_id) AND (p.org_id = current_setting('app.org_id'::text, true)))))`  }),
+]);
+
+/**
  * Cola de extractos bancarios subidos, con su lectura.
  *
  * La extracción vive acá y no en la memoria del navegador: subir veinte

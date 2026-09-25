@@ -217,6 +217,13 @@ export function ControlBancarioCard({
   // que es el orden en que alguien las quiere leer.
   const filas = [...desglose].sort((a, b) => b.total - a.total);
 
+  // Solo se avisa de lo que NO cierra: si cuadra, no hay nada que decir y una
+  // lista de cuentas en verde solo ocupa lugar. Un peso de diferencia puede
+  // ser redondeo del PDF, así que el corte va en un peso.
+  const cuadreQueNoCierra = (data?.cuadre ?? []).filter(
+    (c) => Math.abs(c.diferencia) >= 1
+  );
+
   /**
    * La ventana del control puede ser de varios meses y el registro se filtra
    * por rango, no por cantidad de meses: se traduce al rango que lo contiene,
@@ -345,6 +352,56 @@ export function ControlBancarioCard({
               </div>
             )}
 
+            {/* El cuadre del extracto contra sí mismo: inicial + lo que
+                entró − lo que salió tiene que dar el final que declara el
+                banco. Es la pregunta "¿está completo?", distinta de "¿está
+                bien contabilizado?" que responde el control del cierre. Si no
+                cierra, lo más probable es que falte una página del PDF, y
+                todo lo que se calcule después va a estar mal. */}
+            {!compacto && cuadreQueNoCierra.length > 0 && (
+              <div className="mt-3 overflow-hidden rounded-[10px] border border-[var(--arca-accent-warn)]">
+                <div className="flex items-center gap-2 bg-[var(--arca-accent-warn-bg)] px-3 py-2">
+                  <span className="text-[12px] font-semibold text-[var(--arca-accent-warn-fg)]">
+                    {cuadreQueNoCierra.length === 1
+                      ? 'Un extracto no cuadra consigo mismo'
+                      : `${cuadreQueNoCierra.length} extractos no cuadran consigo mismos`}
+                  </span>
+                  <AyudaIcono texto="Saldo inicial + lo que entró − lo que salió tiene que dar el saldo final que declara el banco. Si no da, falta algún movimiento: casi siempre una página del extracto que no se leyó." />
+                </div>
+                <ul className="divide-y divide-[var(--arca-border)]">
+                  {cuadreQueNoCierra.map((c) => (
+                    <li
+                      key={c.cuentaBancariaId}
+                      className="px-3 py-2 text-[12px]"
+                    >
+                      <div className="flex flex-wrap items-baseline gap-x-2">
+                        <span className="font-medium text-[var(--arca-ink)]">
+                          {c.cuentaBancaria}
+                        </span>
+                        <span className="tabular-nums text-[var(--arca-ink-3)]">
+                          {fmt.format(c.inicial)} + {fmt.format(c.ingresos)} −{' '}
+                          {fmt.format(c.egresos)} = {fmt.format(c.esperado)}
+                        </span>
+                        <span className="text-[var(--arca-ink-4)]">
+                          · el banco dice
+                        </span>
+                        <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                          {fmt.format(c.real)}
+                        </span>
+                        <span
+                          className="ml-auto font-semibold tabular-nums"
+                          style={{ color: COLOR.alerta }}
+                        >
+                          {c.diferencia > 0 ? '+' : ''}
+                          {fmt.format(c.diferencia)}
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <div
               className={`mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[var(--arca-ink-4)] ${compacto ? 'hidden' : ''}`}
             >
@@ -400,7 +457,7 @@ export function ControlBancarioCard({
                             control suma todas. */}
                         <Link
                           to="/bank"
-                          search={(prev) => ({
+                          search={(prev: Record<string, unknown>) => ({
                             ...prev,
                             clientId: clienteId,
                             mes,

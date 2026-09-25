@@ -20,6 +20,7 @@ import {
   comprobante,
   comprobanteAlicuota,
   contraparte,
+  despachoAlicuota,
   despachoImportacion,
   documento,
 } from '@/drizzle/schema';
@@ -31,6 +32,7 @@ import {
 import {
   alicuotaValida,
   calcularDespacho,
+  inferirLineas,
   nombreCompraDespacho,
   numeroComprobanteSintetico,
 } from '@/lib/despacho-calc';
@@ -50,9 +52,19 @@ interface Extraccion {
   tipoDocumento: 'importacion_directa' | 'destinacion_simplificada';
   numero: string;
   fecha: string | null;
-  alicuota: number;
-  ivaUsd: number;
+  /**
+   * Los conceptos 415 del documento, uno por renglón leído. Es una lista y no
+   * un número porque un despacho puede traer varios: una Importación Directa
+   * lista un 415 por ítem y un courier puede consolidar varios envíos.
+   */
+  conceptos415: { alicuota: number; ivaUsd: number }[];
   tipoCambio: number;
+  /**
+   * Base imponible en dólares, cuando el documento la trae. Sirve para deducir
+   * la alícuota cuando ningún renglón la dice, que es lo que pasa en las
+   * liquidaciones de courier consolidadas.
+   */
+  baseImponibleUsd: number;
   legible: boolean;
   importadorCoincide: boolean;
   importadorDelDocumento: string;
@@ -77,15 +89,31 @@ const extraccionSchema: Schema = {
       description:
         'Fecha de oficialización del despacho en formato YYYY-MM-DD, o cadena vacía si no se lee.',
     },
-    alicuota: {
-      type: 'NUMBER',
+    conceptos415: {
+      type: 'ARRAY',
       description:
-        'Alícuota de IVA del Concepto 415, en porcentaje (21 o 10.5 normalmente). 0 si no se encuentra.',
+        'TODOS los renglones del Concepto 415 (IVA) del documento, uno por elemento. Un despacho puede tener varios: la Importación Directa lista un 415 por ítem/foja, y un courier puede consolidar varios envíos. Si el documento trae además un total consolidado del 415, devolvé SOLO el total (una entrada) y no también los parciales, para no duplicar. Lista vacía si no se encuentra ninguno.',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          alicuota: {
+            type: 'NUMBER',
+            description:
+              'Alícuota de IVA de ESE renglón, en porcentaje (21 o 10.5). 0 si el renglón no la indica: se deduce después, no la inventes.',
+          },
+          ivaUsd: {
+            type: 'NUMBER',
+            description:
+              'Importe de ESE renglón del Concepto 415 en DÓLARES, tal como figura.',
+          },
+        },
+        required: ['alicuota', 'ivaUsd'],
+      },
     },
-    ivaUsd: {
+    baseImponibleUsd: {
       type: 'NUMBER',
       description:
-        'Importe del Concepto 415 (IVA) en DÓLARES, tal como figura en el documento. 0 si no se encuentra.',
+        'Base imponible del IVA en DÓLARES si el documento la trae (suele figurar como "Base Imponible", o como valor en aduana + derechos de importación + tasa de estadística). 0 si no se puede leer. No la calcules a partir del IVA.',
     },
     tipoCambio: {
       type: 'NUMBER',
@@ -112,8 +140,8 @@ const extraccionSchema: Schema = {
     'tipoDocumento',
     'numero',
     'fecha',
-    'alicuota',
-    'ivaUsd',
+    'conceptos415',
+    'baseImponibleUsd',
     'tipoCambio',
     'legible',
     'importadorCoincide',
@@ -124,10 +152,22 @@ const extraccionSchema: Schema = {
 const PROMPT = `Sos un extractor de datos de DESPACHOS DE IMPORTACIÓN argentinos (Aduana/ARCA y couriers).
 
 QUÉ BUSCAR — el CONCEPTO 415 (IVA):
-Los despachos listan conceptos numerados. El concepto 415 es el IVA de la importación. De ahí salen los 3 datos que importan:
-1. La ALÍCUOTA de IVA (normalmente 21% o 10,5%).
-2. El importe del IVA en DÓLARES (los conceptos van en USD).
-3. El TIPO DE CAMBIO del documento (la cotización usada para pesificar).
+Los despachos listan conceptos numerados. El concepto 415 es el IVA de la importación. De ahí sale lo que importa:
+1. TODOS los renglones del 415, cada uno con su ALÍCUOTA (21% o 10,5%) y su importe en DÓLARES.
+2. El TIPO DE CAMBIO del documento (la cotización usada para pesificar).
+3. La BASE IMPONIBLE en dólares, si el documento la trae.
+
+PUEDE HABER MÁS DE UN 415 (importante):
+- En una Importación Directa, cada ítem/foja del despacho tiene su propio
+  concepto 415. Si el documento trae además una columna "TOTAL" con el 415
+  consolidado de todo el despacho, devolvé SOLO ese total: es la suma de los
+  ítems y cargar las dos cosas duplicaría el IVA.
+- En un courier, la liquidación puede consolidar varios envíos y traer un
+  único 415 SIN alícuota. En ese caso devolvé ese renglón con alicuota=0 y
+  completá baseImponibleUsd: la alícuota se deduce después con la base. NO la
+  adivines ni pongas 21 por defecto.
+- Si dos renglones tienen alícuotas distintas (21% y 10,5%), devolvé los dos
+  por separado: cada alícuota necesita su propio importe.
 
 TIPOS DE DOCUMENTO:
 - Importación Directa: despacho oficial (formato SIM de Aduana, membrete AFIP/DGA, número de despacho tipo "AA DDD LLNN NNNNNN L").
@@ -152,9 +192,46 @@ pesos, elegí el valor de la lista que haga cerrar esa cuenta).
 
 REGLAS:
 - Números en formato argentino: punto de miles, coma decimal ("1.234,56" = 1234.56).
-- NO inventes: si un dato no está, devolvé 0 (o cadena vacía para la fecha) y marcá legible=false si el documento es dudoso.
+- NO inventes: si un dato no está, devolvé 0 (o cadena vacía para la fecha) y marcá legible=false si el documento es dudoso. Vale especialmente para la alícuota: 0 significa "el documento no la dice" y se resuelve después; un 21 inventado se convierte en un crédito fiscal equivocado.
 - Si hay varios conceptos, el 415 es el IVA; no lo confundas con 410 (derechos), 416/422 (IVA adicional/percepción) ni otros.
 - La imagen puede ser una foto de baja calidad: esforzate igual, priorizá la fila del concepto 415.`;
+
+/**
+ * Las líneas del despacho, resueltas: lo que la IA leyó más lo que se puede
+ * deducir.
+ *
+ * Un renglón con alicuota=0 significa "el documento no la dice", que es lo que
+ * pasa en las liquidaciones de courier consolidadas. Si el documento trae la
+ * base imponible, la alícuota se deduce: el cociente IVA/base da 21% o 10,5%
+ * justo, o cae en el medio y entonces hay de las dos y se despeja el reparto.
+ *
+ * Lo deducido se marca para que quede a la vista: es una propuesta para que
+ * alguien la confirme, no un dato leído.
+ */
+function resolverLineas(e: Extraccion): {
+  lineas: { alicuota: number; ivaUsd: number }[];
+  inferido: boolean;
+} {
+  const conAlicuota = e.conceptos415.filter(
+    (c) => c.ivaUsd > 0 && alicuotaValida(c.alicuota)
+  );
+  const sinAlicuota = e.conceptos415.filter(
+    (c) => c.ivaUsd > 0 && !alicuotaValida(c.alicuota)
+  );
+  if (sinAlicuota.length === 0) return { lineas: conAlicuota, inferido: false };
+
+  // Solo se deduce cuando hay UN renglón sin alícuota y una base para
+  // dividir. Con varios, no se sabe qué parte de la base es de cuál.
+  const ivaSuelto = sinAlicuota.reduce((s, c) => s + c.ivaUsd, 0);
+  const inferidas =
+    sinAlicuota.length === 1 && conAlicuota.length === 0
+      ? inferirLineas(ivaSuelto, e.baseImponibleUsd)
+      : null;
+
+  return inferidas
+    ? { lineas: [...conAlicuota, ...inferidas.lineas], inferido: true }
+    : { lineas: conAlicuota, inferido: false };
+}
 
 async function extraerConGemini(
   base64Data: string,
@@ -243,7 +320,8 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
         'No se pudo leer el documento. Si es una foto, probá con una toma más nítida.'
       );
     }
-    if (!extraccion.numero || (!extraccion.ivaUsd && !extraccion.tipoCambio)) {
+    const ivaLeido = extraccion.conceptos415.reduce((s, c) => s + c.ivaUsd, 0);
+    if (!extraccion.numero || (!ivaLeido && !extraccion.tipoCambio)) {
       console.error('[despachos] extracción vacía', { extraccion });
       throw new Error(
         'No se encontró el Concepto 415 ni el número de despacho en el documento. Si es un despacho, avisá al equipo con el archivo.'
@@ -279,17 +357,32 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
       fuente: 'manual',
     });
 
-    // 3. La fila del despacho. Alícuota rara → 'revision', nunca cálculo mudo.
-    const derivados = calcularDespacho(extraccion);
+    // 3. La fila del despacho. Sin alícuota utilizable → 'revision', nunca
+    // cálculo mudo; y lo deducido también, porque es una propuesta.
+    const { lineas, inferido } = resolverLineas(extraccion);
+    const derivados = calcularDespacho({
+      lineas,
+      tipoCambio: extraccion.tipoCambio,
+    });
     const estado =
-      alicuotaValida(extraccion.alicuota) &&
+      lineas.length > 0 &&
+      !inferido &&
       extraccion.legible &&
       extraccion.importadorCoincide
         ? 'extraido'
         : 'revision';
     const aviso = !extraccion.importadorCoincide
       ? `Ojo: el documento parece ser de ${extraccion.importadorDelDocumento || 'otro importador'}, no de la empresa seleccionada.`
-      : null;
+      : inferido
+        ? 'El documento no dice la alícuota: se dedujo de la base imponible. Revisá el reparto antes de confirmar.'
+        : lineas.length === 0
+          ? 'No se pudo leer ninguna alícuota del Concepto 415: cargala a mano.'
+          : null;
+
+    // La alícuota del padre es la de mayor importe: el listado la muestra y
+    // no tiene sentido inventar un promedio. El detalle vive en las líneas.
+    const principal = derivados.lineas[0]?.alicuota ?? 0;
+    const ivaUsdTotal = derivados.lineas.reduce((s, l) => s + l.ivaUsd, 0);
 
     const [fila] = await db
       .insert(despachoImportacion)
@@ -300,8 +393,8 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
         tipo: extraccion.tipoDocumento,
         numero: extraccion.numero.trim(),
         fecha: extraccion.fecha === '' ? null : extraccion.fecha,
-        alicuota: extraccion.alicuota.toFixed(2),
-        ivaUsd: extraccion.ivaUsd.toFixed(2),
+        alicuota: principal.toFixed(2),
+        ivaUsd: ivaUsdTotal.toFixed(2),
         tipoCambio: extraccion.tipoCambio.toFixed(6),
         ivaPesos: derivados.ivaPesos.toFixed(2),
         netoGravado: derivados.netoGravado.toFixed(2),
@@ -322,8 +415,8 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
         set: {
           documentoId,
           fecha: extraccion.fecha === '' ? null : extraccion.fecha,
-          alicuota: extraccion.alicuota.toFixed(2),
-          ivaUsd: extraccion.ivaUsd.toFixed(2),
+          alicuota: principal.toFixed(2),
+          ivaUsd: ivaUsdTotal.toFixed(2),
           tipoCambio: extraccion.tipoCambio.toFixed(6),
           ivaPesos: derivados.ivaPesos.toFixed(2),
           netoGravado: derivados.netoGravado.toFixed(2),
@@ -355,6 +448,24 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
           string | null
         >`extraccion ->> 'importadorDelDocumento'`,
       });
+
+    // Las líneas, una por alícuota. Se rehacen enteras: si la lectura cambió,
+    // lo que quedó de la anterior no tiene por qué sobrevivir.
+    if (fila) {
+      await db
+        .delete(despachoAlicuota)
+        .where(eq(despachoAlicuota.despachoId, fila.id));
+      if (derivados.lineas.length > 0)
+        await db.insert(despachoAlicuota).values(
+          derivados.lineas.map((l) => ({
+            despachoId: fila.id,
+            alicuota: l.alicuota.toFixed(2),
+            ivaUsd: l.ivaUsd.toFixed(2),
+            ivaPesos: l.ivaPesos.toFixed(2),
+            netoGravado: l.netoGravado.toFixed(2),
+          }))
+        );
+    }
 
     if (!fila) {
       // Ya estaba cargado: se devuelve el existente, marcado como duplicado.
@@ -390,9 +501,32 @@ export const subirYExtraerDespacho = createServerFn({ method: 'POST' })
           )
         )
         .limit(1);
-      return { despacho: existente, duplicado: true, aviso };
+      // Las líneas del que ya estaba: son las que se van a editar.
+      const guardadas = await db
+        .select({
+          alicuota: despachoAlicuota.alicuota,
+          ivaUsd: despachoAlicuota.ivaUsd,
+        })
+        .from(despachoAlicuota)
+        .where(eq(despachoAlicuota.despachoId, existente.id))
+        .orderBy(desc(despachoAlicuota.alicuota));
+      return {
+        despacho: { ...existente, lineas: guardadas },
+        duplicado: true,
+        aviso,
+      };
     }
-    return { despacho: fila, duplicado: false, aviso };
+    return {
+      despacho: {
+        ...fila,
+        lineas: derivados.lineas.map((l) => ({
+          alicuota: l.alicuota.toFixed(2),
+          ivaUsd: l.ivaUsd.toFixed(2),
+        })),
+      },
+      duplicado: false,
+      aviso,
+    };
   });
 
 /** La contraparte única de todos los despachos: la Aduana. */
@@ -425,9 +559,16 @@ export const confirmarDespacho = createServerFn({ method: 'POST' })
   .validator(
     z.object({
       despachoId: z.string().uuid(),
-      // La persona puede corregir lo extraído antes de confirmar.
-      alicuota: z.number().positive().max(100),
-      ivaUsd: z.number().positive(),
+      // La persona puede corregir lo extraído antes de confirmar, y agregar o
+      // sacar líneas: un despacho puede tener varios conceptos 415.
+      lineas: z
+        .array(
+          z.object({
+            alicuota: z.number().positive().max(100),
+            ivaUsd: z.number().positive(),
+          })
+        )
+        .min(1),
       tipoCambio: z.number().positive(),
       numero: z.string().trim().min(1),
       fecha: z
@@ -456,7 +597,10 @@ export const confirmarDespacho = createServerFn({ method: 'POST' })
 
     // El cálculo se rehace en el server con lo confirmado: lo que firma la
     // persona es lo que queda, no lo que leyó la IA.
-    const derivados = calcularDespacho(ctx.data);
+    const derivados = calcularDespacho({
+      lineas: ctx.data.lineas,
+      tipoCambio: ctx.data.tipoCambio,
+    });
     const fechaEmision =
       ctx.data.fecha ?? new Date().toISOString().slice(0, 10);
     const contraparteId = await contraparteAduana();
@@ -486,20 +630,28 @@ export const confirmarDespacho = createServerFn({ method: 'POST' })
         'Ya existe una compra para este despacho (mismo número). Revisá en Facturas.'
       );
 
-    await db.insert(comprobanteAlicuota).values({
-      comprobanteId: compra.id,
-      alicuota: ctx.data.alicuota.toFixed(2),
-      neto: derivados.netoGravado.toFixed(2),
-      iva: derivados.ivaPesos.toFixed(2),
-    });
+    // Una fila por alícuota: es lo que el libro de IVA compras agrupa y lo
+    // que hace que el crédito fiscal quede discriminado. `calcularDespacho` ya
+    // consolidó las líneas repetidas, así que ninguna choca con el unique
+    // (comprobante, alícuota).
+    await db.insert(comprobanteAlicuota).values(
+      derivados.lineas.map((l) => ({
+        comprobanteId: compra.id,
+        alicuota: l.alicuota.toFixed(2),
+        neto: l.netoGravado.toFixed(2),
+        iva: l.ivaPesos.toFixed(2),
+      }))
+    );
 
     const [actualizado] = await db
       .update(despachoImportacion)
       .set({
         numero: ctx.data.numero,
         fecha: ctx.data.fecha,
-        alicuota: ctx.data.alicuota.toFixed(2),
-        ivaUsd: ctx.data.ivaUsd.toFixed(2),
+        alicuota: (derivados.lineas[0]?.alicuota ?? 0).toFixed(2),
+        ivaUsd: derivados.lineas
+          .reduce((acc, l) => acc + l.ivaUsd, 0)
+          .toFixed(2),
         tipoCambio: ctx.data.tipoCambio.toFixed(6),
         ivaPesos: derivados.ivaPesos.toFixed(2),
         netoGravado: derivados.netoGravado.toFixed(2),
@@ -530,6 +682,21 @@ export const confirmarDespacho = createServerFn({ method: 'POST' })
           string | null
         >`extraccion ->> 'importadorDelDocumento'`,
       });
+
+    // Las líneas del despacho quedan como lo que se confirmó, no como lo que
+    // leyó la IA: son el respaldo de por qué la compra tiene esas alícuotas.
+    await db
+      .delete(despachoAlicuota)
+      .where(eq(despachoAlicuota.despachoId, desp.id));
+    await db.insert(despachoAlicuota).values(
+      derivados.lineas.map((l) => ({
+        despachoId: desp.id,
+        alicuota: l.alicuota.toFixed(2),
+        ivaUsd: l.ivaUsd.toFixed(2),
+        ivaPesos: l.ivaPesos.toFixed(2),
+        netoGravado: l.netoGravado.toFixed(2),
+      }))
+    );
 
     return {
       despacho: actualizado,
@@ -615,6 +782,19 @@ export const listarDespachos = createServerFn({ method: 'GET' })
           string | null
         >`extraccion ->> 'importadorDelDocumento'`,
         createdAt: despachoImportacion.createdAt,
+        // Las líneas van en el mismo viaje: la fila se despliega para
+        // editarlas y pedirlas aparte por cada despacho sería una consulta
+        // por fila.
+        // Como texto, igual que el resto de las columnas numeric: así la fila
+        // del listado y la de la extracción tienen la misma forma.
+        lineas: sql<{ alicuota: string; ivaUsd: string }[]>`coalesce((
+          select json_agg(json_build_object(
+                   'alicuota', a.alicuota::text,
+                   'ivaUsd', a.iva_usd::text)
+                 order by a.alicuota desc)
+          from despacho_alicuota a
+          where a.despacho_id = ${despachoImportacion.id}
+        ), '[]'::json)`,
       })
       .from(despachoImportacion)
       .innerJoin(cliente, eq(cliente.id, despachoImportacion.clienteId))
