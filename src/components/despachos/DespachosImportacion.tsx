@@ -628,6 +628,7 @@ export function DespachosImportacionDialog({
                         <th className="px-3 py-2 font-medium">Empresa</th>
                         <th className="px-3 py-2 font-medium">Tipo</th>
                         <th className="px-3 py-2 font-medium">Número</th>
+                        <th className="px-3 py-2 font-medium">Alícuotas</th>
                         <th className="px-3 py-2 text-right font-medium">
                           Total
                         </th>
@@ -649,6 +650,16 @@ export function DespachosImportacionDialog({
                           </td>
                           <td className="px-3 py-2 font-mono text-[11.5px]">
                             {d.numero}
+                          </td>
+                          {/* Todas, no solo la principal: un despacho con dos
+                              alícuotas se veía igual que uno con una, y la
+                              diferencia recién aparecía al abrirlo. */}
+                          <td className="px-3 py-2 tabular-nums text-[var(--arca-ink-3)]">
+                            {d.lineas.length > 0
+                              ? d.lineas
+                                  .map((l) => `${Number(l.alicuota)}%`)
+                                  .join(' + ')
+                              : `${Number(d.alicuota)}%`}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums">
                             {fmt.format(Number(d.total))}
