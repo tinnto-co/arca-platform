@@ -27,10 +27,19 @@ export type ReglaTipo = (typeof reglaMapeoTipo.enumValues)[number];
 export type ModuloRegla = (typeof reglaMapeoModulo.enumValues)[number];
 
 export interface ReglaLineaLike {
-  cuentaId: string;
+  /**
+   * Null solo cuando la línea usa la cuenta del banco (`usaCuentaBanco`): ahí
+   * la cuenta se resuelve al generar, con la de la cuenta bancaria del
+   * movimiento.
+   */
+  cuentaId: string | null;
+  /** Solo en el módulo de banco. Ver `accounting-bank-posting`. */
+  usaCuentaBanco?: boolean;
   lado: Lado;
   base: Base;
   importeFijo?: number | string | null;
+  /** Solo con base 'porcentaje': qué parte del importe lleva la línea. */
+  porcentaje?: number | string | null;
   descripcion?: string | null;
 }
 
@@ -77,10 +86,24 @@ export const TOLERANCIA = 0.005;
  * todos.
  */
 export const BASES_POR_MODULO: Record<ModuloRegla, readonly Base[]> = {
-  comprobante: ['total', 'neto', 'iva', 'otros_tributos', 'fijo'],
-  recibo: ['valor_concepto', 'fijo'],
-  movimiento_bancario: ['total', 'fijo'],
+  comprobante: ['total', 'neto', 'iva', 'otros_tributos', 'fijo', 'porcentaje'],
+  recibo: ['valor_concepto', 'fijo', 'porcentaje'],
+  movimiento_bancario: ['total', 'fijo', 'porcentaje'],
 };
+
+/**
+ * El importe de una línea que reparte en partes.
+ *
+ * `base` natural es el importe entero del hecho: el total del comprobante, el
+ * valor del concepto o el importe del movimiento. El porcentaje se aplica
+ * sobre eso.
+ */
+export function importePorcentaje(
+  baseNatural: number,
+  porcentaje: number | string | null | undefined
+): number {
+  return round2((baseNatural * num(porcentaje)) / 100);
+}
 
 /**
  * Qué puede filtrar la condición de cada módulo. Una clave que no esté acá

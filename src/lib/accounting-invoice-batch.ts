@@ -275,7 +275,7 @@ export async function runPendingInvoiceBatch(opts?: {
           await assertPostableAccounts(
             clienteId,
             orgId,
-            regla.lineas.map((l) => l.cuentaId)
+            regla.lineas.flatMap((l) => (l.cuentaId ? [l.cuentaId] : []))
           );
         }
         const armado = armarLineas(regla, importes, cuentaPendienteId);

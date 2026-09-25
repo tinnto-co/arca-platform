@@ -21,9 +21,11 @@ import {
   ChartNoAxesColumn,
   Search,
   Scale,
+  BookOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ConAyuda } from '@/components/shared/ayuda';
+import { AyudaIcono, ConAyuda } from '@/components/shared/ayuda';
+import { getPostableAccounts } from '@/actions/accounting';
 import { CardsResumen } from '@/components/shared/cards-resumen';
 import { PageHeader } from '@/components/shared/page-header';
 import { PageShell } from '@/components/shared/page-shell';
@@ -74,6 +76,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { ArcaCard } from '@/components/dashboard/shared';
 import {
+  setCuentaContableDeCuentaBancaria,
   listCuentasConResumen,
   listMovimientos,
   autoConciliar,
@@ -95,12 +98,14 @@ import { ImportarExtractoDialog } from '@/components/banco/ImportarExtractoDialo
 import { AvisoExtractosEnCurso } from '@/components/banco/AvisoExtractosEnCurso';
 import { BandejaConciliacion } from '@/components/banco/BandejaConciliacion';
 import { ControlBancarioCard } from '@/components/banco/ControlBancarioCard';
+import { AsientosDelMes } from '@/components/banco/AsientosDelMes';
 import {
   CATEGORIAS_MOVIMIENTO,
   CATEGORIA_MOVIMIENTO_LABEL,
   type CategoriaMovimiento,
 } from '@/lib/clasificar-movimiento';
 import { toast } from 'sonner';
+import { marcarNoContabilizar } from '@/actions/extractos';
 
 /**
  * La empresa y el mes van en la URL: recargar no pierde dónde estabas y el
@@ -126,7 +131,7 @@ const bankSearchSchema = z.object({
   rango: z.enum(['mes', '3m', '12m', 'todo']).optional(),
   /** Qué pestaña se mira. Sin esto, Banco era una sola página larga. */
   vista: z
-    .enum(['control', 'movimientos', 'cuentas', 'conciliacion'])
+    .enum(['control', 'movimientos', 'cuentas', 'conciliacion', 'asientos'])
     .optional(),
 });
 type BankSearch = z.infer<typeof bankSearchSchema>;
@@ -924,8 +929,17 @@ function TransactionItem({
   const recategorizar = useMutation({
     mutationFn: (categoria: CategoriaMovimiento) =>
       recategorizarMovimiento({ data: { movimientoId: tx.id, categoria } }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['controlBancario'] });
+      // El asiento se armó con la categoría vieja y no se rehace solo:
+      // contabilizar es una decisión, no un efecto de corregir una etiqueta.
+      if (r.asientoDesactualizado)
+        toast.warning('Este movimiento ya estaba contabilizado', {
+          description:
+            'El asiento quedó con la categoría anterior. Para rehacerlo, deshacé el mes en la pestaña Asientos y generalo de nuevo.',
+          duration: 8000,
+        });
     },
     onError: () => toast.error('No se pudo cambiar la categoría'),
   });
@@ -946,17 +960,44 @@ function TransactionItem({
       ),
   });
 
+  // "Ya está contabilizado por otro lado": el asiento automático lo saltea.
+  // El caso típico es el pago de una factura ya asentada desde Facturas: si
+  // el banco también lo contabiliza, el gasto queda contado dos veces.
+  const noContabilizar = useMutation({
+    mutationFn: (valor: boolean) =>
+      marcarNoContabilizar({
+        data: { movimientoId: tx.id, noContabilizar: valor },
+      }),
+    onSuccess: (_, valor) => {
+      void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['asientosBanco'] });
+      toast.success(
+        valor
+          ? 'No se le va a generar asiento'
+          : 'Vuelve a entrar en los asientos automáticos'
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // Excluir saca el movimiento de la comparación Banco vs Facturación
   // (transferencias entre cuentas propias, ajustes) sin borrarlo.
   const excluir = useMutation({
     mutationFn: (excluido: boolean) =>
       excluirMovimiento({ data: { movimientoId: tx.id, excluido } }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
       void queryClient.invalidateQueries({ queryKey: ['bankAccountsResumen'] });
       void queryClient.invalidateQueries({ queryKey: ['bancoVsFacturacion'] });
       void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
       setConfirmarExcluir(false);
+      // Excluirlo no lo saca del asiento que ya se generó.
+      if (r.asientoDesactualizado)
+        toast.warning('Este movimiento ya estaba contabilizado', {
+          description:
+            'Excluirlo no lo saca del asiento. Para rehacerlo, deshacé el mes en la pestaña Asientos y generalo de nuevo.',
+          duration: 8000,
+        });
     },
     onError: () => toast.error('No se pudo actualizar el movimiento'),
   });
@@ -1188,6 +1229,39 @@ function TransactionItem({
       >
         {fmtAmount(tx.importe, tx.direccion)}
       </div>
+
+      {/* Si ya tiene asiento se dice y no se ofrece marcarlo: primero hay que
+          deshacer el mes. */}
+      <ConAyuda
+        texto={
+          tx.asientoId
+            ? 'Ya tiene asiento generado. Para cambiarlo, deshacé el mes en la pestaña Asientos.'
+            : tx.noContabilizar
+              ? 'Marcado como ya contabilizado: el asiento automático lo saltea. Click para que vuelva a entrar.'
+              : 'Marcar como ya contabilizado por otro lado, para que el asiento automático lo saltee (por ejemplo, el pago de una factura que ya se asentó desde Facturas).'
+        }
+      >
+        <button
+          type="button"
+          className="shrink-0 transition-colors disabled:opacity-40"
+          style={{
+            color: tx.asientoId
+              ? 'var(--arca-accent-pos-fg)'
+              : tx.noContabilizar
+                ? 'var(--arca-accent-warn-fg)'
+                : 'var(--arca-ink-4)',
+          }}
+          aria-label={
+            tx.noContabilizar
+              ? 'Volver a incluir en los asientos'
+              : 'Marcar como ya contabilizado'
+          }
+          disabled={noContabilizar.isPending || !!tx.asientoId}
+          onClick={() => noContabilizar.mutate(!tx.noContabilizar)}
+        >
+          <BookOpen className="w-3.5 h-3.5" strokeWidth={1.8} />
+        </button>
+      </ConAyuda>
 
       {/* Excluir de la conciliación. Volver a incluir no pregunta: es la
           dirección segura. Excluir sí, porque saca plata de la comparación. */}
@@ -1519,66 +1593,133 @@ function TotalesDelPeriodo({
 }
 
 /* ─── Las cuentas, visibles ─── */
+/**
+ * A qué cuenta del plan van los movimientos de esta cuenta bancaria.
+ *
+ * Sin esto no hay asiento posible: el Debe de un cobro y el Haber de un pago
+ * van siempre contra el banco, y cada cuenta bancaria es una cuenta distinta
+ * del plan (Banco Naci\u00f3n c/c no es Banco Galicia c/c). Va debajo de la
+ * tarjeta y no adentro, porque la tarjeta entera es el bot\u00f3n que filtra.
+ */
+function CuentaContableDeBanco({
+  cuenta,
+  clienteId,
+}: {
+  cuenta: CuentaConResumen;
+  clienteId: string;
+}) {
+  const queryClient = useQueryClient();
+  const { data: plan = [] } = useQuery({
+    queryKey: ['accounting', 'postable', clienteId],
+    queryFn: () => getPostableAccounts({ data: { clientId: clienteId } }),
+    enabled: !!clienteId,
+  });
+
+  const guardar = useMutation({
+    mutationFn: (cuentaContableId: string | null) =>
+      setCuentaContableDeCuentaBancaria({
+        data: { cuentaBancariaId: cuenta.id, cuentaContableId },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['bankAccountsResumen'] });
+      toast.success('Cuenta contable actualizada');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return (
+    <div className="border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
+      <p className="mb-1 flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+        Sus movimientos van a
+        <AyudaIcono texto="La cuenta del plan donde se imputan los movimientos de esta cuenta bancaria. Varias cuentas bancarias pueden apuntar a la misma: ahí el mayor las suma, que es lo que se quiere cuando se lleva una sola cuenta por banco. Sin elegir una, esta cuenta no genera asientos." />
+      </p>
+      <SearchableSelect
+        size="sm"
+        width="100%"
+        value={cuenta.cuentaContableId ?? 'ninguna'}
+        onValueChange={(v) => guardar.mutate(v === 'ninguna' ? null : v)}
+        placeholder="Elegí la cuenta del plan"
+        searchPlaceholder="Buscar por código o nombre..."
+        label="Cuenta del plan"
+        options={[
+          { value: 'ninguna', label: 'Sin asignar' },
+          ...plan.map((c) => ({ value: c.id, label: `${c.code} · ${c.name}` })),
+        ]}
+      />
+    </div>
+  );
+}
+
 function TarjetaCuenta({
   cuenta,
   activa,
   onClick,
+  pie,
 }: {
   cuenta: CuentaConResumen;
   activa: boolean;
   onClick: () => void;
+  /** Va dentro de la card, separado por una línea: no es clickeable. */
+  pie?: React.ReactNode;
 }) {
   const ingresos = parseFloat(cuenta.ingresos);
   const egresos = parseFloat(cuenta.egresos);
   return (
-    <button
-      onClick={onClick}
-      className={`flex flex-col gap-2 rounded-[12px] border px-4 py-3 text-left transition-colors ${
+    <div
+      className={`flex flex-col overflow-hidden rounded-[12px] border transition-colors ${
         activa
           ? 'border-[var(--arca-ink)] bg-[var(--arca-surface)]'
-          : 'border-[var(--arca-border)] bg-[var(--arca-surface)] hover:bg-[var(--arca-surface-2)]'
+          : 'border-[var(--arca-border)] bg-[var(--arca-surface)]'
       }`}
     >
-      <div className="flex items-center gap-2">
-        <Landmark
-          className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-3)]"
-          strokeWidth={2}
-        />
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          {cuenta.banco}
-        </span>
-        {activa && (
-          <span className="ml-auto text-[10.5px] font-medium text-[var(--arca-ink-3)]">
-            viendo
+      <button
+        onClick={onClick}
+        className="flex flex-col gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--arca-surface-2)]"
+      >
+        <div className="flex items-center gap-2">
+          <Landmark
+            className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-3)]"
+            strokeWidth={2}
+          />
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {cuenta.banco}
           </span>
-        )}
-      </div>
-      <div className="text-[11.5px] text-[var(--arca-ink-3)] font-mono">
-        {cuenta.numero ?? 'sin número'}
-        {cuenta.alias ? ` · ${cuenta.alias}` : ''}
-      </div>
-      <div className="text-[10.5px] text-[var(--arca-ink-4)]">
-        {TIPO_CUENTA[cuenta.tipo ?? ''] ?? 'Cuenta'} · {cuenta.moneda}
-        {cuenta.cbu ? ` · CBU ${cuenta.cbu}` : ''}
-      </div>
-      <div className="flex items-center gap-3 border-t border-[var(--arca-border)] pt-2 text-[11.5px] tabular-nums">
-        <span style={{ color: 'oklch(0.45 0.14 145)' }}>
-          +{fmtPesos(ingresos)}
-        </span>
-        <span style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}>
-          −{fmtPesos(egresos)}
-        </span>
-      </div>
-      <div className="text-[10.5px] text-[var(--arca-ink-4)]">
-        {cuenta.movimientos} movimiento{cuenta.movimientos !== 1 ? 's' : ''}
-        {cuenta.ultimoMovimiento
-          ? ` · último ${fmtDate(cuenta.ultimoMovimiento)}`
-          : ' · sin movimientos'}
-        {cuenta.saldoUltimo
-          ? ` · saldo ${fmtPesos(parseFloat(cuenta.saldoUltimo))}`
-          : ''}
-      </div>
-    </button>
+          {activa && (
+            <span className="ml-auto text-[10.5px] font-medium text-[var(--arca-ink-3)]">
+              viendo
+            </span>
+          )}
+        </div>
+        <div className="text-[11.5px] text-[var(--arca-ink-3)] font-mono">
+          {cuenta.numero ?? 'sin número'}
+          {cuenta.alias ? ` · ${cuenta.alias}` : ''}
+        </div>
+        <div className="text-[10.5px] text-[var(--arca-ink-4)]">
+          {TIPO_CUENTA[cuenta.tipo ?? ''] ?? 'Cuenta'} · {cuenta.moneda}
+          {cuenta.cbu ? ` · CBU ${cuenta.cbu}` : ''}
+        </div>
+        <div className="flex items-center gap-3 border-t border-[var(--arca-border)] pt-2 text-[11.5px] tabular-nums">
+          <span style={{ color: 'oklch(0.45 0.14 145)' }}>
+            +{fmtPesos(ingresos)}
+          </span>
+          <span
+            style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}
+          >
+            −{fmtPesos(egresos)}
+          </span>
+        </div>
+        <div className="text-[10.5px] text-[var(--arca-ink-4)]">
+          {cuenta.movimientos} movimiento{cuenta.movimientos !== 1 ? 's' : ''}
+          {cuenta.ultimoMovimiento
+            ? ` · último ${fmtDate(cuenta.ultimoMovimiento)}`
+            : ' · sin movimientos'}
+          {cuenta.saldoUltimo
+            ? ` · saldo ${fmtPesos(parseFloat(cuenta.saldoUltimo))}`
+            : ''}
+        </div>
+      </button>
+      {pie}
+    </div>
   );
 }
 
@@ -1651,6 +1792,15 @@ function BankPage() {
     setAccountId('');
     setShowCreateAccount(false);
     setShowManualMovement(false);
+  }
+
+  // Al llegar desde el desglose del control, el filtro de cuenta se limpia:
+  // ese total suma todas las cuentas, así que abrirlo con una sola elegida
+  // mostraría menos movimientos de los que decía la fila.
+  const [prevCategoria, setPrevCategoria] = useState(search.categoria);
+  if (prevCategoria !== search.categoria) {
+    setPrevCategoria(search.categoria);
+    if (search.categoria) setAccountId('');
   }
 
   /* Cuentas con su actividad */
@@ -1804,6 +1954,7 @@ function BankPage() {
               ['movimientos', 'Movimientos', ArrowLeftRight],
               ['cuentas', 'Cuentas y extractos', Landmark],
               ['conciliacion', 'Conciliación', Scale],
+              ['asientos', 'Asientos', BookOpen],
             ] as const
           ).map(([id, label, Icono]) => (
             <button
@@ -1838,6 +1989,16 @@ function BankPage() {
                 search: (prev: BankSearch) => ({ ...prev, mes }),
               })
             }
+          />
+        </div>
+      )}
+
+      {vista === 'asientos' && accounts.length > 0 && search.mes && (
+        <div className="mb-5">
+          <AsientosDelMes
+            clienteId={clienteId}
+            periodo={search.mes}
+            cuentaBancariaId={accountId || undefined}
           />
         </div>
       )}
@@ -1914,23 +2075,27 @@ function BankPage() {
         ) : (
           <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {accounts.map((c) => (
-              <TarjetaCuenta
-                key={c.id}
-                cuenta={c}
-                activa={accountId === c.id}
-                onClick={() => {
-                  // Volver a clickear la cuenta activa muestra todas de nuevo.
-                  setAccountId((prev) => (prev === c.id ? '' : c.id));
-                  setShowManualMovement(false);
-                  void navigate({
-                    resetScroll: false,
-                    search: (prev: BankSearch) => ({
-                      ...prev,
-                      vista: 'movimientos',
-                    }),
-                  });
-                }}
-              />
+              <div key={c.id} className="flex flex-col">
+                <TarjetaCuenta
+                  cuenta={c}
+                  activa={accountId === c.id}
+                  pie={
+                    <CuentaContableDeBanco cuenta={c} clienteId={clienteId} />
+                  }
+                  onClick={() => {
+                    // Volver a clickear la cuenta activa muestra todas de nuevo.
+                    setAccountId((prev) => (prev === c.id ? '' : c.id));
+                    setShowManualMovement(false);
+                    void navigate({
+                      resetScroll: false,
+                      search: (prev: BankSearch) => ({
+                        ...prev,
+                        vista: 'movimientos',
+                      }),
+                    });
+                  }}
+                />
+              </div>
             ))}
           </div>
         ))}

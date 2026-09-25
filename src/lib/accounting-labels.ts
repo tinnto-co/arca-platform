@@ -257,6 +257,7 @@ export const MAPPING_AMOUNT_BASIS_LABELS: Record<string, string> = {
   otros_tributos: 'Otros impuestos / percepciones',
   valor_concepto: 'Valor del concepto (sueldos)',
   fijo: 'Monto fijo',
+  porcentaje: 'Porcentaje del importe',
 };
 
 /**

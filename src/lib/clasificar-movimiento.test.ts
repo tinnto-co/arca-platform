@@ -135,6 +135,16 @@ describe('clasificarMovimiento', () => {
     expect(clasificarMovimiento('LIQUIDACION VISA PRISMA MEDIOS DE PAGO')).toBe(
       'cobros_tarjeta'
     );
+    // Así nombra Mercado Pago la acreditación de cada venta cobrada. La
+    // descripción no dice "Mercado Pago": eso está en la cuenta.
+    expect(clasificarMovimiento('LIQUIDACIÓN DE DINERO')).toBe(
+      'cobros_tarjeta'
+    );
+    expect(clasificarMovimiento('Liquidacion de dinero')).toBe(
+      'cobros_tarjeta'
+    );
+    // Los rendimientos de la cuenta remunerada siguen siendo resultado.
+    expect(clasificarMovimiento('RENDIMIENTOS')).toBe('intereses');
     expect(clasificarMovimiento('ACREDITACION DE HABERES')).toBe('sueldos');
     expect(clasificarMovimiento('DEPOSITO CHEQUE 48HS')).toBe('cheques');
     expect(clasificarMovimiento('EXTRACCION CAJERO ATM RED LINK')).toBe(
@@ -174,6 +184,68 @@ describe('clasificarMovimiento', () => {
     // "Compra" empieza con "Com" pero no es una comisión.
     expect(clasificarMovimiento('Compra con tarjeta de debito')).not.toBe(
       'comisiones'
+    );
+  });
+
+  it('compras con débito: plata que sale, no una liquidación de tarjeta', () => {
+    for (const d of [
+      'COMPRA CON TARJETA DE DEBITO MERPAGO*SHELLBOX - TARJ NRO. 3260',
+      'COMPRA DEBITO VITAL SUPERMAYORISTA 4517699006778796',
+      'COMPRA CON TARJETA DE DEBITO FARMACITY-INDEPENDENCIA - TARJ NRO. 3260',
+      // La palabra "visa" no la convierte en un cobro: gana el patrón de
+      // compras porque va primero.
+      'COMPRA CON TARJETA DE DEBITO VISA ELECTRON',
+    ]) {
+      expect(clasificarMovimiento(d), d).toBe('compras_debito');
+    }
+    // Un débito automático sigue siendo un débito automático.
+    expect(clasificarMovimiento('DEBITO AUTOM EDENOR')).toBe(
+      'debitos_automaticos'
+    );
+    // Y la liquidación que entra sigue siendo un cobro.
+    expect(clasificarMovimiento('LIQUIDACION VISA PRISMA')).toBe(
+      'cobros_tarjeta'
+    );
+  });
+
+  it('una marca suelta no le gana a una transferencia que se anuncia', () => {
+    // Caso real: "personal pay" es una billetera, no la telefónica, y el
+    // banco ya dijo que es una transferencia recibida.
+    expect(
+      clasificarMovimiento(
+        'Transf recibida cvu dif titular De micaela giselle fernandez/personal pay/27387074045'
+      )
+    ).toBe('transferencias');
+    expect(
+      clasificarMovimiento(
+        'Transf recibida cvu dif titular De marlen orsetto / mercado pago /27372996213'
+      )
+    ).toBe('transferencias');
+    // Pero el servicio de la telefónica sigue siendo un débito automático.
+    expect(clasificarMovimiento('DEBITO AUTOMATICO PERSONAL')).toBe(
+      'debitos_automaticos'
+    );
+    // Y una transferencia entre cuentas propias le gana a la genérica.
+    expect(
+      clasificarMovimiento('TRANSFERENCIA ENVIADA ENTRE CUENTAS PROPIAS')
+    ).toBe('transferencias_propias');
+    // El impuesto sigue primero: dice "transferencia" y no lo es.
+    expect(
+      clasificarMovimiento('IMPUESTO DEBITOS S/TRANSFERENCIA LEY 25413')
+    ).toBe('impuestos_idc');
+  });
+
+  it('las marcas de tarjeta no agarran palabras que las contienen', () => {
+    // "cabal" dentro de un apellido, "visa" dentro de "revisa".
+    expect(
+      clasificarMovimiento('TRANSFERENCIA A CABALLERO JUAN')
+    ).not.toBe('cobros_tarjeta');
+    expect(clasificarMovimiento('AJUSTE A REVISAR SUCURSAL')).not.toBe(
+      'cobros_tarjeta'
+    );
+    // Pero la marca sola sigue funcionando.
+    expect(clasificarMovimiento('LIQUIDACION VISA PRISMA')).toBe(
+      'cobros_tarjeta'
     );
   });
 

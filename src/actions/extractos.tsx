@@ -26,6 +26,7 @@ import {
   documento,
   extractoBancario,
   movimientoBancario,
+  saldoBancario,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -484,6 +485,9 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
             cbu: z.string(),
             tipo: z.enum(['caja_ahorro', 'cuenta_corriente', 'otra']),
             moneda: z.string(),
+            /** Lo que el banco dice que había al abrir y cerrar el período. */
+            saldoInicial: z.number().optional(),
+            saldoFinal: z.number().optional(),
             movimientos: z
               .array(
                 z.object({
@@ -676,6 +680,39 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
             );
           }
 
+          // El saldo del banco al abrir y cerrar el mes. Antes se leía solo
+          // para validar que el PDF cuadrara y se tiraba; hace falta para el
+          // asiento de apertura y para verificar, al cierre, que el saldo
+          // contable de la cuenta coincida con el del banco.
+          if (
+            cta.saldoInicial != null &&
+            cta.saldoFinal != null &&
+            filas.length
+          ) {
+            // El período sale de los movimientos y no del encabezado del PDF:
+            // un extracto puede venir titulado de otra forma.
+            const periodo = `${filas[0].fecha.slice(0, 7)}-01`;
+            await tx
+              .insert(saldoBancario)
+              .values({
+                cuentaBancariaId: cuentaId,
+                periodo,
+                saldoInicial: cta.saldoInicial.toFixed(2),
+                saldoFinal: cta.saldoFinal.toFixed(2),
+                extractoId: extracto.id,
+              })
+              // Reimportar el mismo mes pisa lo anterior: el extracto nuevo
+              // manda.
+              .onConflictDoUpdate({
+                target: [saldoBancario.cuentaBancariaId, saldoBancario.periodo],
+                set: {
+                  saldoInicial: cta.saldoInicial.toFixed(2),
+                  saldoFinal: cta.saldoFinal.toFixed(2),
+                  extractoId: extracto.id,
+                },
+              });
+          }
+
           importados += nuevos.length;
           salteados += filas.length - nuevos.length;
         }
@@ -746,9 +783,16 @@ export const recategorizarMovimiento = createServerFn({ method: 'POST' })
           )
         )
       )
-      .returning({ id: movimientoBancario.id });
+      .returning({
+        id: movimientoBancario.id,
+        asientoId: movimientoBancario.asientoId,
+      });
     if (!fila) throw new Error('Movimiento no encontrado');
-    return { ok: true };
+    // Si ya estaba contabilizado, el asiento quedó armado con la categoría
+    // vieja: se avisa para que alguien rehaga el mes. No se rehace solo
+    // porque contabilizar es una decisión, no un efecto secundario de
+    // corregir una etiqueta.
+    return { ok: true, asientoDesactualizado: fila.asientoId != null };
   });
 
 /** Excluir/incluir un movimiento de la comparación Banco vs Facturación. */
@@ -774,8 +818,64 @@ export const excluirMovimiento = createServerFn({ method: 'POST' })
           )
         )
       )
-      .returning({ id: movimientoBancario.id });
+      .returning({
+        id: movimientoBancario.id,
+        asientoId: movimientoBancario.asientoId,
+      });
     if (!fila) throw new Error('Movimiento no encontrado');
+    return {
+      ok: true,
+      // Excluir no saca al movimiento de un asiento ya generado: el asiento
+      // sigue incluyéndolo. Se avisa, igual que al recategorizar.
+      asientoDesactualizado: fila.asientoId != null && ctx.data.excluido,
+    };
+  });
+
+/**
+ * "Este ya está contabilizado por otro lado": el asiento automático lo
+ * ignora.
+ *
+ * El caso típico es el pago de una factura que ya se asentó desde Facturas.
+ * Si el banco también lo contabiliza, el gasto queda contado dos veces.
+ *
+ * No se puede marcar lo que ya tiene asiento: primero hay que deshacerlo, o
+ * el asiento quedaría apuntando a un movimiento que dice no estar ahí.
+ */
+export const marcarNoContabilizar = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      movimientoId: z.string().uuid(),
+      noContabilizar: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const [actual] = await db
+      .select({ asientoId: movimientoBancario.asientoId })
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(movimientoBancario.id, ctx.data.movimientoId),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      );
+    if (!actual) throw new Error('Movimiento no encontrado');
+    if (actual.asientoId && ctx.data.noContabilizar)
+      throw new Error(
+        'Este movimiento ya tiene asiento: deshacé el mes en la pestaña Asientos antes de marcarlo'
+      );
+
+    await db
+      .update(movimientoBancario)
+      .set({ noContabilizar: ctx.data.noContabilizar })
+      .where(eq(movimientoBancario.id, ctx.data.movimientoId));
+
     return { ok: true };
   });
 

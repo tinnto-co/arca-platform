@@ -60,8 +60,12 @@ function EncabezadoSeccion({
 }) {
   return (
     <div
-      className="flex items-center justify-between"
-      style={{ padding: '9px 20px', background: 'var(--arca-surface-2)' }}
+      className="flex items-center justify-between border-t"
+      style={{
+        padding: '9px 20px',
+        background: 'var(--arca-surface-2)',
+        borderColor: 'var(--arca-border)',
+      }}
     >
       <span
         className="text-[10.5px] font-semibold uppercase"
@@ -380,21 +384,32 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
                     : ' y no hay facturas emitidas'}
                 </div>
               </div>
-              <span
-                className="text-[13px] font-bold tabular-nums shrink-0"
-                style={{
-                  fontFamily: 'var(--ff-display)',
-                  color:
-                    b.nivel === 'alerta'
-                      ? 'var(--arca-accent-neg-fg)'
-                      : 'var(--arca-ink)',
-                }}
-              >
-                {/* Sin facturas, el porcentaje se calcula contra cero y da un
-                    número absurdo: ahí lo que importa es el importe. */}
-                {b.ventas > 0
-                  ? `${b.diferencia > 0 ? '+' : '−'}${b.porcentaje}%`
-                  : pesos(b.ingresos)}
+              {/* Siempre el importe, y el porcentaje al lado cuando
+                  significa algo: sin facturas se calcula contra cero, y una
+                  columna que mezcla pesos con porcentajes se lee como error. */}
+              <span className="shrink-0 text-right">
+                <span
+                  className="block text-[13px] font-bold tabular-nums"
+                  style={{
+                    fontFamily: 'var(--ff-display)',
+                    color:
+                      b.nivel === 'alerta'
+                        ? 'var(--arca-accent-neg-fg)'
+                        : 'var(--arca-ink)',
+                  }}
+                >
+                  {b.diferencia > 0 ? '+' : '−'}
+                  {pesos(Math.abs(b.diferencia))}
+                </span>
+                {b.ventas > 0 && (
+                  <span
+                    className="block text-[11px] tabular-nums"
+                    style={{ color: 'var(--arca-ink-4)' }}
+                  >
+                    {b.diferencia > 0 ? '+' : '−'}
+                    {b.porcentaje}% de lo facturado
+                  </span>
+                )}
               </span>
             </Link>
           ))}

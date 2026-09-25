@@ -192,7 +192,7 @@ export async function closePayrollPeriod(
   const built = armarLineasSueldos(concepts, rules, prId);
   const ruleAccountIds = rules
     .filter((r) => built.reglasUsadasIds.includes(r.id))
-    .flatMap((r) => r.lineas.map((l) => l.cuentaId));
+    .flatMap((r) => r.lineas.flatMap((l) => (l.cuentaId ? [l.cuentaId] : [])));
   await assertPostableAccounts(clientId, orgId, ruleAccountIds);
 
   const conceptosSinRegla = built.mapeos.filter((m) => m.sinRegla).length;

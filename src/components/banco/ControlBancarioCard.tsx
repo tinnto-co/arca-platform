@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { AyudaIcono } from '@/components/shared/ayuda';
+import { Badge } from '@/components/ui/badge';
 import { SearchableSelect } from '@/components/ui/searchable-select';
 import { getControlBancario } from '@/actions/bank';
 import { format } from 'date-fns';
@@ -210,45 +211,18 @@ export function ControlBancarioCard({
   if (compacto && data && data.ultimoPeriodoConDatos === null) return null;
 
   const desglose = data?.desglose ?? [];
-  // El servidor devuelve una fila por concepto y dirección; la lista muestra
-  // una sola por concepto, con las dos columnas. Se ordena por lo que más
-  // pesa de cualquiera de los dos lados.
-  const porConcepto = (() => {
-    const totalIngreso = data?.ingresos.banco ?? 0;
-    const totalEgreso = data?.egresos.banco ?? 0;
-    const mapa = new Map<
-      string,
-      {
-        categoria: string;
-        ingreso: number;
-        egreso: number;
-        movimientos: number;
-      }
-    >();
-    for (const d of desglose) {
-      const fila = mapa.get(d.categoria) ?? {
-        categoria: d.categoria,
-        ingreso: 0,
-        egreso: 0,
-        movimientos: 0,
-      };
-      if (d.direccion === 'ingreso') fila.ingreso += d.total;
-      else fila.egreso += d.total;
-      fila.movimientos += d.movimientos;
-      mapa.set(d.categoria, fila);
-    }
-    return [...mapa.values()]
-      .map((f) => ({
-        ...f,
-        parteIngreso: totalIngreso > 0 ? f.ingreso / totalIngreso : 0,
-        parteEgreso: totalEgreso > 0 ? f.egreso / totalEgreso : 0,
-      }))
-      .sort(
-        (a, b) =>
-          Math.max(b.parteIngreso, b.parteEgreso) -
-          Math.max(a.parteIngreso, a.parteEgreso)
-      );
-  })();
+  // Una fila por concepto y dirección, que es como viene del servidor: el
+  // badge dice de qué lado está, así que no hace falta juntar las dos puntas
+  // de un mismo concepto en una fila con dos columnas. Se ordena por monto,
+  // que es el orden en que alguien las quiere leer.
+  const filas = [...desglose].sort((a, b) => b.total - a.total);
+
+  /**
+   * La ventana del control puede ser de varios meses y el registro se filtra
+   * por rango, no por cantidad de meses: se traduce al rango que lo contiene,
+   * para no mostrar menos movimientos de los que suma la fila.
+   */
+  const rangoDelRegistro = meses === 1 ? 'mes' : meses <= 3 ? '3m' : '12m';
 
   return (
     <div className="flex h-full flex-col rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] p-4">
@@ -400,17 +374,16 @@ export function ControlBancarioCard({
 
             {/* El desglose es lo que explica la diferencia: qué parte de lo
                 que entró o salió son impuestos, comisiones o sueldos.
-                Una sola lista con las dos columnas: en dos bloques separados,
-                un cliente que cobra por una sola vía y paga por diez dejaba
-                media pantalla en blanco de un lado, y no se podía ver un
-                concepto que tiene las dos puntas (transferencias que entran y
-                salen) sin saltar de una lista a la otra. */}
+                Concepto, de qué lado y cuánto: nada más. El conteo de
+                movimientos y las barras de proporción competían con el monto,
+                que es el único número que se mira acá; el detalle está a un
+                click, en el registro. */}
             {verDesglose && !compacto && (
               <div className="mt-3 overflow-hidden rounded-[10px] border border-[var(--arca-border)]">
                 <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
                   <span>Concepto</span>
-                  <span className="w-[130px] text-right">Entró</span>
-                  <span className="w-[130px] text-right">Salió</span>
+                  <span className="w-[72px]" />
+                  <span className="w-[130px] text-right">Monto</span>
                 </div>
                 {desglose.length === 0 ? (
                   <p className="px-3 py-3 text-[12px] text-[var(--arca-ink-4)]">
@@ -418,79 +391,45 @@ export function ControlBancarioCard({
                   </p>
                 ) : (
                   <ul className="divide-y divide-[var(--arca-border)]">
-                    {porConcepto.map((c) => (
-                      <li key={c.categoria} className="px-3 py-2">
-                        <div className="grid grid-cols-[1fr_auto_auto] items-baseline gap-3">
-                          <span className="flex items-baseline gap-2">
-                            <span className="text-[12.5px] text-[var(--arca-ink)]">
-                              {CATEGORIA_MOVIMIENTO_LABEL[
-                                c.categoria as keyof typeof CATEGORIA_MOVIMIENTO_LABEL
-                              ] ?? c.categoria}
-                            </span>
-                            <span className="text-[11px] text-[var(--arca-ink-4)]">
-                              {c.movimientos}
-                            </span>
+                    {filas.map((c) => (
+                      <li key={`${c.categoria}|${c.direccion}`}>
+                        {/* La fila lleva al registro con ese concepto ya
+                            filtrado: ver que "Comisiones" pesa $180.000 y no
+                            poder abrir cuáles son obligaba a rehacer el
+                            filtro a mano. Va sin cuenta elegida, porque el
+                            control suma todas. */}
+                        <Link
+                          to="/bank"
+                          search={(prev) => ({
+                            ...prev,
+                            clientId: clienteId,
+                            mes,
+                            vista: 'movimientos' as const,
+                            categoria:
+                              c.categoria as keyof typeof CATEGORIA_MOVIMIENTO_LABEL,
+                            rango: rangoDelRegistro,
+                          })}
+                          className="grid h-[44px] grid-cols-[1fr_auto_auto] items-center gap-3 px-3 hover:bg-[var(--arca-surface-2)] transition-colors duration-[120ms]"
+                        >
+                          <span className="truncate text-[12.5px] text-[var(--arca-ink)]">
+                            {CATEGORIA_MOVIMIENTO_LABEL[
+                              c.categoria as keyof typeof CATEGORIA_MOVIMIENTO_LABEL
+                            ] ?? c.categoria}
                           </span>
-                          <span className="w-[130px] text-right text-[12.5px] font-medium tabular-nums text-[var(--arca-ink)]">
-                            {c.ingreso > 0 ? (
-                              <>
-                                {fmt.format(c.ingreso)}
-                                <span className="ml-1.5 text-[11px] font-normal text-[var(--arca-ink-3)]">
-                                  {Math.round(c.parteIngreso * 100)}%
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-[var(--arca-ink-4)]">
-                                —
-                              </span>
-                            )}
-                          </span>
-                          <span className="w-[130px] text-right text-[12.5px] font-medium tabular-nums text-[var(--arca-ink)]">
-                            {c.egreso > 0 ? (
-                              <>
-                                {fmt.format(c.egreso)}
-                                <span className="ml-1.5 text-[11px] font-normal text-[var(--arca-ink-3)]">
-                                  {Math.round(c.parteEgreso * 100)}%
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-[var(--arca-ink-4)]">
-                                —
-                              </span>
-                            )}
-                          </span>
-                        </div>
-                        {/* Las dos barras sobre la misma línea: el concepto se
-                            lee de un vistazo y de qué lado pesa. */}
-                        <div className="mt-1 grid grid-cols-2 gap-3">
-                          {(
-                            [
-                              [
-                                c.parteIngreso,
-                                'var(--arca-accent-pos-fg, oklch(0.5 0.12 145))',
-                              ],
-                              [
-                                c.parteEgreso,
-                                'var(--arca-accent-neg, oklch(0.55 0.18 25))',
-                              ],
-                            ] as const
-                          ).map(([parte, color], i) => (
-                            <div
-                              key={i}
-                              className="h-1 overflow-hidden rounded-full bg-[var(--arca-surface-2)]"
+                          <span className="w-[72px]">
+                            <Badge
+                              variant={
+                                c.direccion === 'ingreso' ? 'success' : 'error'
+                              }
+                              className="px-2 py-0.5 text-[11px]"
                             >
-                              {parte > 0 && (
-                                <div
-                                  className="h-full rounded-full"
-                                  style={{
-                                    width: `${Math.max(parte * 100, 1)}%`,
-                                    background: color,
-                                  }}
-                                />
-                              )}
-                            </div>
-                          ))}
-                        </div>
+                              {c.direccion === 'ingreso' ? 'Entró' : 'Salió'}
+                            </Badge>
+                          </span>
+                          <span className="w-[130px] text-right text-[12.5px] font-medium tabular-nums text-[var(--arca-ink)]">
+                            {fmt.format(c.total)}
+                          </span>
+                        </Link>
                       </li>
                     ))}
                   </ul>

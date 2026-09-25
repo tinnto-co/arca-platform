@@ -68,7 +68,7 @@ export const orgModule = pgEnum("org_module", ['sueldos', 'banco', 'contabilidad
 export const periodoEstado = pgEnum("periodo_estado", ['abierto', 'cerrado'])
 export const provinciaFuente = pgEnum("provincia_fuente", ['padron', 'nosis', 'manual'])
 export const reciboTipo = pgEnum("recibo_tipo", ['mensual', 'quincenal', 'sac', 'liquidacion_final', 'vacaciones', 'anticipo', 'comisiones', 'fondo_desempleo', 'otros'])
-export const reglaMapeoBase = pgEnum("regla_mapeo_base", ['total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo'])
+export const reglaMapeoBase = pgEnum("regla_mapeo_base", ['total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo', 'porcentaje'])
 export const reglaMapeoModulo = pgEnum("regla_mapeo_modulo", ['comprobante', 'recibo', 'movimiento_bancario'])
 export const reglaMapeoTipo = pgEnum("regla_mapeo_tipo", ['default', 'condicional'])
 export const relacionFuente = pgEnum("relacion_fuente", ['discovery', 'manual'])
@@ -2282,10 +2282,12 @@ export const reglaMapeo = pgTable("regla_mapeo", {
 export const reglaMapeoLinea = pgTable("regla_mapeo_linea", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	reglaId: uuid("regla_id").notNull(),
-	cuentaId: uuid("cuenta_id").notNull(),
+	cuentaId: uuid("cuenta_id"),
+	usaCuentaBanco: boolean("usa_cuenta_banco").default(false).notNull(),
 	lado: asientoLineaLado().notNull(),
 	base: reglaMapeoBase().notNull(),
 	importeFijo: numeric("importe_fijo", { precision: 15, scale:  2 }),
+	porcentaje: numeric({ precision: 5, scale:  2 }),
 	orden: integer().default(0).notNull(),
 	descripcion: text(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2669,6 +2671,26 @@ export const firmante = pgTable("firmante", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 ]);
 
+export const saldoBancario = pgTable("saldo_bancario", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	cuentaBancariaId: uuid("cuenta_bancaria_id").notNull(),
+	periodo: date().notNull(),
+	saldoInicial: numeric("saldo_inicial", { precision: 15, scale:  2 }).notNull(),
+	saldoFinal: numeric("saldo_final", { precision: 15, scale:  2 }).notNull(),
+	extractoId: uuid("extracto_id"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_saldo_bancario_cuenta").using("btree", table.cuentaBancariaId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.cuentaBancariaId],
+			foreignColumns: [cuentaBancaria.id],
+			name: "saldo_bancario_cuenta_bancaria_id_fkey"
+		}).onDelete("cascade"),
+	unique("saldo_bancario_cuenta_bancaria_id_periodo_key").on(table.cuentaBancariaId, table.periodo),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"] }),
+]);
+
 export const movimientoBancario = pgTable("movimiento_bancario", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	cuentaBancariaId: uuid("cuenta_bancaria_id").notNull(),
@@ -2685,6 +2707,8 @@ export const movimientoBancario = pgTable("movimiento_bancario", {
 	categoria: text(),
 	categoriaFuente: text("categoria_fuente"),
 	excluido: boolean().default(false).notNull(),
+	asientoId: uuid("asiento_id"),
+	noContabilizar: boolean("no_contabilizar").default(false).notNull(),
 	fuente: datoFuente().default('import').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

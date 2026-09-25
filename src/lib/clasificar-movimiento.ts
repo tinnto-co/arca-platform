@@ -20,6 +20,7 @@ export const CATEGORIAS_MOVIMIENTO = [
   'transferencias',
   'transferencias_propias',
   'cobros_tarjeta',
+  'compras_debito',
   'impuestos_idc',
   'retencion_iibb',
   'percepcion_iibb',
@@ -107,6 +108,7 @@ export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
   transferencias: 'Transferencias',
   transferencias_propias: 'Entre cuentas propias',
   cobros_tarjeta: 'Cobros con tarjeta',
+  compras_debito: 'Compras con tarjeta de débito',
   impuestos_idc: 'Impuesto al cheque (deb. y créd.)',
   retencion_iibb: 'Retención IIBB (SIRCREB)',
   percepcion_iibb: 'Percepción IIBB',
@@ -190,13 +192,55 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
     'impuestos_otros',
     /impuesto|\bafip\b|\barca\b|percepci[oó]n|retenci[oó]n|\brentas\b|\bagip\b|\barba\b|tasa\s+municipal|\babl\b/i,
   ],
+  // Traspaso entre cuentas de la misma empresa, antes que la transferencia a
+  // secas: "transferencia de cuenta propia" es las dos cosas y gana esta.
+  [
+    'transferencias_propias',
+    /entre\s+cuentas\s+propias|misma\s+titularidad|mismo\s+titular|traspaso\s+(entre\s+)?cuentas|transferencia\s+interna/i,
+  ],
+  /**
+   * Una transferencia que se anuncia como tal gana sobre cualquier marca.
+   *
+   * Sale de un caso real: "Transf recibida cvu dif titular De micaela
+   * giselle fernandez/personal pay/27387074045" se leía como débito
+   * automático, porque abajo hay una regla con la palabra "personal" (la
+   * telefónica) y el texto trae "personal pay" (la billetera). Con el
+   * nombre de una persona y el de una billetera en la misma línea, las
+   * coincidencias sobran; que el banco diga "transf recibida" no deja lugar
+   * a dudas y tiene que pesar más.
+   *
+   * Va después de los impuestos a propósito: un "IMPUESTO DEBITOS
+   * S/TRANSFERENCIA" es un impuesto, no una transferencia.
+   */
+  [
+    'transferencias',
+    /\b(transf|transferencia)\w*\s+(recibida|enviada|recibido|enviado|a\s+terceros)|te\s+transfirieron|env[ií]o\s+de\s+dinero/i,
+  ],
   [
     'comisiones',
     /comisi[oó]n|com\.\s|^\s*com\s|mantenimiento|cargo\s|gastos?\s+(de\s+)?(mantenim|servicio|admin)|costo\s+paquete|seguro\s+de\s+vida/i,
   ],
+  // Antes que los cobros con tarjeta: "COMPRA CON TARJETA DE DÉBITO VISA" es
+  // plata que sale, no una liquidación de la tarjeta, y si no va primero se
+  // la lleva el patrón de abajo por la palabra "visa".
+  //
+  // No se imputa sola a ninguna cuenta y eso es a propósito: acá conviven la
+  // nafta de la camioneta con una compra de mercadería de un millón, y lo
+  // único que se ve es el nombre del comercio. Separarlas de "Varios" alcanza
+  // para que el contador las encuentre juntas y decida.
+  [
+    'compras_debito',
+    /compras?\s+(con\s+)?(tarj(eta)?\.?\s*(de\s+)?)?d[eé]bito/i,
+  ],
+  // "Liquidación de dinero" es como Mercado Pago nombra la acreditación de
+  // cada venta cobrada: el extracto no dice "Mercado Pago" en la descripción
+  // porque eso está en la cuenta. Sin esto caen en "Varios" y, en un comercio
+  // que cobra solo por ahí, eso es el 100% de los ingresos.
   [
     'cobros_tarjeta',
-    /prisma|first\s*data|fiserv|payway|posnet|lapos|mercado\s*pago.*(liquidaci|cobro)|liquidaci[oó]n\s+(tarj|visa|master|cabal|naranja)|visa|mastercard|amex|cabal|naranja\s*x?/i,
+    // Las marcas, con límites de palabra: "visa" suelta agarraba "revisa" y
+    // "divisa", y "cabal" agarraba el apellido Caballero.
+    /\b(prisma|fiserv|payway|posnet|lapos)\b|\bfirst\s*data\b|mercado\s*pago.*(liquidaci|cobro)|liquidaci[oó]n\s+de\s+dinero|liquidaci[oó]n\s+(tarj|visa|master|cabal|naranja)|\b(visa|mastercard|amex|cabal|naranja\s*x?)\b/i,
   ],
   [
     'sueldos',
@@ -221,18 +265,20 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
   ['intereses', /inter[eé]s|intereses|rendimiento/i],
   [
     'debitos_automaticos',
-    /d[eé]bito\s+autom|debito\s+directo|dda\b|pago\s+(de\s+)?servicio|edenor|edesur|metrogas|aysa|telecom|personal|claro|movistar|osde|swiss\s*medical|galeno/i,
+    // Las marcas van con límites de palabra y en su propio grupo: sin eso
+    // "personal" agarraba "personal pay" (una billetera, no la telefónica) y
+    // "claro" agarraba cualquier frase que tuviera la palabra. Una marca
+    // suelta dentro de un texto es una coincidencia, no un servicio.
+    /d[eé]bito\s+autom|debito\s+directo|dda\b|pago\s+(de\s+)?servicio|\b(edenor|edesur|metrogas|aysa|telecom|movistar|osde|galeno)\b|\bswiss\s*medical\b|\bpersonal\b(?!\s*pay)|\bclaro\b(?!\s+(que|est))/i,
   ],
-  // Traspaso entre cuentas de la misma empresa: entra y sale la misma plata,
-  // así que no se compara contra facturas. Por ahora sale del texto del
-  // banco; cuando la contraparte venga con CUIT se puede reconocer sola.
-  [
-    'transferencias_propias',
-    /entre\s+cuentas\s+propias|misma\s+titularidad|mismo\s+titular|traspaso\s+(entre\s+)?cuentas|transferencia\s+interna/i,
-  ],
+  // El resto de lo que mueve plata sin decirse transferencia en la primera
+  // línea: un DEBIN, un crédito inmediato, un CBU suelto.
   [
     'transferencias',
-    /transferencia|transf|trf\b|cr[eé]dito\s+inmediato|debin\b|cbu|cvu|env[ií]o\s+de\s+dinero|te\s+transfirieron/i,
+    // "Servicio pago a proveedores" es el nombre que le ponen Galicia y
+    // Santander a su módulo de pagos masivos: es una transferencia hecha
+    // desde otra pantalla del homebanking.
+    /transferencia|transf|trf\b|cr[eé]dito\s+inmediato|debin\b|cbu|cvu|env[ií]o\s+de\s+dinero|te\s+transfirieron|(servicio\s+)?pago\s+a\s+proveedores/i,
   ],
 ];
 

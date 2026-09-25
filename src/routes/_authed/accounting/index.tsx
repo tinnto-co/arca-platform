@@ -14,6 +14,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Plus,
+  Sparkles,
   ChevronRight,
   ChevronDown,
   ChevronsUpDown,
@@ -113,6 +114,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { ReglasSugeridas } from '@/components/banco/ReglasSugeridas';
 import { Button } from '@/components/ui/button';
 import { Badge, BadgeDot } from '@/components/ui/badge';
 import { Ayuda } from '@/components/shared/ayuda';
@@ -6627,11 +6629,21 @@ interface AccClient {
   name: string;
   identityNumber: string;
 }
+/**
+ * Valor del selector de cuenta cuando la línea apunta al banco del
+ * movimiento en vez de a una cuenta fija. Va en el mismo desplegable que el
+ * resto: es una cuenta más para el que escribe la regla, aunque se resuelva
+ * recién al generar el asiento.
+ */
+const CUENTA_DEL_BANCO = '__banco__';
+
 interface RuleLineDraft {
   accountId: string;
   side: 'debe' | 'haber';
   amountBasis: RuleAmountBasis;
   fixedAmount: string;
+  /** Con base 'porcentaje': qué parte del importe lleva la línea. */
+  percentage: string;
   description: string;
 }
 type RuleEditorState = { mode: 'create' } | { mode: 'edit'; ruleId: string };
@@ -6642,7 +6654,8 @@ type RuleAmountBasis =
   | 'iva'
   | 'otros_tributos'
   | 'valor_concepto'
-  | 'fijo';
+  | 'fijo'
+  | 'porcentaje';
 
 /**
  * Las bases se ofrecen según el módulo: una factura tiene total, neto, IVA y
@@ -6686,6 +6699,7 @@ function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
     side,
     amountBasis: 'total',
     fixedAmount: '',
+    percentage: '',
     description: '',
   };
 }
@@ -6889,6 +6903,7 @@ function Reglas({
   >('');
   const [editor, setEditor] = useState<RuleEditorState | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [sugeridasOpen, setSugeridasOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
   const queryKey = ['accounting', 'rules', clientId, moduleFilter];
@@ -7009,6 +7024,19 @@ function Reglas({
           <TutorialReglas />
           {isOwner && (
             <>
+              {/* Solo con el filtro en Banco: en Facturas o Sueldos no hay
+                  nada que sugerir todavía. */}
+              {moduleFilter === 'movimiento_bancario' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setSugeridasOpen(true)}
+                >
+                  <Sparkles className="size-3.5" strokeWidth={1.8} />
+                  Reglas sugeridas
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -7128,6 +7156,12 @@ function Reglas({
           onChanged={invalidate}
         />
       )}
+      <ReglasSugeridas
+        clienteId={clientId}
+        abierto={sugeridasOpen}
+        onAbiertoChange={setSugeridasOpen}
+      />
+
       {importOpen && (
         <ImportRulesDialog
           clientId={clientId}
@@ -7265,10 +7299,11 @@ function RuleEditorDialog({
     }
     setLines(
       existing.lines.map((l) => ({
-        accountId: l.accountId,
+        accountId: l.usesBankAccount ? CUENTA_DEL_BANCO : (l.accountId ?? ''),
         side: l.side,
         amountBasis: l.amountBasis,
         fixedAmount: l.fixedAmount != null ? String(l.fixedAmount) : '',
+        percentage: l.percentage != null ? String(l.percentage) : '',
         description: l.description ?? '',
       }))
     );
@@ -7287,7 +7322,11 @@ function RuleEditorDialog({
     hasDebit &&
     hasCredit &&
     lines.every(
-      (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
+      (l) =>
+        l.accountId &&
+        (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0) &&
+        (l.amountBasis !== 'porcentaje' ||
+          (num(l.percentage) > 0 && num(l.percentage) <= 100))
     );
   const needsDirection = sourceModule === 'comprobante';
   const cuadre =
@@ -7339,10 +7378,12 @@ function RuleEditorDialog({
         condition = Object.keys(c).length ? c : undefined;
       }
       const payloadLines = lines.map((l) => ({
-        accountId: l.accountId,
+        accountId: l.accountId === CUENTA_DEL_BANCO ? null : l.accountId,
+        usesBankAccount: l.accountId === CUENTA_DEL_BANCO,
         side: l.side,
         amountBasis: l.amountBasis,
         fixedAmount: l.amountBasis === 'fijo' ? num(l.fixedAmount) : null,
+        percentage: l.amountBasis === 'porcentaje' ? num(l.percentage) : null,
         description: l.description || undefined,
       }));
       const base = {
@@ -7830,8 +7871,8 @@ function RuleEditorDialog({
               <HelpTip text="De qué importe del comprobante sale esta línea: Total, Neto (sin IVA), IVA, otros impuestos, el valor de un concepto (sueldos) o un monto fijo." />
             </div>
             <div className="w-24 flex items-center gap-1">
-              Monto fijo
-              <HelpTip text="Solo si la base es 'Monto fijo': el importe exacto a usar. En los demás casos queda deshabilitado." />
+              Monto / %
+              <HelpTip text="Con base «Monto fijo», el importe exacto. Con base «Porcentaje», qué parte del importe lleva esta línea: por ejemplo 33 para el tercio del impuesto al cheque que se computa a cuenta de Ganancias. En las demás bases queda deshabilitado." />
             </div>
             <div className="w-6" />
           </div>
@@ -7840,29 +7881,36 @@ function RuleEditorDialog({
               key={i}
               className="flex items-center gap-2 px-3 py-1.5 border-t border-[var(--arca-border)]"
             >
-              <Select
-                value={l.accountId}
-                onValueChange={(v) => updateLine(i, { accountId: v })}
-              >
-                <SelectTrigger
+              {/* Con un plan de cuentas largo, bajar por la lista hasta
+                  encontrar la cuenta era lo más lento de escribir una regla:
+                  este trae buscador por código y por nombre. */}
+              <div className="min-w-0 flex-1">
+                <SearchableSelect
                   size="sm"
-                  className="flex-1 min-w-0 w-0 text-[12.5px]"
-                >
-                  <SelectValue placeholder="— Cuenta —" />
-                </SelectTrigger>
-                <SelectContent>
-                  {groupedPostable(postable).map((g) => (
-                    <SelectGroup key={g.label}>
-                      <SelectLabel>{g.label}</SelectLabel>
-                      {g.items.map((a) => (
-                        <SelectItem key={a.id} value={a.id}>
-                          {a.code} · {a.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
+                  width="100%"
+                  value={l.accountId}
+                  onValueChange={(v) => updateLine(i, { accountId: v })}
+                  placeholder="— Cuenta —"
+                  searchPlaceholder="Buscar por código o nombre..."
+                  options={[
+                    // Primera de la lista en banco: es la que va en casi todas
+                    // las reglas, y evita tener una regla por cada cuenta
+                    // bancaria del cliente.
+                    ...(sourceModule === 'movimiento_bancario'
+                      ? [
+                          {
+                            value: CUENTA_DEL_BANCO,
+                            label: 'La cuenta del banco del movimiento',
+                          },
+                        ]
+                      : []),
+                    ...postable.map((a) => ({
+                      value: a.id,
+                      label: `${a.code} · ${a.name}`,
+                    })),
+                  ]}
+                />
+              </div>
               <Select
                 value={l.side}
                 onValueChange={(v) =>
@@ -7894,14 +7942,38 @@ function RuleEditorDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <input
-                type="number"
-                step="0.01"
-                value={l.fixedAmount}
-                disabled={l.amountBasis !== 'fijo'}
-                onChange={(e) => updateLine(i, { fixedAmount: e.target.value })}
-                className={`${INPUT_CLASS} w-24 h-8 text-right disabled:opacity-40`}
-              />
+              {/* El mismo campo para las dos bases que piden un número:
+                  nunca conviven, y un tercer input vacío es ruido. */}
+              <div className="relative w-24">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={
+                    l.amountBasis === 'porcentaje'
+                      ? l.percentage
+                      : l.fixedAmount
+                  }
+                  disabled={
+                    l.amountBasis !== 'fijo' && l.amountBasis !== 'porcentaje'
+                  }
+                  onChange={(e) =>
+                    updateLine(
+                      i,
+                      l.amountBasis === 'porcentaje'
+                        ? { percentage: e.target.value }
+                        : { fixedAmount: e.target.value }
+                    )
+                  }
+                  className={`${INPUT_CLASS} h-8 w-full text-right disabled:opacity-40 ${
+                    l.amountBasis === 'porcentaje' ? 'pr-5' : ''
+                  }`}
+                />
+                {l.amountBasis === 'porcentaje' && (
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] text-[var(--arca-ink-3)]">
+                    %
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() =>
                   setLines((prev) => prev.filter((_, idx) => idx !== i))
@@ -8068,9 +8140,11 @@ function RuleDetailDialog({
                   </div>
                   <div className="w-48 text-[var(--arca-ink-2)]">
                     {MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}
-                    {l.amountBasis === 'fijo' && l.fixedAmount
-                      ? ` ($ ${fmtMoney(l.fixedAmount)})`
-                      : ''}
+                    {l.amountBasis === 'porcentaje' && l.percentage
+                      ? ` (${l.percentage}%)`
+                      : l.amountBasis === 'fijo' && l.fixedAmount
+                        ? ` ($ ${fmtMoney(l.fixedAmount)})`
+                        : ''}
                   </div>
                 </div>
               ))}

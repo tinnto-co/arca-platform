@@ -33,14 +33,21 @@ console.log(`\nBase: ${quien.base} — conectado como ${quien.usuario}`);
 console.log(APPLY ? 'Modo: APLICAR\n' : 'Modo: dry-run\n');
 
 const estado = async () => {
-  const [r] = await sql<{ tabla: boolean; rls: boolean; politica: boolean }[]>`
+  const [r] = await sql<
+    { tabla: boolean; rls: boolean; politica: boolean; permisos: boolean }[]
+  >`
     select
       (select count(*) > 0 from information_schema.tables
         where table_name = 'configuracion_org') as tabla,
       (select coalesce(bool_or(relrowsecurity), false) from pg_class
         where relname = 'configuracion_org') as rls,
       (select count(*) > 0 from pg_policies
-        where tablename = 'configuracion_org' and policyname = 'tenant') as politica`;
+        where tablename = 'configuracion_org' and policyname = 'tenant') as politica,
+      -- El grant no se hereda: el grant sobre todas las tablas corrio una
+      -- vez, cuando esta tabla no existia. Sin esto la app no la puede leer
+      -- y la pantalla que usa el umbral se queda cargando para siempre.
+      (select count(*) > 0 from information_schema.role_table_grants
+        where table_name = 'configuracion_org' and grantee = 'arca_app') as permisos`;
   return r;
 };
 
@@ -50,8 +57,11 @@ console.log(`  RLS activo                ${antes.rls ? 'ya está' : 'FALTA'}`);
 console.log(
   `  política tenant           ${antes.politica ? 'ya está' : 'FALTA'}`
 );
+console.log(
+  `  permisos de arca_app      ${antes.permisos ? 'ya están' : 'FALTAN'}`
+);
 
-if (antes.tabla && antes.rls && antes.politica) {
+if (antes.tabla && antes.rls && antes.politica && antes.permisos) {
   console.log('\n✓ Nada que hacer.\n');
   await sql.end();
   process.exit(0);
@@ -89,6 +99,9 @@ await sql.unsafe(`
     'jsonb porque una preferencia rara vez es un solo número: el umbral del control bancario son dos (porcentaje y monto) y se evalúan juntos.';
 
   alter table configuracion_org enable row level security;
+
+  grant select, insert, update, delete on configuracion_org to arca_app;
+  grant select on configuracion_org to arca_agent;
 `);
 
 // El trigger y la política no aceptan "if not exists": se crean solo si
@@ -115,7 +128,7 @@ if (!hayPolitica) {
 
 const final = await estado();
 console.log(
-  final.tabla && final.rls && final.politica
+  final.tabla && final.rls && final.politica && final.permisos
     ? '\n✓ Listo.\n'
     : '\n✗ Algo no quedó.\n'
 );

@@ -21,6 +21,7 @@ import {
 } from './sos-recibo-totales';
 import {
   cerrarPorDiferencia,
+  importePorcentaje,
   num,
   round2,
   seleccionarPorPrioridad,
@@ -302,12 +303,15 @@ export function armarLineasSueldos(
         if (fijosAplicados.has(claveFijo)) continue;
         fijosAplicados.add(claveFijo);
         amt = round2(num(rl.importeFijo));
+      } else if (rl.base === 'porcentaje') {
+        amt = importePorcentaje(c.monto, rl.porcentaje);
       } else {
         amt = c.monto;
       }
       // Un concepto negativo (ajuste en contra) invierte el lado de la línea.
       const lado: Lado =
         amt >= 0 ? rl.lado : rl.lado === 'debe' ? 'haber' : 'debe';
+      if (!rl.cuentaId) continue;
       add(rl.cuentaId, lado, Math.abs(amt), rl.descripcion ?? null, rule.id);
     }
 

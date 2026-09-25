@@ -3158,6 +3158,9 @@ interface RuleLineInput {
   side: 'debe' | 'haber';
   amountBasis: BaseRegla;
   fixedAmount?: number | null;
+  percentage?: number | null;
+  accountId?: string | null;
+  usesBankAccount?: boolean;
 }
 function validateRuleLines(
   lines: RuleLineInput[],
@@ -3172,6 +3175,16 @@ function validateRuleLines(
       'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
     );
   }
+  // "La cuenta del banco" solo existe si hay un banco atrás: en facturas o
+  // sueldos no hay de dónde sacarla.
+  for (const l of lines) {
+    if (l.usesBankAccount && sourceModule !== 'movimiento_bancario')
+      throw new Error(
+        'La cuenta del banco solo se puede usar en reglas del módulo Banco'
+      );
+    if (!l.usesBankAccount && !l.accountId)
+      throw new Error('Cada línea necesita su cuenta');
+  }
   const bases = BASES_POR_MODULO[sourceModule];
   for (const l of lines) {
     if (!bases.includes(l.amountBasis)) {
@@ -3185,6 +3198,14 @@ function validateRuleLines(
     ) {
       throw new Error(
         'Las líneas con base "monto fijo" requieren un importe mayor a 0'
+      );
+    }
+    if (
+      l.amountBasis === 'porcentaje' &&
+      (l.percentage == null || l.percentage <= 0 || l.percentage > 100)
+    ) {
+      throw new Error(
+        'Las líneas con base "porcentaje" requieren un valor entre 0 y 100'
       );
     }
   }
@@ -3229,7 +3250,13 @@ function normalizeRuleCondition(
 }
 
 const mappingLineSchema = z.object({
-  accountId: z.string().uuid(),
+  /**
+   * Null cuando la línea apunta al banco del movimiento (`usesBankAccount`):
+   * la cuenta sale de `cuenta_bancaria.cuenta_contable_id` al generar.
+   */
+  accountId: z.string().uuid().nullable().optional(),
+  /** Solo en reglas de banco: la cuenta la pone la cuenta bancaria. */
+  usesBankAccount: z.boolean().optional(),
   side: z.enum(['debe', 'haber']),
   amountBasis: z.enum([
     'total',
@@ -3238,8 +3265,11 @@ const mappingLineSchema = z.object({
     'otros_tributos',
     'valor_concepto',
     'fijo',
+    'porcentaje',
   ]),
   fixedAmount: z.number().nullable().optional(),
+  /** Solo con base 'porcentaje'. */
+  percentage: z.number().nullable().optional(),
   description: z.string().optional(),
 });
 
@@ -3372,16 +3402,18 @@ export const getMappingRule = createServerFn({ method: 'GET' })
       .select({
         id: reglaMapeoLinea.id,
         accountId: reglaMapeoLinea.cuentaId,
+        usesBankAccount: reglaMapeoLinea.usaCuentaBanco,
         accountCode: cuenta.codigo,
         accountName: cuenta.nombre,
         side: reglaMapeoLinea.lado,
         amountBasis: reglaMapeoLinea.base,
         fixedAmount: reglaMapeoLinea.importeFijo,
+        percentage: reglaMapeoLinea.porcentaje,
         description: reglaMapeoLinea.descripcion,
         lineOrder: reglaMapeoLinea.orden,
       })
       .from(reglaMapeoLinea)
-      .innerJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
+      .leftJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
       .where(eq(reglaMapeoLinea.reglaId, rule.id))
       .orderBy(asc(reglaMapeoLinea.orden));
 
@@ -3468,7 +3500,7 @@ export const createMappingRule = createServerFn({ method: 'POST' })
     await assertPostableAccounts(
       d.clientId,
       orgId,
-      d.lines.map((l) => l.accountId)
+      d.lines.flatMap((l) => (l.accountId ? [l.accountId] : []))
     );
 
     const rule = await db.transaction(async (tx) => {
@@ -3494,12 +3526,17 @@ export const createMappingRule = createServerFn({ method: 'POST' })
       await tx.insert(reglaMapeoLinea).values(
         d.lines.map((l, i) => ({
           reglaId: r.id,
-          cuentaId: l.accountId,
+          cuentaId: l.usesBankAccount ? null : (l.accountId ?? null),
+          usaCuentaBanco: l.usesBankAccount ?? false,
           lado: l.side,
           base: l.amountBasis,
           importeFijo:
             l.amountBasis === 'fijo' && l.fixedAmount != null
               ? String(l.fixedAmount)
+              : null,
+          porcentaje:
+            l.amountBasis === 'porcentaje' && l.percentage != null
+              ? String(l.percentage)
               : null,
           descripcion: l.description?.trim() ? l.description.trim() : null,
           orden: i,
@@ -3536,7 +3573,7 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
     await assertPostableAccounts(
       rule.clienteId,
       orgId,
-      d.lines.map((l) => l.accountId)
+      d.lines.flatMap((l) => (l.accountId ? [l.accountId] : []))
     );
 
     // Si cambió de módulo, la prioridad vieja es de otra cola: la regla va al
@@ -3569,12 +3606,17 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
       await tx.insert(reglaMapeoLinea).values(
         d.lines.map((l, i) => ({
           reglaId: rule.id,
-          cuentaId: l.accountId,
+          cuentaId: l.usesBankAccount ? null : (l.accountId ?? null),
+          usaCuentaBanco: l.usesBankAccount ?? false,
           lado: l.side,
           base: l.amountBasis,
           importeFijo:
             l.amountBasis === 'fijo' && l.fixedAmount != null
               ? String(l.fixedAmount)
+              : null,
+          porcentaje:
+            l.amountBasis === 'porcentaje' && l.percentage != null
+              ? String(l.percentage)
               : null,
           descripcion: l.description?.trim() ? l.description.trim() : null,
           orden: i,
@@ -3744,6 +3786,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       .select({
         ruleId: reglaMapeoLinea.reglaId,
         code: cuenta.codigo,
+        usaCuentaBanco: reglaMapeoLinea.usaCuentaBanco,
         side: reglaMapeoLinea.lado,
         amountBasis: reglaMapeoLinea.base,
         fixedAmount: reglaMapeoLinea.importeFijo,
@@ -3751,7 +3794,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
         lineOrder: reglaMapeoLinea.orden,
       })
       .from(reglaMapeoLinea)
-      .innerJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
+      .leftJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
       .where(
         inArray(
           reglaMapeoLinea.reglaId,
@@ -3785,7 +3828,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       const lines = linesByRule.get(r.id) ?? [];
       const resolved = lines.map((l) => ({
         ...l,
-        targetId: codeToId.get(l.code),
+        targetId: l.code ? codeToId.get(l.code) : undefined,
       }));
       if (existentes.has(`${r.modulo}|${r.nombre.trim().toLowerCase()}`)) {
         skipped.push({ nombre: r.nombre, motivo: 'ya_existe' });
@@ -3796,7 +3839,11 @@ export const importMappingRules = createServerFn({ method: 'POST' })
         continue;
       }
       const faltantes = [
-        ...new Set(resolved.filter((l) => !l.targetId).map((l) => l.code)),
+        ...new Set(
+          resolved
+            .filter((l) => !l.usaCuentaBanco && !l.targetId)
+            .flatMap((l) => (l.code ? [l.code] : []))
+        ),
       ];
       if (faltantes.length > 0) {
         skipped.push({
@@ -4003,7 +4050,7 @@ async function planInvoiceEntry(
       await assertPostableAccounts(
         clientId,
         orgId,
-        rule.lineas.map((l) => l.cuentaId)
+        rule.lineas.flatMap((l) => (l.cuentaId ? [l.cuentaId] : []))
       );
     } catch (e) {
       return {
