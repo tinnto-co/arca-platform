@@ -779,6 +779,54 @@ export const excluirMovimiento = createServerFn({ method: 'POST' })
     return { ok: true };
   });
 
+/**
+ * "Este ya está contabilizado por otro lado": el asiento automático lo
+ * ignora.
+ *
+ * El caso típico es el pago de una factura que ya se asentó desde Facturas.
+ * Si el banco también lo contabiliza, el gasto queda contado dos veces.
+ *
+ * No se puede marcar lo que ya tiene asiento: primero hay que deshacerlo, o
+ * el asiento quedaría apuntando a un movimiento que dice no estar ahí.
+ */
+export const marcarNoContabilizar = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      movimientoId: z.string().uuid(),
+      noContabilizar: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const [actual] = await db
+      .select({ asientoId: movimientoBancario.asientoId })
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(movimientoBancario.id, ctx.data.movimientoId),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      );
+    if (!actual) throw new Error('Movimiento no encontrado');
+    if (actual.asientoId && ctx.data.noContabilizar)
+      throw new Error(
+        'Este movimiento ya tiene asiento: deshacé el mes en la pestaña Asientos antes de marcarlo'
+      );
+
+    await db
+      .update(movimientoBancario)
+      .set({ noContabilizar: ctx.data.noContabilizar })
+      .where(eq(movimientoBancario.id, ctx.data.movimientoId));
+
+    return { ok: true };
+  });
+
 /** Movimiento de ajuste manual (el saldo contable no coincide al cierre). */
 export const agregarMovimientoManual = createServerFn({ method: 'POST' })
   .validator(

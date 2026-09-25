@@ -105,6 +105,7 @@ import {
   type CategoriaMovimiento,
 } from '@/lib/clasificar-movimiento';
 import { toast } from 'sonner';
+import { marcarNoContabilizar } from '@/actions/extractos';
 
 /**
  * La empresa y el mes van en la URL: recargar no pierde dónde estabas y el
@@ -950,6 +951,26 @@ function TransactionItem({
       ),
   });
 
+  // "Ya está contabilizado por otro lado": el asiento automático lo saltea.
+  // El caso típico es el pago de una factura ya asentada desde Facturas: si
+  // el banco también lo contabiliza, el gasto queda contado dos veces.
+  const noContabilizar = useMutation({
+    mutationFn: (valor: boolean) =>
+      marcarNoContabilizar({
+        data: { movimientoId: tx.id, noContabilizar: valor },
+      }),
+    onSuccess: (_, valor) => {
+      void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
+      void queryClient.invalidateQueries({ queryKey: ['asientosBanco'] });
+      toast.success(
+        valor
+          ? 'No se le va a generar asiento'
+          : 'Vuelve a entrar en los asientos automáticos'
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   // Excluir saca el movimiento de la comparación Banco vs Facturación
   // (transferencias entre cuentas propias, ajustes) sin borrarlo.
   const excluir = useMutation({
@@ -1192,6 +1213,39 @@ function TransactionItem({
       >
         {fmtAmount(tx.importe, tx.direccion)}
       </div>
+
+      {/* Si ya tiene asiento se dice y no se ofrece marcarlo: primero hay que
+          deshacer el mes. */}
+      <ConAyuda
+        texto={
+          tx.asientoId
+            ? 'Ya tiene asiento generado. Para cambiarlo, deshacé el mes en la pestaña Asientos.'
+            : tx.noContabilizar
+              ? 'Marcado como ya contabilizado: el asiento automático lo saltea. Click para que vuelva a entrar.'
+              : 'Marcar como ya contabilizado por otro lado, para que el asiento automático lo saltee (por ejemplo, el pago de una factura que ya se asentó desde Facturas).'
+        }
+      >
+        <button
+          type="button"
+          className="shrink-0 transition-colors disabled:opacity-40"
+          style={{
+            color: tx.asientoId
+              ? 'var(--arca-accent-pos-fg)'
+              : tx.noContabilizar
+                ? 'var(--arca-accent-warn-fg)'
+                : 'var(--arca-ink-4)',
+          }}
+          aria-label={
+            tx.noContabilizar
+              ? 'Volver a incluir en los asientos'
+              : 'Marcar como ya contabilizado'
+          }
+          disabled={noContabilizar.isPending || !!tx.asientoId}
+          onClick={() => noContabilizar.mutate(!tx.noContabilizar)}
+        >
+          <BookOpen className="w-3.5 h-3.5" strokeWidth={1.8} />
+        </button>
+      </ConAyuda>
 
       {/* Excluir de la conciliación. Volver a incluir no pregunta: es la
           dirección segura. Excluir sí, porque saca plata de la comparación. */}

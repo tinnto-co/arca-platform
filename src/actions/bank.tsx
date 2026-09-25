@@ -493,6 +493,8 @@ export const listMovimientos = createServerFn({ method: 'GET' })
           categoria: movimientoBancario.categoria,
           categoriaFuente: movimientoBancario.categoriaFuente,
           excluido: movimientoBancario.excluido,
+          noContabilizar: movimientoBancario.noContabilizar,
+          asientoId: movimientoBancario.asientoId,
           fuente: movimientoBancario.fuente,
           createdAt: movimientoBancario.createdAt,
           cuentaBancariaId: movimientoBancario.cuentaBancariaId,
