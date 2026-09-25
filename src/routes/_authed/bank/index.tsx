@@ -985,12 +985,19 @@ function TransactionItem({
   const excluir = useMutation({
     mutationFn: (excluido: boolean) =>
       excluirMovimiento({ data: { movimientoId: tx.id, excluido } }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
       void queryClient.invalidateQueries({ queryKey: ['bankAccountsResumen'] });
       void queryClient.invalidateQueries({ queryKey: ['bancoVsFacturacion'] });
       void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
       setConfirmarExcluir(false);
+      // Excluirlo no lo saca del asiento que ya se generó.
+      if (r.asientoDesactualizado)
+        toast.warning('Este movimiento ya estaba contabilizado', {
+          description:
+            'Excluirlo no lo saca del asiento. Para rehacerlo, deshacé el mes en la pestaña Asientos y generalo de nuevo.',
+          duration: 8000,
+        });
     },
     onError: () => toast.error('No se pudo actualizar el movimiento'),
   });

@@ -102,6 +102,12 @@ export async function loadActiveMappingRules(
         lado: l.lado,
         base: l.base,
         importeFijo: l.importeFijo,
+        // Sin esto, una línea con base `porcentaje` llega con el porcentaje
+        // en blanco, calcula 0, se saltea, y el importe entero termina en
+        // "Pendiente de revisión" sin que nada avise. Es justo lo que hace
+        // la regla del impuesto al cheque (67/33), así que el reparto se
+        // perdía en silencio.
+        porcentaje: l.porcentaje,
         descripcion: l.descripcion,
       })),
     })

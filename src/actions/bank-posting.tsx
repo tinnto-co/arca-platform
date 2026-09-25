@@ -95,7 +95,14 @@ async function armarPropuesta(
           : undefined,
         eq(movimientoBancario.excluido, false),
         eq(movimientoBancario.noContabilizar, false),
-        isNull(movimientoBancario.asientoId),
+        // Un asiento anulado desde el Libro Diario no deja al movimiento
+        // contabilizado: si solo miráramos `asiento_id is not null`, esa
+        // plata no volvía nunca a la propuesta y el control de saldos
+        // mostraba la diferencia diciendo "0 sin contabilizar".
+        sql`(${movimientoBancario.asientoId} is null
+             or exists (select 1 from asiento a
+                        where a.id = ${movimientoBancario.asientoId}
+                          and a.anulado = true))`,
         sql`${movimientoBancario.fecha} >= ${desde}::date`,
         sql`${movimientoBancario.fecha} < (${desde}::date + interval '1 month')`
       )
@@ -236,10 +243,17 @@ export const generarAsientosBanco = createServerFn({ method: 'POST' })
             `No hay ejercicio que contenga ${fecha}: creálo en Contabilidad antes de generar`
           );
         if (e.message === 'no_period')
-          throw new Error(`No hay período contable abierto para ${fecha}`);
+          throw new Error(`No hay período contable para ${fecha}`);
         throw e;
       }
     );
+    // Facturas y Sueldos ya lo chequean; acá faltaba, así que se podían
+    // insertar asientos en un mes cerrado y el balance de ese período
+    // cambiaba después de darlo por terminado.
+    if (resuelto.period.estado === 'cerrado')
+      throw new Error(
+        `El período ${periodo} está cerrado: reabrilo en Contabilidad para poder generar sus asientos`
+      );
 
     let generados = 0;
     let movimientos = 0;
@@ -325,6 +339,17 @@ export const deshacerAsientosBanco = createServerFn({ method: 'POST' })
     ] as string[];
     if (asientoIds.length === 0) return { anulados: 0, movimientos: 0 };
 
+    // Deshacer un mes cerrado le cambia el balance a un período que alguien
+    // ya dio por terminado. Igual que para generar: primero se reabre.
+    const resuelto = await resolvePeriodForDate(
+      clienteId,
+      fechaDelPeriodo(periodo)
+    ).catch(() => null);
+    if (resuelto?.period.estado === 'cerrado')
+      throw new Error(
+        `El período ${periodo} está cerrado: reabrilo en Contabilidad para poder deshacer sus asientos`
+      );
+
     await db.transaction(async (tx) => {
       await tx
         .update(movimientoBancario)
@@ -393,7 +418,12 @@ export const getControlDeSaldos = createServerFn({ method: 'GET' })
         sinContabilizar: sql<number>`(
           select count(*) from movimiento_bancario mb
           where mb.cuenta_bancaria_id = ${cuentaBancaria.id}
-            and mb.asiento_id is null
+            -- Mismo criterio que la propuesta: un asiento anulado no cuenta
+            -- como contabilizado. Si no, la fila mostraba una diferencia y
+            -- al lado "0 sin contabilizar", que no hay forma de entender.
+            and (mb.asiento_id is null
+                 or exists (select 1 from asiento a2
+                            where a2.id = mb.asiento_id and a2.anulado = true))
             and mb.no_contabilizar = false
             and mb.excluido = false
             and mb.fecha >= ${desde}::date

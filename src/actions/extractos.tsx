@@ -818,9 +818,17 @@ export const excluirMovimiento = createServerFn({ method: 'POST' })
           )
         )
       )
-      .returning({ id: movimientoBancario.id });
+      .returning({
+        id: movimientoBancario.id,
+        asientoId: movimientoBancario.asientoId,
+      });
     if (!fila) throw new Error('Movimiento no encontrado');
-    return { ok: true };
+    return {
+      ok: true,
+      // Excluir no saca al movimiento de un asiento ya generado: el asiento
+      // sigue incluyéndolo. Se avisa, igual que al recategorizar.
+      asientoDesactualizado: fila.asientoId != null && ctx.data.excluido,
+    };
   });
 
 /**
