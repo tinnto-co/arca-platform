@@ -409,20 +409,53 @@ export const getControlDeSaldos = createServerFn({ method: 'GET' })
 
     // Los saldos del mes, en su propia consulta: como subconsulta dentro del
     // select de cuentas no devolvía nada y no hacía falta complicarlo.
+    // Se traen los dos meses: el del período y el anterior. Con el anterior
+    // se verifica la continuidad —el saldo con el que cierra un mes tiene que
+    // ser el mismo con el que abre el siguiente—, que es como se detecta que
+    // falta un extracto en el medio.
+    const mesAnterior = (() => {
+      const [y, m] = periodo.split('-').map(Number);
+      const d = new Date(Date.UTC(y, m - 2, 1));
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+    })();
+
     const saldos = await db
       .select({
         cuentaBancariaId: saldoBancario.cuentaBancariaId,
+        periodo: saldoBancario.periodo,
+        saldoInicial: saldoBancario.saldoInicial,
         saldoFinal: saldoBancario.saldoFinal,
       })
       .from(saldoBancario)
-      .where(eq(saldoBancario.periodo, desde));
-    const saldoPorCuenta = new Map(
-      saldos.map((s) => [s.cuentaBancariaId, Number(s.saldoFinal)])
+      .where(inArray(saldoBancario.periodo, [desde, mesAnterior]));
+
+    const delMes = new Map(
+      saldos
+        .filter((s) => s.periodo === desde)
+        .map((s) => [
+          s.cuentaBancariaId,
+          { inicial: Number(s.saldoInicial), final: Number(s.saldoFinal) },
+        ])
+    );
+    const cierreAnterior = new Map(
+      saldos
+        .filter((s) => s.periodo === mesAnterior)
+        .map((s) => [s.cuentaBancariaId, Number(s.saldoFinal)])
     );
 
     return cuentas.map((c) => {
-      const banco = saldoPorCuenta.get(c.id) ?? null;
+      const mes = delMes.get(c.id);
+      const banco = mes?.final ?? null;
       const contable = Number(c.saldoContable);
+      const anterior = cierreAnterior.get(c.id);
+
+      // El mes abre con un saldo distinto al que cerró el anterior: entre los
+      // dos extractos falta uno, o uno de los dos se leyó mal.
+      const salto =
+        mes && anterior != null
+          ? Math.round((mes.inicial - anterior) * 100) / 100
+          : null;
+
       return {
         cuentaBancariaId: c.id,
         cuentaBancaria: `${c.banco} ${c.numero ?? ''}`.trim(),
@@ -433,6 +466,8 @@ export const getControlDeSaldos = createServerFn({ method: 'GET' })
         diferencia:
           banco == null ? null : Math.round((banco - contable) * 100) / 100,
         sinContabilizar: c.sinContabilizar,
+        /** Diferencia entre el cierre del mes anterior y la apertura de este. */
+        saltoDeSaldo: salto != null && Math.abs(salto) >= 0.01 ? salto : null,
       };
     });
   });

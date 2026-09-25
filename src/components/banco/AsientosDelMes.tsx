@@ -283,6 +283,20 @@ export function AsientosDelMes({
                         ? ` · ${s.sinContabilizar} movimiento${s.sinContabilizar === 1 ? '' : 's'} sin contabilizar`
                         : ''}
                     </span>
+                    {/* Si el mes no abre con el saldo con el que cerró el
+                        anterior, entre los dos extractos falta uno. Sin esto,
+                        el agujero pasa desapercibido: cada mes por separado
+                        cuadra. */}
+                    {s.saltoDeSaldo != null && (
+                      <span
+                        className="block truncate text-[11px]"
+                        style={{ color: 'var(--arca-accent-warn-fg)' }}
+                      >
+                        Abre con {pesosConCentavos(s.saltoDeSaldo)} de
+                        diferencia contra el cierre del mes anterior: puede
+                        faltar un extracto en el medio
+                      </span>
+                    )}
                   </span>
                   <span className="w-[130px] text-right tabular-nums text-[var(--arca-ink-3)]">
                     {s.saldoBanco == null ? '—' : pesos(s.saldoBanco)}
