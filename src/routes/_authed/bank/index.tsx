@@ -1794,6 +1794,15 @@ function BankPage() {
     setShowManualMovement(false);
   }
 
+  // Al llegar desde el desglose del control, el filtro de cuenta se limpia:
+  // ese total suma todas las cuentas, así que abrirlo con una sola elegida
+  // mostraría menos movimientos de los que decía la fila.
+  const [prevCategoria, setPrevCategoria] = useState(search.categoria);
+  if (prevCategoria !== search.categoria) {
+    setPrevCategoria(search.categoria);
+    if (search.categoria) setAccountId('');
+  }
+
   /* Cuentas con su actividad */
   const { data: accounts = [] } = useQuery({
     queryKey: ['bankAccountsResumen', clienteId],
