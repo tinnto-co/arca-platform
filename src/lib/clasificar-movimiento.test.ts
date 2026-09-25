@@ -208,6 +208,47 @@ describe('clasificarMovimiento', () => {
     );
   });
 
+  it('una marca suelta no le gana a una transferencia que se anuncia', () => {
+    // Caso real: "personal pay" es una billetera, no la telefónica, y el
+    // banco ya dijo que es una transferencia recibida.
+    expect(
+      clasificarMovimiento(
+        'Transf recibida cvu dif titular De micaela giselle fernandez/personal pay/27387074045'
+      )
+    ).toBe('transferencias');
+    expect(
+      clasificarMovimiento(
+        'Transf recibida cvu dif titular De marlen orsetto / mercado pago /27372996213'
+      )
+    ).toBe('transferencias');
+    // Pero el servicio de la telefónica sigue siendo un débito automático.
+    expect(clasificarMovimiento('DEBITO AUTOMATICO PERSONAL')).toBe(
+      'debitos_automaticos'
+    );
+    // Y una transferencia entre cuentas propias le gana a la genérica.
+    expect(
+      clasificarMovimiento('TRANSFERENCIA ENVIADA ENTRE CUENTAS PROPIAS')
+    ).toBe('transferencias_propias');
+    // El impuesto sigue primero: dice "transferencia" y no lo es.
+    expect(
+      clasificarMovimiento('IMPUESTO DEBITOS S/TRANSFERENCIA LEY 25413')
+    ).toBe('impuestos_idc');
+  });
+
+  it('las marcas de tarjeta no agarran palabras que las contienen', () => {
+    // "cabal" dentro de un apellido, "visa" dentro de "revisa".
+    expect(
+      clasificarMovimiento('TRANSFERENCIA A CABALLERO JUAN')
+    ).not.toBe('cobros_tarjeta');
+    expect(clasificarMovimiento('AJUSTE A REVISAR SUCURSAL')).not.toBe(
+      'cobros_tarjeta'
+    );
+    // Pero la marca sola sigue funcionando.
+    expect(clasificarMovimiento('LIQUIDACION VISA PRISMA')).toBe(
+      'cobros_tarjeta'
+    );
+  });
+
   it('lo que no matchea cae en varios, sin romper', () => {
     expect(clasificarMovimiento('PAGO VS 84512')).toBe('varios');
     expect(clasificarMovimiento('')).toBe('varios');
