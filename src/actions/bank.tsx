@@ -20,6 +20,7 @@ import {
   comprobanteTipo,
   contraparte,
   cliente,
+  saldoBancario,
 } from '@/drizzle/schema';
 import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
 import { getUmbralControlBancario } from '@/actions/admin';
@@ -1399,9 +1400,96 @@ export const getControlBancario = createServerFn({ method: 'GET' })
       }))
       .sort((a, b) => b.total - a.total);
 
+    /**
+     * El cuadre del propio extracto: saldo inicial + lo que entró − lo que
+     * salió tiene que dar el saldo final que declara el banco.
+     *
+     * Responde una pregunta distinta a la del control contable: no es "¿está
+     * bien contabilizado?" sino "¿está completo?". Si no cierra, falta un
+     * movimiento en el medio —lo más común, una página del PDF que no se
+     * leyó—, y todo lo que se calcule después va a estar mal sin que nada lo
+     * avise. El cálculo ya existía, pero solo se veía al importar el extracto
+     * y después desaparecía.
+     */
+    const [porCuenta, saldos] = await Promise.all([
+      db
+        .select({
+          cuentaBancariaId: movimientoBancario.cuentaBancariaId,
+          ingresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'ingreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+          egresos: sql<string>`coalesce(sum(case when ${movimientoBancario.direccion} = 'egreso' then ${movimientoBancario.importe} else 0 end), 0)::text`,
+        })
+        .from(movimientoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+        )
+        .where(movimientosDelPeriodo)
+        .groupBy(movimientoBancario.cuentaBancariaId),
+      // El inicial del primer mes de la ventana y el final del último: con
+      // una ventana de varios meses la cuenta sigue siendo la misma.
+      db
+        .select({
+          cuentaBancariaId: saldoBancario.cuentaBancariaId,
+          banco: cuentaBancaria.banco,
+          numero: cuentaBancaria.numero,
+          inicial: sql<string>`(array_agg(${saldoBancario.saldoInicial} order by ${saldoBancario.periodo}))[1]`,
+          final: sql<string>`(array_agg(${saldoBancario.saldoFinal} order by ${saldoBancario.periodo} desc))[1]`,
+          meses: sql<number>`count(*)::int`,
+        })
+        .from(saldoBancario)
+        .innerJoin(
+          cuentaBancaria,
+          eq(cuentaBancaria.id, saldoBancario.cuentaBancariaId)
+        )
+        .where(
+          and(
+            eq(cuentaBancaria.orgId, orgId),
+            eq(cuentaBancaria.clienteId, clienteId),
+            eq(cuentaBancaria.activa, true),
+            sql`${saldoBancario.periodo} >= ${desde}::date`,
+            sql`${saldoBancario.periodo} < ${hasta}::date`
+          )
+        )
+        .groupBy(
+          saldoBancario.cuentaBancariaId,
+          cuentaBancaria.banco,
+          cuentaBancaria.numero
+        ),
+    ]);
+
+    const movsPorCuenta = new Map(
+      porCuenta.map((c) => [
+        c.cuentaBancariaId,
+        { ingresos: Number(c.ingresos), egresos: Number(c.egresos) },
+      ])
+    );
+    const cuadre = saldos.map((s) => {
+      const m = movsPorCuenta.get(s.cuentaBancariaId) ?? {
+        ingresos: 0,
+        egresos: 0,
+      };
+      const inicial = Number(s.inicial);
+      const real = Number(s.final);
+      const esperado =
+        Math.round((inicial + m.ingresos - m.egresos) * 100) / 100;
+      return {
+        cuentaBancariaId: s.cuentaBancariaId,
+        cuentaBancaria: `${s.banco} ${s.numero ?? ''}`.trim(),
+        inicial,
+        ingresos: m.ingresos,
+        egresos: m.egresos,
+        esperado,
+        real,
+        diferencia: Math.round((real - esperado) * 100) / 100,
+        /** Cuántos meses de extracto entraron en la cuenta. */
+        meses: s.meses,
+      };
+    });
+
     return {
       periodo: ctx.data.periodo,
       meses,
+      cuadre,
       ingresos: {
         banco: ingresos,
         comprobantes: ventas,
