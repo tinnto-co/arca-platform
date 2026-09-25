@@ -33,7 +33,7 @@ create type asiento_linea_lado as enum ('debe', 'haber');
 
 create type regla_mapeo_modulo as enum ('comprobante', 'recibo', 'movimiento_bancario');
 create type regla_mapeo_tipo as enum ('default', 'condicional');
-create type regla_mapeo_base as enum ('total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo');
+create type regla_mapeo_base as enum ('total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo', 'porcentaje');
 
 create type eecc_estado as enum ('borrador', 'aprobado');
 
@@ -186,12 +186,15 @@ create table regla_mapeo_linea (
   lado asiento_linea_lado not null,
   base regla_mapeo_base not null,
   importe_fijo numeric(15, 2),
+  porcentaje numeric(5, 2),
   orden integer not null default 0,
   descripcion text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint regla_mapeo_linea_cuenta_o_banco
-    check (cuenta_id is not null or usa_cuenta_banco)
+    check (cuenta_id is not null or usa_cuenta_banco),
+  constraint regla_mapeo_linea_porcentaje
+    check (base <> 'porcentaje' or (porcentaje > 0 and porcentaje <= 100))
 );
 create index idx_regla_mapeo_linea_regla on regla_mapeo_linea(regla_id);
 create trigger trg_set_updated_at before update on regla_mapeo_linea for each row execute function set_updated_at();
@@ -199,7 +202,9 @@ create trigger trg_set_updated_at before update on regla_mapeo_linea for each ro
 comment on column regla_mapeo_linea.usa_cuenta_banco is
   'La línea no apunta a una cuenta fija sino a la del banco del movimiento (cuenta_bancaria.cuenta_contable_id). Sin esto haría falta una regla por cada cuenta bancaria: con siete cuentas y diez conceptos, setenta reglas. Solo tiene sentido en el módulo movimiento_bancario.';
 comment on column regla_mapeo_linea.base is
-  'De qué campo del hecho de origen sale el importe de esta línea (total, neto, iva…). fijo = usa importe_fijo.';
+  'De qué campo del hecho de origen sale el importe de esta línea (total, neto, iva…). fijo = usa importe_fijo; porcentaje = usa porcentaje sobre el importe natural del módulo.';
+comment on column regla_mapeo_linea.porcentaje is
+  'Qué parte del importe lleva esta línea, en por ciento. Nace del impuesto sobre débitos y créditos, donde el 33% se computa a cuenta de Ganancias y el resto es gasto: sin esto haría falta un monto fijo, y el importe cambia todos los meses.';
 
 create table asiento (
   id uuid primary key default gen_random_uuid(),

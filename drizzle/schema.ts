@@ -68,7 +68,7 @@ export const orgModule = pgEnum("org_module", ['sueldos', 'banco', 'contabilidad
 export const periodoEstado = pgEnum("periodo_estado", ['abierto', 'cerrado'])
 export const provinciaFuente = pgEnum("provincia_fuente", ['padron', 'nosis', 'manual'])
 export const reciboTipo = pgEnum("recibo_tipo", ['mensual', 'quincenal', 'sac', 'liquidacion_final', 'vacaciones', 'anticipo', 'comisiones', 'fondo_desempleo', 'otros'])
-export const reglaMapeoBase = pgEnum("regla_mapeo_base", ['total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo'])
+export const reglaMapeoBase = pgEnum("regla_mapeo_base", ['total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo', 'porcentaje'])
 export const reglaMapeoModulo = pgEnum("regla_mapeo_modulo", ['comprobante', 'recibo', 'movimiento_bancario'])
 export const reglaMapeoTipo = pgEnum("regla_mapeo_tipo", ['default', 'condicional'])
 export const relacionFuente = pgEnum("relacion_fuente", ['discovery', 'manual'])
@@ -2287,6 +2287,7 @@ export const reglaMapeoLinea = pgTable("regla_mapeo_linea", {
 	lado: asientoLineaLado().notNull(),
 	base: reglaMapeoBase().notNull(),
 	importeFijo: numeric("importe_fijo", { precision: 15, scale:  2 }),
+	porcentaje: numeric({ precision: 5, scale:  2 }),
 	orden: integer().default(0).notNull(),
 	descripcion: text(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

@@ -23,6 +23,7 @@ import {
   type ReglaLike,
   type ReglaLineaLike,
   type ReglaTipo,
+  importePorcentaje,
 } from './accounting-reglas';
 
 export type Direccion = (typeof comprobanteDireccion.enumValues)[number];
@@ -74,7 +75,8 @@ export function calcularImportes(c: ComprobanteLike): ImportesComprobante {
 export function importeSegunBase(
   base: Base,
   importes: ImportesComprobante,
-  importeFijo?: number | string | null
+  importeFijo?: number | string | null,
+  porcentaje?: number | string | null
 ): number {
   switch (base) {
     case 'total':
@@ -87,6 +89,10 @@ export function importeSegunBase(
       return importes.otrosTributos;
     case 'fijo':
       return round2(num(importeFijo));
+    // Un porcentaje del total: sirve para repartir un mismo importe en
+    // partes (ver `importePorcentaje`).
+    case 'porcentaje':
+      return importePorcentaje(importes.total, porcentaje);
     case 'valor_concepto':
       return 0; // solo aplica a sueldos, no a comprobantes
     default:
@@ -336,7 +342,9 @@ export function armarLineas(
 
   const lineas: LineaArmada[] = [];
   for (const rl of regla.lineas) {
-    const importe = round2(importeSegunBase(rl.base, importes, rl.importeFijo));
+    const importe = round2(
+      importeSegunBase(rl.base, importes, rl.importeFijo, rl.porcentaje)
+    );
     if (importe <= 0) continue; // descarta líneas en cero (ej. IVA en factura B)
     // Sin cuenta no hay línea: "la cuenta del banco" no existe en facturas.
     if (!rl.cuentaId) continue;

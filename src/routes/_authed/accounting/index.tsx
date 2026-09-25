@@ -6640,6 +6640,8 @@ interface RuleLineDraft {
   side: 'debe' | 'haber';
   amountBasis: RuleAmountBasis;
   fixedAmount: string;
+  /** Con base 'porcentaje': qué parte del importe lleva la línea. */
+  percentage: string;
   description: string;
 }
 type RuleEditorState = { mode: 'create' } | { mode: 'edit'; ruleId: string };
@@ -6650,7 +6652,8 @@ type RuleAmountBasis =
   | 'iva'
   | 'otros_tributos'
   | 'valor_concepto'
-  | 'fijo';
+  | 'fijo'
+  | 'porcentaje';
 
 /**
  * Las bases se ofrecen según el módulo: una factura tiene total, neto, IVA y
@@ -6694,6 +6697,7 @@ function emptyRuleLine(side: 'debe' | 'haber'): RuleLineDraft {
     side,
     amountBasis: 'total',
     fixedAmount: '',
+    percentage: '',
     description: '',
   };
 }
@@ -7277,6 +7281,7 @@ function RuleEditorDialog({
         side: l.side,
         amountBasis: l.amountBasis,
         fixedAmount: l.fixedAmount != null ? String(l.fixedAmount) : '',
+        percentage: l.percentage != null ? String(l.percentage) : '',
         description: l.description ?? '',
       }))
     );
@@ -7295,7 +7300,11 @@ function RuleEditorDialog({
     hasDebit &&
     hasCredit &&
     lines.every(
-      (l) => l.accountId && (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0)
+      (l) =>
+        l.accountId &&
+        (l.amountBasis !== 'fijo' || num(l.fixedAmount) > 0) &&
+        (l.amountBasis !== 'porcentaje' ||
+          (num(l.percentage) > 0 && num(l.percentage) <= 100))
     );
   const needsDirection = sourceModule === 'comprobante';
   const cuadre =
@@ -7352,6 +7361,7 @@ function RuleEditorDialog({
         side: l.side,
         amountBasis: l.amountBasis,
         fixedAmount: l.amountBasis === 'fijo' ? num(l.fixedAmount) : null,
+        percentage: l.amountBasis === 'porcentaje' ? num(l.percentage) : null,
         description: l.description || undefined,
       }));
       const base = {
@@ -7839,8 +7849,8 @@ function RuleEditorDialog({
               <HelpTip text="De qué importe del comprobante sale esta línea: Total, Neto (sin IVA), IVA, otros impuestos, el valor de un concepto (sueldos) o un monto fijo." />
             </div>
             <div className="w-24 flex items-center gap-1">
-              Monto fijo
-              <HelpTip text="Solo si la base es 'Monto fijo': el importe exacto a usar. En los demás casos queda deshabilitado." />
+              Monto / %
+              <HelpTip text="Con base «Monto fijo», el importe exacto. Con base «Porcentaje», qué parte del importe lleva esta línea: por ejemplo 33 para el tercio del impuesto al cheque que se computa a cuenta de Ganancias. En las demás bases queda deshabilitado." />
             </div>
             <div className="w-6" />
           </div>
@@ -7910,14 +7920,38 @@ function RuleEditorDialog({
                   ))}
                 </SelectContent>
               </Select>
-              <input
-                type="number"
-                step="0.01"
-                value={l.fixedAmount}
-                disabled={l.amountBasis !== 'fijo'}
-                onChange={(e) => updateLine(i, { fixedAmount: e.target.value })}
-                className={`${INPUT_CLASS} w-24 h-8 text-right disabled:opacity-40`}
-              />
+              {/* El mismo campo para las dos bases que piden un número:
+                  nunca conviven, y un tercer input vacío es ruido. */}
+              <div className="relative w-24">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={
+                    l.amountBasis === 'porcentaje'
+                      ? l.percentage
+                      : l.fixedAmount
+                  }
+                  disabled={
+                    l.amountBasis !== 'fijo' && l.amountBasis !== 'porcentaje'
+                  }
+                  onChange={(e) =>
+                    updateLine(
+                      i,
+                      l.amountBasis === 'porcentaje'
+                        ? { percentage: e.target.value }
+                        : { fixedAmount: e.target.value }
+                    )
+                  }
+                  className={`${INPUT_CLASS} h-8 w-full text-right disabled:opacity-40 ${
+                    l.amountBasis === 'porcentaje' ? 'pr-5' : ''
+                  }`}
+                />
+                {l.amountBasis === 'porcentaje' && (
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11.5px] text-[var(--arca-ink-3)]">
+                    %
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() =>
                   setLines((prev) => prev.filter((_, idx) => idx !== i))
@@ -8084,9 +8118,11 @@ function RuleDetailDialog({
                   </div>
                   <div className="w-48 text-[var(--arca-ink-2)]">
                     {MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}
-                    {l.amountBasis === 'fijo' && l.fixedAmount
-                      ? ` ($ ${fmtMoney(l.fixedAmount)})`
-                      : ''}
+                    {l.amountBasis === 'porcentaje' && l.percentage
+                      ? ` (${l.percentage}%)`
+                      : l.amountBasis === 'fijo' && l.fixedAmount
+                        ? ` ($ ${fmtMoney(l.fixedAmount)})`
+                        : ''}
                   </div>
                 </div>
               ))}

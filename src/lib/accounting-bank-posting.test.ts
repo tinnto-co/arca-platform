@@ -199,6 +199,58 @@ describe('armarLineasBanco', () => {
     ]);
   });
 
+  it('reparte el importe en partes con la base porcentaje', () => {
+    // El caso que motivó la base: del impuesto al cheque, el 33% se computa a
+    // cuenta de Ganancias y el resto es gasto. Con un monto fijo no se podía
+    // escribir, porque el importe cambia todos los meses.
+    const PAGO_A_CUENTA = 'bbbbbbbb-0000-0000-0000-000000000002';
+    const ley25413: ReglaLike = {
+      ...reglaComisiones,
+      id: 'regla-idc',
+      nombre: 'Impuesto al cheque',
+      lineas: [
+        { cuentaId: GASTOS, lado: 'debe', base: 'porcentaje', porcentaje: 67 },
+        {
+          cuentaId: PAGO_A_CUENTA,
+          lado: 'debe',
+          base: 'porcentaje',
+          porcentaje: 33,
+        },
+        { cuentaId: null, usaCuentaBanco: true, lado: 'haber', base: 'total' },
+      ],
+    };
+    const r = armarLineasBanco(
+      grupo({ total: 1000 }),
+      [ley25413],
+      PENDIENTE,
+      CTA_BBVA
+    );
+    expect(r.usoPendienteRevision).toBe(false);
+    expect(r.lineas).toEqual([
+      expect.objectContaining({ cuentaId: GASTOS, debe: 670 }),
+      expect.objectContaining({ cuentaId: PAGO_A_CUENTA, debe: 330 }),
+      expect.objectContaining({ cuentaId: CTA_BBVA, haber: 1000 }),
+    ]);
+  });
+
+  it('un porcentaje que no llega al total deja el resto en revisión', () => {
+    const parcial: ReglaLike = {
+      ...reglaComisiones,
+      lineas: [
+        { cuentaId: GASTOS, lado: 'debe', base: 'porcentaje', porcentaje: 60 },
+        { cuentaId: null, usaCuentaBanco: true, lado: 'haber', base: 'total' },
+      ],
+    };
+    const r = armarLineasBanco(
+      grupo({ total: 1000 }),
+      [parcial],
+      PENDIENTE,
+      CTA_BBVA
+    );
+    expect(r.usoPendienteRevision).toBe(true);
+    expect(r.lineas.at(-1)).toMatchObject({ cuentaId: PENDIENTE, debe: 400 });
+  });
+
   it('una regla que no cuadra manda la diferencia a revisión', () => {
     // El caso del impuesto al cheque partido, mal escrito: el 67% y el 33%
     // tienen que sumar el total.

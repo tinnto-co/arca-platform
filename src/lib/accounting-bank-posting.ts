@@ -18,6 +18,7 @@
  */
 import {
   cerrarPorDiferencia,
+  importePorcentaje,
   num,
   round2,
   seleccionarPorPrioridad,
@@ -212,7 +213,11 @@ export function armarLineasBanco(
 
   for (const l of regla.lineas) {
     const importe =
-      l.base === 'fijo' ? round2(num(l.importeFijo)) : grupo.total;
+      l.base === 'fijo'
+        ? round2(num(l.importeFijo))
+        : l.base === 'porcentaje'
+          ? importePorcentaje(grupo.total, l.porcentaje)
+          : grupo.total;
     if (importe === 0) continue;
     lineas.push({
       cuentaId: l.usaCuentaBanco ? cuentaDelBancoId : l.cuentaId!,

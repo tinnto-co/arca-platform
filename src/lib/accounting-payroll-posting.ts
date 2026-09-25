@@ -21,6 +21,7 @@ import {
 } from './sos-recibo-totales';
 import {
   cerrarPorDiferencia,
+  importePorcentaje,
   num,
   round2,
   seleccionarPorPrioridad,
@@ -302,6 +303,8 @@ export function armarLineasSueldos(
         if (fijosAplicados.has(claveFijo)) continue;
         fijosAplicados.add(claveFijo);
         amt = round2(num(rl.importeFijo));
+      } else if (rl.base === 'porcentaje') {
+        amt = importePorcentaje(c.monto, rl.porcentaje);
       } else {
         amt = c.monto;
       }

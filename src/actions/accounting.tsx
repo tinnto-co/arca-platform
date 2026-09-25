@@ -3158,6 +3158,7 @@ interface RuleLineInput {
   side: 'debe' | 'haber';
   amountBasis: BaseRegla;
   fixedAmount?: number | null;
+  percentage?: number | null;
   accountId?: string | null;
   usesBankAccount?: boolean;
 }
@@ -3197,6 +3198,14 @@ function validateRuleLines(
     ) {
       throw new Error(
         'Las líneas con base "monto fijo" requieren un importe mayor a 0'
+      );
+    }
+    if (
+      l.amountBasis === 'porcentaje' &&
+      (l.percentage == null || l.percentage <= 0 || l.percentage > 100)
+    ) {
+      throw new Error(
+        'Las líneas con base "porcentaje" requieren un valor entre 0 y 100'
       );
     }
   }
@@ -3256,8 +3265,11 @@ const mappingLineSchema = z.object({
     'otros_tributos',
     'valor_concepto',
     'fijo',
+    'porcentaje',
   ]),
   fixedAmount: z.number().nullable().optional(),
+  /** Solo con base 'porcentaje'. */
+  percentage: z.number().nullable().optional(),
   description: z.string().optional(),
 });
 
@@ -3396,6 +3408,7 @@ export const getMappingRule = createServerFn({ method: 'GET' })
         side: reglaMapeoLinea.lado,
         amountBasis: reglaMapeoLinea.base,
         fixedAmount: reglaMapeoLinea.importeFijo,
+        percentage: reglaMapeoLinea.porcentaje,
         description: reglaMapeoLinea.descripcion,
         lineOrder: reglaMapeoLinea.orden,
       })
@@ -3521,6 +3534,10 @@ export const createMappingRule = createServerFn({ method: 'POST' })
             l.amountBasis === 'fijo' && l.fixedAmount != null
               ? String(l.fixedAmount)
               : null,
+          porcentaje:
+            l.amountBasis === 'porcentaje' && l.percentage != null
+              ? String(l.percentage)
+              : null,
           descripcion: l.description?.trim() ? l.description.trim() : null,
           orden: i,
         }))
@@ -3596,6 +3613,10 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
           importeFijo:
             l.amountBasis === 'fijo' && l.fixedAmount != null
               ? String(l.fixedAmount)
+              : null,
+          porcentaje:
+            l.amountBasis === 'porcentaje' && l.percentage != null
+              ? String(l.percentage)
               : null,
           descripcion: l.description?.trim() ? l.description.trim() : null,
           orden: i,
@@ -3807,7 +3828,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       const lines = linesByRule.get(r.id) ?? [];
       const resolved = lines.map((l) => ({
         ...l,
-        targetId: codeToId.get(l.code),
+        targetId: l.code ? codeToId.get(l.code) : undefined,
       }));
       if (existentes.has(`${r.modulo}|${r.nombre.trim().toLowerCase()}`)) {
         skipped.push({ nombre: r.nombre, motivo: 'ya_existe' });
@@ -3818,7 +3839,11 @@ export const importMappingRules = createServerFn({ method: 'POST' })
         continue;
       }
       const faltantes = [
-        ...new Set(resolved.filter((l) => !l.targetId).map((l) => l.code)),
+        ...new Set(
+          resolved
+            .filter((l) => !l.usaCuentaBanco && !l.targetId)
+            .flatMap((l) => (l.code ? [l.code] : []))
+        ),
       ];
       if (faltantes.length > 0) {
         skipped.push({
@@ -4025,7 +4050,7 @@ async function planInvoiceEntry(
       await assertPostableAccounts(
         clientId,
         orgId,
-        rule.lineas.map((l) => l.cuentaId)
+        rule.lineas.flatMap((l) => (l.cuentaId ? [l.cuentaId] : []))
       );
     } catch (e) {
       return {
