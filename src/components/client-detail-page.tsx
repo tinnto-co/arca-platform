@@ -49,7 +49,7 @@ import {
 } from '@/components/ui/select';
 import { EditRepresentativeDialog } from '@/components/edit-client-dialog';
 import { InboxEmbebido } from '@/components/notificaciones/InboxEmbebido';
-import { BancoVsFacturacionCard } from '@/components/banco/BancoVsFacturacionCard';
+import { ControlBancarioCard } from '@/components/banco/ControlBancarioCard';
 import { PanelLectura } from '@/components/notificaciones/PanelLectura';
 import { CrearTareaDesdeNotificacion } from '@/components/notificaciones/CrearTareaDesdeNotificacion';
 import {
@@ -2516,18 +2516,13 @@ export function RepresentativeDetailPage({
               `representative_balance_config` no existe en el modelo nuevo.
             */}
 
-            {/* Banco vs Facturación (TIN-1634): el semáforo del mes pasado.
-                Solo aparece si la empresa tiene cuentas bancarias cargadas. */}
+            {/* Control bancario (el vistazo del mes: ingresos contra ventas y
+                egresos contra compras) y los datos fiscales, lado a lado: son
+                dos fichas cortas y apiladas dejaban media pantalla vacía. Se
+                estiran a la misma altura. */}
             {selectedClientId && (
-              <div className="max-w-[560px]">
-                <BancoVsFacturacionCard clienteId={selectedClientId} compacto />
-              </div>
-            )}
-
-            {/* Datos fiscales para el módulo de Balances (norma RT 54/RT 6,
-                actividad e inscripción). Por empresa seleccionada. */}
-            {selectedClientId && (
-              <div className="max-w-[560px]">
+              <div className="grid items-stretch gap-4 lg:grid-cols-2">
+                <ControlBancarioCard clienteId={selectedClientId} compacto />
                 <FiscalDataCard clientId={selectedClientId} />
               </div>
             )}

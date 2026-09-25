@@ -420,6 +420,11 @@ function RevisionCargada({
               cbu: c.cbu,
               tipo: c.tipo as 'caja_ahorro' | 'cuenta_corriente' | 'otra',
               moneda: c.moneda,
+              // Los saldos que leyó el modelo: hasta ahora solo se usaban
+              // para mostrar si el extracto cuadraba, y se perdían al
+              // confirmar.
+              saldoInicial: c.saldoInicial,
+              saldoFinal: c.saldoFinal,
               movimientos: aImportar[i].map((f) => ({
                 fecha: f.fecha,
                 descripcion: f.descripcion,
@@ -440,14 +445,21 @@ function RevisionCargada({
       void queryClient.invalidateQueries({ queryKey: ['bankSummary'] });
       void queryClient.invalidateQueries({ queryKey: ['bancoVsFacturacion'] });
       void queryClient.invalidateQueries({ queryKey: ['bandejaConciliacion'] });
+      void queryClient.invalidateQueries({ queryKey: ['sugerencias'] });
       const enCuentas = r.cuentas > 1 ? ` en ${r.cuentas} cuentas` : '';
       const creadas =
         r.cuentasCreadas > 0
           ? ` · ${r.cuentasCreadas} cuenta${r.cuentasCreadas > 1 ? 's' : ''} creada${r.cuentasCreadas > 1 ? 's' : ''}`
           : '';
       const repetidos = r.salteados > 0 ? ` · ${r.salteados} ya estaban` : '';
+      // Las sugerencias se generan solas al importar: se avisa cuántas hay
+      // para revisar, porque todavía no cuentan como conciliadas.
+      const sugeridos =
+        r.sugeridos > 0
+          ? ` · ${r.sugeridos} cruce${r.sugeridos > 1 ? 's' : ''} sugerido${r.sugeridos > 1 ? 's' : ''} para revisar`
+          : '';
       toast.success(
-        `${r.importados} movimientos importados${enCuentas}${creadas}${repetidos}`
+        `${r.importados} movimientos importados${enCuentas}${creadas}${repetidos}${sugeridos}`
       );
       onVolver();
     },

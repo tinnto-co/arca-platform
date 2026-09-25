@@ -10,7 +10,7 @@
  * El criterio de cruce vive en el server (`getBandejaConciliacion`): mismo
  * importe con un peso de tolerancia y fecha cercana.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -38,7 +38,14 @@ import {
   getBandejaConciliacion,
 } from '@/actions/bank';
 import { excluirMovimiento } from '@/actions/extractos';
+import { Button } from '@/components/ui/button';
 import { MesPicker } from '@/components/shared/mes-picker';
+import { fechaLocal } from '@/components/inicio/compartido';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { CATEGORIA_MOVIMIENTO_LABEL } from '@/lib/clasificar-movimiento';
 
 type Bandeja = Awaited<ReturnType<typeof getBandejaConciliacion>>;
@@ -48,8 +55,12 @@ type ComprobantePendiente = Bandeja['comprobantes'][number];
 const pesos = (n: number) =>
   `$${n.toLocaleString('es-AR', { maximumFractionDigits: 0 })}`;
 
+/** `date` de la base leído como fecha local: por UTC se vería un día antes. */
 const fecha = (d: string) =>
-  new Date(d).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+  fechaLocal(d).toLocaleDateString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+  });
 
 /** El mes anterior en 'YYYY-MM': los extractos llegan a mes vencido. */
 function mesAnterior(): string {
@@ -69,9 +80,35 @@ function nombreComprobante(c: {
   return `${c.tipoNombre ?? `Tipo ${c.tipo}`} ${nro}`;
 }
 
+/** Un tramo de la barra de progreso, con su explicación al pasar el mouse. */
+function Tramo({
+  clase,
+  ancho,
+  texto,
+}: {
+  clase: string;
+  ancho: number;
+  texto: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={`h-full ${clase}`} style={{ width: `${ancho}%` }} />
+      </TooltipTrigger>
+      <TooltipContent className="text-[12px]">{texto}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 /* ─────────────────────────── progreso del mes ─────────────────────────── */
 
-function Progreso({ totales }: { totales: Bandeja['totales'] }) {
+function Progreso({
+  totales,
+  ultimaFacturaEmitida,
+}: {
+  totales: Bandeja['totales'];
+  ultimaFacturaEmitida: string | null;
+}) {
   const pctFacturado =
     totales.facturado > 0
       ? Math.min(100, (totales.facturadoConciliado / totales.facturado) * 100)
@@ -79,33 +116,46 @@ function Progreso({ totales }: { totales: Bandeja['totales'] }) {
   const base = totales.ingresos || 1;
 
   return (
-    <div className="grid gap-5 sm:grid-cols-2">
-      <div className="flex flex-col gap-1.5">
+    <div className="grid gap-x-5 gap-y-3 sm:grid-cols-2">
+      <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-[17px] font-semibold tabular-nums text-[var(--arca-ink)]">
+          <span className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
             {pesos(totales.facturadoConciliado)}
           </span>
           <span className="text-[11.5px] text-[var(--arca-ink-3)]">
             de {pesos(totales.facturado)} facturados, conciliados
           </span>
         </div>
-        <div className="flex h-[9px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
+        <div className="flex h-[7px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
           <span
             className="h-full bg-[var(--arca-accent-pos)]"
             style={{ width: `${pctFacturado}%` }}
           />
         </div>
         <span className="text-[11px] text-[var(--arca-ink-4)]">
-          {Math.round(pctFacturado)}% ·{' '}
-          {totales.comprobantesSinCobro === 0
-            ? 'todas las facturas del mes tienen su cobro'
-            : `quedan ${totales.comprobantesSinCobro} comprobante${totales.comprobantesSinCobro === 1 ? '' : 's'} sin cobro identificado`}
+          {totales.comprobantes === 0 ? (
+            // Sin facturas no hay nada conciliado: decir "todas tienen su
+            // cobro" hacía parecer terminado un mes al que le faltan datos.
+            <span className="text-[var(--arca-accent-warn-fg)]">
+              No hay facturas emitidas cargadas para este mes
+              {ultimaFacturaEmitida
+                ? ` · la última es del ${fecha(ultimaFacturaEmitida)}/${ultimaFacturaEmitida.slice(0, 4)}: revisá que ARCA esté sincronizado`
+                : ''}
+            </span>
+          ) : (
+            <>
+              {Math.round(pctFacturado)}% ·{' '}
+              {totales.comprobantesSinCobro === 0
+                ? 'todas las facturas del mes tienen su cobro'
+                : `quedan ${totales.comprobantesSinCobro} comprobante${totales.comprobantesSinCobro === 1 ? '' : 's'} sin cobro identificado`}
+            </>
+          )}
         </span>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-[17px] font-semibold tabular-nums text-[var(--arca-ink)]">
+          <span className="text-[15px] font-semibold tabular-nums text-[var(--arca-ink)]">
             {pesos(totales.sinExplicar)}
           </span>
           <span className="text-[11.5px] text-[var(--arca-ink-3)]">
@@ -113,21 +163,21 @@ function Progreso({ totales }: { totales: Bandeja['totales'] }) {
           </span>
         </div>
         {/* Una sola escala: lo que entró en el mes, partido en tres estados. */}
-        <div className="flex h-[9px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
-          <span
-            className="h-full bg-[var(--arca-accent-pos)]"
-            style={{ width: `${(totales.conciliado / base) * 100}%` }}
-            title="Conciliado"
+        <div className="flex h-[7px] overflow-hidden rounded-full bg-[var(--arca-surface-2)]">
+          <Tramo
+            clase="bg-[var(--arca-accent-pos)]"
+            ancho={(totales.conciliado / base) * 100}
+            texto={`Conciliado: ${pesos(totales.conciliado)} ya tienen su factura`}
           />
-          <span
-            className="h-full bg-[var(--arca-ink-4)]"
-            style={{ width: `${(totales.excluido / base) * 100}%` }}
-            title="Excluido (transferencias entre cuentas propias)"
+          <Tramo
+            clase="bg-[var(--arca-ink-4)]"
+            ancho={(totales.excluido / base) * 100}
+            texto={`Excluido: ${pesos(totales.excluido)} que no son ventas (por ejemplo, transferencias entre cuentas propias)`}
           />
-          <span
-            className="h-full bg-[var(--arca-accent-warn)]"
-            style={{ width: `${(totales.sinExplicar / base) * 100}%` }}
-            title="Sin explicar"
+          <Tramo
+            clase="bg-[var(--arca-accent-warn)]"
+            ancho={(totales.sinExplicar / base) * 100}
+            texto={`Sin explicar: ${pesos(totales.sinExplicar)} que entraron y todavía no tienen factura`}
           />
         </div>
         <span className="text-[11px] text-[var(--arca-ink-4)]">
@@ -157,7 +207,7 @@ function FilaMovimiento({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0 ${
+      className={`flex h-[56px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 first:border-t-0 ${
         elegido
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -198,15 +248,23 @@ function FilaMovimiento({
           )}
         </span>
       </button>
-      <button
-        type="button"
-        onClick={onExcluir}
-        disabled={excluyendo}
-        title="No es una venta: excluir de la conciliación y de la comparación con facturación"
-        className="shrink-0 text-[var(--arca-ink-4)] transition-colors hover:text-[var(--arca-ink)]"
-      >
-        <EyeOff className="size-3.5" />
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={onExcluir}
+            disabled={excluyendo}
+            aria-label="Excluir de la conciliación"
+            className="shrink-0 text-[var(--arca-ink-4)] transition-colors hover:text-[var(--arca-ink)]"
+          >
+            <EyeOff className="size-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-[280px] text-[12px] leading-snug">
+          No es una venta: excluir de la conciliación y de la comparación con
+          facturación.
+        </TooltipContent>
+      </Tooltip>
     </div>
   );
 }
@@ -226,7 +284,7 @@ function FilaComprobante({
 }) {
   return (
     <div
-      className={`flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0 ${
+      className={`flex h-[56px] items-center gap-3 border-t border-[var(--arca-border)] px-3.5 first:border-t-0 ${
         esCandidato
           ? 'bg-[var(--arca-accent-bg)]'
           : 'hover:bg-[var(--arca-surface-2)]'
@@ -266,10 +324,18 @@ function FilaComprobante({
 
 /* ───────────────────────────────── bandeja ────────────────────────────── */
 
-export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
+export function BandejaConciliacion({
+  clienteId,
+  periodo: periodoElegido,
+  onPeriodoChange,
+}: {
+  clienteId: string;
+  /** 'YYYY-MM' que viene de la URL; sin él, se busca el mes que corresponde. */
+  periodo: string | undefined;
+  onPeriodoChange: (periodo: string, opts?: { reemplazar?: boolean }) => void;
+}) {
   const queryClient = useQueryClient();
-  const [periodo, setPeriodo] = useState(mesAnterior());
-  const [yaReubicada, setYaReubicada] = useState(false);
+  const periodo = periodoElegido ?? mesAnterior();
   const [movElegido, setMovElegido] = useState<string | null>(null);
   // Excluir saca plata de la comparación con facturación: se pregunta antes.
   const [aExcluir, setAExcluir] = useState<MovimientoPendiente | null>(null);
@@ -278,7 +344,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
   const [revisandoLote, setRevisandoLote] = useState(false);
   const [verConciliados, setVerConciliados] = useState(false);
 
-  const { data, isFetching } = useQuery({
+  const { data, isFetching, isPlaceholderData } = useQuery({
     queryKey: ['bandejaConciliacion', clienteId, periodo],
     queryFn: () => getBandejaConciliacion({ data: { clienteId, periodo } }),
     enabled: !!clienteId,
@@ -345,6 +411,19 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
     onError: () => toast.error('No se pudo actualizar el movimiento'),
   });
 
+  // Los extractos se cargan con atraso, así que el mes anterior suele estar
+  // vacío: sin mes en la URL, la bandeja se corre al último mes con
+  // movimientos y lo deja escrito, así recargar vuelve al mismo lugar. Con
+  // `replace`, para que el botón atrás no pase por el mes vacío.
+  useEffect(() => {
+    if (periodoElegido || !data || isPlaceholderData) return;
+    const destino =
+      data.totales.ingresos === 0 && data.ultimoPeriodoConDatos
+        ? data.ultimoPeriodoConDatos
+        : periodo;
+    onPeriodoChange(destino, { reemplazar: true });
+  }, [periodoElegido, data, isPlaceholderData, periodo, onPeriodoChange]);
+
   if (!data) {
     return (
       <div className="flex items-center gap-2 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-8 text-[12.5px] text-[var(--arca-ink-3)]">
@@ -352,19 +431,6 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
         Buscando lo que falta conciliar…
       </div>
     );
-  }
-
-  // Los extractos se cargan con atraso, así que el mes anterior suele estar
-  // vacío: la bandeja se corre sola —una sola vez— al último mes con
-  // movimientos. Durante el render, no en un efecto.
-  if (
-    !yaReubicada &&
-    data.totales.ingresos === 0 &&
-    data.ultimoPeriodoConDatos &&
-    data.ultimoPeriodoConDatos !== periodo
-  ) {
-    setYaReubicada(true);
-    setPeriodo(data.ultimoPeriodoConDatos);
   }
 
   const { totales, movimientos, comprobantes } = data;
@@ -399,7 +465,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
   return (
     <div className="flex flex-col gap-3.5">
       {/* Cabecera: el mes y cuánto falta de cada lado */}
-      <div className="flex flex-col gap-3.5 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-4">
+      <div className="flex flex-col gap-2.5 rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-5 py-3">
         <div className="flex flex-wrap items-center gap-3">
           <Scale className="size-4 text-[var(--arca-ink-2)]" strokeWidth={2} />
           <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
@@ -415,16 +481,16 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
               mes={periodo.slice(5, 7)}
               maxPeriodo={mesAnterior()}
               onChange={(ano, mes) => {
-                setPeriodo(`${ano}-${mes}`);
+                onPeriodoChange(`${ano}-${mes}`);
                 setMovElegido(null);
               }}
             />
             {crucesExactos.length > 0 && (
-              <button
+              <Button
                 type="button"
+                size="sm"
                 onClick={() => setRevisandoLote(true)}
                 disabled={conciliar.isPending}
-                className="inline-flex h-8 items-center gap-1.5 rounded-[8px] bg-[var(--arca-accent)] px-3 text-[12.5px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {conciliar.isPending ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -434,12 +500,15 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
                 Revisar {crucesExactos.length} cruce
                 {crucesExactos.length === 1 ? '' : 's'} exacto
                 {crucesExactos.length === 1 ? '' : 's'}
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
-        <Progreso totales={totales} />
+        <Progreso
+          totales={totales}
+          ultimaFacturaEmitida={data.ultimaFacturaEmitida}
+        />
       </div>
 
       {/* El cruce propuesto para el movimiento elegido */}
@@ -469,7 +538,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
               disabled={conciliar.isPending}
               onClick={() =>
@@ -480,7 +549,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
                   },
                 ])
               }
-              className="inline-flex items-center gap-1.5 rounded-[8px] bg-[var(--arca-accent)] px-3 py-1.5 text-[12px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              size="sm"
             >
               {conciliar.isPending ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -488,14 +557,15 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
                 <Check className="size-3.5" />
               )}
               Confirmar este cruce
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="outline"
+              size="sm"
               onClick={() => setMovElegido(null)}
-              className="rounded-[8px] border border-[var(--arca-border-strong)] bg-[var(--arca-surface)] px-3 py-1.5 text-[12px] font-medium text-[var(--arca-ink-2)]"
             >
               No es esta
-            </button>
+            </Button>
             <span className="text-[11px] text-[var(--arca-accent-pos-fg)]">
               o elegí otra factura de la derecha
             </span>
@@ -514,10 +584,10 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
           </p>
         </div>
       ) : (
-        <div className="grid items-start gap-3.5 lg:grid-cols-2">
+        <div className="grid items-stretch gap-3.5 lg:grid-cols-2">
           {/* Izquierda: la plata que entró sin identificar */}
-          <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
-            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] px-4 py-2.5">
+          <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
               <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                 Entró al banco, sin identificar
               </span>
@@ -532,7 +602,7 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
                 Todo lo que entró en el mes está identificado.
               </p>
             ) : (
-              <div className="max-h-[440px] overflow-y-auto">
+              <div className="max-h-[min(440px,42vh)] flex-1 overflow-y-auto">
                 {movimientos.map((m) => (
                   <FilaMovimiento
                     key={m.id}
@@ -550,8 +620,8 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
           </div>
 
           {/* Derecha: las facturas que esperan su cobro */}
-          <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
-            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] px-4 py-2.5">
+          <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+            <div className="flex flex-wrap items-center gap-2.5 border-b border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-4 py-2.5">
               <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
                 Facturas sin cobro identificado
               </span>
@@ -567,15 +637,24 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
                   elegido
                 </span>
               )}
+              {/* Sin candidato no es un callejón sin salida: cualquier factura
+                  de la lista se puede conciliar a mano, y las de otros meses
+                  se buscan desde el registro. */}
+              {elegido && candidatosDelElegido.size === 0 && (
+                <span className="ml-auto text-[11px] text-[var(--arca-ink-3)]">
+                  Ninguna coincide sola: elegí una de la lista, o buscá en otros
+                  meses con «Elegir factura» en el registro
+                </span>
+              )}
             </div>
             {comprobantes.length === 0 ? (
               <p className="px-4 py-8 text-center text-[12.5px] text-[var(--arca-ink-3)]">
                 {totales.comprobantes === 0
-                  ? 'No hay comprobantes emitidos en este mes.'
+                  ? `No hay facturas emitidas cargadas en este mes.${data.ultimaFacturaEmitida ? ` La última que tiene la empresa es del ${fecha(data.ultimaFacturaEmitida)}/${data.ultimaFacturaEmitida.slice(0, 4)}.` : ''}`
                   : 'Todas las facturas del mes tienen su cobro identificado.'}
               </p>
             ) : (
-              <div className="max-h-[440px] overflow-y-auto">
+              <div className="max-h-[min(440px,42vh)] flex-1 overflow-y-auto">
                 {/* Los candidatos del movimiento elegido van primero. */}
                 {[...comprobantes]
                   .sort(
@@ -604,69 +683,106 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
         </div>
       )}
 
-      {/* Lo ya resuelto del mes, para saber que no se perdió */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[11.5px] text-[var(--arca-ink-3)]">
-        {data.conciliados.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => setVerConciliados((v) => !v)}
-            className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
-          >
-            <CheckCircle2 className="size-3.5 text-[var(--arca-accent-pos)]" />
-            {data.conciliados.length} conciliado
-            {data.conciliados.length === 1 ? '' : 's'} en el mes{' '}
-            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
-              {pesos(totales.conciliado)}
-            </span>
-            <span className="underline">
-              {verConciliados ? 'ocultar' : 'ver y deshacer'}
-            </span>
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
-            <CheckCircle2 className="size-3.5" />
-            nada conciliado todavía
+      {/* El pie, en dos bloques con el vocabulario de la barra de arriba: lo
+          que pasó en el banco (cobros) y lo que pasó en la facturación. Antes
+          iba todo en una línea y mezclaba movimientos con comprobantes. */}
+      <div className="grid gap-2 text-[11.5px] text-[var(--arca-ink-3)] sm:grid-cols-2">
+        <div className="flex flex-col gap-1 rounded-[10px] border border-[var(--arca-border)] px-3 py-2">
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Banco · cobros del mes
           </span>
-        )}
-        {data.excluidos.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => setVerExcluidos((v) => !v)}
-            className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
-          >
-            <EyeOff className="size-3.5 text-[var(--arca-ink-4)]" />
-            {data.excluidos.length} excluido
-            {data.excluidos.length === 1 ? '' : 's'} por no ser venta{' '}
-            <span className="font-medium tabular-nums text-[var(--arca-ink)]">
-              {pesos(totales.excluido)}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            {data.conciliados.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setVerConciliados((v) => !v)}
+                className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
+              >
+                <CheckCircle2 className="size-3.5 text-[var(--arca-accent-pos)]" />
+                {data.conciliados.length} conciliado
+                {data.conciliados.length === 1 ? '' : 's'}
+                <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                  {pesos(totales.conciliado)}
+                </span>
+                <span className="underline">
+                  {verConciliados ? 'ocultar' : 'ver y deshacer'}
+                </span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
+                <CheckCircle2 className="size-3.5" />
+                nada conciliado todavía
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5">
+              {totales.movimientosSinIdentificar} sin identificar
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.sinExplicar)}
+              </span>
             </span>
-            <span className="underline">
-              {verExcluidos ? 'ocultar' : 'ver y revertir'}
-            </span>
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
-            <EyeOff className="size-3.5" />
-            sin movimientos excluidos
+            {data.excluidos.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setVerExcluidos((v) => !v)}
+                className="inline-flex items-center gap-1.5 hover:text-[var(--arca-ink)]"
+              >
+                <EyeOff className="size-3.5 text-[var(--arca-ink-4)]" />
+                {data.excluidos.length} excluido
+                {data.excluidos.length === 1 ? '' : 's'}
+                <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                  {pesos(totales.excluido)}
+                </span>
+                <span className="underline">
+                  {verExcluidos ? 'ocultar' : 'ver y revertir'}
+                </span>
+              </button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-[var(--arca-ink-4)]">
+                <EyeOff className="size-3.5" />
+                ninguno excluido
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 rounded-[10px] border border-[var(--arca-border)] px-3 py-2">
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Facturación del mes
           </span>
-        )}
-        <span className="text-[var(--arca-ink-4)]">
-          {totales.comprobantes} comprobante
-          {totales.comprobantes === 1 ? '' : 's'} emitidos por{' '}
-          {pesos(totales.facturado)}
-        </span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>
+              {totales.comprobantes} emitido
+              {totales.comprobantes === 1 ? '' : 's'}{' '}
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.facturado)}
+              </span>
+            </span>
+            <span>
+              con cobro identificado{' '}
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.facturadoConciliado)}
+              </span>
+            </span>
+            <span>
+              {totales.comprobantesSinCobro} sin cobro{' '}
+              <span className="font-medium tabular-nums text-[var(--arca-ink)]">
+                {pesos(totales.facturadoSinCobro)}
+              </span>
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Lo conciliado, con su deshacer: confirmar no es definitivo */}
       {verConciliados && data.conciliados.length > 0 && (
-        <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
           <div className="border-b border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]">
             Movimientos con su factura asignada
           </div>
           {data.conciliados.map((m) => (
             <div
               key={m.id}
-              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0"
             >
               <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
                 {fecha(m.fecha)}
@@ -698,14 +814,14 @@ export function BandejaConciliacion({ clienteId }: { clienteId: string }) {
 
       {/* Los excluidos, con la puerta de vuelta */}
       {verExcluidos && data.excluidos.length > 0 && (
-        <div className="rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
+        <div className="flex flex-col overflow-hidden rounded-[12px] border border-[var(--arca-border)] bg-[var(--arca-surface)]">
           <div className="border-b border-[var(--arca-border)] px-4 py-2.5 text-[12.5px] text-[var(--arca-ink-3)]">
             Fuera de la conciliación y de la comparación con facturación
           </div>
           {data.excluidos.map((m) => (
             <div
               key={m.id}
-              className="flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2.5 first:border-t-0"
+              className="flex items-center gap-3 border-t border-[var(--arca-border)] px-3.5 py-2 first:border-t-0"
             >
               <span className="w-[42px] shrink-0 font-mono text-[11.5px] text-[var(--arca-ink-3)]">
                 {fecha(m.fecha)}

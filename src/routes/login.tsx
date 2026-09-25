@@ -26,15 +26,15 @@ export default function LoginPage() {
         {/* Brand.
             El wordmark va inline y no como <img>: dentro de un <img> el SVG es
             un documento aparte que no ve la webfont de la página, así que
-            "Ordo" y el descriptor caían a system-ui. Es el mismo dibujo que
+            "Orddo" y el descriptor caían a system-ui. Es el mismo dibujo que
             public/brand/ordo-wordmark-descriptor.svg. */}
         <div className="flex items-center">
           <svg
             role="img"
-            aria-label="Ordo Suite Contable"
-            viewBox="0 0 200 72"
+            aria-label="Orddo Suite Contable"
+            viewBox="0 0 220 72"
             fill="none"
-            className="block h-[44px] w-auto [font-family:var(--ff-display)]"
+            className="block h-[58px] w-auto [font-family:var(--ff-display)]"
           >
             <path
               d="M20 10a14 14 0 1 0 14 14"
@@ -51,7 +51,7 @@ export default function LoginPage() {
               letterSpacing="-1"
               fill="#101720"
             >
-              Ordo
+              Orddo
             </text>
             <text
               x="46"
@@ -72,11 +72,8 @@ export default function LoginPage() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between text-[11.5px] text-[var(--arca-ink-4)]">
-          <span>© 2026 Ordo Suite Contable</span>
-          <span className="text-[11px] [font-family:var(--ff-mono)]">
-            contable.tinnto.co
-          </span>
+        <div className="flex items-center text-[11.5px] text-[var(--arca-ink-4)]">
+          <span>© 2026 Orddo Suite Contable</span>
         </div>
       </div>
 

@@ -66,12 +66,23 @@ describe('semaforoBancoVsFacturacion', () => {
     expect(s.diferencia).toBe(790_000_000);
   });
 
-  it('un solo umbral superado queda en atención, no alerta', () => {
-    // 25% de brecha pero apenas $10.000: porcentaje alto, monto chico.
+  it('pasar el umbral es atención; doblarlo, alerta', () => {
+    // 25% sobre un umbral de 20: pasa, pero no lo dobla.
     expect(semaforoBancoVsFacturacion(50_000, 40_000).nivel).toBe('atencion');
-    // $2M de brecha sobre $200M: monto alto, 1% de porcentaje.
+    // 50%: más del doble del umbral.
+    expect(semaforoBancoVsFacturacion(60_000, 40_000).nivel).toBe('alerta');
+  });
+
+  it('el porcentaje manda sin importar el tamaño de la empresa', () => {
+    // El mismo 25% en una empresa chica y en una grande da lo mismo. Antes
+    // hacía falta pasar también un monto en pesos, así que la chica nunca
+    // llegaba a alerta y la grande llegaba por cualquier cosa.
+    expect(semaforoBancoVsFacturacion(50_000, 40_000).nivel).toBe(
+      semaforoBancoVsFacturacion(250_000_000, 200_000_000).nivel
+    );
+    // Y una diferencia grande en pesos pero chica en proporción queda verde.
     expect(semaforoBancoVsFacturacion(202_000_000, 200_000_000).nivel).toBe(
-      'atencion'
+      'ok'
     );
   });
 
@@ -88,5 +99,14 @@ describe('idExternoDeMovimiento', () => {
     // Normaliza espacios y mayúsculas: el mismo movimiento releído da igual.
     const m2 = mov('ingreso', 1500.5, 'transf recib CBU 123');
     expect(idExternoDeMovimiento(m, 0)).toBe(idExternoDeMovimiento(m2, 0));
+  });
+
+  it('da igual si la IA escribió letras cirílicas que se ven latinas', () => {
+    // "СОЕ" con С, О y Е cirílicas, como en Gastrotecno, enero 2026.
+    const cirilico = mov('ingreso', 464563.17, 'TRANSFERENCIA INMEDIATA СОЕ 1');
+    const latino = mov('ingreso', 464563.17, 'TRANSFERENCIA INMEDIATA COE 1');
+    expect(idExternoDeMovimiento(cirilico, 0)).toBe(
+      idExternoDeMovimiento(latino, 0)
+    );
   });
 });

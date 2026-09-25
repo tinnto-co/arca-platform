@@ -257,7 +257,21 @@ export const MAPPING_AMOUNT_BASIS_LABELS: Record<string, string> = {
   otros_tributos: 'Otros impuestos / percepciones',
   valor_concepto: 'Valor del concepto (sueldos)',
   fijo: 'Monto fijo',
+  porcentaje: 'Porcentaje del importe',
 };
+
+/**
+ * La misma base se llama distinto según de dónde venga: `total` es el total
+ * de la factura, pero en banco es el importe del movimiento.
+ */
+export function etiquetaBase(
+  base: string,
+  modulo: 'comprobante' | 'recibo' | 'movimiento_bancario'
+): string {
+  if (modulo === 'movimiento_bancario' && base === 'total')
+    return 'Importe del movimiento';
+  return MAPPING_AMOUNT_BASIS_LABELS[base] ?? base;
+}
 
 /* ── Bienes de uso (Fase 4) ── */
 

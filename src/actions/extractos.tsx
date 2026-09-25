@@ -26,6 +26,7 @@ import {
   documento,
   extractoBancario,
   movimientoBancario,
+  saldoBancario,
 } from '@/drizzle/schema';
 import {
   getSessionWithOrg,
@@ -41,6 +42,12 @@ import {
 import { type LecturaGuardable } from '@/lib/extracto-lectura';
 import { despertarWorkerExtractos } from '@/lib/extractos-worker';
 import { CATEGORIAS_MOVIMIENTO } from '@/lib/clasificar-movimiento';
+import { resolverContrapartesDeCliente } from '@/lib/contraparte-movimiento-db';
+import { aLatino } from '@/lib/texto-latino';
+import {
+  cuentasActivasDeCliente,
+  generarSugerencias,
+} from '@/lib/sugerencias-conciliacion';
 
 /** Tope de tamaño del archivo subido. */
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -405,6 +412,65 @@ export const descartarExtracto = createServerFn({ method: 'POST' })
  * con su id; las nuevas se crean acá con los datos que el PDF ya trae, así un
  * consolidado se importa completo sin cargar cuentas a mano.
  */
+/** Código y restricción de un error de Postgres, venga envuelto o no. */
+function errorDePostgres(error: unknown): {
+  code?: string;
+  constraint?: string;
+} {
+  const e = error as {
+    code?: string;
+    constraint_name?: string;
+    cause?: { code?: string; constraint_name?: string };
+  };
+  return {
+    code: e.cause?.code ?? e.code,
+    constraint: e.cause?.constraint_name ?? e.constraint_name,
+  };
+}
+
+/**
+ * Qué decirle a la persona cuando la importación falla. El CBU es único en
+ * todo el sistema, pero no es la única causa posible: culparlo siempre
+ * mandaba a buscar el problema donde no estaba.
+ */
+async function mensajeErrorImportacion(
+  error: unknown,
+  cuentas: { numeroCuenta: string; cbu: string }[],
+  orgId: string
+): Promise<string> {
+  const { code, constraint } = errorDePostgres(error);
+  if (code === '23505' && constraint === 'idx_cuenta_bancaria_cbu') {
+    const cbus = cuentas
+      .map((c) => c.cbu.replace(/\D/g, ''))
+      .filter((c) => c.length === 22);
+    // Si es de otra empresa del estudio, se nombra; si es de otra
+    // organización, la política de la base ni siquiera deja verla.
+    const [duena] =
+      cbus.length > 0
+        ? await db
+            .select({
+              cbu: cuentaBancaria.cbu,
+              numero: cuentaBancaria.numero,
+              empresa: cliente.razonSocial,
+            })
+            .from(cuentaBancaria)
+            .innerJoin(cliente, eq(cliente.id, cuentaBancaria.clienteId))
+            .where(
+              and(
+                eq(cuentaBancaria.orgId, orgId),
+                inArray(cuentaBancaria.cbu, cbus)
+              )
+            )
+            .limit(1)
+        : [];
+    return duena
+      ? `El CBU ${duena.cbu} ya está cargado en otra empresa del estudio: ${duena.empresa}${duena.numero ? ` (cuenta ${duena.numero})` : ''}. Revisá que el extracto sea de esta empresa. No se importó nada.`
+      : 'El CBU de este extracto ya está registrado en otra organización. Revisá que el extracto sea de esta empresa. No se importó nada.';
+  }
+  const detalle = error instanceof Error ? error.message : String(error);
+  return `No se pudo importar el extracto y no se guardó nada, así que se puede reintentar. Detalle: ${detalle.slice(0, 200)}`;
+}
+
 export const confirmarExtracto = createServerFn({ method: 'POST' })
   .validator(
     z.object({
@@ -419,6 +485,9 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
             cbu: z.string(),
             tipo: z.enum(['caja_ahorro', 'cuenta_corriente', 'otra']),
             moneda: z.string(),
+            /** Lo que el banco dice que había al abrir y cerrar el período. */
+            saldoInicial: z.number().optional(),
+            saldoFinal: z.number().optional(),
             movimientos: z
               .array(
                 z.object({
@@ -484,101 +553,206 @@ export const confirmarExtracto = createServerFn({ method: 'POST' })
         throw new Error('Alguna cuenta bancaria no corresponde a esta empresa');
     }
 
-    let importados = 0;
-    let salteados = 0;
-    let cuentasCreadas = 0;
+    // Todo o nada: crear cuentas, guardar movimientos y sacar el extracto de
+    // la cola van en una transacción. Si algo falla a mitad de camino no
+    // queda una cuenta creada sin movimientos ni un extracto a medio
+    // importar, y reintentar arranca de cero.
+    let resultado: {
+      importados: number;
+      salteados: number;
+      cuentasCreadas: number;
+    };
+    try {
+      resultado = await db.transaction(async (tx) => {
+        let importados = 0;
+        let salteados = 0;
+        let cuentasCreadas = 0;
 
-    for (const cta of ctx.data.cuentas) {
-      // La cuenta que falta se crea con lo que el PDF ya dijo.
-      let cuentaId = cta.cuentaBancariaId;
-      if (!cuentaId) {
-        const cbu = cta.cbu.replace(/\D/g, '');
-        try {
-          const [creada] = await db
-            .insert(cuentaBancaria)
-            .values({
-              orgId,
-              clienteId: clienteId,
-              banco: ctx.data.banco,
-              tipo: cta.tipo,
-              numero: cta.numeroCuenta || null,
-              cbu: cbu.length === 22 ? cbu : null,
-              moneda: monedaIso(cta.moneda),
-            })
-            .returning({ id: cuentaBancaria.id });
-          cuentaId = creada.id;
-          cuentasCreadas++;
-        } catch (error) {
-          // El CBU es único en todo el sistema: si ya está, es de otra
-          // empresa y hay que decirlo con nombre y apellido.
-          console.error('[extractos] no se pudo crear la cuenta', { error });
-          throw new Error(
-            `No se pudo crear la cuenta ${cta.numeroCuenta || ctx.data.banco}. Puede que su CBU ya esté registrado en otra empresa.`
-          );
+        for (const cta of ctx.data.cuentas) {
+          let cuentaId = cta.cuentaBancariaId;
+          if (!cuentaId) {
+            // Si la cuenta ya existe (misma empresa, banco y número) se usa
+            // esa: la pantalla pudo haberla visto como nueva.
+            const [existente] = cta.numeroCuenta
+              ? await tx
+                  .select({ id: cuentaBancaria.id })
+                  .from(cuentaBancaria)
+                  .where(
+                    and(
+                      eq(cuentaBancaria.clienteId, clienteId),
+                      eq(cuentaBancaria.banco, ctx.data.banco),
+                      eq(cuentaBancaria.numero, cta.numeroCuenta)
+                    )
+                  )
+                  .limit(1)
+              : [];
+            if (existente) {
+              cuentaId = existente.id;
+            } else {
+              // La cuenta que falta se crea con lo que el PDF ya dijo.
+              const cbu = cta.cbu.replace(/\D/g, '');
+              const [creada] = await tx
+                .insert(cuentaBancaria)
+                .values({
+                  orgId,
+                  clienteId: clienteId,
+                  banco: ctx.data.banco,
+                  tipo: cta.tipo,
+                  numero: cta.numeroCuenta || null,
+                  cbu: cbu.length === 22 ? cbu : null,
+                  moneda: monedaIso(cta.moneda),
+                })
+                .returning({ id: cuentaBancaria.id });
+              cuentaId = creada.id;
+              cuentasCreadas++;
+            }
+          }
+
+          // idExterno estable por movimiento (ocurrencia distingue repetidos).
+          const vistos = new Map<string, number>();
+          // Las lecturas que ya estaban en la cola pueden traer letras
+          // cirílicas que se ven latinas: se corrigen antes de la huella, así
+          // la descripción guardada y la de un reimporte son la misma.
+          const filas = cta.movimientos.map((original) => {
+            const m = {
+              ...original,
+              descripcion: aLatino(original.descripcion),
+            };
+            const base = idExternoDeMovimiento(m, 0).slice(0, -2);
+            const n = vistos.get(base) ?? 0;
+            vistos.set(base, n + 1);
+            return { ...m, idExterno: idExternoDeMovimiento(m, n) };
+          });
+
+          // Dedup contra lo ya importado en esa cuenta.
+          const yaImportados = await tx
+            .select({ idExterno: movimientoBancario.idExterno })
+            .from(movimientoBancario)
+            .where(
+              and(
+                eq(movimientoBancario.cuentaBancariaId, cuentaId),
+                inArray(
+                  movimientoBancario.idExterno,
+                  filas.map((f) => f.idExterno)
+                )
+              )
+            );
+          const ya = new Set(yaImportados.map((e) => e.idExterno));
+          const nuevos = filas.filter((f) => !ya.has(f.idExterno));
+
+          if (nuevos.length > 0) {
+            // Con quién fue cada movimiento: el CUIT de la descripción se
+            // asigna, el importe exacto de una factura queda como sugerencia.
+            const contrapartes = await resolverContrapartesDeCliente(
+              clienteId,
+              nuevos.map((m) => ({
+                descripcion: m.descripcion || null,
+                importe: m.importe,
+                fecha: m.fecha,
+                direccion: m.direccion,
+                categoria: m.categoria,
+              }))
+            );
+            await tx.insert(movimientoBancario).values(
+              nuevos.map((m, i) => ({
+                cuentaBancariaId: cuentaId,
+                fecha: m.fecha,
+                importe: m.importe.toFixed(2),
+                direccion: m.direccion,
+                descripcion: m.descripcion || null,
+                saldoPosterior:
+                  m.saldoPosterior != null && m.saldoPosterior !== 0
+                    ? m.saldoPosterior.toFixed(2)
+                    : null,
+                idExterno: m.idExterno,
+                categoria: m.categoria,
+                categoriaFuente: 'sistema',
+                fuente: 'import' as const,
+                contraparteId: contrapartes[i].contraparteId,
+                contraparteTexto: contrapartes[i].contraparteTexto,
+                datosCrudos: {
+                  documentoId,
+                  ...(contrapartes[i].sugerida && {
+                    contraparteSugerida: contrapartes[i].sugerida,
+                  }),
+                },
+              }))
+            );
+          }
+
+          // El saldo del banco al abrir y cerrar el mes. Antes se leía solo
+          // para validar que el PDF cuadrara y se tiraba; hace falta para el
+          // asiento de apertura y para verificar, al cierre, que el saldo
+          // contable de la cuenta coincida con el del banco.
+          if (
+            cta.saldoInicial != null &&
+            cta.saldoFinal != null &&
+            filas.length
+          ) {
+            // El período sale de los movimientos y no del encabezado del PDF:
+            // un extracto puede venir titulado de otra forma.
+            const periodo = `${filas[0].fecha.slice(0, 7)}-01`;
+            await tx
+              .insert(saldoBancario)
+              .values({
+                cuentaBancariaId: cuentaId,
+                periodo,
+                saldoInicial: cta.saldoInicial.toFixed(2),
+                saldoFinal: cta.saldoFinal.toFixed(2),
+                extractoId: extracto.id,
+              })
+              // Reimportar el mismo mes pisa lo anterior: el extracto nuevo
+              // manda.
+              .onConflictDoUpdate({
+                target: [saldoBancario.cuentaBancariaId, saldoBancario.periodo],
+                set: {
+                  saldoInicial: cta.saldoInicial.toFixed(2),
+                  saldoFinal: cta.saldoFinal.toFixed(2),
+                  extractoId: extracto.id,
+                },
+              });
+          }
+
+          importados += nuevos.length;
+          salteados += filas.length - nuevos.length;
         }
-      }
 
-      // idExterno estable por movimiento (ocurrencia distingue repetidos).
-      const vistos = new Map<string, number>();
-      const filas = cta.movimientos.map((m) => {
-        const base = idExternoDeMovimiento(m, 0).slice(0, -2);
-        const n = vistos.get(base) ?? 0;
-        vistos.set(base, n + 1);
-        return { ...m, idExterno: idExternoDeMovimiento(m, n) };
+        // La fila sale de la cola: ya no hay nada que revisar en ella.
+        await tx
+          .update(extractoBancario)
+          .set({ estado: 'confirmado' })
+          .where(eq(extractoBancario.id, extracto.id));
+
+        return { importados, salteados, cuentasCreadas };
       });
-
-      // Dedup contra lo ya importado en esa cuenta.
-      const yaImportados = await db
-        .select({ idExterno: movimientoBancario.idExterno })
-        .from(movimientoBancario)
-        .where(
-          and(
-            eq(movimientoBancario.cuentaBancariaId, cuentaId),
-            inArray(
-              movimientoBancario.idExterno,
-              filas.map((f) => f.idExterno)
-            )
-          )
-        );
-      const ya = new Set(yaImportados.map((e) => e.idExterno));
-      const nuevos = filas.filter((f) => !ya.has(f.idExterno));
-
-      if (nuevos.length > 0) {
-        await db.insert(movimientoBancario).values(
-          nuevos.map((m) => ({
-            cuentaBancariaId: cuentaId,
-            fecha: m.fecha,
-            importe: m.importe.toFixed(2),
-            direccion: m.direccion,
-            descripcion: m.descripcion || null,
-            saldoPosterior:
-              m.saldoPosterior != null && m.saldoPosterior !== 0
-                ? m.saldoPosterior.toFixed(2)
-                : null,
-            idExterno: m.idExterno,
-            categoria: m.categoria,
-            categoriaFuente: 'sistema',
-            fuente: 'import' as const,
-            datosCrudos: { documentoId },
-          }))
-        );
-      }
-
-      importados += nuevos.length;
-      salteados += filas.length - nuevos.length;
+    } catch (error) {
+      console.error('[extractos] no se pudo importar', { error });
+      throw new Error(
+        await mensajeErrorImportacion(error, ctx.data.cuentas, orgId)
+      );
     }
 
-    // La fila sale de la cola: ya no hay nada que revisar en ella.
-    await db
-      .update(extractoBancario)
-      .set({ estado: 'confirmado' })
-      .where(eq(extractoBancario.id, extracto.id));
+    // Los movimientos nuevos llegan con sugerencias, sin que nadie tenga que
+    // apretar "Auto-conciliar". Solo propone, y si falla no deshace la
+    // importación: el botón sigue ahí para reintentarlo.
+    let sugeridos = 0;
+    if (resultado.importados > 0) {
+      try {
+        ({ sugeridos } = await generarSugerencias(
+          clienteId,
+          await cuentasActivasDeCliente(orgId, clienteId)
+        ));
+      } catch (error) {
+        console.error('[extractos] no se pudieron generar sugerencias', {
+          error,
+        });
+      }
+    }
 
     return {
-      importados,
-      salteados,
+      ...resultado,
+      sugeridos,
       cuentas: ctx.data.cuentas.length,
-      cuentasCreadas,
       documentoId,
     };
   });
@@ -609,9 +783,16 @@ export const recategorizarMovimiento = createServerFn({ method: 'POST' })
           )
         )
       )
-      .returning({ id: movimientoBancario.id });
+      .returning({
+        id: movimientoBancario.id,
+        asientoId: movimientoBancario.asientoId,
+      });
     if (!fila) throw new Error('Movimiento no encontrado');
-    return { ok: true };
+    // Si ya estaba contabilizado, el asiento quedó armado con la categoría
+    // vieja: se avisa para que alguien rehaga el mes. No se rehace solo
+    // porque contabilizar es una decisión, no un efecto secundario de
+    // corregir una etiqueta.
+    return { ok: true, asientoDesactualizado: fila.asientoId != null };
   });
 
 /** Excluir/incluir un movimiento de la comparación Banco vs Facturación. */
@@ -637,8 +818,64 @@ export const excluirMovimiento = createServerFn({ method: 'POST' })
           )
         )
       )
-      .returning({ id: movimientoBancario.id });
+      .returning({
+        id: movimientoBancario.id,
+        asientoId: movimientoBancario.asientoId,
+      });
     if (!fila) throw new Error('Movimiento no encontrado');
+    return {
+      ok: true,
+      // Excluir no saca al movimiento de un asiento ya generado: el asiento
+      // sigue incluyéndolo. Se avisa, igual que al recategorizar.
+      asientoDesactualizado: fila.asientoId != null && ctx.data.excluido,
+    };
+  });
+
+/**
+ * "Este ya está contabilizado por otro lado": el asiento automático lo
+ * ignora.
+ *
+ * El caso típico es el pago de una factura que ya se asentó desde Facturas.
+ * Si el banco también lo contabiliza, el gasto queda contado dos veces.
+ *
+ * No se puede marcar lo que ya tiene asiento: primero hay que deshacerlo, o
+ * el asiento quedaría apuntando a un movimiento que dice no estar ahí.
+ */
+export const marcarNoContabilizar = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      movimientoId: z.string().uuid(),
+      noContabilizar: z.boolean(),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    assertCanWrite(await getMemberRole());
+
+    const [actual] = await db
+      .select({ asientoId: movimientoBancario.asientoId })
+      .from(movimientoBancario)
+      .innerJoin(
+        cuentaBancaria,
+        eq(cuentaBancaria.id, movimientoBancario.cuentaBancariaId)
+      )
+      .where(
+        and(
+          eq(movimientoBancario.id, ctx.data.movimientoId),
+          eq(cuentaBancaria.orgId, orgId)
+        )
+      );
+    if (!actual) throw new Error('Movimiento no encontrado');
+    if (actual.asientoId && ctx.data.noContabilizar)
+      throw new Error(
+        'Este movimiento ya tiene asiento: deshacé el mes en la pestaña Asientos antes de marcarlo'
+      );
+
+    await db
+      .update(movimientoBancario)
+      .set({ noContabilizar: ctx.data.noContabilizar })
+      .where(eq(movimientoBancario.id, ctx.data.movimientoId));
+
     return { ok: true };
   });
 

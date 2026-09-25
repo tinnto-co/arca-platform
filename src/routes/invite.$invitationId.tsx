@@ -51,6 +51,8 @@ function InvitePage() {
         }
 
         setInvitation(preview);
+        // Quien invitó ya escribió el nombre: no se lo volvemos a pedir.
+        if (preview.nombre) setName(preview.nombre);
 
         const session = await getSession();
         setIsLoggedIn(!!session?.user);

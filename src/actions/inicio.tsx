@@ -26,6 +26,7 @@ import {
 import { user } from '@/drizzle/auth';
 import { and, asc, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
 import { getSessionWithOrg } from '@/actions/helpers';
+import { getUmbralControlBancario } from '@/actions/admin';
 
 /** `YYYY-MM-DD` local: las columnas `date` son strings y UTC correría un día. */
 function aFecha(d: Date): string {
@@ -258,6 +259,55 @@ export const getInicio = createServerFn({ method: 'GET' })
       .groupBy(tarea.asignadoA, user.name)
       .orderBy(desc(sql`count(*)`));
 
+    /**
+     * Control bancario: por cada empresa con banco, el último mes con
+     * extracto cargado, lo que entró y lo que se facturó en ese mes.
+     *
+     * Va por el último mes con datos y no por el corriente: los extractos se
+     * cargan a mes vencido, así que preguntar por el mes actual daría cero
+     * para todos. El juicio —si la diferencia amerita aviso— lo hace el
+     * cliente con `semaforoBancoVsFacturacion`, como el resto de la pantalla.
+     */
+    const controlBancario = db.execute(sql`
+      with ultimo as (
+        select cb.cliente_id,
+               to_char(max(mb.fecha), 'YYYY-MM') as periodo
+        from movimiento_bancario mb
+        join cuenta_bancaria cb on cb.id = mb.cuenta_bancaria_id
+        where cb.org_id = ${orgId} and cb.activa and not mb.excluido
+        group by 1
+      )
+      select u.cliente_id           as "clienteId",
+             c.razon_social         as "razonSocial",
+             u.periodo,
+             coalesce((
+               select sum(mb.importe)
+               from movimiento_bancario mb
+               join cuenta_bancaria cb on cb.id = mb.cuenta_bancaria_id
+               where cb.cliente_id = u.cliente_id and cb.activa
+                 and not mb.excluido and mb.direccion = 'ingreso'
+                 and to_char(mb.fecha, 'YYYY-MM') = u.periodo
+             ), 0)::text            as "ingresos",
+             coalesce((
+               select sum(
+                 (case when ct.es_nc then -1 else 1 end)
+                 * (case when upper(cp.moneda) = 'ARS' then 1
+                         else coalesce(nullif(cp.cotizacion, 0), 1) end)
+                 * cp.total)
+               from comprobante cp
+               left join comprobante_tipo ct on ct.codigo = cp.tipo
+               where cp.cliente_id = u.cliente_id and cp.org_id = ${orgId}
+                 and cp.direccion = 'emitido'
+                 and to_char(cp.fecha_emision, 'YYYY-MM') = u.periodo
+             ), 0)::text            as "ventas"
+      from ultimo u
+      join cliente c on c.id = u.cliente_id
+      where c.estado = 'activo'
+    `);
+
+    // Con qué desvío este estudio quiere que le avisen del banco.
+    const umbral = await getUmbralControlBancario();
+
     const [
       vencs,
       vencidosRows,
@@ -266,6 +316,7 @@ export const getInicio = createServerFn({ method: 'GET' })
       notifs,
       monos,
       equipoRows,
+      bancoRows,
     ] = await Promise.all([
       vencimientosPeriodo,
       vencidosLista,
@@ -274,6 +325,7 @@ export const getInicio = createServerFn({ method: 'GET' })
       notificacionesRiesgo,
       monotributistas,
       equipo,
+      controlBancario,
     ]);
 
     return {
@@ -288,5 +340,21 @@ export const getInicio = createServerFn({ method: 'GET' })
       notificaciones: notifs,
       monotributo: monos,
       equipo: equipoRows,
+      umbralBanco: { porcentaje: umbral.porcentaje },
+      controlBancario: (
+        bancoRows as unknown as {
+          clienteId: string;
+          razonSocial: string;
+          periodo: string;
+          ingresos: string;
+          ventas: string;
+        }[]
+      ).map((r) => ({
+        clienteId: r.clienteId,
+        razonSocial: r.razonSocial,
+        periodo: r.periodo,
+        ingresos: Number(r.ingresos),
+        ventas: Number(r.ventas),
+      })),
     };
   });

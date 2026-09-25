@@ -16,6 +16,7 @@
 import { db } from '@/lib/db';
 import {
   asiento,
+  asientoLinea,
   cuenta,
   clienteCuenta,
   ejercicio,
@@ -97,9 +98,16 @@ export async function loadActiveMappingRules(
       prioridad: r.prioridad,
       lineas: (byRule.get(r.id) ?? []).map((l) => ({
         cuentaId: l.cuentaId,
+        usaCuentaBanco: l.usaCuentaBanco,
         lado: l.lado,
         base: l.base,
         importeFijo: l.importeFijo,
+        // Sin esto, una línea con base `porcentaje` llega con el porcentaje
+        // en blanco, calcula 0, se saltea, y el importe entero termina en
+        // "Pendiente de revisión" sin que nada avise. Es justo lo que hace
+        // la regla del impuesto al cheque (67/33), así que el reparto se
+        // perdía en silencio.
+        porcentaje: l.porcentaje,
         descripcion: l.descripcion,
       })),
     })
@@ -202,6 +210,94 @@ export async function loadAccountLabels(
     .from(cuenta)
     .where(and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ids)));
   return new Map(rows.map((r) => [r.id, { code: r.code, name: r.name }]));
+}
+
+/** Una línea ya calculada del asiento: cuenta, importes y su detalle. */
+export interface LineaParaAsiento {
+  cuentaId: string;
+  debe: number;
+  haber: number;
+  descripcion: string | null;
+  /** Regla que generó esta línea, si salió de una. */
+  reglaId?: string | null;
+}
+
+/**
+ * Inserta un asiento automático con sus líneas y devuelve el asiento creado.
+ *
+ * Lo usan los tres motores —facturas desde la pantalla, facturas desde el job y
+ * sueldos—, que antes repetían el mismo insert. El número se pide acá dentro,
+ * en la misma transacción, para que la numeración no tenga saltos.
+ *
+ * El evento del log queda en cada motor: no todos anotan lo mismo.
+ */
+export async function insertarAsientoConLineas(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  params: {
+    orgId: string;
+    clienteId: string;
+    ejercicioId: string;
+    periodoId: string;
+    /** 'YYYY-MM-DD' */
+    fecha: string;
+    descripcion: string;
+    origenTipo: 'comprobante' | 'recibo' | 'movimiento_bancario';
+    /**
+     * Null cuando el asiento no sale de UN documento: el del banco agrupa un
+     * mes entero, y la vuelta se guarda en `movimiento_bancario.asiento_id`.
+     * El índice `asiento_origen_unico` no lo alcanza, porque solo mira las
+     * filas con `origen_id` no nulo.
+     */
+    origenId: string | null;
+    reglaId: string | null;
+    lineas: LineaParaAsiento[];
+    /** De dónde salió el asiento. Sin esto, la columna queda en 'manual'. */
+    fuente?: 'import' | 'calculo' | 'manual' | 'scraper' | 'ai';
+    /** null cuando lo generó un proceso automático y no una persona. */
+    creadoPor: string | null;
+  }
+) {
+  const numero = await nextEntryNumber(
+    tx,
+    params.clienteId,
+    params.ejercicioId
+  );
+
+  const [je] = await tx
+    .insert(asiento)
+    .values({
+      orgId: params.orgId,
+      clienteId: params.clienteId,
+      ejercicioId: params.ejercicioId,
+      periodoId: params.periodoId,
+      numero,
+      fecha: params.fecha,
+      descripcion: params.descripcion,
+      origenTipo: params.origenTipo,
+      origenId: params.origenId,
+      reglaId: params.reglaId,
+      ...(params.fuente ? { fuente: params.fuente } : {}),
+      creadoPor: params.creadoPor,
+    })
+    .returning();
+
+  await tx.insert(asientoLinea).values(
+    params.lineas.map((l, i) => ({
+      asientoId: je.id,
+      cuentaId: l.cuentaId,
+      debe: String(l.debe),
+      haber: String(l.haber),
+      descripcion: l.descripcion,
+      orden: i,
+      // La cabecera guarda una sola regla; en sueldos el asiento agrupa
+      // varias, así que cada línea lleva la suya. `null` explícito es "esta
+      // línea no salió de ninguna regla" (la diferencia a Pendiente de
+      // revisión) y no hay que caer a la de la cabecera.
+      reglaId: l.reglaId === undefined ? params.reglaId : l.reglaId,
+    }))
+  );
+
+  return je;
 }
 
 /**

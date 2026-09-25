@@ -8,6 +8,7 @@ import { Link } from '@tanstack/react-router';
 import type { getInicio } from '@/actions/inicio';
 import { guardarClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { usoDelTope } from '@/lib/monotributo-escala';
+import { semaforoBancoVsFacturacion } from '@/lib/extracto-calc';
 import { fechaCorta, haceDias, pesos } from './compartido';
 
 type Datos = Awaited<ReturnType<typeof getInicio>>;
@@ -59,8 +60,12 @@ function EncabezadoSeccion({
 }) {
   return (
     <div
-      className="flex items-center justify-between"
-      style={{ padding: '9px 20px', background: 'var(--arca-surface-2)' }}
+      className="flex items-center justify-between border-t"
+      style={{
+        padding: '9px 20px',
+        background: 'var(--arca-surface-2)',
+        borderColor: 'var(--arca-border)',
+      }}
     >
       <span
         className="text-[10.5px] font-semibold uppercase"
@@ -95,10 +100,25 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
     .filter((m) => m.uso !== null && m.uso >= UMBRAL_MONOTRIBUTO)
     .sort((a, b) => (b.uso ?? 0) - (a.uso ?? 0));
 
-  const criticos =
-    criticasNotif + monos.filter((m) => (m.uso ?? 0) >= UMBRAL_CRITICO).length;
+  /**
+   * Control bancario: las empresas donde lo que entró al banco no se parece
+   * a lo facturado. Mismo semáforo que la pantalla de Banco, así que lo que
+   * se avisa acá es lo que allá está en rojo.
+   */
+  const banco = (datos.controlBancario ?? [])
+    .map((b) => ({
+      ...b,
+      ...semaforoBancoVsFacturacion(b.ingresos, b.ventas, datos.umbralBanco),
+    }))
+    .filter((b) => b.nivel !== 'ok')
+    .sort((a, b) => Math.abs(b.diferencia) - Math.abs(a.diferencia));
 
-  if (filas.length === 0 && monos.length === 0) {
+  const criticos =
+    criticasNotif +
+    monos.filter((m) => (m.uso ?? 0) >= UMBRAL_CRITICO).length +
+    banco.filter((b) => b.nivel === 'alerta').length;
+
+  if (filas.length === 0 && monos.length === 0 && banco.length === 0) {
     return (
       <div
         className="bg-white border rounded-[14px]"
@@ -119,7 +139,8 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
           className="text-[12.5px]"
           style={{ color: 'var(--arca-ink-4)', padding: '0 20px 20px' }}
         >
-          Sin intimaciones abiertas ni monotributistas cerca del tope.
+          Sin intimaciones abiertas, monotributistas cerca del tope ni
+          diferencias de banco.
         </p>
       </div>
     );
@@ -312,6 +333,112 @@ export function RiesgosCard({ datos, ahora }: { datos: Datos; ahora: Date }) {
           </div>
         </>
       )}
+
+      {banco.length > 0 && (
+        <>
+          <EncabezadoSeccion
+            label="Banco · no coincide con lo facturado"
+            derecha={`${banco.length} empresa${banco.length !== 1 ? 's' : ''}`}
+          />
+          {banco.slice(0, 3).map((b) => (
+            <Link
+              key={b.clienteId}
+              to="/bank"
+              search={{
+                clientId: b.clienteId,
+                mes: b.periodo,
+                vista: 'control',
+              }}
+              onClick={() => guardarClienteSeleccionado(b.clienteId)}
+              className="flex items-center gap-3 border-b transition-colors duration-150 hover:bg-[var(--arca-surface-2)]"
+              style={{
+                padding: '13px 20px',
+                borderColor: 'var(--arca-border)',
+              }}
+            >
+              <span
+                className="size-2 rounded-full shrink-0"
+                style={{
+                  background:
+                    b.nivel === 'alerta'
+                      ? 'var(--arca-accent-neg)'
+                      : 'var(--arca-accent-warn)',
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <div
+                  className="text-[13px] font-semibold truncate"
+                  style={{ color: 'var(--arca-ink)' }}
+                >
+                  {b.razonSocial}
+                </div>
+                {/* El dato temporal siempre: sin el mes, un desvío viejo se
+                    lee como si fuera de ahora. */}
+                <div
+                  className="text-[11.5px] truncate"
+                  style={{ color: 'var(--arca-ink-3)' }}
+                >
+                  {mesEnPalabras(b.periodo)} · entró {pesos(b.ingresos)}
+                  {b.ventas > 0
+                    ? ` y se facturó ${pesos(b.ventas)}`
+                    : ' y no hay facturas emitidas'}
+                </div>
+              </div>
+              {/* Siempre el importe, y el porcentaje al lado cuando
+                  significa algo: sin facturas se calcula contra cero, y una
+                  columna que mezcla pesos con porcentajes se lee como error. */}
+              <span className="shrink-0 text-right">
+                <span
+                  className="block text-[13px] font-bold tabular-nums"
+                  style={{
+                    fontFamily: 'var(--ff-display)',
+                    color:
+                      b.nivel === 'alerta'
+                        ? 'var(--arca-accent-neg-fg)'
+                        : 'var(--arca-ink)',
+                  }}
+                >
+                  {b.diferencia > 0 ? '+' : '−'}
+                  {pesos(Math.abs(b.diferencia))}
+                </span>
+                {b.ventas > 0 && (
+                  <span
+                    className="block text-[11px] tabular-nums"
+                    style={{ color: 'var(--arca-ink-4)' }}
+                  >
+                    {b.diferencia > 0 ? '+' : '−'}
+                    {b.porcentaje}% de lo facturado
+                  </span>
+                )}
+              </span>
+            </Link>
+          ))}
+          <div
+            className="flex items-center justify-between"
+            style={{
+              padding: '12px 20px',
+              background: 'var(--arca-surface-2)',
+            }}
+          >
+            <span
+              className="text-[11.5px]"
+              style={{ color: 'var(--arca-ink-3)' }}
+            >
+              Se avisa desde el {datos.umbralBanco.porcentaje}% de diferencia
+              sobre lo facturado
+            </span>
+          </div>
+        </>
+      )}
     </div>
   );
+}
+
+/** 'YYYY-MM' → "enero 2026". */
+function mesEnPalabras(periodo: string): string {
+  const [ano, mes] = periodo.split('-').map(Number);
+  return new Date(ano, mes - 1, 1).toLocaleDateString('es-AR', {
+    month: 'long',
+    year: 'numeric',
+  });
 }

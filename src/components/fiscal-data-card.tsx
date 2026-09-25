@@ -71,10 +71,12 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // `Card` trae py-6 y gap-6: en una ficha de formulario eso deja un hueco
+  // grande bajo el título y estira la card sin necesidad.
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+    <Card className="h-full gap-3 py-4">
+      <CardHeader className="pb-0">
+        <CardTitle className="flex items-center gap-2 text-sm font-medium text-[var(--arca-ink)]">
           <Landmark className="h-4 w-4 text-[var(--arca-ink)]" />
           Datos fiscales y norma contable
         </CardTitle>
@@ -85,7 +87,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
             e.preventDefault();
             mut.mutate();
           }}
-          className="space-y-3"
+          className="space-y-2.5"
         >
           <div className="space-y-1.5">
             <Label htmlFor="fd-norma" className="text-xs">
@@ -100,7 +102,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
                 }))
               }
             >
-              <SelectTrigger id="fd-norma" className="w-full">
+              <SelectTrigger id="fd-norma" className="h-9 w-full text-[13px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -121,6 +123,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
             </Label>
             <Input
               id="fd-actividad"
+              className="h-9 text-[13px]"
               value={form.actividadPrincipal}
               onChange={(e) =>
                 setForm((f) => ({ ...f, actividadPrincipal: e.target.value }))
@@ -161,6 +164,7 @@ export function FiscalDataCard({ clientId }: { clientId: string }) {
               </Label>
               <Input
                 id="fd-numero"
+                className="h-9 text-[13px]"
                 value={form.numeroInscripcion}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, numeroInscripcion: e.target.value }))

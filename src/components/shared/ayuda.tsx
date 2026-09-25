@@ -74,3 +74,55 @@ export function Ayuda({
     </Popover>
   );
 }
+
+/**
+ * Tooltip del sistema alrededor de un elemento (en vez del `title` del
+ * navegador). Para un botón que ya se explica con su ícono: el tooltip dice
+ * qué hace, no hay nada extra que mostrar.
+ */
+export function ConAyuda({
+  texto,
+  children,
+}: {
+  texto: React.ReactNode;
+  children: React.ReactElement;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent className="max-w-[300px] text-[12px] leading-snug">
+        {texto}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * El signo de pregunta al lado de un dato, con la explicación al pasar por
+ * encima. Reemplaza al texto subrayado con puntitos: ese no se distinguía de
+ * un link y solo se descubría por el cursor.
+ *
+ * Es para una aclaración de una línea. Si son varios párrafos, va `Ayuda`.
+ */
+export function AyudaIcono({
+  texto,
+  className,
+}: {
+  texto: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <ConAyuda texto={texto}>
+      <button
+        type="button"
+        aria-label="Qué significa"
+        className={cn(
+          'inline-grid size-4 shrink-0 place-items-center rounded-full text-[var(--arca-ink-4)] transition-colors duration-[120ms] hover:text-[var(--arca-ink-2)]',
+          className
+        )}
+      >
+        <HelpCircle className="size-3.5" />
+      </button>
+    </ConAyuda>
+  );
+}

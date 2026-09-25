@@ -34,7 +34,20 @@ import {
   asientoTemplate,
 } from '@/drizzle/schema';
 import { user } from '@/drizzle/auth';
-import { nextEntryNumber } from '@/lib/accounting-posting-db';
+import { reglaCubreConcepto } from '@/lib/accounting-payroll-posting';
+import {
+  BASES_POR_MODULO,
+  detectarTapadas,
+  type Base as BaseRegla,
+  type ModuloRegla,
+} from '@/lib/accounting-reglas';
+import {
+  assertPostableAccounts,
+  insertarAsientoConLineas,
+  loadActiveMappingRules,
+  loadPendingReviewAccountId,
+  nextEntryNumber,
+} from '@/lib/accounting-posting-db';
 import type { LayoutEntry } from '@/lib/accounting-document';
 import {
   buildClosingEntries,
@@ -57,12 +70,14 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lt,
   lte,
   ne,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -78,6 +93,7 @@ import {
   EXPENSE_FUNCTION_LABELS,
   type AccountGroup,
   CASH_FLOW_ACTIVITY_FROM_DB,
+  MAPPING_AMOUNT_BASIS_LABELS,
   type AccountingFramework,
 } from '@/lib/accounting-labels';
 import {
@@ -89,9 +105,14 @@ import {
   type CashFlowActivity,
 } from '@/lib/accounting-cashflow';
 import {
+  analizarCuadreRegla,
   armarLineas,
   calcularImportes,
+  describirAlcanceRegla,
+  detectarReglasTapadas,
+  direccionDeCondicion,
   seleccionarRegla,
+  type EstadoCuadre,
   type ReglaLike,
   type LineaArmada,
 } from '@/lib/accounting-invoice-posting';
@@ -101,6 +122,7 @@ import {
 } from '@/lib/accounting-depreciation';
 import { parentCodeOf } from '@/lib/accounting-base-chart';
 import * as r2Storage from '@/lib/r2';
+import { mandaEnElEstudio } from '@/lib/permissions';
 import {
   planChartImport,
   type ExistingAccount,
@@ -190,7 +212,7 @@ function accountingEvent(args: {
 
 /** Solo el Owner del estudio configura el plan de cuentas. */
 function assertOwner(role: string): void {
-  if (role !== 'owner') {
+  if (!mandaEnElEstudio(role)) {
     throw new Error(
       'Solo el Owner del estudio puede modificar el plan de cuentas'
     );
@@ -2005,46 +2027,6 @@ function validateLineAmounts(lines: { debit: number; credit: number }[]) {
   return { totalDebit: td, totalCredit: tc };
 }
 
-/** Valida que las cuentas de las líneas sean imputables y activas para la empresa. */
-async function assertPostableAccounts(
-  clientId: string,
-  orgId: string,
-  accountIds: string[]
-) {
-  const ids = [...new Set(accountIds)];
-  const accs = await db
-    .select()
-    .from(cuenta)
-    .where(and(eq(cuenta.orgId, orgId), inArray(cuenta.id, ids)));
-  const overrides = await db
-    .select()
-    .from(clienteCuenta)
-    .where(
-      and(
-        eq(clienteCuenta.clienteId, clientId),
-        inArray(clienteCuenta.cuentaId, ids)
-      )
-    );
-  const ovMap = new Map(overrides.map((o) => [o.cuentaId, o]));
-  const byId = new Map(accs.map((a) => [a.id, a]));
-  for (const id of ids) {
-    const a = byId.get(id);
-    if (!a)
-      throw new Error('Una de las cuentas no existe o no pertenece al estudio');
-    if (a.alcance === 'propia' && a.clienteId !== clientId) {
-      throw new Error('Una de las cuentas es custom de otra empresa');
-    }
-    if (a.tipo !== 'imputable') {
-      throw new Error(
-        `La cuenta ${a.codigo} es de agrupación; solo se imputan cuentas imputables`
-      );
-    }
-    const active = ovMap.get(id)?.activa ?? a.activa;
-    if (!active)
-      throw new Error(`La cuenta ${a.codigo} está inactiva para esta empresa`);
-  }
-}
-
 /** Cuentas imputables y activas de la empresa, para el selector de líneas del asiento. */
 export const getPostableAccounts = createServerFn({ method: 'GET' })
   .validator(z.object({ clientId: z.string().uuid() }))
@@ -3174,10 +3156,16 @@ async function loadMappingRuleForOrg(
 
 interface RuleLineInput {
   side: 'debe' | 'haber';
-  amountBasis: string;
+  amountBasis: BaseRegla;
   fixedAmount?: number | null;
+  percentage?: number | null;
+  accountId?: string | null;
+  usesBankAccount?: boolean;
 }
-function validateRuleLines(lines: RuleLineInput[]): void {
+function validateRuleLines(
+  lines: RuleLineInput[],
+  sourceModule: ModuloRegla
+): void {
   if (lines.length < 2)
     throw new Error('La regla debe tener al menos 2 líneas');
   const hasDebit = lines.some((l) => l.side === 'debe');
@@ -3187,7 +3175,23 @@ function validateRuleLines(lines: RuleLineInput[]): void {
       'La regla debe tener al menos una línea al Debe y una al Haber para que el asiento pueda cuadrar'
     );
   }
+  // "La cuenta del banco" solo existe si hay un banco atrás: en facturas o
+  // sueldos no hay de dónde sacarla.
   for (const l of lines) {
+    if (l.usesBankAccount && sourceModule !== 'movimiento_bancario')
+      throw new Error(
+        'La cuenta del banco solo se puede usar en reglas del módulo Banco'
+      );
+    if (!l.usesBankAccount && !l.accountId)
+      throw new Error('Cada línea necesita su cuenta');
+  }
+  const bases = BASES_POR_MODULO[sourceModule];
+  for (const l of lines) {
+    if (!bases.includes(l.amountBasis)) {
+      throw new Error(
+        `La base "${MAPPING_AMOUNT_BASIS_LABELS[l.amountBasis]}" no aplica a este módulo`
+      );
+    }
     if (
       l.amountBasis === 'fijo' &&
       (l.fixedAmount == null || l.fixedAmount <= 0)
@@ -3196,11 +3200,63 @@ function validateRuleLines(lines: RuleLineInput[]): void {
         'Las líneas con base "monto fijo" requieren un importe mayor a 0'
       );
     }
+    if (
+      l.amountBasis === 'porcentaje' &&
+      (l.percentage == null || l.percentage <= 0 || l.percentage > 100)
+    ) {
+      throw new Error(
+        'Las líneas con base "porcentaje" requieren un valor entre 0 y 100'
+      );
+    }
+  }
+  // Un asiento que no cuadra manda la diferencia a "Pendiente de revisión" y
+  // bloquea el cierre del período. Antes se avisaba y se guardaba igual.
+  const cuadre = analizarCuadreRegla(
+    lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
+  );
+  if (cuadre.estado === 'descuadra') {
+    throw new Error(
+      cuadre.mensaje ??
+        'Las líneas de la regla no cuadran: el Debe y el Haber no suman lo mismo'
+    );
   }
 }
 
+/**
+ * Condición que se guarda para una regla. En facturas la dirección es
+ * obligatoria: sin ella una regla "de compras" también se lleva las ventas, y
+ * el nombre no filtra nada. Una default de facturas guarda sólo la dirección.
+ */
+function normalizeRuleCondition(
+  sourceModule: 'comprobante' | 'recibo' | 'movimiento_bancario',
+  ruleType: 'default' | 'condicional',
+  condition: unknown
+): RuleCondition {
+  const cond =
+    condition && typeof condition === 'object' && !Array.isArray(condition)
+      ? (condition as Record<string, JsonValue>)
+      : null;
+  if (sourceModule !== 'comprobante') {
+    return ruleType === 'condicional' ? cond : null;
+  }
+  const direccion = direccionDeCondicion(cond);
+  if (!direccion) {
+    throw new Error(
+      'Elegí si la regla es para ventas o para compras: sin eso se aplica a los dos'
+    );
+  }
+  if (ruleType === 'default') return { direccion };
+  return { ...cond, direccion };
+}
+
 const mappingLineSchema = z.object({
-  accountId: z.string().uuid(),
+  /**
+   * Null cuando la línea apunta al banco del movimiento (`usesBankAccount`):
+   * la cuenta sale de `cuenta_bancaria.cuenta_contable_id` al generar.
+   */
+  accountId: z.string().uuid().nullable().optional(),
+  /** Solo en reglas de banco: la cuenta la pone la cuenta bancaria. */
+  usesBankAccount: z.boolean().optional(),
   side: z.enum(['debe', 'haber']),
   amountBasis: z.enum([
     'total',
@@ -3209,8 +3265,11 @@ const mappingLineSchema = z.object({
     'otros_tributos',
     'valor_concepto',
     'fijo',
+    'porcentaje',
   ]),
   fixedAmount: z.number().nullable().optional(),
+  /** Solo con base 'porcentaje'. */
+  percentage: z.number().nullable().optional(),
   description: z.string().optional(),
 });
 
@@ -3232,6 +3291,13 @@ export interface MappingRuleListRow {
   priority: number;
   isActive: boolean;
   lineCount: number;
+  /** A qué comprobantes aplica, en palabras. Null fuera de facturas. */
+  scope: string | null;
+  /** Regla anterior que la tapa: esta nunca se aplica. */
+  shadowedBy: { id: string; name: string } | null;
+  /** Regla de facturas sin dirección: se aplica a ventas y a compras. */
+  missingDirection: boolean;
+  balance: { status: EstadoCuadre; message: string | null } | null;
 }
 
 /** Lista reglas de una empresa, ordenadas por prioridad. (US 3.1.2) */
@@ -3259,21 +3325,54 @@ export const listMappingRules = createServerFn({ method: 'GET' })
       .orderBy(asc(reglaMapeo.prioridad), asc(reglaMapeo.nombre));
 
     const ids = rules.map((r) => r.id);
-    const counts = new Map<string, number>();
+    const linesByRule = new Map<
+      string,
+      {
+        lado: 'debe' | 'haber';
+        base: (typeof reglaMapeoLinea.$inferSelect)['base'];
+      }[]
+    >();
     if (ids.length > 0) {
-      const cRows = await db
+      const lRows = await db
         .select({
           ruleId: reglaMapeoLinea.reglaId,
-          n: sql<number>`count(*)::int`,
+          lado: reglaMapeoLinea.lado,
+          base: reglaMapeoLinea.base,
         })
         .from(reglaMapeoLinea)
-        .where(inArray(reglaMapeoLinea.reglaId, ids))
-        .groupBy(reglaMapeoLinea.reglaId);
-      for (const c of cRows) counts.set(c.ruleId, c.n);
+        .where(inArray(reglaMapeoLinea.reglaId, ids));
+      for (const l of lRows) {
+        const list = linesByRule.get(l.ruleId) ?? [];
+        list.push(l);
+        linesByRule.set(l.ruleId, list);
+      }
     }
 
-    return rules.map(
-      (r): MappingRuleListRow => ({
+    // El solapamiento se calcula sobre la cola completa de cada módulo, aunque
+    // el filtro esté puesto: la cola es la misma. Sueldos también se revisa,
+    // con su propia idea de qué regla tapa a cuál.
+    const deLaCola = (modulo: 'comprobante' | 'recibo') =>
+      rules
+        .filter((r) => r.modulo === modulo)
+        .map((r) => ({
+          id: r.id,
+          nombre: r.nombre,
+          tipo: r.tipo,
+          condicion: (r.condicion ?? null) as Record<string, unknown> | null,
+          activa: r.activa,
+        }));
+    const shadowed = new Map([
+      ...detectarReglasTapadas(deLaCola('comprobante')),
+      ...detectarTapadas(deLaCola('recibo'), reglaCubreConcepto),
+    ]);
+
+    return rules.map((r): MappingRuleListRow => {
+      const cond = (r.condicion ?? null) as Record<string, unknown> | null;
+      const isInvoice = r.modulo === 'comprobante';
+      const lines = linesByRule.get(r.id) ?? [];
+      const tapa = shadowed.get(r.id);
+      const cuadre = isInvoice ? analizarCuadreRegla(lines) : null;
+      return {
         id: r.id,
         name: r.nombre,
         sourceModule: r.modulo,
@@ -3281,9 +3380,15 @@ export const listMappingRules = createServerFn({ method: 'GET' })
         condition: (r.condicion ?? null) as RuleCondition,
         priority: r.prioridad,
         isActive: r.activa,
-        lineCount: counts.get(r.id) ?? 0,
-      })
-    );
+        lineCount: lines.length,
+        scope: isInvoice ? describirAlcanceRegla(r.tipo, cond) : null,
+        shadowedBy: tapa ? { id: tapa.id, name: tapa.nombre } : null,
+        missingDirection: isInvoice && direccionDeCondicion(cond) === null,
+        balance: cuadre
+          ? { status: cuadre.estado, message: cuadre.mensaje }
+          : null,
+      };
+    });
   });
 
 /** Detalle de una regla con sus líneas + cuántos asientos del período abierto generó. */
@@ -3297,16 +3402,18 @@ export const getMappingRule = createServerFn({ method: 'GET' })
       .select({
         id: reglaMapeoLinea.id,
         accountId: reglaMapeoLinea.cuentaId,
+        usesBankAccount: reglaMapeoLinea.usaCuentaBanco,
         accountCode: cuenta.codigo,
         accountName: cuenta.nombre,
         side: reglaMapeoLinea.lado,
         amountBasis: reglaMapeoLinea.base,
         fixedAmount: reglaMapeoLinea.importeFijo,
+        percentage: reglaMapeoLinea.porcentaje,
         description: reglaMapeoLinea.descripcion,
         lineOrder: reglaMapeoLinea.orden,
       })
       .from(reglaMapeoLinea)
-      .innerJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
+      .leftJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
       .where(eq(reglaMapeoLinea.reglaId, rule.id))
       .orderBy(asc(reglaMapeoLinea.orden));
 
@@ -3325,6 +3432,13 @@ export const getMappingRule = createServerFn({ method: 'GET' })
     // `condicion` es jsonb (tipo `unknown`): no serializa, se expone tipada
     // como `condition` y se saca del spread.
     const { condicion, ...ruleRest } = rule;
+    const isInvoice = rule.modulo === 'comprobante';
+    const cond = (condicion ?? null) as Record<string, unknown> | null;
+    const cuadre = isInvoice
+      ? analizarCuadreRegla(
+          lines.map((l) => ({ lado: l.side, base: l.amountBasis }))
+        )
+      : null;
     return {
       rule: { ...ruleRest, condition: (condicion ?? null) as RuleCondition },
       lines: lines.map((l) => ({
@@ -3332,6 +3446,11 @@ export const getMappingRule = createServerFn({ method: 'GET' })
         fixedAmount: l.fixedAmount ? parseFloat(l.fixedAmount) : null,
       })),
       generatedOpenCount: gen?.n ?? 0,
+      scope: isInvoice ? describirAlcanceRegla(rule.tipo, cond) : null,
+      missingDirection: isInvoice && direccionDeCondicion(cond) === null,
+      balance: cuadre
+        ? { status: cuadre.estado, message: cuadre.mensaje }
+        : null,
     };
   });
 
@@ -3377,11 +3496,11 @@ export const createMappingRule = createServerFn({ method: 'POST' })
     assertOwner(role);
     const d = ctx.data;
     await ensureClientBelongsToOrg(d.clientId, orgId);
-    validateRuleLines(d.lines);
+    validateRuleLines(d.lines, d.sourceModule);
     await assertPostableAccounts(
       d.clientId,
       orgId,
-      d.lines.map((l) => l.accountId)
+      d.lines.flatMap((l) => (l.accountId ? [l.accountId] : []))
     );
 
     const rule = await db.transaction(async (tx) => {
@@ -3393,8 +3512,11 @@ export const createMappingRule = createServerFn({ method: 'POST' })
           nombre: d.name.trim(),
           modulo: d.sourceModule,
           tipo: d.ruleType,
-          condicion:
-            d.ruleType === 'condicional' ? (d.condition ?? null) : null,
+          condicion: normalizeRuleCondition(
+            d.sourceModule,
+            d.ruleType,
+            d.condition
+          ),
           prioridad:
             d.priority ??
             (await siguientePrioridad(orgId, d.clientId, d.sourceModule)),
@@ -3404,12 +3526,17 @@ export const createMappingRule = createServerFn({ method: 'POST' })
       await tx.insert(reglaMapeoLinea).values(
         d.lines.map((l, i) => ({
           reglaId: r.id,
-          cuentaId: l.accountId,
+          cuentaId: l.usesBankAccount ? null : (l.accountId ?? null),
+          usaCuentaBanco: l.usesBankAccount ?? false,
           lado: l.side,
           base: l.amountBasis,
           importeFijo:
             l.amountBasis === 'fijo' && l.fixedAmount != null
               ? String(l.fixedAmount)
+              : null,
+          porcentaje:
+            l.amountBasis === 'porcentaje' && l.percentage != null
+              ? String(l.percentage)
               : null,
           descripcion: l.description?.trim() ? l.description.trim() : null,
           orden: i,
@@ -3442,12 +3569,21 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
     assertOwner(role);
     const d = ctx.data;
     const rule = await loadMappingRuleForOrg(d.id, orgId);
-    validateRuleLines(d.lines);
+    validateRuleLines(d.lines, d.sourceModule);
     await assertPostableAccounts(
       rule.clienteId,
       orgId,
-      d.lines.map((l) => l.accountId)
+      d.lines.flatMap((l) => (l.accountId ? [l.accountId] : []))
     );
+
+    // Si cambió de módulo, la prioridad vieja es de otra cola: la regla va al
+    // final de la nueva, como una recién creada. Si no, se queda donde está.
+    const cambioDeModulo = d.sourceModule !== rule.modulo;
+    const prioridad =
+      d.priority ??
+      (cambioDeModulo
+        ? await siguientePrioridad(orgId, rule.clienteId, d.sourceModule)
+        : null);
 
     await db.transaction(async (tx) => {
       await tx
@@ -3456,9 +3592,12 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
           nombre: d.name.trim(),
           modulo: d.sourceModule,
           tipo: d.ruleType,
-          condicion:
-            d.ruleType === 'condicional' ? (d.condition ?? null) : null,
-          ...(d.priority != null ? { prioridad: d.priority } : {}),
+          condicion: normalizeRuleCondition(
+            d.sourceModule,
+            d.ruleType,
+            d.condition
+          ),
+          ...(prioridad != null ? { prioridad } : {}),
         })
         .where(eq(reglaMapeo.id, rule.id));
       await tx
@@ -3467,12 +3606,17 @@ export const updateMappingRule = createServerFn({ method: 'POST' })
       await tx.insert(reglaMapeoLinea).values(
         d.lines.map((l, i) => ({
           reglaId: rule.id,
-          cuentaId: l.accountId,
+          cuentaId: l.usesBankAccount ? null : (l.accountId ?? null),
+          usaCuentaBanco: l.usesBankAccount ?? false,
           lado: l.side,
           base: l.amountBasis,
           importeFijo:
             l.amountBasis === 'fijo' && l.fixedAmount != null
               ? String(l.fixedAmount)
+              : null,
+          porcentaje:
+            l.amountBasis === 'porcentaje' && l.percentage != null
+              ? String(l.percentage)
               : null,
           descripcion: l.description?.trim() ? l.description.trim() : null,
           orden: i,
@@ -3585,6 +3729,14 @@ export const reorderMappingRules = createServerFn({ method: 'POST' })
  * Copia las reglas de una empresa a otra (isActive=false). Resuelve las cuentas
  * por código en la empresa destino; salta reglas con cuentas que no existen allí. (US 3.1.5)
  */
+/** Una regla que no se copió, con el porqué, para avisarlo en la pantalla. */
+export interface ReglaOmitida {
+  nombre: string;
+  motivo: 'ya_existe' | 'sin_lineas' | 'cuentas_faltantes';
+  /** Códigos de cuenta que la empresa destino no tiene. */
+  cuentas?: string[];
+}
+
 export const importMappingRules = createServerFn({ method: 'POST' })
   .validator(
     z.object({ fromClientId: z.string().uuid(), toClientId: z.string().uuid() })
@@ -3604,12 +3756,37 @@ export const importMappingRules = createServerFn({ method: 'POST' })
       .from(reglaMapeo)
       .where(eq(reglaMapeo.clienteId, fromClientId))
       .orderBy(asc(reglaMapeo.prioridad));
-    if (srcRules.length === 0) return { created: 0, skipped: [] as string[] };
+    if (srcRules.length === 0)
+      return { created: 0, skipped: [] as ReglaOmitida[] };
+
+    // Lo que la empresa destino ya tiene: una regla con el mismo nombre y
+    // módulo no se copia de nuevo. Antes, importar dos veces las duplicaba.
+    const yaTiene = await db
+      .select({
+        nombre: reglaMapeo.nombre,
+        modulo: reglaMapeo.modulo,
+        prioridad: reglaMapeo.prioridad,
+      })
+      .from(reglaMapeo)
+      .where(eq(reglaMapeo.clienteId, toClientId));
+    const existentes = new Set(
+      yaTiene.map((r) => `${r.modulo}|${r.nombre.trim().toLowerCase()}`)
+    );
+    // Las copias van al final de la cola de su módulo, no intercaladas con las
+    // reglas propias por conservar la prioridad de la empresa de origen.
+    const ultimaPrioridad = new Map<string, number>();
+    for (const r of yaTiene) {
+      ultimaPrioridad.set(
+        r.modulo,
+        Math.max(ultimaPrioridad.get(r.modulo) ?? 0, r.prioridad)
+      );
+    }
 
     const srcLines = await db
       .select({
         ruleId: reglaMapeoLinea.reglaId,
         code: cuenta.codigo,
+        usaCuentaBanco: reglaMapeoLinea.usaCuentaBanco,
         side: reglaMapeoLinea.lado,
         amountBasis: reglaMapeoLinea.base,
         fixedAmount: reglaMapeoLinea.importeFijo,
@@ -3617,7 +3794,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
         lineOrder: reglaMapeoLinea.orden,
       })
       .from(reglaMapeoLinea)
-      .innerJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
+      .leftJoin(cuenta, eq(cuenta.id, reglaMapeoLinea.cuentaId))
       .where(
         inArray(
           reglaMapeoLinea.reglaId,
@@ -3646,17 +3823,38 @@ export const importMappingRules = createServerFn({ method: 'POST' })
     }
 
     let created = 0;
-    const skipped: string[] = [];
+    const skipped: ReglaOmitida[] = [];
     for (const r of srcRules) {
       const lines = linesByRule.get(r.id) ?? [];
       const resolved = lines.map((l) => ({
         ...l,
-        targetId: codeToId.get(l.code),
+        targetId: l.code ? codeToId.get(l.code) : undefined,
       }));
-      if (lines.length < 2 || resolved.some((l) => !l.targetId)) {
-        skipped.push(r.nombre);
+      if (existentes.has(`${r.modulo}|${r.nombre.trim().toLowerCase()}`)) {
+        skipped.push({ nombre: r.nombre, motivo: 'ya_existe' });
         continue;
       }
+      if (lines.length < 2) {
+        skipped.push({ nombre: r.nombre, motivo: 'sin_lineas' });
+        continue;
+      }
+      const faltantes = [
+        ...new Set(
+          resolved
+            .filter((l) => !l.usaCuentaBanco && !l.targetId)
+            .flatMap((l) => (l.code ? [l.code] : []))
+        ),
+      ];
+      if (faltantes.length > 0) {
+        skipped.push({
+          nombre: r.nombre,
+          motivo: 'cuentas_faltantes',
+          cuentas: faltantes,
+        });
+        continue;
+      }
+      const prioridad = (ultimaPrioridad.get(r.modulo) ?? 0) + 10;
+      ultimaPrioridad.set(r.modulo, prioridad);
       await db.transaction(async (tx) => {
         const [nr] = await tx
           .insert(reglaMapeo)
@@ -3667,7 +3865,7 @@ export const importMappingRules = createServerFn({ method: 'POST' })
             modulo: r.modulo,
             tipo: r.tipo,
             condicion: r.condicion,
-            prioridad: r.prioridad,
+            prioridad,
             activa: false,
           })
           .returning();
@@ -3691,76 +3889,9 @@ export const importMappingRules = createServerFn({ method: 'POST' })
 
 /* ════════════ Asientos automáticos desde facturas (US 3.2.x) ════════════ */
 
-/** Cuenta de sistema pending_review (base, a nivel estudio). Lanza si falta. */
-async function loadPendingReviewAccountId(orgId: string): Promise<string> {
-  const [acc] = await db
-    .select({ id: cuenta.id })
-    .from(cuenta)
-    .where(
-      and(
-        eq(cuenta.orgId, orgId),
-        eq(cuenta.alcance, 'base'),
-        eq(cuenta.codigo, PENDING_REVIEW_CODE)
-      )
-    )
-    .limit(1);
-  if (!acc) {
-    throw new Error(
-      'Falta la cuenta de sistema "Pendiente de revisión". Re-sembrá el plan base'
-    );
-  }
-  return acc.id;
-}
-
-/** Reglas de facturas activas de una empresa, con sus líneas, ordenadas por prioridad. */
-async function loadActiveInvoiceRules(clientId: string): Promise<ReglaLike[]> {
-  const rules = await db
-    .select()
-    .from(reglaMapeo)
-    .where(
-      and(
-        eq(reglaMapeo.clienteId, clientId),
-        eq(reglaMapeo.modulo, 'comprobante'),
-        eq(reglaMapeo.activa, true)
-      )
-    )
-    .orderBy(asc(reglaMapeo.prioridad), asc(reglaMapeo.nombre));
-  if (rules.length === 0) return [];
-
-  const lines = await db
-    .select()
-    .from(reglaMapeoLinea)
-    .where(
-      inArray(
-        reglaMapeoLinea.reglaId,
-        rules.map((r) => r.id)
-      )
-    )
-    .orderBy(asc(reglaMapeoLinea.orden));
-  const byRule = new Map<string, typeof lines>();
-  for (const l of lines) {
-    const arr = byRule.get(l.reglaId) ?? [];
-    arr.push(l);
-    byRule.set(l.reglaId, arr);
-  }
-
-  return rules.map(
-    (r): ReglaLike => ({
-      id: r.id,
-      nombre: r.nombre,
-      tipo: r.tipo,
-      condicion: (r.condicion ?? null) as Record<string, unknown> | null,
-      prioridad: r.prioridad,
-      lineas: (byRule.get(r.id) ?? []).map((l) => ({
-        cuentaId: l.cuentaId,
-        lado: l.lado,
-        base: l.base,
-        importeFijo: l.importeFijo,
-        descripcion: l.descripcion,
-      })),
-    })
-  );
-}
+/** Reglas de facturas activas de la empresa, con sus líneas, por prioridad. */
+const loadActiveInvoiceRules = (clientId: string): Promise<ReglaLike[]> =>
+  loadActiveMappingRules(clientId, 'comprobante');
 
 /** Asiento auto vigente (no anulado) de una factura, si existe. */
 async function findAutoEntryForInvoice(clientId: string, invoiceId: string) {
@@ -3835,45 +3966,22 @@ async function insertAutoInvoiceEntry(
     userId,
   } = params;
 
-  const [{ maxNum }] = await tx
-    .select({
-      maxNum: sql<number>`coalesce(max(${asiento.numero}),0)::int`,
-    })
-    .from(asiento)
-    .where(and(eq(asiento.clienteId, clientId), eq(asiento.ejercicioId, fyId)));
-  const number = (maxNum ?? 0) + 1;
-
   const label = inv.direccion === 'recibido' ? 'Compra' : 'Venta';
-  const description =
-    `${label} ${inv.letra ?? inv.tipo} — ${inv.contraparte ?? ''}`.trim();
-
-  const [je] = await tx
-    .insert(asiento)
-    .values({
-      orgId,
-      clienteId: clientId,
-      ejercicioId: fyId,
-      periodoId: periodId,
-      numero: number,
-      fecha: date,
-      descripcion: description,
-      origenTipo: 'comprobante',
-      origenId: inv.id,
-      reglaId: ruleId,
-      creadoPor: userId,
-    })
-    .returning();
-
-  await tx.insert(asientoLinea).values(
-    lines.map((l, i) => ({
-      asientoId: je.id,
-      cuentaId: l.cuentaId,
-      debe: String(l.debe),
-      haber: String(l.haber),
-      descripcion: l.descripcion,
-      orden: i,
-    }))
-  );
+  const je = await insertarAsientoConLineas(tx, {
+    orgId,
+    clienteId: clientId,
+    ejercicioId: fyId,
+    periodoId: periodId,
+    fecha: date,
+    descripcion:
+      `${label} ${inv.letra ?? inv.tipo} — ${inv.contraparte ?? ''}`.trim(),
+    origenTipo: 'comprobante',
+    origenId: inv.id,
+    reglaId: ruleId,
+    lineas: lines,
+    creadoPor: userId,
+  });
+  const number = je.numero;
 
   await tx.insert(evento).values(
     accountingEvent({
@@ -3942,7 +4050,7 @@ async function planInvoiceEntry(
       await assertPostableAccounts(
         clientId,
         orgId,
-        rule.lineas.map((l) => l.cuentaId)
+        rule.lineas.flatMap((l) => (l.cuentaId ? [l.cuentaId] : []))
       );
     } catch (e) {
       return {
@@ -4061,7 +4169,13 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
     const invIds = invs.map((i) => i.id);
     const posted = new Map<
       string,
-      { id: string; number: number; edited: boolean }
+      {
+        id: string;
+        number: number;
+        edited: boolean;
+        ruleId: string | null;
+        ruleName: string | null;
+      }
     >();
     if (invIds.length > 0) {
       const entries = await db
@@ -4070,8 +4184,11 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
           number: asiento.numero,
           sourceId: asiento.origenId,
           edited: asiento.editadoPostGeneracion,
+          ruleId: asiento.reglaId,
+          ruleName: reglaMapeo.nombre,
         })
         .from(asiento)
+        .leftJoin(reglaMapeo, eq(reglaMapeo.id, asiento.reglaId))
         .where(
           and(
             eq(asiento.clienteId, clientId),
@@ -4086,6 +4203,8 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
             id: e.id,
             number: e.number,
             edited: e.edited,
+            ruleId: e.ruleId,
+            ruleName: e.ruleName,
           });
       }
     }
@@ -4095,6 +4214,11 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
       const rule = seleccionarRegla(rules, inv);
       const post = posted.get(inv.id) ?? null;
       const pStatus = periodStatus.get(inv.fechaEmision.slice(0, 7)) ?? null;
+      // Con la regla real: la heurística vieja sólo miraba si había percepciones
+      // y no avisaba de una regla que no cuadra.
+      const willUsePendingReview =
+        amounts.total > 0 &&
+        armarLineas(rule, amounts, 'pending-review').usoPendienteRevision;
       return {
         id: inv.id,
         emitionDate: inv.fechaEmision,
@@ -4107,11 +4231,17 @@ export const getInvoicePostingPreview = createServerFn({ method: 'GET' })
         otherTaxes: amounts.otrosTributos,
         ruleId: rule?.id ?? null,
         ruleName: rule?.nombre ?? null,
-        willUsePendingReview: !rule || amounts.otrosTributos > 0.005,
+        willUsePendingReview,
         posted: !!post,
         entryId: post?.id ?? null,
         entryNumber: post?.number ?? null,
         entryEdited: post?.edited ?? false,
+        /** Regla con la que se generó el asiento vigente. */
+        appliedRuleName: post
+          ? (post.ruleName ?? (post.ruleId ? 'Regla eliminada' : null))
+          : null,
+        /** Regenerar lo contabilizaría con otra regla que la usada. */
+        ruleWouldChange: !!post && (post.ruleId ?? null) !== (rule?.id ?? null),
         periodStatus: pStatus,
       };
     });
@@ -4214,6 +4344,108 @@ export const generateInvoiceEntries = createServerFn({ method: 'POST' })
     return summary;
   });
 
+const PLAN_ERROR_MESSAGES: Record<
+  Extract<PlanResult, { ok: false }>['reason'],
+  string
+> = {
+  non_positive:
+    'El comprobante no tiene un total positivo (ej. nota de crédito)',
+  no_fy: 'No hay un ejercicio que cubra la fecha del comprobante',
+  cerrado: 'El período del comprobante está cerrado',
+  invalid_accounts: 'La regla referencia cuentas inválidas',
+};
+
+type RegenerateOutcome =
+  | { kind: 'done'; entryId: string; number: number }
+  | { kind: 'needs_confirmation'; entryNumber: number }
+  | { kind: 'error'; reason: string };
+
+/**
+ * Anula el asiento vigente de una factura (si hay) y crea uno nuevo con las
+ * reglas actuales. Un asiento editado a mano sólo se pisa con `force`.
+ */
+async function regenerateOneInvoice(params: {
+  inv: InvoiceRow;
+  clientId: string;
+  orgId: string;
+  userId: string | null;
+  rules: ReglaLike[];
+  prId: string;
+  force: boolean;
+  reason: string;
+}): Promise<RegenerateOutcome> {
+  const { inv, clientId, orgId, userId, rules, prId, force } = params;
+  const existing = await findAutoEntryForInvoice(clientId, inv.id);
+  if (existing) {
+    if (existing.isEditedPostGeneration && !force) {
+      return { kind: 'needs_confirmation', entryNumber: existing.number };
+    }
+    const { period } = await loadPeriodForOrg(existing.periodId, orgId);
+    if (period.estado === 'cerrado') {
+      return {
+        kind: 'error',
+        reason:
+          'El asiento actual está en un período cerrado. Reabrí el período o hacé un ajuste manual',
+      };
+    }
+  }
+
+  const plan = await planInvoiceEntry(inv, clientId, orgId, rules, prId);
+  if (!plan.ok) {
+    return {
+      kind: 'error',
+      reason:
+        plan.reason === 'invalid_accounts' && plan.detail
+          ? plan.detail
+          : PLAN_ERROR_MESSAGES[plan.reason],
+    };
+  }
+
+  const je = await db.transaction(async (tx) => {
+    if (existing) {
+      await tx
+        .update(asiento)
+        .set({
+          anulado: true,
+          anuladoAt: sql`now()`,
+          anuladoPor: userId,
+          motivoAnulacion: params.reason,
+        })
+        .where(eq(asiento.id, existing.id));
+      await tx.insert(evento).values(
+        accountingEvent({
+          orgId,
+          clientId,
+          fiscalYearId: plan.fyId,
+          eventType: 'journal_entry_voided',
+          entityId: existing.id,
+          data: {
+            entryId: existing.id,
+            number: existing.number,
+            auto: true,
+            reason: params.reason,
+          },
+          userId,
+        })
+      );
+    }
+    return insertAutoInvoiceEntry(tx, {
+      orgId,
+      clientId,
+      fyId: plan.fyId,
+      periodId: plan.periodId,
+      date: plan.date,
+      inv,
+      ruleId: plan.ruleId,
+      lines: plan.lines,
+      usedPendingReview: plan.usedPendingReview,
+      reason: plan.reason,
+      userId,
+    });
+  });
+  return { kind: 'done', entryId: je.id, number: je.numero };
+}
+
 /**
  * Regenera el asiento de una factura desde Contabilidad: anula el vigente y crea
  * uno nuevo con las reglas actuales. Si el asiento fue editado a mano, exige `force`.
@@ -4245,84 +4477,316 @@ export const regenerateInvoiceEntry = createServerFn({ method: 'POST' })
       .limit(1);
     if (!inv) throw new Error('Factura no encontrada o de otra empresa');
 
-    const existing = await findAutoEntryForInvoice(clientId, invoiceId);
-    if (existing) {
-      if (existing.isEditedPostGeneration && !ctx.data.force) {
-        return {
-          needsConfirmation: true as const,
-          entryNumber: existing.number,
-        };
-      }
-      const { period } = await loadPeriodForOrg(existing.periodId, orgId);
-      if (period.estado === 'cerrado') {
-        throw new Error(
-          'No se puede regenerar: el asiento actual está en un período cerrado. Reabrí el período o hacé un ajuste manual'
-        );
-      }
-    }
-
-    const prId = await loadPendingReviewAccountId(orgId);
-    const rules = await loadActiveInvoiceRules(clientId);
-    const plan = await planInvoiceEntry(inv, clientId, orgId, rules, prId);
-    if (!plan.ok) {
-      const msgs: Record<string, string> = {
-        non_positive:
-          'El comprobante no tiene un total positivo (ej. nota de crédito)',
-        no_fy: 'No hay un ejercicio que cubra la fecha del comprobante',
-        closed: 'El período del comprobante está cerrado',
-        invalid_accounts:
-          plan.detail ?? 'La regla referencia cuentas inválidas',
+    const out = await regenerateOneInvoice({
+      inv,
+      clientId,
+      orgId,
+      userId,
+      rules: await loadActiveInvoiceRules(clientId),
+      prId: await loadPendingReviewAccountId(orgId),
+      force: ctx.data.force,
+      reason: 'Regenerado desde el comprobante',
+    });
+    if (out.kind === 'error') throw new Error(out.reason);
+    if (out.kind === 'needs_confirmation') {
+      return {
+        needsConfirmation: true as const,
+        entryNumber: out.entryNumber,
       };
-      throw new Error(msgs[plan.reason]);
     }
+    return {
+      needsConfirmation: false as const,
+      entryId: out.entryId,
+      number: out.number,
+    };
+  });
 
-    const je = await db.transaction(async (tx) => {
-      if (existing) {
-        await tx
-          .update(asiento)
-          .set({
-            anulado: true,
-            anuladoAt: sql`now()`,
-            anuladoPor: userId,
-            motivoAnulacion: 'Regenerado desde el comprobante',
-          })
-          .where(eq(asiento.id, existing.id));
-        await tx.insert(evento).values(
+/**
+ * Regenera varios asientos de facturas de una vez, con las reglas actuales.
+ * Los editados a mano se saltean salvo `force`: pisarlos es una decisión por
+ * asiento que no conviene tomar en bloque sin avisar.
+ */
+export const regenerateInvoiceEntries = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      invoiceIds: z.array(z.string().uuid()).min(1).max(2000),
+      force: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+
+    const invs = await db
+      .select(INVOICE_SELECT)
+      .from(comprobante)
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
+      .where(
+        and(
+          eq(comprobante.clienteId, clientId),
+          inArray(comprobante.id, ctx.data.invoiceIds)
+        )
+      )
+      .orderBy(asc(comprobante.fechaEmision));
+
+    const rules = await loadActiveInvoiceRules(clientId);
+    const prId = await loadPendingReviewAccountId(orgId);
+
+    const summary = {
+      regenerated: 0,
+      skippedEdited: 0,
+      errors: [] as { invoiceId: string; reason: string }[],
+    };
+    for (const inv of invs) {
+      const out = await regenerateOneInvoice({
+        inv,
+        clientId,
+        orgId,
+        userId,
+        rules,
+        prId,
+        force: ctx.data.force,
+        reason: 'Regenerado en bloque desde Contabilizar',
+      });
+      if (out.kind === 'done') summary.regenerated++;
+      else if (out.kind === 'needs_confirmation') summary.skippedEdited++;
+      else summary.errors.push({ invoiceId: inv.id, reason: out.reason });
+    }
+    return summary;
+  });
+
+/**
+ * Rehace los asientos del período abierto que generó una regla, después de
+ * editarla. Antes solo se avisaba que habían quedado con la versión anterior
+ * y había que buscarlos a mano en Contabilizar.
+ *
+ * Solo facturas: un asiento de sueldos agrupa el período entero y se rehace
+ * volviendo a cerrar el período. Los asientos editados a mano se conservan
+ * salvo que se pida `force`.
+ */
+export const regenerateEntriesForRule = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({ ruleId: z.string().uuid(), force: z.boolean().default(false) })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+
+    const rule = await loadMappingRuleForOrg(ctx.data.ruleId, orgId);
+    if (rule.modulo !== 'comprobante') {
+      throw new Error(
+        'Los asientos de sueldos se rehacen volviendo a cerrar el período'
+      );
+    }
+    const clientId = rule.clienteId;
+
+    // Las facturas cuyo asiento vigente salió de esta regla, en un período
+    // que todavía se puede tocar.
+    const conAsiento = await db
+      .select({ invoiceId: asiento.origenId })
+      .from(asiento)
+      .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
+      .where(
+        and(
+          eq(asiento.reglaId, rule.id),
+          eq(asiento.origenTipo, 'comprobante'),
+          eq(asiento.anulado, false),
+          eq(periodoContable.estado, 'abierto'),
+          isNotNull(asiento.origenId)
+        )
+      );
+    const ids = [...new Set(conAsiento.map((r) => r.invoiceId!))];
+    if (ids.length === 0)
+      return { regenerated: 0, skippedEdited: 0, errors: [] };
+
+    const invs = await db
+      .select(INVOICE_SELECT)
+      .from(comprobante)
+      .leftJoin(comprobanteTipo, eq(comprobanteTipo.codigo, comprobante.tipo))
+      .leftJoin(contraparte, eq(contraparte.id, comprobante.contraparteId))
+      .where(inArray(comprobante.id, ids))
+      .orderBy(asc(comprobante.fechaEmision));
+
+    const rules = await loadActiveInvoiceRules(clientId);
+    const prId = await loadPendingReviewAccountId(orgId);
+
+    const summary = {
+      regenerated: 0,
+      skippedEdited: 0,
+      errors: [] as { invoiceId: string; reason: string }[],
+    };
+    for (const inv of invs) {
+      const out = await regenerateOneInvoice({
+        inv,
+        clientId,
+        orgId,
+        userId,
+        rules,
+        prId,
+        force: ctx.data.force,
+        reason: `Regenerado al editar la regla «${rule.nombre}»`,
+      });
+      if (out.kind === 'done') summary.regenerated++;
+      else if (out.kind === 'needs_confirmation') summary.skippedEdited++;
+      else summary.errors.push({ invoiceId: inv.id, reason: out.reason });
+    }
+    return summary;
+  });
+
+/**
+ * Anula varios asientos a la vez. Un anulado no suma en mayor, balance ni
+ * estados contables; sigue en el Libro Diario marcado como anulado.
+ */
+export const voidJournalEntries = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      ids: z.array(z.string().uuid()).min(1).max(2000),
+      reason: z.string().trim().min(1),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertCanWrite(role);
+    const { clientId, ids } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    return voidEntriesInOpenPeriods({
+      orgId,
+      clientId,
+      userId,
+      reason: ctx.data.reason.trim(),
+      where: inArray(asiento.id, ids),
+      includeEdited: true,
+    });
+  });
+
+/**
+ * Anula de una vez los asientos vigentes que cumplen `where` (siempre dentro
+ * de la empresa), salvo los de períodos cerrados. Con `dryRun` sólo cuenta.
+ */
+async function voidEntriesInOpenPeriods(params: {
+  orgId: string;
+  clientId: string;
+  userId: string | null;
+  reason: string;
+  where: SQL | undefined;
+  includeEdited: boolean;
+  dryRun?: boolean;
+}) {
+  const { orgId, clientId, userId, reason } = params;
+  const rows = await db
+    .select({
+      id: asiento.id,
+      number: asiento.numero,
+      fyId: asiento.ejercicioId,
+      edited: asiento.editadoPostGeneracion,
+      periodStatus: periodoContable.estado,
+    })
+    .from(asiento)
+    .innerJoin(periodoContable, eq(periodoContable.id, asiento.periodoId))
+    .where(
+      and(
+        eq(asiento.orgId, orgId),
+        eq(asiento.clienteId, clientId),
+        eq(asiento.anulado, false),
+        params.where
+      )
+    );
+
+  const skippedClosed = rows.filter((r) => r.periodStatus === 'cerrado');
+  const open = rows.filter((r) => r.periodStatus !== 'cerrado');
+  const skippedEdited = params.includeEdited
+    ? []
+    : open.filter((r) => r.edited);
+  const toVoid = params.includeEdited ? open : open.filter((r) => !r.edited);
+
+  if (!params.dryRun && toVoid.length > 0) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(asiento)
+        .set({
+          anulado: true,
+          anuladoAt: sql`now()`,
+          anuladoPor: userId,
+          motivoAnulacion: reason,
+        })
+        .where(
+          inArray(
+            asiento.id,
+            toVoid.map((r) => r.id)
+          )
+        );
+      await tx.insert(evento).values(
+        toVoid.map((r) =>
           accountingEvent({
             orgId,
             clientId,
-            fiscalYearId: plan.fyId,
             eventType: 'journal_entry_voided',
-            entityId: existing.id,
-            data: {
-              entryId: existing.id,
-              number: existing.number,
-              auto: true,
-              reason: 'Regenerado desde el comprobante',
-            },
+            entityId: r.id,
+            fiscalYearId: r.fyId,
+            data: { entryId: r.id, number: r.number, reason, bulk: true },
             userId,
           })
-        );
-      }
-      return insertAutoInvoiceEntry(tx, {
-        orgId,
-        clientId,
-        fyId: plan.fyId,
-        periodId: plan.periodId,
-        date: plan.date,
-        inv,
-        ruleId: plan.ruleId,
-        lines: plan.lines,
-        usedPendingReview: plan.usedPendingReview,
-        reason: plan.reason,
-        userId,
-      });
+        )
+      );
     });
+  }
 
+  return {
+    voided: toVoid.length,
+    skippedClosed: skippedClosed.length,
+    skippedEdited: skippedEdited.length,
+  };
+}
+
+/**
+ * Reinicia la contabilización automática de facturas de un ejercicio: anula
+ * todos sus asientos generados desde comprobantes (los manuales no se tocan) y
+ * las facturas vuelven a quedar pendientes para generarlas con las reglas de
+ * hoy. Con `dryRun` sólo devuelve cuántos anularía.
+ */
+export const resetFiscalYearInvoiceEntries = createServerFn({ method: 'POST' })
+  .validator(
+    z.object({
+      clientId: z.string().uuid(),
+      fiscalYearId: z.string().uuid().optional(),
+      includeEdited: z.boolean().default(false),
+      dryRun: z.boolean().default(false),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId, userId } = await getSessionWithOrg();
+    const role = await getMemberRole();
+    assertOwner(role);
+    const { clientId } = ctx.data;
+    await ensureClientBelongsToOrg(clientId, orgId);
+    const fy = await resolveFiscalYear(clientId, orgId, ctx.data.fiscalYearId);
+    if (fy?.clienteId !== clientId)
+      throw new Error('La empresa no tiene ese ejercicio contable');
+
+    const result = await voidEntriesInOpenPeriods({
+      orgId,
+      clientId,
+      userId,
+      reason: 'Reinicio de asientos automáticos del ejercicio',
+      where: and(
+        eq(asiento.ejercicioId, fy.id),
+        eq(asiento.origenTipo, 'comprobante')
+      ),
+      includeEdited: ctx.data.includeEdited,
+      dryRun: ctx.data.dryRun,
+    });
     return {
-      needsConfirmation: false as const,
-      entryId: je.id,
-      number: je.numero,
+      ...result,
+      fiscalYear: { id: fy.id, from: fy.fechaDesde, to: fy.fechaHasta },
     };
   });
 

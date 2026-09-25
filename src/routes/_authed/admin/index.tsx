@@ -13,8 +13,11 @@ import {
   cancelInvitation,
   listOrgModules,
   setModuleEnabled,
+  getUmbralControlBancario,
+  setUmbralControlBancario,
 } from '@/actions/admin';
 import { getUser } from '@/actions/user';
+import { mandaEnElEstudio, ROL_SOPORTE } from '@/lib/permissions';
 import {
   getAccountantSignature,
   saveAccountantSignature,
@@ -64,6 +67,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { pesos } from '@/components/inicio/compartido';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { toast } from 'sonner';
 import {
@@ -72,6 +76,7 @@ import {
   Loader2,
   Mail,
   Shield,
+  ShieldCheck,
   Trash2,
   UserPlus,
   Users,
@@ -84,7 +89,7 @@ import { PageShell } from '@/components/shared/page-shell';
 export const Route = createFileRoute('/_authed/admin/')({
   beforeLoad: async () => {
     const user = await getUser();
-    if (!user?.organizationRole || user.organizationRole !== 'owner') {
+    if (!mandaEnElEstudio(user?.organizationRole)) {
       throw redirect({ to: '/' });
     }
   },
@@ -95,12 +100,16 @@ const ROLE_LABELS: Record<string, string> = {
   owner: 'Administrador',
   member: 'Miembro',
   viewer: 'Solo lectura',
+  // Sólo lo ve el superadmin: al estudio estas filas se le filtran.
+  [ROL_SOPORTE]: 'Soporte Orddo',
 };
 
 const ROLE_COLORS: Record<string, string> = {
   owner: 'bg-[var(--arca-accent-warn)]/10 text-[var(--arca-accent-warn-fg)]',
   member: 'bg-[var(--arca-accent)]/10 text-[var(--arca-accent)]',
   viewer: 'bg-[var(--arca-surface-2)] text-[var(--arca-ink-3)]',
+  [ROL_SOPORTE]:
+    'bg-[var(--arca-accent-info-bg)] text-[var(--arca-accent-info-fg)]',
 };
 
 function AdminPanel() {
@@ -145,8 +154,9 @@ function AdminPanel() {
         <TabsContent value="invitations">
           <InvitationsTab />
         </TabsContent>
-        <TabsContent value="settings">
+        <TabsContent value="settings" className="space-y-4">
           <SettingsTab />
+          <UmbralBancoCard />
         </TabsContent>
         <TabsContent value="modules">
           <ModulesTab />
@@ -190,13 +200,20 @@ function MembersTab() {
 
   const removingMember = members?.find((m) => m.memberId === removeMemberId);
 
+  // El acceso de soporte de la plataforma no es gente del estudio: se muestra
+  // —esconderlo sería ocultarle a un contador quién puede ver los datos de sus
+  // clientes— pero no se cuenta entre los suyos ni ocupa un lugar.
+  const miembrosDelEstudio = members?.filter((m) => !m.esSoporte).length ?? 0;
+
+  const { data: usuarioActual } = useQuery(userQuery);
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Miembros</CardTitle>
           <CardDescription>
-            {members?.length ?? 0} miembros en la organización
+            {miembrosDelEstudio} miembros en la organización
           </CardDescription>
         </div>
         <InviteDialog />
@@ -232,35 +249,62 @@ function MembersTab() {
                     {m.email}
                   </TableCell>
                   <TableCell>
-                    <Select
-                      value={m.role}
-                      onValueChange={(role: 'owner' | 'member' | 'viewer') =>
-                        rolesMutation.mutate({ memberId: m.memberId, role })
-                      }
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="owner">
-                          <div className="flex items-center gap-2">
-                            <Shield className="size-3" />
-                            Administrador
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="member">Miembro</SelectItem>
-                        <SelectItem value="viewer">Solo lectura</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {/* El acceso de soporte no es un rol de este estudio: no
+                        se elige de esta lista ni se cambia desde acá. Se
+                        muestra como lo que es y se revoca saliendo. */}
+                    {m.role === ROL_SOPORTE ? (
+                      <span
+                        className={`inline-flex items-center gap-1.5 rounded-[var(--arca-r-sm)] px-2 py-1 text-[12px] font-medium ${ROLE_COLORS[ROL_SOPORTE]}`}
+                      >
+                        <ShieldCheck className="size-3" />
+                        {ROLE_LABELS[ROL_SOPORTE]}
+                      </span>
+                    ) : (
+                      <Select
+                        value={m.role}
+                        onValueChange={(role: 'owner' | 'member' | 'viewer') =>
+                          rolesMutation.mutate({ memberId: m.memberId, role })
+                        }
+                      >
+                        <SelectTrigger className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="owner">
+                            <div className="flex items-center gap-2">
+                              <Shield className="size-3" />
+                              Administrador
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="member">Miembro</SelectItem>
+                          <SelectItem value="viewer">Solo lectura</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setRemoveMemberId(m.memberId)}
-                    >
-                      <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
-                    </Button>
+                    {/* El acceso de soporte no se revoca desde acá: se cierra
+                        saliendo, desde el módulo de plataforma. */}
+                    {m.esSoporte || m.userId === usuarioActual?.id ? (
+                      <span
+                        title={
+                          m.esSoporte
+                            ? 'Acceso de la plataforma. Se cierra desde Orddo, no desde el estudio.'
+                            : 'Sos vos: pedile a otro administrador que te quite.'
+                        }
+                        className="text-[11.5px] text-[var(--arca-ink-4)]"
+                      >
+                        —
+                      </span>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setRemoveMemberId(m.memberId)}
+                      >
+                        <Trash2 className="size-4 text-[var(--arca-accent-neg-fg)]" />
+                      </Button>
+                    )}
                     <AlertDialog
                       open={removeMemberId === m.memberId}
                       onOpenChange={(open) =>
@@ -732,6 +776,114 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   ai_agent: 'Asistente inteligente con acceso a datos fiscales',
 };
 
+/**
+ * El desvío con el que el estudio quiere que le avisen del control bancario.
+ *
+ * El 20% con el que arranca salió de mirar unas pocas empresas. Un estudio
+ * con clientes grandes lo va a querer más alto y uno con monotributistas, más
+ * bajo; hasta ahora había que tocar el código.
+ *
+ * Solo el porcentaje: antes había también un importe mínimo en pesos, pero
+ * envejecía con la inflación y no significaba lo mismo en una empresa que
+ * factura $2M que en una que factura $2.000M.
+ */
+function UmbralBancoCard() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['admin', 'umbralBanco'],
+    queryFn: () => getUmbralControlBancario(),
+  });
+
+  const [porcentaje, setPorcentaje] = useState('');
+  // Los inputs se llenan con lo guardado la primera vez que llega, y no
+  // vuelven a pisarse mientras la persona escribe.
+  const [cargado, setCargado] = useState(false);
+  if (data && !cargado) {
+    setPorcentaje(String(data.porcentaje));
+    setCargado(true);
+  }
+
+  const guardar = useMutation({
+    mutationFn: () =>
+      setUmbralControlBancario({
+        data: { porcentaje: Number(porcentaje) },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: ['admin', 'umbralBanco'],
+      });
+      void queryClient.invalidateQueries({ queryKey: ['inicio'] });
+      void queryClient.invalidateQueries({ queryKey: ['controlBancario'] });
+      toast.success('Umbral guardado');
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  // Un campo vacío no es un cero: `Number('')` da 0, que acá sería "avisame
+  // siempre".
+  const pct = porcentaje.trim() === '' ? NaN : Number(porcentaje);
+  const error =
+    !Number.isFinite(pct) || pct < 1 || pct > 100
+      ? 'La diferencia va de 1 a 100%.'
+      : null;
+  const sinCambios = !!data && pct === data.porcentaje && !data.esDefault;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Aviso de control bancario</CardTitle>
+        <CardDescription>
+          Con qué diferencia entre lo que entró al banco y lo que se facturó
+          querés que aparezca el aviso en Inicio. Se mide sobre lo facturado,
+          así que el mismo número sirve para una empresa chica y para una
+          grande.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-[var(--arca-ink-3)]">Cargando...</p>
+        ) : (
+          <div className="flex flex-wrap items-end gap-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="umbral-pct">Diferencia mínima (%)</Label>
+              <Input
+                id="umbral-pct"
+                type="number"
+                min={1}
+                max={100}
+                value={porcentaje}
+                onChange={(e) => setPorcentaje(e.target.value)}
+                className="w-[140px]"
+              />
+            </div>
+            <Button
+              onClick={() => guardar.mutate()}
+              disabled={!!error || sinCambios || guardar.isPending}
+            >
+              {guardar.isPending ? 'Guardando…' : 'Guardar'}
+            </Button>
+            <p
+              className="text-[12px]"
+              style={{
+                color: error
+                  ? 'var(--arca-accent-neg-fg)'
+                  : 'var(--arca-ink-3)',
+              }}
+            >
+              {/* Lo que se va a guardar, en una frase. */}
+              {error ??
+                `Vas a recibir aviso cuando la diferencia supere el ${pct}% de lo facturado, y en rojo cuando pase el ${pct * 2}%.`}
+              {!error && data?.esDefault
+                ? ' Todavía sin configurar: rige el valor con el que arranca el sistema.'
+                : ''}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ModulesTab() {
   const queryClient = useQueryClient();
   const { data: modules, isLoading } = useQuery({
@@ -821,9 +973,28 @@ function InviteDialog() {
 
   const mutation = useMutation({
     mutationFn: () => inviteMember({ data: { email, role } }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'invitations'] });
-      toast.success(`Invitación enviada a ${email}`);
+      if (res.emailEnviado) {
+        toast.success(`Invitación enviada a ${email}`);
+      } else {
+        // Sin correo configurado la invitación existe igual, pero nadie la va
+        // a recibir: hay que decirlo y dar el link a mano, no cantar victoria.
+        toast.warning('Invitación creada, pero no se envió el correo', {
+          description:
+            'No hay servicio de correo configurado. Copiá el link y pasáselo vos.',
+          duration: 10000,
+          action: {
+            label: 'Copiar link',
+            onClick: () => {
+              void navigator.clipboard
+                .writeText(res.link)
+                .then(() => toast.success('Link copiado'))
+                .catch(() => toast.error('No se pudo copiar'));
+            },
+          },
+        });
+      }
       setEmail('');
       setRole('member');
       setStep('edit');

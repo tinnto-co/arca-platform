@@ -68,7 +68,7 @@ export const orgModule = pgEnum("org_module", ['sueldos', 'banco', 'contabilidad
 export const periodoEstado = pgEnum("periodo_estado", ['abierto', 'cerrado'])
 export const provinciaFuente = pgEnum("provincia_fuente", ['padron', 'nosis', 'manual'])
 export const reciboTipo = pgEnum("recibo_tipo", ['mensual', 'quincenal', 'sac', 'liquidacion_final', 'vacaciones', 'anticipo', 'comisiones', 'fondo_desempleo', 'otros'])
-export const reglaMapeoBase = pgEnum("regla_mapeo_base", ['total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo'])
+export const reglaMapeoBase = pgEnum("regla_mapeo_base", ['total', 'neto', 'iva', 'otros_tributos', 'valor_concepto', 'fijo', 'porcentaje'])
 export const reglaMapeoModulo = pgEnum("regla_mapeo_modulo", ['comprobante', 'recibo', 'movimiento_bancario'])
 export const reglaMapeoTipo = pgEnum("regla_mapeo_tipo", ['default', 'condicional'])
 export const relacionFuente = pgEnum("relacion_fuente", ['discovery', 'manual'])
@@ -113,6 +113,12 @@ export const agentConversation = pgTable("agent_conversation", {
 	userId: text("user_id").notNull(),
 	clienteId: uuid("cliente_id"),
 	titulo: text().default('Nueva conversación').notNull(),
+	/** Anclada arriba del listado por decisión del usuario. */
+	fijado: boolean().default(false).notNull(),
+	/** De qué habla, en una palabra. La escribe el agente al cerrar el primer turno. */
+	etiqueta: text(),
+	/** Legible por cualquier miembro de la misma organización, en solo lectura. */
+	compartido: boolean().default(false).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
@@ -1249,6 +1255,9 @@ export const asientoLinea = pgTable("asiento_linea", {
 	orden: integer().default(0).notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+	// De qué regla salió la línea. En sueldos cada línea puede venir de una
+	// distinta, así que la cabecera no alcanza.
+	reglaId: uuid("regla_id"),
 }, (table) => [
 	index("idx_asiento_linea_asiento").using("btree", table.asientoId.asc().nullsLast().op("uuid_ops")),
 	index("idx_asiento_linea_cuenta").using("btree", table.cuentaId.asc().nullsLast().op("uuid_ops")),
@@ -2143,6 +2152,23 @@ export const obraSocial = pgTable("obra_social", {
 	unique("obra_social_codigo_key").on(table.codigo),
 ]);
 
+export const configuracionOrg = pgTable("configuracion_org", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	orgId: text("org_id").notNull(),
+	clave: text().notNull(),
+	valor: jsonb().notNull(),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	foreignKey({
+			columns: [table.orgId],
+			foreignColumns: [organization.id],
+			name: "configuracion_org_org_id_fkey"
+		}).onDelete("cascade"),
+	unique("configuracion_org_org_id_clave_key").on(table.orgId, table.clave),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
 export const organizationModule = pgTable("organization_module", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	orgId: text("org_id").notNull(),
@@ -2256,10 +2282,12 @@ export const reglaMapeo = pgTable("regla_mapeo", {
 export const reglaMapeoLinea = pgTable("regla_mapeo_linea", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	reglaId: uuid("regla_id").notNull(),
-	cuentaId: uuid("cuenta_id").notNull(),
+	cuentaId: uuid("cuenta_id"),
+	usaCuentaBanco: boolean("usa_cuenta_banco").default(false).notNull(),
 	lado: asientoLineaLado().notNull(),
 	base: reglaMapeoBase().notNull(),
 	importeFijo: numeric("importe_fijo", { precision: 15, scale:  2 }),
+	porcentaje: numeric({ precision: 5, scale:  2 }),
 	orden: integer().default(0).notNull(),
 	descripcion: text(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -2643,6 +2671,26 @@ export const firmante = pgTable("firmante", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 ]);
 
+export const saldoBancario = pgTable("saldo_bancario", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	cuentaBancariaId: uuid("cuenta_bancaria_id").notNull(),
+	periodo: date().notNull(),
+	saldoInicial: numeric("saldo_inicial", { precision: 15, scale:  2 }).notNull(),
+	saldoFinal: numeric("saldo_final", { precision: 15, scale:  2 }).notNull(),
+	extractoId: uuid("extracto_id"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_saldo_bancario_cuenta").using("btree", table.cuentaBancariaId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.cuentaBancariaId],
+			foreignColumns: [cuentaBancaria.id],
+			name: "saldo_bancario_cuenta_bancaria_id_fkey"
+		}).onDelete("cascade"),
+	unique("saldo_bancario_cuenta_bancaria_id_periodo_key").on(table.cuentaBancariaId, table.periodo),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"] }),
+]);
+
 export const movimientoBancario = pgTable("movimiento_bancario", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	cuentaBancariaId: uuid("cuenta_bancaria_id").notNull(),
@@ -2659,6 +2707,8 @@ export const movimientoBancario = pgTable("movimiento_bancario", {
 	categoria: text(),
 	categoriaFuente: text("categoria_fuente"),
 	excluido: boolean().default(false).notNull(),
+	asientoId: uuid("asiento_id"),
+	noContabilizar: boolean("no_contabilizar").default(false).notNull(),
 	fuente: datoFuente().default('import').notNull(),
 	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -3009,4 +3059,35 @@ export const extractoBancario = pgTable("extracto_bancario", {
 			name: "extracto_bancario_org_id_fkey"
 		}).onDelete("cascade"),
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_app", "arca_agent"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
+]);
+
+/**
+ * Bitácora de accesos del superadmin a estudios que no son suyos.
+ *
+ * El acceso vive como una fila en `member` con rol 'superadmin', que se borra
+ * al salir; esta tabla es la que sobrevive y responde quién entró a qué
+ * estudio y cuándo, esté el acceso abierto o cerrado.
+ */
+export const superadminAcceso = pgTable("superadmin_acceso", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	userId: text("user_id").notNull(),
+	organizationId: text("organization_id").notNull(),
+	entroAt: timestamp("entro_at", { withTimezone: true }).defaultNow().notNull(),
+	salioAt: timestamp("salio_at", { withTimezone: true }),
+	/** Para qué se entró. Es lo que convierte el registro en algo mostrable. */
+	motivo: text(),
+});
+
+/**
+ * Tutoriales que cada usuario ya terminó u omitió. Sin fila, el tutorial se
+ * abre solo la próxima vez que entra al módulo.
+ */
+export const usuarioTutorial = pgTable("usuario_tutorial", {
+	userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+	tutorial: text().notNull(),
+	estado: text().$type<'completado' | 'omitido'>().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	primaryKey({ columns: [table.userId, table.tutorial], name: "usuario_tutorial_pkey" }),
+	check("usuario_tutorial_estado_check", sql`${table.estado} IN ('completado', 'omitido')`),
 ]);

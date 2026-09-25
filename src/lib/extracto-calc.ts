@@ -6,6 +6,7 @@
  * la lectura perdió movimientos (o leyó mal un importe) y hay que revisar
  * antes de guardar. Nunca un descuadre silencioso.
  */
+import { aLatino } from './texto-latino';
 
 export interface MovimientoExtraido {
   fecha: string;
@@ -70,22 +71,48 @@ export function monedaIso(valor: string): string {
 export type SemaforoIncongruencia = 'ok' | 'atencion' | 'alerta';
 
 /**
- * Semáforo de Banco vs Facturación. La brecha es significativa cuando pasa
- * el 20% Y el millón de pesos a la vez (una brecha de 25% sobre $40.000 no
- * amerita rojo; una de $2M sobre $200M tampoco). Un solo umbral superado
- * queda en atención.
+ * Cuándo una brecha amerita aviso. Cada estudio puede correr el número.
+ *
+ * Solo el porcentaje: un monto fijo envejece mal con la inflación y obliga a
+ * revisarlo todos los años, y además no significa lo mismo en una empresa que
+ * factura $2M que en una que factura $2.000M. El porcentaje se sostiene solo.
+ */
+export interface UmbralControlBancario {
+  /** Diferencia sobre lo facturado, en puntos porcentuales. */
+  porcentaje: number;
+}
+
+/**
+ * El umbral con el que arrancan todos los estudios. Sale de la reunión del
+ * 23/9: el estudio quería mirar varias empresas antes de fijar un número, así
+ * que se dejó el que ya usaba la pantalla.
+ */
+export const UMBRAL_CONTROL_BANCARIO_DEFAULT: UmbralControlBancario = {
+  porcentaje: 20,
+};
+
+/**
+ * Semáforo de Banco vs Facturación, por porcentaje sobre lo facturado.
+ *
+ * Tres niveles con un solo número: hasta el umbral está bien, pasarlo es para
+ * mirar, y doblarlo es para actuar. Antes hacía falta pasar también un monto
+ * en pesos, pero ese monto había que corregirlo cada año por la inflación y
+ * no quería decir lo mismo en una empresa chica que en una grande.
  */
 export function semaforoBancoVsFacturacion(
   ingresosBancarios: number,
-  ventasFacturadas: number
+  ventasFacturadas: number,
+  umbral: UmbralControlBancario = UMBRAL_CONTROL_BANCARIO_DEFAULT
 ): { diferencia: number; porcentaje: number; nivel: SemaforoIncongruencia } {
   const diferencia = round2(ingresosBancarios - ventasFacturadas);
   const base = Math.max(Math.abs(ventasFacturadas), 1);
   const porcentaje = Math.round((Math.abs(diferencia) / base) * 100);
-  const pasaPct = porcentaje > 20;
-  const pasaMonto = Math.abs(diferencia) > 1_000_000;
   const nivel: SemaforoIncongruencia =
-    pasaPct && pasaMonto ? 'alerta' : pasaPct || pasaMonto ? 'atencion' : 'ok';
+    porcentaje > umbral.porcentaje * 2
+      ? 'alerta'
+      : porcentaje > umbral.porcentaje
+        ? 'atencion'
+        : 'ok';
   return { diferencia, porcentaje, nivel };
 }
 
@@ -98,8 +125,10 @@ export function idExternoDeMovimiento(
   m: MovimientoExtraido,
   ocurrencia: number
 ): string {
+  // `aLatino`: la IA puede escribir la misma descripción con letras
+  // cirílicas que se ven latinas, y la huella tiene que salir igual.
   const limpio = (s: string) =>
-    s.toUpperCase().replace(/\s+/g, ' ').trim().slice(0, 60);
+    aLatino(s).toUpperCase().replace(/\s+/g, ' ').trim().slice(0, 60);
   return [
     'pdf',
     m.fecha,

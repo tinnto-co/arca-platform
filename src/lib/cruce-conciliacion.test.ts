@@ -1,0 +1,352 @@
+import { describe, expect, it } from 'vitest';
+import {
+  asignarCruces,
+  type FacturaDisponible,
+  type MovimientoACruzar,
+} from './cruce-conciliacion';
+
+const cobro = (
+  id: string,
+  fecha: string,
+  extra: Partial<MovimientoACruzar> = {}
+): MovimientoACruzar => ({
+  id,
+  fecha,
+  importe: 14900,
+  direccion: 'ingreso',
+  contraparteId: null,
+  ...extra,
+});
+
+const factura = (
+  id: string,
+  fechaEmision: string,
+  extra: Partial<FacturaDisponible> = {}
+): FacturaDisponible => ({
+  id,
+  fechaEmision,
+  total: 14900,
+  direccion: 'emitido',
+  contraparteId: null,
+  ...extra,
+});
+
+describe('asignarCruces', () => {
+  it('una factura y cinco cobros: se la lleva el del mismo día, no el primero de la lista', () => {
+    const cruces = asignarCruces(
+      [
+        cobro('a', '2026-01-02'),
+        cobro('b', '2026-01-04'),
+        cobro('c', '2026-01-06'), // mismo día que la factura
+        cobro('d', '2026-01-08'),
+        cobro('e', '2026-01-09'),
+      ],
+      [factura('f', '2026-01-06')]
+    );
+    expect(cruces).toHaveLength(1);
+    expect(cruces[0]).toMatchObject({ movimientoId: 'c', comprobanteId: 'f' });
+    expect(cruces[0].confianza).toBeCloseTo(0.6);
+  });
+
+  it('la misma contraparte gana aunque la fecha esté más lejos', () => {
+    const cruces = asignarCruces(
+      [
+        cobro('mismo-dia', '2026-01-06'),
+        cobro('de-mica', '2026-01-09', { contraparteId: 'mica' }),
+      ],
+      [factura('f', '2026-01-06', { contraparteId: 'mica' })]
+    );
+    expect(cruces).toEqual([
+      expect.objectContaining({ movimientoId: 'de-mica', comprobanteId: 'f' }),
+    ]);
+    expect(cruces[0].confianza).toBeCloseTo(0.94);
+  });
+
+  it('a igual distancia, el cobro posterior a la factura antes que el anterior', () => {
+    const cruces = asignarCruces(
+      [cobro('antes', '2026-01-05'), cobro('despues', '2026-01-07')],
+      [factura('f', '2026-01-06')]
+    );
+    expect(cruces[0].movimientoId).toBe('despues');
+  });
+
+  it('varias facturas del mismo importe: cada una al cobro más cercano, sin repetir', () => {
+    const cruces = asignarCruces(
+      [
+        cobro('a', '2026-01-02'),
+        cobro('b', '2026-01-02'),
+        cobro('c', '2026-01-06'),
+      ],
+      [
+        factura('f1', '2026-01-02'),
+        factura('f2', '2026-01-02'),
+        factura('f3', '2026-01-06'),
+      ]
+    );
+    const pares = cruces.map((c) => `${c.movimientoId}-${c.comprobanteId}`);
+    expect(pares).toHaveLength(3);
+    expect(new Set(cruces.map((c) => c.comprobanteId)).size).toBe(3);
+    expect(pares).toContain('c-f3');
+  });
+
+  it('el resultado no depende del orden en que llegan los datos', () => {
+    const movimientos = [
+      cobro('a', '2026-01-02'),
+      cobro('b', '2026-01-04'),
+      cobro('c', '2026-01-06'),
+    ];
+    const facturas = [factura('f1', '2026-01-03'), factura('f2', '2026-01-06')];
+    const ida = asignarCruces(movimientos, facturas);
+    const vuelta = asignarCruces(
+      [...movimientos].reverse(),
+      [...facturas].reverse()
+    );
+    const clave = (xs: typeof ida) =>
+      xs.map((x) => `${x.movimientoId}-${x.comprobanteId}`).sort();
+    expect(clave(vuelta)).toEqual(clave(ida));
+  });
+
+  it('respeta lado, importe, ventana de días y lo descartado', () => {
+    expect(
+      asignarCruces(
+        [cobro('a', '2026-01-06')],
+        [factura('f', '2026-01-06', { direccion: 'recibido' })]
+      )
+    ).toEqual([]);
+    expect(
+      asignarCruces(
+        [cobro('a', '2026-01-06')],
+        [factura('f', '2026-01-06', { total: 15000 })]
+      )
+    ).toEqual([]);
+    expect(
+      asignarCruces([cobro('a', '2026-02-20')], [factura('f', '2026-01-06')])
+    ).toEqual([]);
+    // Descartado a → f: pasa al siguiente candidato.
+    expect(
+      asignarCruces(
+        [cobro('a', '2026-01-06'), cobro('b', '2026-01-07')],
+        [factura('f', '2026-01-06')],
+        new Set(['a|f'])
+      )
+    ).toEqual([expect.objectContaining({ movimientoId: 'b' })]);
+  });
+
+  describe('parejas que no tienen sentido aunque el importe coincida (casos reales de Admip, mayo 2025)', () => {
+    const pago = (
+      id: string,
+      descripcion: string,
+      extra: Partial<MovimientoACruzar> = {}
+    ): MovimientoACruzar =>
+      cobro(id, '2025-05-20', {
+        direccion: 'egreso',
+        importe: 700000,
+        descripcion,
+        categoria: 'transferencias',
+        ...extra,
+      });
+    const alquiler = factura('dermerdjian', '2025-05-19', {
+      direccion: 'recibido',
+      total: 700000,
+      contraparteId: 'ct-dermerdjian',
+      contraparteNombre: 'DERMERDJIAN LIDIA BEATRIZ',
+    });
+
+    it('si el banco nombra a otra persona, la sugiere con baja seguridad (caso real: alquiler pagado a Montenegro)', () => {
+      const [c] = asignarCruces(
+        [pago('a', 'Transferencia realizada A montenegro horacio anto / var')],
+        [alquiler]
+      );
+      expect(c).toMatchObject({
+        movimientoId: 'a',
+        comprobanteId: 'dermerdjian',
+      });
+      // 50% − 20% por el nombre + 8% por 1 día de diferencia.
+      expect(c.confianza).toBeCloseTo(0.38);
+    });
+
+    it('si hay otra factura del mismo importe con el nombre que coincide, gana esa', () => {
+      const [c] = asignarCruces(
+        [pago('a', 'Transferencia realizada A montenegro horacio anto / var')],
+        [
+          alquiler,
+          factura('montenegro', '2025-05-18', {
+            direccion: 'recibido',
+            total: 700000,
+            contraparteId: 'ct-montenegro',
+            contraparteNombre: 'MONTENEGRO HORACIO ANTONIO',
+          }),
+        ]
+      );
+      expect(c.comprobanteId).toBe('montenegro');
+    });
+
+    it('de 6 a 30 días con otro nombre no la sugiere (dos dudas juntas)', () => {
+      expect(
+        asignarCruces(
+          [
+            pago(
+              'a',
+              'Transferencia realizada A montenegro horacio anto / var',
+              {
+                fecha: '2025-06-05',
+              }
+            ),
+          ],
+          [alquiler]
+        )
+      ).toEqual([]);
+    });
+
+    it('no sugiere un retiro de efectivo', () => {
+      expect(
+        asignarCruces(
+          [
+            pago('a', 'Retiro en efvo por caja suc san cristobal', {
+              categoria: 'varios',
+            }),
+            pago('b', 'EXTRACCION CAJERO 1234', { categoria: 'varios' }),
+            pago('c', 'Movimiento', { categoria: 'efectivo' }),
+          ],
+          [alquiler]
+        )
+      ).toEqual([]);
+    });
+
+    it('sí sugiere si la descripción nombra a la misma persona', () => {
+      expect(
+        asignarCruces(
+          [pago('a', 'Transferencia realizada A dermerdjian lidia / var')],
+          [alquiler]
+        )
+      ).toHaveLength(1);
+    });
+
+    it('sí sugiere si la contraparte coincide, aunque el texto no la nombre', () => {
+      expect(
+        asignarCruces(
+          [
+            pago('a', 'Transferencia realizada A otra persona', {
+              contraparteId: 'ct-dermerdjian',
+            }),
+          ],
+          [alquiler]
+        )
+      ).toHaveLength(1);
+    });
+
+    it('sí sugiere si la descripción no nombra a nadie', () => {
+      expect(
+        asignarCruces([pago('a', 'TRANSFERENCIA 000123')], [alquiler])
+      ).toHaveLength(1);
+    });
+
+    it('en compras no se exige el nombre: la descripción nombra el producto', () => {
+      for (const descripcion of [
+        'Compra con tarjeta de debito Merpago*shellbox - tarj nr',
+        'Compra de Escalera Madera T /pintor 5 Escalones',
+        'Pago de suscripción Universal Plus',
+      ]) {
+        expect(
+          asignarCruces([pago('a', descripcion)], [alquiler]),
+          descripcion
+        ).toHaveLength(1);
+      }
+    });
+
+    it('a consumidor final no se exige el nombre (la factura no lo dice)', () => {
+      expect(
+        asignarCruces(
+          [
+            cobro('a', '2026-01-02', {
+              descripcion: 'Transferencia recibida OMAR ALBERTO, DAVID',
+            }),
+          ],
+          [
+            factura('f', '2026-01-02', {
+              contraparteNombre: 'Consumidor final',
+            }),
+          ]
+        )
+      ).toHaveLength(1);
+    });
+  });
+
+  describe('facturas de 6 a 30 días antes', () => {
+    const pagoJalil = cobro('jalil', '2025-05-22', {
+      direccion: 'egreso',
+      importe: 1500000,
+      descripcion: 'Debito transf. online banking',
+    });
+    const facturaJalil = factura('5-10', '2025-05-12', {
+      direccion: 'recibido',
+      total: 1500000,
+      contraparteId: 'ct-jalil',
+      contraparteNombre: 'JALIL DANIEL OMAR',
+    });
+
+    it('la sugiere si es la única factura posible (caso real JALIL, 10 días)', () => {
+      const [c] = asignarCruces([pagoJalil], [facturaJalil]);
+      expect(c).toMatchObject({ movimientoId: 'jalil', comprobanteId: '5-10' });
+      // Sin contraparte y lejos: seguridad baja (50% − 1% por los 10 días).
+      expect(c.confianza).toBeCloseTo(0.49);
+    });
+
+    it('no la sugiere si hay varias posibles con ese importe', () => {
+      expect(
+        asignarCruces(
+          [pagoJalil],
+          [
+            facturaJalil,
+            factura('otra', '2025-05-02', {
+              ...facturaJalil,
+              id: 'otra',
+              fechaEmision: '2025-05-02',
+              contraparteId: 'ct-otro',
+              contraparteNombre: 'OTRO PROVEEDOR',
+            }),
+          ]
+        )
+      ).toEqual([]);
+    });
+
+    it('con la misma contraparte la sugiere aunque haya varias, y elige la más cercana', () => {
+      const conContraparte = { ...pagoJalil, contraparteId: 'ct-jalil' };
+      const [c] = asignarCruces(
+        [conContraparte],
+        [
+          facturaJalil,
+          { ...facturaJalil, id: 'vieja', fechaEmision: '2025-04-30' },
+        ]
+      );
+      expect(c.comprobanteId).toBe('5-10');
+      expect(c.confianza).toBeCloseTo(0.89);
+    });
+
+    it('no busca más de 30 días, ni facturas posteriores al movimiento', () => {
+      expect(
+        asignarCruces(
+          [pagoJalil],
+          [{ ...facturaJalil, fechaEmision: '2025-04-15' }]
+        )
+      ).toEqual([]);
+      expect(
+        asignarCruces(
+          [pagoJalil],
+          [{ ...facturaJalil, fechaEmision: '2025-06-05' }]
+        )
+      ).toEqual([]);
+    });
+
+    it('si hay una cerca, no se usa la lejana', () => {
+      const [c] = asignarCruces(
+        [pagoJalil],
+        [
+          facturaJalil,
+          { ...facturaJalil, id: 'cerca', fechaEmision: '2025-05-20' },
+        ]
+      );
+      expect(c.comprobanteId).toBe('cerca');
+    });
+  });
+});

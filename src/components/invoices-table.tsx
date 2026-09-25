@@ -10,7 +10,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { type DateRange } from 'react-day-picker';
 import ExcelJSRaw from 'exceljs';
@@ -40,7 +40,11 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { getComprobantes, getComprobante } from '@/actions/comprobante';
+import {
+  getComprobantes,
+  getComprobante,
+  getResumenComprobantes,
+} from '@/actions/comprobante';
 import { useClienteSeleccionado } from '@/lib/cliente-seleccionado';
 import { Paginador } from '@/components/shared/paginador';
 import { descargarComprobantePdf } from '@/components/comprobante-pdf';
@@ -151,6 +155,38 @@ function formatNumero(puntoVenta: number, numero: number): string {
   return `${String(puntoVenta).padStart(4, '0')}-${String(numero).padStart(8, '0')}`;
 }
 
+/**
+ * Los filtros de la página de Facturas, tal como van en la URL. Todos son
+ * opcionales: sin valor, no filtra (y el orden es por fecha, más nueva primero).
+ */
+export interface FiltrosFacturas {
+  /** Código AFIP del tipo de comprobante. */
+  tipo?: string;
+  direccion?: 'emitido' | 'recibido';
+  /** 'YYYY-MM-DD' */
+  desde?: string;
+  /** 'YYYY-MM-DD' */
+  hasta?: string;
+  /** Contraparte, por nombre o CUIT. */
+  q?: string;
+  pagina?: number;
+  orden?: 'fecha_asc' | 'monto_desc' | 'monto_asc' | 'sin_orden';
+}
+
+/** Formatea YYYY-MM-DD a dd/MM/yyyy sin pasar por UTC (evita desfase de día en otras zonas horarias). */
+function formatDateOnlyString(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-');
+  return d && m && y ? `${d}/${m}/${y}` : isoDate;
+}
+
+function formatCurrency(amount: string, currency: string) {
+  const numAmount = parseFloat(amount);
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: currency || 'ARS',
+  }).format(numAmount);
+}
+
 interface InvoicesTableProps {
   /** Cliente (entidad fiscal) al que se acotan los comprobantes. */
   clienteId?: string;
@@ -186,6 +222,15 @@ interface InvoicesTableProps {
   }) => void;
   /** Si se pasa, abre automáticamente el detalle de esa factura (deep-link). */
   openInvoiceId?: string;
+  /**
+   * Página de Facturas: los filtros viven en la URL (al recargar no se
+   * pierden y el link se puede compartir). La tabla los lee de `valor` y
+   * pide cada cambio con `onChange`. Sin esto, los guarda ella misma.
+   */
+  filtrosUrl?: {
+    valor: FiltrosFacturas;
+    onChange: (cambio: Partial<FiltrosFacturas>) => void;
+  };
 }
 
 export interface InvoicesTableRef {
@@ -207,6 +252,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       toolbarExtra,
       onFiltersChange,
       openInvoiceId,
+      filtrosUrl,
     }: InvoicesTableProps = {},
     ref
   ) {
@@ -215,17 +261,46 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
     /** La tabla está embebida en el detalle de un cliente. */
     const isEmbedded = fixedClienteId !== undefined || clientId !== undefined;
 
-    const [searchTerm, setSearchTerm] = useState('');
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    const url = filtrosUrl?.valor;
+    /** Pide un cambio de filtros a la URL; cualquiera vuelve a la página 1. */
+    const cambiarUrl = (cambio: Partial<FiltrosFacturas>) =>
+      filtrosUrl?.onChange({ pagina: undefined, ...cambio });
+
+    const [searchTerm, setSearchTerm] = useState(url?.q ?? '');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(
+      url?.q ?? ''
+    );
     // En la página de Facturas el filtro de cliente es el selector global de
     // empresa del header (patrón de Contabilidad/Sueldos/IVA); embebida en la
     // ficha de un cliente, el cliente ya viene fijo por prop.
     const [clienteGlobal] = useClienteSeleccionado();
     const clientFilter = isEmbedded ? 'all' : (clienteGlobal ?? 'all');
     const [profileFilter, setProfileFilter] = useState<string>('all');
-    const [dateRange, setDateRange] = useState<DateRange | undefined>(
+    const [calendarioAbierto, setCalendarioAbierto] = useState(false);
+    /** Inicio del rango elegido en el calendario, mientras falta el fin. */
+    const [primerDia, setPrimerDia] = useState<Date | undefined>();
+    const [dateRangeLocal, setDateRangeLocal] = useState<DateRange | undefined>(
       undefined
     );
+    const dateRange: DateRange | undefined = url
+      ? url.desde
+        ? {
+            from: parseISO(url.desde),
+            to: url.hasta ? parseISO(url.hasta) : undefined,
+          }
+        : undefined
+      : dateRangeLocal;
+    const setDateRange = (r: DateRange | undefined) => {
+      if (!url) {
+        setDateRangeLocal(r);
+        setCurrentPage(1);
+        return;
+      }
+      cambiarUrl({
+        desde: r?.from ? format(r.from, 'yyyy-MM-dd') : undefined,
+        hasta: r?.to ? format(r.to, 'yyyy-MM-dd') : undefined,
+      });
+    };
     /** Padre controla fechas cuando hay valores definidos; si estamos en modo filtros controlados, undefined/undefined = Sin período = sin filtro de fecha. */
     const isDateControlled =
       controlledDateFrom !== undefined && controlledDateTo !== undefined;
@@ -233,19 +308,97 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       controlledProfileFilter !== undefined &&
       controlledTypeFilter !== undefined &&
       controlledDirectionFilter !== undefined;
-    const [typeFilter, setTypeFilter] = useState<string>('all');
-    const [directionFilter, setDirectionFilter] = useState<string>('all');
-    const [sortBy, setSortBy] = useState<'total' | 'fechaEmision' | undefined>(
-      'fechaEmision'
-    );
-    const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(
-      'desc'
-    );
-    const [currentPage, setCurrentPage] = useState(1);
+    const [typeFilterLocal, setTypeFilterLocal] = useState<string>('all');
+    const typeFilter = url ? (url.tipo ?? 'all') : typeFilterLocal;
+    const setTypeFilter = (v: string) => {
+      if (url) cambiarUrl({ tipo: v === 'all' ? undefined : v });
+      else {
+        setTypeFilterLocal(v);
+        setCurrentPage(1);
+      }
+    };
+    const [directionFilterLocal, setDirectionFilterLocal] =
+      useState<string>('all');
+    const directionFilter = url
+      ? (url.direccion ?? 'all')
+      : directionFilterLocal;
+    const setDirectionFilter = (v: string) => {
+      if (url)
+        cambiarUrl({
+          direccion: v === 'emitido' || v === 'recibido' ? v : undefined,
+        });
+      else {
+        setDirectionFilterLocal(v);
+        setCurrentPage(1);
+      }
+    };
+    const [sortByLocal, setSortByLocal] = useState<
+      'total' | 'fechaEmision' | undefined
+    >('fechaEmision');
+    const [sortOrderLocal, setSortOrderLocal] = useState<
+      'asc' | 'desc' | undefined
+    >('desc');
+    const sortBy: 'total' | 'fechaEmision' | undefined = url
+      ? url.orden === 'sin_orden'
+        ? undefined
+        : url.orden?.startsWith('monto')
+          ? 'total'
+          : 'fechaEmision'
+      : sortByLocal;
+    const sortOrder: 'asc' | 'desc' | undefined = url
+      ? url.orden === 'sin_orden'
+        ? undefined
+        : url.orden?.endsWith('asc')
+          ? 'asc'
+          : 'desc'
+      : sortOrderLocal;
+    const setOrden = (
+      by: 'total' | 'fechaEmision' | undefined,
+      order: 'asc' | 'desc' | undefined
+    ) => {
+      if (!url) {
+        setSortByLocal(by);
+        setSortOrderLocal(order);
+        return;
+      }
+      const orden = !by
+        ? 'sin_orden'
+        : by === 'total'
+          ? order === 'asc'
+            ? 'monto_asc'
+            : 'monto_desc'
+          : order === 'asc'
+            ? 'fecha_asc'
+            : undefined;
+      cambiarUrl({ orden });
+    };
+    const [currentPageLocal, setCurrentPageLocal] = useState(1);
+    const currentPage = url ? (url.pagina ?? 1) : currentPageLocal;
+    function setCurrentPage(p: number) {
+      if (url) filtrosUrl?.onChange({ pagina: p > 1 ? p : undefined });
+      else setCurrentPageLocal(p);
+    }
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    /**
+     * El tilde del encabezado manda sobre la página que se está viendo, y sólo
+     * sobre ella: suma o quita esos ids conservando lo tildado en las otras.
+     *
+     * Antes reemplazaba el conjunto entero, así que tildar todo en la página 2
+     * borraba la selección de la página 1 —y destildar ahí borraba todo—. La
+     * exportación siempre supo cruzar ids de varias páginas; lo que no dejaba
+     * era juntarlos.
+     */
     const toggleAllInvoices = (ids: string[]) => {
-      const allSel = ids.length > 0 && ids.every((id) => selectedIds.has(id));
-      setSelectedIds(allSel ? new Set() : new Set(ids));
+      const yaEstabanTodas =
+        ids.length > 0 && ids.every((id) => selectedIds.has(id));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (yaEstabanTodas) next.delete(id);
+          else next.add(id);
+        }
+        return next;
+      });
     };
     const toggleInvoiceRow = (id: string) => {
       setSelectedIds((prev) => {
@@ -263,28 +416,48 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
     const pageSize = 10;
 
+    // Con los filtros en la URL, el cambio de empresa ya vuelve a la página
+    // 1 desde la ruta; acá solo la página local.
     useEffect(() => {
-      setCurrentPage(1);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
+      setCurrentPageLocal(1);
     }, [fixedClienteId]);
 
     useEffect(() => {
-      setCurrentPage(1);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
+      setCurrentPageLocal(1);
     }, [clientFilter]);
 
     useEffect(() => {
       const timer = setTimeout(() => {
         setDebouncedSearchTerm(searchTerm);
         if (searchTerm !== debouncedSearchTerm) {
-          setCurrentPage(1);
+          if (url) cambiarUrl({ q: searchTerm || undefined });
+          else setCurrentPageLocal(1);
         }
       }, 500);
       return () => clearTimeout(timer);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchTerm, debouncedSearchTerm]);
+
+    // La búsqueda de la URL cambió desde afuera (atrás del navegador, un
+    // link): el campo la sigue.
+    useEffect(() => {
+      if (!url) return;
+      const q = url.q ?? '';
+      if (q !== debouncedSearchTerm) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
+        setSearchTerm(q);
+        setDebouncedSearchTerm(q);
+      }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [url?.q]);
 
     // Sincronizar rango de fechas cuando el padre controla el período (p. ej. pestaña Facturas). Sin período = undefined/undefined → limpiamos.
     useEffect(() => {
       if (controlledDateFrom && controlledDateTo) {
-        setDateRange({
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
+        setDateRangeLocal({
           from: new Date(controlledDateFrom),
           to: new Date(controlledDateTo),
         });
@@ -293,29 +466,33 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         controlledDateFrom === undefined &&
         controlledDateTo === undefined
       ) {
-        setDateRange(undefined);
+        setDateRangeLocal(undefined);
       }
     }, [controlledDateFrom, controlledDateTo, isFiltersControlled]);
 
     // Sincronizar filtros cuando el padre los controla (módulo Facturas: filtros arriba de las cards)
     useEffect(() => {
       if (isFiltersControlled && controlledProfileFilter !== undefined) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
         setProfileFilter(controlledProfileFilter);
       }
     }, [isFiltersControlled, controlledProfileFilter]);
     useEffect(() => {
       if (isFiltersControlled && controlledTypeFilter !== undefined) {
-        setTypeFilter(controlledTypeFilter);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
+        setTypeFilterLocal(controlledTypeFilter);
       }
     }, [isFiltersControlled, controlledTypeFilter]);
     useEffect(() => {
       if (isFiltersControlled && controlledDirectionFilter !== undefined) {
-        setDirectionFilter(controlledDirectionFilter);
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
+        setDirectionFilterLocal(controlledDirectionFilter);
       }
     }, [isFiltersControlled, controlledDirectionFilter]);
 
     useEffect(() => {
       if (controlledSearchTerm !== undefined) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- sincroniza con la URL o con el padre
         setSearchTerm(controlledSearchTerm);
         setDebouncedSearchTerm(controlledSearchTerm);
       }
@@ -334,10 +511,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       directionFilter,
     ]);
 
-    const effectiveSearchTerm =
-      controlledSearchTerm !== undefined
-        ? controlledSearchTerm
-        : debouncedSearchTerm;
+    const effectiveSearchTerm = controlledSearchTerm ?? debouncedSearchTerm;
 
     /**
      * Cliente por el que se filtra: prop del padre > filtro controlado >
@@ -351,7 +525,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       (clientFilter !== 'all' ? clientFilter : undefined);
 
     /** Sólo los dos valores del enum de BD llegan al server function. */
-    const direccionFiltro =
+    const direccionFiltro: 'emitido' | 'recibido' | undefined =
       directionFilter === 'emitido' || directionFilter === 'recibido'
         ? directionFilter
         : undefined;
@@ -405,6 +579,24 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
           },
         }),
       enabled: !isEmbedded || !!clienteFiltro,
+    });
+
+    /** Filtros de la consulta, sin página ni orden: los usa el resumen. */
+    const filtrosConsulta = {
+      clienteId: clienteFiltro,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+      tipo: tipoFiltro,
+      direccion: direccionFiltro,
+      search: effectiveSearchTerm || undefined,
+    };
+    // Solo en la página de Facturas: embebida en la ficha del cliente, el
+    // padre ya muestra sus totales de ventas y compras.
+    const { data: resumen } = useQuery({
+      queryKey: ['comprobantes-resumen', filtrosConsulta],
+      queryFn: () => getResumenComprobantes({ data: filtrosConsulta }),
+      enabled: !isEmbedded,
+      placeholderData: (previo) => previo,
     });
 
     const handleViewInvoice = async (invoice: ComprobanteRow) => {
@@ -564,20 +756,6 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       handleExportExcel,
     ]);
 
-    /** Formatea YYYY-MM-DD a dd/MM/yyyy sin pasar por UTC (evita desfase de día en otras zonas horarias). */
-    const formatDateOnlyString = (isoDate: string): string => {
-      const [y, m, d] = isoDate.split('-');
-      return d && m && y ? `${d}/${m}/${y}` : isoDate;
-    };
-
-    const formatCurrency = (amount: string, currency: string) => {
-      const numAmount = parseFloat(amount);
-      return new Intl.NumberFormat('es-ES', {
-        style: 'currency',
-        currency: currency || 'ARS',
-      }).format(numAmount);
-    };
-
     const getTypeBadge = (type: string) => {
       const typeMap: Record<
         string,
@@ -683,7 +861,12 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
       return (
         <Badge
           variant={typeInfo.variant}
-          className="!whitespace-normal break-words text-[10px] px-1.5 py-0.5 inline-block max-w-full leading-tight"
+          // Se queda con el `inline-flex items-center justify-center` de la
+          // variante base: con `inline-block` el texto se apoyaba arriba de la
+          // caja de `h-6` y dejaba el aire abajo. Lo que sí hay que soltar es
+          // esa altura fija, porque "Ticket Factura A" necesita dos líneas y
+          // la base recorta con `overflow-hidden`.
+          className="!h-auto !whitespace-normal break-words text-[10px] px-1.5 py-1 max-w-full leading-tight text-center"
         >
           {typeInfo.label}
         </Badge>
@@ -692,24 +875,21 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 
     const handleSortByDate = () => {
       if (sortBy === 'fechaEmision') {
-        setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc');
+        setOrden('fechaEmision', sortOrder === 'desc' ? 'asc' : 'desc');
       } else {
-        setSortBy('fechaEmision');
-        setSortOrder('desc');
+        setOrden('fechaEmision', 'desc');
       }
     };
 
     const handleSortByAmount = () => {
       if (sortBy === 'total') {
         if (sortOrder === 'desc') {
-          setSortOrder('asc');
+          setOrden('total', 'asc');
         } else if (sortOrder === 'asc') {
-          setSortBy(undefined);
-          setSortOrder(undefined);
+          setOrden(undefined, undefined);
         }
       } else {
-        setSortBy('total');
-        setSortOrder('desc');
+        setOrden('total', 'desc');
       }
     };
 
@@ -733,7 +913,7 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
         {(!isFiltersControlled || toolbarExtra) && (
           <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
             <div className="flex flex-1 flex-wrap items-center gap-2">
-              {!isFiltersControlled && isEmbedded && (
+              {!isFiltersControlled && (isEmbedded || url) && (
                 <div className="relative">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--arca-ink-3)]" />
                   <Input
@@ -799,7 +979,13 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                     )}
                   </div>
                 ) : (
-                  <Popover>
+                  <Popover
+                    open={calendarioAbierto}
+                    onOpenChange={(abierto) => {
+                      setCalendarioAbierto(abierto);
+                      setPrimerDia(undefined);
+                    }}
+                  >
                     <PopoverTrigger asChild>
                       <Button
                         id="date"
@@ -836,8 +1022,29 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                         initialFocus
                         mode="range"
                         defaultMonth={dateRange?.from}
-                        selected={dateRange}
-                        onSelect={setDateRange}
+                        selected={
+                          primerDia
+                            ? { from: primerDia, to: undefined }
+                            : dateRange
+                        }
+                        onSelect={(_, dia) => {
+                          // El primer clic marca el inicio y no filtra; el
+                          // segundo cierra el rango (en cualquier orden) y
+                          // recién ahí se aplica. Antes, el primer clic ya
+                          // filtraba por ese solo día y la tabla quedaba
+                          // vacía a mitad de la elección.
+                          if (!primerDia) {
+                            setPrimerDia(dia);
+                            return;
+                          }
+                          const [from, to] =
+                            primerDia <= dia
+                              ? [primerDia, dia]
+                              : [dia, primerDia];
+                          setDateRange({ from, to });
+                          setPrimerDia(undefined);
+                          setCalendarioAbierto(false);
+                        }}
                         numberOfMonths={2}
                         locale={es}
                       />
@@ -873,6 +1080,17 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
                 <LimpiarFiltros
                   onLimpiar={() => {
                     setSearchTerm('');
+                    setDebouncedSearchTerm('');
+                    if (url) {
+                      cambiarUrl({
+                        tipo: undefined,
+                        direccion: undefined,
+                        desde: undefined,
+                        hasta: undefined,
+                        q: undefined,
+                      });
+                      return;
+                    }
                     setTypeFilter('all');
                     setDirectionFilter('all');
                     setDateRange(undefined);
@@ -881,6 +1099,14 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
               )}
             </div>
           </div>
+        )}
+
+        {!isEmbedded && resumen && (
+          <ResumenFacturas
+            resumen={resumen}
+            direccion={direccionFiltro}
+            cargando={isLoading}
+          />
         )}
 
         <div className="overflow-hidden rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] shadow-[var(--arca-shadow-card)]">
@@ -1290,3 +1516,81 @@ const InvoicesTableComponent = forwardRef<InvoicesTableRef, InvoicesTableProps>(
 );
 
 export const InvoicesTable = InvoicesTableComponent;
+
+type Resumen = Awaited<ReturnType<typeof getResumenComprobantes>>;
+
+const pesos = (n: number) =>
+  n.toLocaleString('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    maximumFractionDigits: 0,
+  });
+
+/**
+ * Lo que dejan los filtros, en dos bloques: emitidas (ventas) y recibidas
+ * (compras). Si se filtra por una sola dirección, solo esa.
+ */
+function ResumenFacturas({
+  resumen,
+  direccion,
+  cargando,
+}: {
+  resumen: Resumen;
+  direccion?: 'emitido' | 'recibido';
+  cargando: boolean;
+}) {
+  const bloques = (
+    [
+      ['emitido', 'Emitidas', resumen.emitidos],
+      ['recibido', 'Recibidas', resumen.recibidos],
+    ] as const
+  ).filter(([d]) => !direccion || d === direccion);
+  const hayNotas = bloques.some(([, , b]) => b.notasDeCredito > 0);
+  return (
+    <div className={cn('flex flex-col gap-1.5', cargando && 'opacity-60')}>
+      <div
+        className={cn(
+          'grid gap-[10px]',
+          bloques.length > 1 && 'md:grid-cols-2'
+        )}
+      >
+        {bloques.map(([d, titulo, b]) => (
+          <div
+            key={d}
+            className="rounded-[var(--arca-r-lg)] border border-[var(--arca-border)] bg-[var(--arca-surface)] px-4 py-3 shadow-[var(--arca-shadow-card)]"
+          >
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-3)]">
+                {titulo}
+              </p>
+              <p className="text-[12px] text-[var(--arca-ink-3)]">
+                {b.cantidad.toLocaleString('es-AR')} comprobante
+                {b.cantidad === 1 ? '' : 's'}
+              </p>
+            </div>
+            <p className="mt-1 text-[20px] font-semibold tabular-nums text-[var(--arca-ink)] [font-family:var(--ff-display)]">
+              {pesos(b.total)}
+            </p>
+            <div className="mt-1 flex flex-wrap gap-x-4 text-[12px] tabular-nums text-[var(--arca-ink-2)]">
+              <span>Neto gravado {pesos(b.netoGravado)}</span>
+              <span>IVA {pesos(b.iva)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      {hayNotas && (
+        <p className="text-[11.5px] text-[var(--arca-ink-4)]">
+          En pesos. Las notas de crédito restan (
+          {bloques
+            .filter(([, , b]) => b.notasDeCredito > 0)
+            .map(
+              ([, titulo, b]) =>
+                `${b.notasDeCredito} ${titulo.toLowerCase().slice(0, -1)}${b.notasDeCredito === 1 ? '' : 's'}`
+            )
+            .join(', ')}
+          ).
+        </p>
+      )}
+    </div>
+  );
+}

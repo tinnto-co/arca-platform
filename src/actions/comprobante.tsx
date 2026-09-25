@@ -26,6 +26,7 @@ import {
   isNull,
   isNotNull,
 } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { calcularIva, type ComprobanteAlicuotaRow } from '@/lib/iva-calc';
 
 /** Valida que el cliente sea de la organización activa. */
@@ -43,17 +44,40 @@ function periodoADate(periodo: string): string {
   return `${periodo}-01`;
 }
 
+/** Filtros de la grilla de Facturas: los comparten la lista y su resumen. */
+const filtrosComprobantes = z.object({
+  clienteId: z.string().optional(),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+  tipo: z.number().optional(),
+  direccion: z.enum(['emitido', 'recibido']).optional(),
+  search: z.string().optional(),
+});
+
+/** El `where` de esos filtros. La búsqueda necesita el join con `contraparte`. */
+function condicionesComprobantes(
+  orgId: string,
+  f: z.infer<typeof filtrosComprobantes>
+) {
+  const conditions = [eq(comprobante.orgId, orgId)];
+  if (f.clienteId) conditions.push(eq(comprobante.clienteId, f.clienteId));
+  if (f.dateFrom) conditions.push(gte(comprobante.fechaEmision, f.dateFrom));
+  if (f.dateTo) conditions.push(lte(comprobante.fechaEmision, f.dateTo));
+  if (f.tipo !== undefined) conditions.push(eq(comprobante.tipo, f.tipo));
+  if (f.direccion) conditions.push(eq(comprobante.direccion, f.direccion));
+  if (f.search) {
+    conditions.push(
+      sql`(${contraparte.nombre} ILIKE ${`%${f.search}%`} OR ${contraparte.docNro} ILIKE ${`%${f.search}%`})`
+    );
+  }
+  return and(...conditions);
+}
+
 export const getComprobantes = createServerFn({ method: 'GET' })
   .validator(
-    z.object({
+    filtrosComprobantes.extend({
       page: z.number().default(1),
       limit: z.number().default(10),
-      clienteId: z.string().optional(),
-      dateFrom: z.string().optional(),
-      dateTo: z.string().optional(),
-      tipo: z.number().optional(),
-      direccion: z.enum(['emitido', 'recibido']).optional(),
-      search: z.string().optional(),
       sortBy: z.enum(['total', 'fechaEmision']).optional(),
       sortOrder: z.enum(['asc', 'desc']).optional(),
     })
@@ -73,20 +97,14 @@ export const getComprobantes = createServerFn({ method: 'GET' })
       sortOrder,
     } = ctx.data;
 
-    const conditions = [eq(comprobante.orgId, orgId)];
-
-    if (clienteId) conditions.push(eq(comprobante.clienteId, clienteId));
-    if (dateFrom) conditions.push(gte(comprobante.fechaEmision, dateFrom));
-    if (dateTo) conditions.push(lte(comprobante.fechaEmision, dateTo));
-    if (tipo !== undefined) conditions.push(eq(comprobante.tipo, tipo));
-    if (direccion) conditions.push(eq(comprobante.direccion, direccion));
-    if (search) {
-      conditions.push(
-        sql`(${contraparte.nombre} ILIKE ${`%${search}%`} OR ${contraparte.docNro} ILIKE ${`%${search}%`})`
-      );
-    }
-
-    const whereCondition = and(...conditions);
+    const whereCondition = condicionesComprobantes(orgId, {
+      clienteId,
+      dateFrom,
+      dateTo,
+      tipo,
+      direccion,
+      search,
+    });
 
     const [{ count }] = await db
       .select({ count: sql<number>`count(*)::int` })
@@ -143,6 +161,49 @@ export const getComprobantes = createServerFn({ method: 'GET' })
       totalPages: Math.ceil(count / limit),
       currentPage: page,
     };
+  });
+
+/**
+ * Resumen de lo que filtra la grilla de Facturas, separado en emitidos y
+ * recibidos: cantidad, neto gravado, IVA y total.
+ *
+ * Mismo criterio que `getComprobanteStats`: en pesos (lo que no es ARS se
+ * pasa con su cotización; sin cotización, 1) y las notas de crédito restan.
+ */
+export const getResumenComprobantes = createServerFn({ method: 'GET' })
+  .validator(filtrosComprobantes)
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const signoYCotizacion = sql`(CASE WHEN ${comprobanteTipo.esNc} THEN -1 ELSE 1 END) * (CASE WHEN upper(${comprobante.moneda}) = 'ARS' THEN 1 ELSE coalesce(nullif(${comprobante.cotizacion}, 0), 1) END)`;
+    const suma = (col: AnyPgColumn) =>
+      sql<string>`coalesce(sum(${signoYCotizacion} * coalesce(${col}, 0)), 0)`;
+
+    const filas = await db
+      .select({
+        direccion: comprobante.direccion,
+        cantidad: sql<number>`count(*)::int`,
+        notasDeCredito: sql<number>`count(*) filter (where ${comprobanteTipo.esNc})::int`,
+        netoGravado: suma(comprobante.netoGravado),
+        iva: suma(comprobante.ivaTotal),
+        total: suma(comprobante.total),
+      })
+      .from(comprobante)
+      .innerJoin(contraparte, eq(comprobante.contraparteId, contraparte.id))
+      .innerJoin(comprobanteTipo, eq(comprobante.tipo, comprobanteTipo.codigo))
+      .where(condicionesComprobantes(orgId, ctx.data))
+      .groupBy(comprobante.direccion);
+
+    const de = (direccion: 'emitido' | 'recibido') => {
+      const f = filas.find((x) => x.direccion === direccion);
+      return {
+        cantidad: f?.cantidad ?? 0,
+        notasDeCredito: f?.notasDeCredito ?? 0,
+        netoGravado: Number(f?.netoGravado ?? 0),
+        iva: Number(f?.iva ?? 0),
+        total: Number(f?.total ?? 0),
+      };
+    };
+    return { emitidos: de('emitido'), recibidos: de('recibido') };
   });
 
 export const getComprobante = createServerFn({ method: 'GET' })

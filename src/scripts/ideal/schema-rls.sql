@@ -47,7 +47,7 @@ grant select on all tables in schema public to arca_agent;
 -- Políticas
 -- ============================================================================
 
--- ---------- Nivel 1: la fila tiene org_id propio (36 tablas) ----------
+-- ---------- Nivel 1: la fila tiene org_id propio (37 tablas) ----------
 do $do$
 declare t text;
 begin
@@ -55,7 +55,7 @@ begin
     'agent_action','agent_conversation','agent_run','ajuste_inflacion','alerta',
     'anexo_cmv','asiento','asiento_template','bien_de_uso','cierre_sueldos',
     'cliente','cliente_cct',
-    'cliente_concepto','comprobante','convenio','credencial_afip','cuenta',
+    'cliente_concepto','configuracion_org','comprobante','convenio','credencial_afip','cuenta',
     'cuenta_bancaria','despacho_importacion','deuda','documento','eecc','ejercicio','empleado','evento',
     'extracto_bancario',
     'firmante','job','liquidacion_iibb','lsd_presentacion','notificacion',
@@ -94,7 +94,7 @@ begin
 end
 $do$;
 
--- ---------- Nivel 3: hijas — heredan del padre (13 tablas) ----------
+-- ---------- Nivel 3: hijas — heredan del padre (14 tablas) ----------
 -- Todas las FK de acá son NOT NULL, así que no hay filas huérfanas que se
 -- escapen del filtro.
 do $do$
@@ -112,6 +112,7 @@ begin
     ('movimiento_bancario',      'cuenta_bancaria_id',     'cuenta_bancaria'),
     ('notificacion_adjunto',     'documento_id',           'documento'),
     ('recibo_concepto',          'recibo_id',              'recibo'),
+    ('saldo_bancario',           'cuenta_bancaria_id',     'cuenta_bancaria'),
     ('regla_mapeo_linea',        'regla_id',               'regla_mapeo')
   ) v(t, col, padre) loop
     execute format('alter table %I enable row level security', r.t);
