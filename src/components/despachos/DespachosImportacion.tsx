@@ -38,6 +38,7 @@ import {
   subirYExtraerDespacho,
 } from '@/actions/despachos';
 import {
+  ALICUOTAS_VALIDAS,
   alicuotaValida,
   calcularDespacho,
   nombreCompraDespacho,
@@ -279,7 +280,6 @@ function CardDespacho({
               onChange={(e) => cambiarLinea(i, 'alicuota', e.target.value)}
               disabled={yaConfirmado}
               inputMode="decimal"
-              placeholder="21"
               className="h-8 text-[12.5px] tabular-nums"
             />
             <Input
@@ -308,7 +308,20 @@ function CardDespacho({
           <button
             type="button"
             onClick={() =>
-              setLineas((prev) => [...prev, { alicuota: '', ivaUsd: '' }])
+              // Nace con la alícuota que falta, no vacía: solo hay dos
+              // posibles, y un campo en blanco con "21" de placeholder se lee
+              // como que ya vale 21 —los totales no se movían y no se
+              // entendía por qué—.
+              setLineas((prev) => {
+                const usadas = prev.map((l) => aNumero(l.alicuota));
+                const libre = ALICUOTAS_VALIDAS.find(
+                  (a) => !usadas.includes(a)
+                );
+                return [
+                  ...prev,
+                  { alicuota: libre ? String(libre) : '', ivaUsd: '' },
+                ];
+              })
             }
             className="w-full border-t border-[var(--arca-border)] px-3 py-1.5 text-left text-[11.5px] font-medium text-[var(--arca-accent)] hover:bg-[var(--arca-surface-2)]"
           >
