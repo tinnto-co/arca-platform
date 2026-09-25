@@ -14,6 +14,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Plus,
+  Sparkles,
   ChevronRight,
   ChevronDown,
   ChevronsUpDown,
@@ -113,6 +114,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SearchableSelect } from '@/components/ui/searchable-select';
+import { ReglasSugeridas } from '@/components/banco/ReglasSugeridas';
 import { Button } from '@/components/ui/button';
 import { Badge, BadgeDot } from '@/components/ui/badge';
 import { Ayuda } from '@/components/shared/ayuda';
@@ -6901,6 +6903,7 @@ function Reglas({
   >('');
   const [editor, setEditor] = useState<RuleEditorState | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [sugeridasOpen, setSugeridasOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
 
   const queryKey = ['accounting', 'rules', clientId, moduleFilter];
@@ -7021,6 +7024,19 @@ function Reglas({
           <TutorialReglas />
           {isOwner && (
             <>
+              {/* Solo con el filtro en Banco: en Facturas o Sueldos no hay
+                  nada que sugerir todavía. */}
+              {moduleFilter === 'movimiento_bancario' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setSugeridasOpen(true)}
+                >
+                  <Sparkles className="size-3.5" strokeWidth={1.8} />
+                  Reglas sugeridas
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -7140,6 +7156,12 @@ function Reglas({
           onChanged={invalidate}
         />
       )}
+      <ReglasSugeridas
+        clienteId={clientId}
+        abierto={sugeridasOpen}
+        onAbiertoChange={setSugeridasOpen}
+      />
+
       {importOpen && (
         <ImportRulesDialog
           clientId={clientId}
