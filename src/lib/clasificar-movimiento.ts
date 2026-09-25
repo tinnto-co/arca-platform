@@ -20,6 +20,7 @@ export const CATEGORIAS_MOVIMIENTO = [
   'transferencias',
   'transferencias_propias',
   'cobros_tarjeta',
+  'compras_debito',
   'impuestos_idc',
   'retencion_iibb',
   'percepcion_iibb',
@@ -107,6 +108,7 @@ export const CATEGORIA_MOVIMIENTO_LABEL: Record<CategoriaMovimiento, string> = {
   transferencias: 'Transferencias',
   transferencias_propias: 'Entre cuentas propias',
   cobros_tarjeta: 'Cobros con tarjeta',
+  compras_debito: 'Compras con tarjeta de débito',
   impuestos_idc: 'Impuesto al cheque (deb. y créd.)',
   retencion_iibb: 'Retención IIBB (SIRCREB)',
   percepcion_iibb: 'Percepción IIBB',
@@ -193,6 +195,18 @@ const REGLAS: [CategoriaMovimiento, RegExp][] = [
   [
     'comisiones',
     /comisi[oó]n|com\.\s|^\s*com\s|mantenimiento|cargo\s|gastos?\s+(de\s+)?(mantenim|servicio|admin)|costo\s+paquete|seguro\s+de\s+vida/i,
+  ],
+  // Antes que los cobros con tarjeta: "COMPRA CON TARJETA DE DÉBITO VISA" es
+  // plata que sale, no una liquidación de la tarjeta, y si no va primero se
+  // la lleva el patrón de abajo por la palabra "visa".
+  //
+  // No se imputa sola a ninguna cuenta y eso es a propósito: acá conviven la
+  // nafta de la camioneta con una compra de mercadería de un millón, y lo
+  // único que se ve es el nombre del comercio. Separarlas de "Varios" alcanza
+  // para que el contador las encuentre juntas y decida.
+  [
+    'compras_debito',
+    /compras?\s+(con\s+)?(tarj(eta)?\.?\s*(de\s+)?)?d[eé]bito/i,
   ],
   // "Liquidación de dinero" es como Mercado Pago nombra la acreditación de
   // cada venta cobrada: el extracto no dice "Mercado Pago" en la descripción

@@ -187,6 +187,27 @@ describe('clasificarMovimiento', () => {
     );
   });
 
+  it('compras con débito: plata que sale, no una liquidación de tarjeta', () => {
+    for (const d of [
+      'COMPRA CON TARJETA DE DEBITO MERPAGO*SHELLBOX - TARJ NRO. 3260',
+      'COMPRA DEBITO VITAL SUPERMAYORISTA 4517699006778796',
+      'COMPRA CON TARJETA DE DEBITO FARMACITY-INDEPENDENCIA - TARJ NRO. 3260',
+      // La palabra "visa" no la convierte en un cobro: gana el patrón de
+      // compras porque va primero.
+      'COMPRA CON TARJETA DE DEBITO VISA ELECTRON',
+    ]) {
+      expect(clasificarMovimiento(d), d).toBe('compras_debito');
+    }
+    // Un débito automático sigue siendo un débito automático.
+    expect(clasificarMovimiento('DEBITO AUTOM EDENOR')).toBe(
+      'debitos_automaticos'
+    );
+    // Y la liquidación que entra sigue siendo un cobro.
+    expect(clasificarMovimiento('LIQUIDACION VISA PRISMA')).toBe(
+      'cobros_tarjeta'
+    );
+  });
+
   it('lo que no matchea cae en varios, sin romper', () => {
     expect(clasificarMovimiento('PAGO VS 84512')).toBe('varios');
     expect(clasificarMovimiento('')).toBe('varios');
