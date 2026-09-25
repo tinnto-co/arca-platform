@@ -17,11 +17,19 @@ import {
   generarAsientosBanco,
   previsualizarAsientosBanco,
   deshacerAsientosBanco,
+  getControlDeSaldos,
 } from '@/actions/bank-posting';
 import { Button } from '@/components/ui/button';
 import { ArcaCard } from '@/components/dashboard/shared';
 import { AyudaIcono } from '@/components/shared/ayuda';
 import { pesos } from '@/components/inicio/compartido';
+
+/**
+ * La diferencia va con centavos. `pesos` redondea, y una diferencia de $0,34
+ * se leía "$ 0" en rojo: parecía que cuadraba y estaba marcado como error.
+ */
+const pesosConCentavos = (n: number) =>
+  `$ ${n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** 'YYYY-MM' → "agosto de 2026". */
 function mesEnPalabras(periodo: string): string {
@@ -55,8 +63,17 @@ export function AsientosDelMes({
     enabled: !!clienteId && !!periodo,
   });
 
+  // Lo que el banco dice que hay contra lo que dice el mayor: es lo que
+  // permite afirmar que el mes está bien contabilizado.
+  const { data: saldos = [] } = useQuery({
+    queryKey: ['controlSaldos', clienteId, periodo],
+    queryFn: () => getControlDeSaldos({ data: { clienteId, periodo } }),
+    enabled: !!clienteId && !!periodo,
+  });
+
   const refrescar = () => {
     void queryClient.invalidateQueries({ queryKey: ['asientosBanco'] });
+    void queryClient.invalidateQueries({ queryKey: ['controlSaldos'] });
     void queryClient.invalidateQueries({ queryKey: ['bankTransactions'] });
   };
 
@@ -236,6 +253,71 @@ export function AsientosDelMes({
             );
           })}
         </ul>
+      )}
+
+      {/* El control de saldos cierra el circuito: sin esto se pueden generar
+          asientos pero nadie puede afirmar que el banco está bien
+          contabilizado. */}
+      {saldos.length > 0 && (
+        <div className="border-t border-[var(--arca-border)]">
+          <div className="flex items-center gap-1.5 bg-[var(--arca-bg)] px-5 py-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+            Saldo al cierre del mes
+            <AyudaIcono texto="Lo que el banco dice que quedó, contra lo que dice el mayor de su cuenta contable. Si no coinciden, o falta contabilizar algo del mes o hay un asiento de más. El saldo del banco sale del extracto importado." />
+          </div>
+          <ul className="divide-y divide-[var(--arca-border)]">
+            {saldos.map((s) => {
+              const cuadra =
+                s.diferencia != null && Math.abs(s.diferencia) < 0.01;
+              return (
+                <li
+                  key={s.cuentaBancariaId}
+                  className="flex items-center gap-3 px-5 py-2 text-[12.5px]"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[var(--arca-ink)]">
+                      {s.cuentaBancaria}
+                    </span>
+                    <span className="block truncate text-[11px] text-[var(--arca-ink-4)]">
+                      {s.cuentaContable ?? 'Sin cuenta contable asignada'}
+                      {s.sinContabilizar > 0
+                        ? ` · ${s.sinContabilizar} movimiento${s.sinContabilizar === 1 ? '' : 's'} sin contabilizar`
+                        : ''}
+                    </span>
+                  </span>
+                  <span className="w-[130px] text-right tabular-nums text-[var(--arca-ink-3)]">
+                    {s.saldoBanco == null ? '—' : pesos(s.saldoBanco)}
+                    <span className="block text-[10.5px] text-[var(--arca-ink-4)]">
+                      banco
+                    </span>
+                  </span>
+                  <span className="w-[130px] text-right tabular-nums text-[var(--arca-ink-3)]">
+                    {pesos(s.saldoContable)}
+                    <span className="block text-[10.5px] text-[var(--arca-ink-4)]">
+                      contable
+                    </span>
+                  </span>
+                  <span
+                    className="w-[130px] text-right text-[12.5px] font-semibold tabular-nums"
+                    style={{
+                      color:
+                        s.diferencia == null
+                          ? 'var(--arca-ink-4)'
+                          : cuadra
+                            ? 'var(--arca-accent-pos-fg)'
+                            : 'var(--arca-accent-neg-fg)',
+                    }}
+                  >
+                    {s.diferencia == null
+                      ? 'sin extracto'
+                      : cuadra
+                        ? 'coincide'
+                        : pesosConCentavos(s.diferencia)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       <div className="flex items-center gap-1.5 border-t border-[var(--arca-border)] bg-[var(--arca-surface-2)] px-5 py-2.5 text-[11.5px] text-[var(--arca-ink-3)]">

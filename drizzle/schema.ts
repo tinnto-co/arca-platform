@@ -2671,6 +2671,26 @@ export const firmante = pgTable("firmante", {
 	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"], using: sql`(org_id = current_setting('app.org_id'::text, true))`, withCheck: sql`(org_id = current_setting('app.org_id'::text, true))`  }),
 ]);
 
+export const saldoBancario = pgTable("saldo_bancario", {
+	id: uuid().defaultRandom().primaryKey().notNull(),
+	cuentaBancariaId: uuid("cuenta_bancaria_id").notNull(),
+	periodo: date().notNull(),
+	saldoInicial: numeric("saldo_inicial", { precision: 15, scale:  2 }).notNull(),
+	saldoFinal: numeric("saldo_final", { precision: 15, scale:  2 }).notNull(),
+	extractoId: uuid("extracto_id"),
+	createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+	index("idx_saldo_bancario_cuenta").using("btree", table.cuentaBancariaId.asc().nullsLast().op("uuid_ops")),
+	foreignKey({
+			columns: [table.cuentaBancariaId],
+			foreignColumns: [cuentaBancaria.id],
+			name: "saldo_bancario_cuenta_bancaria_id_fkey"
+		}).onDelete("cascade"),
+	unique("saldo_bancario_cuenta_bancaria_id_periodo_key").on(table.cuentaBancariaId, table.periodo),
+	pgPolicy("tenant", { as: "permissive", for: "all", to: ["arca_agent", "arca_app"] }),
+]);
+
 export const movimientoBancario = pgTable("movimiento_bancario", {
 	id: uuid().defaultRandom().primaryKey().notNull(),
 	cuentaBancariaId: uuid("cuenta_bancaria_id").notNull(),

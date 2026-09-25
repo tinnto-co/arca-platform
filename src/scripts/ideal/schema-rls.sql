@@ -94,7 +94,7 @@ begin
 end
 $do$;
 
--- ---------- Nivel 3: hijas — heredan del padre (13 tablas) ----------
+-- ---------- Nivel 3: hijas — heredan del padre (14 tablas) ----------
 -- Todas las FK de acá son NOT NULL, así que no hay filas huérfanas que se
 -- escapen del filtro.
 do $do$
@@ -112,6 +112,7 @@ begin
     ('movimiento_bancario',      'cuenta_bancaria_id',     'cuenta_bancaria'),
     ('notificacion_adjunto',     'documento_id',           'documento'),
     ('recibo_concepto',          'recibo_id',              'recibo'),
+    ('saldo_bancario',           'cuenta_bancaria_id',     'cuenta_bancaria'),
     ('regla_mapeo_linea',        'regla_id',               'regla_mapeo')
   ) v(t, col, padre) loop
     execute format('alter table %I enable row level security', r.t);

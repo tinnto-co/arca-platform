@@ -79,6 +79,25 @@ create unique index idx_movimiento_bancario_externo
   on movimiento_bancario(cuenta_bancaria_id, id_externo) where id_externo is not null;
 create trigger trg_set_updated_at before update on movimiento_bancario for each row execute function set_updated_at();
 
+create table saldo_bancario (
+  id uuid primary key default gen_random_uuid(),
+  cuenta_bancaria_id uuid not null references cuenta_bancaria(id) on delete cascade,
+  periodo date not null,
+  saldo_inicial numeric(15, 2) not null,
+  saldo_final numeric(15, 2) not null,
+  extracto_id uuid references extracto_bancario(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (cuenta_bancaria_id, periodo)
+);
+create index idx_saldo_bancario_cuenta on saldo_bancario(cuenta_bancaria_id);
+create trigger trg_set_updated_at before update on saldo_bancario for each row execute function set_updated_at();
+
+comment on table saldo_bancario is
+  'Lo que el banco dice que había al empezar y al terminar cada mes, por cuenta. Se lee del extracto al importarlo; antes se usaba solo para validar que el PDF cuadrara y se descartaba. Hace falta para dos cosas: el asiento de apertura y verificar al cierre que el saldo contable de la cuenta coincida con el del banco.';
+comment on column saldo_bancario.periodo is
+  'Primer día del mes. Un extracto por mes y por cuenta: si se reimporta, se pisa.';
+
 comment on table movimiento_bancario is
   'Una línea del extracto bancario.';
 comment on column movimiento_bancario.asiento_id is

@@ -17,6 +17,7 @@ import {
   cuenta,
   cuentaBancaria,
   movimientoBancario,
+  saldoBancario,
 } from '@/drizzle/schema';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
@@ -339,4 +340,99 @@ export const deshacerAsientosBanco = createServerFn({ method: 'POST' })
     });
 
     return { anulados: asientoIds.length, movimientos: contabilizados.length };
+  });
+
+/**
+ * El control que cierra el circuito: lo que el banco dice que hay contra lo
+ * que dice el mayor.
+ *
+ * El saldo contable se calcula sobre la cuenta del plan de cada cuenta
+ * bancaria, sumando todo lo asentado hasta el último día del mes. Si no
+ * coinciden, o falta contabilizar algo o hay un asiento de más; la diferencia
+ * queda a la vista para resolverla a mano.
+ *
+ * Sin saldo del extracto no hay nada que comparar: se devuelve igual, con
+ * `saldoBanco` en null, para que la pantalla lo diga en vez de callar.
+ */
+export const getControlDeSaldos = createServerFn({ method: 'GET' })
+  .validator(
+    z.object({
+      clienteId: z.string().uuid(),
+      periodo: z.string().regex(/^\d{4}-\d{2}$/),
+    })
+  )
+  .handler(async (ctx) => {
+    const { orgId } = await getSessionWithOrg();
+    const { clienteId, periodo } = ctx.data;
+    const desde = `${periodo}-01`;
+
+    const cuentas = await db
+      .select({
+        id: cuentaBancaria.id,
+        banco: cuentaBancaria.banco,
+        numero: cuentaBancaria.numero,
+        cuentaContableId: cuentaBancaria.cuentaContableId,
+        cuentaContable: sql<
+          string | null
+        >`(select c.codigo || ' · ' || c.nombre from ${cuenta} c where c.id = ${cuentaBancaria.cuentaContableId})`,
+        // Todo lo asentado en esa cuenta del plan hasta el cierre del mes, sin
+        // los asientos anulados. El signo sale del Debe menos el Haber: en una
+        // cuenta de banco, deudora, eso es el saldo.
+        saldoContable: sql<string>`coalesce((
+          select sum(al.debe - al.haber)
+          from asiento_linea al
+          join asiento a on a.id = al.asiento_id
+          where al.cuenta_id = ${cuentaBancaria.cuentaContableId}
+            and a.cliente_id = ${clienteId}
+            and a.anulado = false
+            and a.fecha < (${desde}::date + interval '1 month')
+        ), 0)::text`,
+        sinContabilizar: sql<number>`(
+          select count(*) from movimiento_bancario mb
+          where mb.cuenta_bancaria_id = ${cuentaBancaria.id}
+            and mb.asiento_id is null
+            and mb.no_contabilizar = false
+            and mb.excluido = false
+            and mb.fecha >= ${desde}::date
+            and mb.fecha < (${desde}::date + interval '1 month')
+        )::int`,
+      })
+      .from(cuentaBancaria)
+      .where(
+        and(
+          eq(cuentaBancaria.orgId, orgId),
+          eq(cuentaBancaria.clienteId, clienteId),
+          eq(cuentaBancaria.activa, true)
+        )
+      )
+      .orderBy(asc(cuentaBancaria.createdAt));
+
+    // Los saldos del mes, en su propia consulta: como subconsulta dentro del
+    // select de cuentas no devolvía nada y no hacía falta complicarlo.
+    const saldos = await db
+      .select({
+        cuentaBancariaId: saldoBancario.cuentaBancariaId,
+        saldoFinal: saldoBancario.saldoFinal,
+      })
+      .from(saldoBancario)
+      .where(eq(saldoBancario.periodo, desde));
+    const saldoPorCuenta = new Map(
+      saldos.map((s) => [s.cuentaBancariaId, Number(s.saldoFinal)])
+    );
+
+    return cuentas.map((c) => {
+      const banco = saldoPorCuenta.get(c.id) ?? null;
+      const contable = Number(c.saldoContable);
+      return {
+        cuentaBancariaId: c.id,
+        cuentaBancaria: `${c.banco} ${c.numero ?? ''}`.trim(),
+        cuentaContable: c.cuentaContable,
+        saldoBanco: banco,
+        saldoContable: contable,
+        // Menos de un centavo es redondeo, no una diferencia.
+        diferencia:
+          banco == null ? null : Math.round((banco - contable) * 100) / 100,
+        sinContabilizar: c.sinContabilizar,
+      };
+    });
   });

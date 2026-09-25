@@ -420,6 +420,11 @@ function RevisionCargada({
               cbu: c.cbu,
               tipo: c.tipo as 'caja_ahorro' | 'cuenta_corriente' | 'otra',
               moneda: c.moneda,
+              // Los saldos que leyó el modelo: hasta ahora solo se usaban
+              // para mostrar si el extracto cuadraba, y se perdían al
+              // confirmar.
+              saldoInicial: c.saldoInicial,
+              saldoFinal: c.saldoFinal,
               movimientos: aImportar[i].map((f) => ({
                 fecha: f.fecha,
                 descripcion: f.descripcion,
