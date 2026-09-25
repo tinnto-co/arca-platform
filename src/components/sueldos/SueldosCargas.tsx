@@ -32,6 +32,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
@@ -460,6 +461,145 @@ function HistorialPresentaciones({
   );
 }
 
+// ─── Dialog: Conceptos LSD ───────────────────────────────────────────────────
+
+/**
+ * El otro archivo que pide ARCA: la lista de conceptos que usa la empresa, con
+ * a qué concepto de ARCA corresponde cada uno. Va a la solapa CONCEPTOS y se
+ * sube una sola vez —y de nuevo cuando aparece un concepto que antes no se
+ * usaba—, mientras que la liquidación va todos los meses a otra solapa.
+ *
+ * Se muestra la lista antes de bajarla porque el error típico de ARCA al
+ * importar la liquidación es "código de concepto inexistente": pasa cuando el
+ * recibo usa un concepto que no está declarado, y acá se ve si está.
+ *
+ * El archivo se pide al abrir y el botón solo lo baja: no se genera nada en el
+ * servidor, así que abrir y cancelar no deja rastro.
+ */
+function ConceptosLsdDialog({
+  clientId,
+  periodo,
+  onClose,
+}: {
+  clientId: string;
+  periodo: string;
+  onClose: () => void;
+}) {
+  const {
+    data: archivo,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ['conceptos-lsd', clientId, periodo],
+    queryFn: () => generarConceptosLsd({ data: { clientId, periodo } }),
+    enabled: !!clientId,
+    retry: false,
+  });
+
+  /** Cada línea son 195 chars: 1-6 código ARCA, 7-16 código propio, 17-166 nombre. */
+  const filas = useMemo(() => {
+    if (!archivo?.contenido) return [];
+    return archivo.contenido
+      .split('\r\n')
+      .filter((l) => l.length > 0)
+      .map((l) => ({
+        arca: l.slice(0, 6),
+        propio: l.slice(6, 16),
+        nombre: l.slice(16, 166).trim(),
+      }));
+  }, [archivo]);
+
+  const descargar = () => {
+    if (!archivo) return;
+    triggerDownload(archivo.contenido, archivo.filename);
+    toast.success(`Conceptos LSD descargados — ${archivo.conceptos} conceptos`);
+    onClose();
+  };
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="max-w-[720px] max-h-[85vh] flex flex-col">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-[15px]">Conceptos LSD</DialogTitle>
+          <DialogDescription className="text-[12.5px]">
+            La lista de conceptos que usa la empresa, para importar en la solapa
+            CONCEPTOS de ARCA. Va antes de subir la liquidación.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 overflow-y-auto pr-1">
+          {isLoading && (
+            <div className="flex items-center gap-2 py-8 justify-center text-[13px] text-[var(--arca-ink-3)]">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Armando la lista…
+            </div>
+          )}
+          {error && (
+            <div className="py-8 text-center text-[13px] text-[var(--arca-ink-2)]">
+              {error instanceof Error
+                ? error.message
+                : 'No se pudo armar la lista de conceptos.'}
+            </div>
+          )}
+          {!isLoading && !error && filas.length > 0 && (
+            <div
+              className="rounded-[var(--arca-r-md)] overflow-hidden"
+              style={{ border: '1px solid var(--arca-border)' }}
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-[11px]">CÓDIGO ARCA</TableHead>
+                    <TableHead className="text-[11px]">CÓDIGO PROPIO</TableHead>
+                    <TableHead className="text-[11px]">CONCEPTO</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filas.map((f) => (
+                    <TableRow key={f.propio}>
+                      <TableCell className="font-[family-name:var(--ff-mono)] text-[12px]">
+                        {f.arca}
+                      </TableCell>
+                      <TableCell className="font-[family-name:var(--ff-mono)] text-[12px]">
+                        {f.propio}
+                      </TableCell>
+                      <TableCell className="text-[12.5px]">
+                        {f.nombre}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter
+          className="shrink-0 pt-2 border-t"
+          style={{ borderColor: 'var(--arca-border)' }}
+        >
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={descargar}
+            disabled={isLoading || !!error || filas.length === 0}
+            className="gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Descargar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Dialog: Generar presentación ────────────────────────────────────────────
 
 function GenerarPresentacionDialog({
@@ -542,20 +682,6 @@ function GenerarPresentacionDialog({
       toast.error(`Error al generar LSD: ${(err as Error).message}`);
     },
   });
-
-  const { mutate: generarConceptos, isPending: isGeneratingConceptos } =
-    useMutation({
-      mutationFn: () => generarConceptosLsd({ data: { clientId, periodo } }),
-      onSuccess: (result) => {
-        triggerDownload(result.contenido, result.filename);
-        toast.success(
-          `Conceptos LSD descargados — ${result.conceptos} conceptos`
-        );
-      },
-      onError: (err) => {
-        toast.error(`Error al generar conceptos: ${(err as Error).message}`);
-      },
-    });
 
   const hasData = preview && preview.empleados.length > 0;
   const puedeDescargar =
@@ -884,19 +1010,6 @@ function GenerarPresentacionDialog({
             className="shrink-0 pt-2 border-t"
             style={{ borderColor: 'var(--arca-border)' }}
           >
-            <Button
-              variant="outline"
-              onClick={() => generarConceptos()}
-              disabled={isGeneratingConceptos}
-              className="gap-2 mr-auto"
-            >
-              {isGeneratingConceptos ? (
-                <RefreshCw className="h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="h-4 w-4" />
-              )}
-              {isGeneratingConceptos ? 'Generando…' : 'Descargar Conceptos LSD'}
-            </Button>
             <Button variant="outline" onClick={onClose}>
               Cancelar
             </Button>
@@ -911,11 +1024,15 @@ function GenerarPresentacionDialog({
                 ) : (
                   <Download className="h-4 w-4" />
                 )}
+                {/* El botón de adentro no repite el de afuera: acá ya sabés
+                  dónde estás, lo que falta saber es qué va a pasar. Y "generar
+                  y descargar" porque hace las dos cosas — queda registrada una
+                  presentación numerada, no es solo bajar un archivo. */}
                 {isGenerating
                   ? 'Generando…'
                   : isFiltered
-                    ? `Generar presentación (${effectiveCuils.size} empleados)`
-                    : 'Generar presentación'}
+                    ? `Generar y descargar (${effectiveCuils.size} empleados)`
+                    : 'Generar y descargar'}
               </Button>
             ) : (
               <Button disabled className="gap-2">
@@ -947,6 +1064,7 @@ export function SueldosCargas({ clientId }: SueldosCargasProps) {
   const [year, setYear] = useState(def.year);
   const [month, setMonth] = useState(def.month);
   const [showGenerarDialog, setShowGenerarDialog] = useState(false);
+  const [showConceptosDialog, setShowConceptosDialog] = useState(false);
 
   const periodo = `${year}-${month}`;
   const mesNombre = MONTHS.find((m) => m.value === month)?.label ?? '';
@@ -1000,10 +1118,21 @@ export function SueldosCargas({ clientId }: SueldosCargasProps) {
         <HistorialPresentaciones clientId={clientId} periodo={periodo} />
       </div>
 
-      {/* Botón generar presentación */}
-      <div className="flex justify-end">
+      {/* Los dos archivos que pide ARCA, uno al lado del otro. Conceptos vivía
+        escondido en el pie del diálogo de presentación: son archivos distintos,
+        van a solapas distintas de ARCA y se suben con frecuencias distintas —
+        conceptos una vez, la liquidación todos los meses. */}
+      <div className="flex justify-end gap-2">
+        <Button
+          variant="outline"
+          onClick={() => setShowConceptosDialog(true)}
+          className="gap-2"
+        >
+          <FileText className="h-4 w-4" />
+          Conceptos LSD
+        </Button>
         <Button onClick={() => setShowGenerarDialog(true)} className="gap-2">
-          <Download className="h-4 w-4" />
+          <Upload className="h-4 w-4" />
           Generar presentación
         </Button>
       </div>
@@ -1014,6 +1143,14 @@ export function SueldosCargas({ clientId }: SueldosCargasProps) {
           periodo={periodo}
           nroPresentacion={nroPresentacionSiguiente}
           onClose={() => setShowGenerarDialog(false)}
+        />
+      )}
+
+      {showConceptosDialog && (
+        <ConceptosLsdDialog
+          clientId={clientId}
+          periodo={periodo}
+          onClose={() => setShowConceptosDialog(false)}
         />
       )}
     </div>
