@@ -17,11 +17,9 @@ import {
   cuenta,
   cuentaBancaria,
   movimientoBancario,
-  reglaMapeo,
-  reglaMapeoLinea,
   saldoBancario,
 } from '@/drizzle/schema';
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   getSessionWithOrg,
   assertCanWrite,

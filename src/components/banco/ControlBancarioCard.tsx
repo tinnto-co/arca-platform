@@ -400,7 +400,7 @@ export function ControlBancarioCard({
                             control suma todas. */}
                         <Link
                           to="/bank"
-                          search={(prev) => ({
+                          search={(prev: Record<string, unknown>) => ({
                             ...prev,
                             clientId: clienteId,
                             mes,

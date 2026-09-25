@@ -95,19 +95,50 @@ function CardDespacho({
   const queryClient = useQueryClient();
   const [numero, setNumero] = useState(despacho.numero);
   const [fecha, setFecha] = useState(despacho.fecha ?? '');
-  const [alicuota, setAlicuota] = useState(String(Number(despacho.alicuota)));
-  const [ivaUsd, setIvaUsd] = useState(String(Number(despacho.ivaUsd)));
+  /**
+   * Las líneas del Concepto 415, editables.
+   *
+   * Un despacho puede tener varias: una Importación Directa lista un 415 por
+   * ítem y un courier puede consolidar varios envíos con alícuotas distintas.
+   * Se pueden agregar y sacar a mano porque el documento no siempre lo dice
+   * —hay liquidaciones que traen el IVA sin el porcentaje— y porque un escaneo
+   * con firmas encima se lee mal más seguido de lo que uno querría.
+   */
+  const [lineas, setLineas] = useState<{ alicuota: string; ivaUsd: string }[]>(
+    () =>
+      despacho.lineas && despacho.lineas.length > 0
+        ? despacho.lineas.map((l) => ({
+            alicuota: String(Number(l.alicuota)),
+            ivaUsd: String(Number(l.ivaUsd)),
+          }))
+        : [
+            {
+              alicuota: String(Number(despacho.alicuota)),
+              ivaUsd: String(Number(despacho.ivaUsd)),
+            },
+          ]
+  );
   const [tipoCambio, setTipoCambio] = useState(
     String(Number(despacho.tipoCambio))
   );
 
+  const aNumero = (v: string) => Number(v.replace(',', '.')) || 0;
   const nums = {
-    alicuota: Number(alicuota.replace(',', '.')) || 0,
-    ivaUsd: Number(ivaUsd.replace(',', '.')) || 0,
-    tipoCambio: Number(tipoCambio.replace(',', '.')) || 0,
+    lineas: lineas
+      .map((l) => ({
+        alicuota: aNumero(l.alicuota),
+        ivaUsd: aNumero(l.ivaUsd),
+      }))
+      .filter((l) => l.alicuota > 0 && l.ivaUsd > 0),
+    tipoCambio: aNumero(tipoCambio),
   };
   const derivados = calcularDespacho(nums);
-  const alicuotaRara = nums.alicuota > 0 && !alicuotaValida(nums.alicuota);
+  const alicuotaRara = nums.lineas.some((l) => !alicuotaValida(l.alicuota));
+
+  const cambiarLinea = (i: number, campo: 'alicuota' | 'ivaUsd', v: string) =>
+    setLineas((prev) =>
+      prev.map((l, j) => (j === i ? { ...l, [campo]: v } : l))
+    );
   const yaConfirmado = despacho.estado === 'confirmado';
   const importadorNoCoincide = despacho.importadorCoincide === false;
 
@@ -122,8 +153,7 @@ function CardDespacho({
       confirmarDespacho({
         data: {
           despachoId: despacho.id,
-          alicuota: nums.alicuota,
-          ivaUsd: nums.ivaUsd,
+          lineas: nums.lineas,
           tipoCambio: nums.tipoCambio,
           numero: numero.trim(),
           fecha: fecha === '' ? null : fecha,
@@ -220,26 +250,6 @@ function CardDespacho({
           />
         </label>
         <label className="flex flex-col gap-1 text-[11.5px] text-[var(--arca-ink-3)]">
-          Alícuota %
-          <Input
-            value={alicuota}
-            onChange={(e) => setAlicuota(e.target.value)}
-            disabled={yaConfirmado}
-            inputMode="decimal"
-            className="h-8 text-[12.5px] tabular-nums"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[11.5px] text-[var(--arca-ink-3)]">
-          IVA (USD)
-          <Input
-            value={ivaUsd}
-            onChange={(e) => setIvaUsd(e.target.value)}
-            disabled={yaConfirmado}
-            inputMode="decimal"
-            className="h-8 text-[12.5px] tabular-nums"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[11.5px] text-[var(--arca-ink-3)]">
           Tipo de cambio
           <Input
             value={tipoCambio}
@@ -249,6 +259,62 @@ function CardDespacho({
             className="h-8 text-[12.5px] tabular-nums"
           />
         </label>
+      </div>
+
+      {/* Los conceptos 415. Van en su propia lista y no en la fila de arriba
+          porque son cuantos haga falta, no un par de campos fijos. */}
+      <div className="mt-3 rounded-[10px] border border-[var(--arca-border)]">
+        <div className="grid grid-cols-[110px_1fr_auto] items-center gap-3 border-b border-[var(--arca-border)] bg-[var(--arca-bg)] px-3 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--arca-ink-4)]">
+          <span>Alícuota %</span>
+          <span>IVA (USD)</span>
+          <span className="w-7" />
+        </div>
+        {lineas.map((l, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-[110px_1fr_auto] items-center gap-3 border-b border-[var(--arca-border)] px-3 py-2 last:border-b-0"
+          >
+            <Input
+              value={l.alicuota}
+              onChange={(e) => cambiarLinea(i, 'alicuota', e.target.value)}
+              disabled={yaConfirmado}
+              inputMode="decimal"
+              placeholder="21"
+              className="h-8 text-[12.5px] tabular-nums"
+            />
+            <Input
+              value={l.ivaUsd}
+              onChange={(e) => cambiarLinea(i, 'ivaUsd', e.target.value)}
+              disabled={yaConfirmado}
+              inputMode="decimal"
+              className="h-8 text-[12.5px] tabular-nums"
+            />
+            {/* La última no se puede sacar: un despacho sin ninguna línea no
+                tiene IVA que registrar. */}
+            <button
+              type="button"
+              aria-label="Sacar esta línea"
+              disabled={yaConfirmado || lineas.length === 1}
+              onClick={() =>
+                setLineas((prev) => prev.filter((_, j) => j !== i))
+              }
+              className="inline-flex size-7 items-center justify-center rounded-md text-[var(--arca-ink-4)] hover:bg-[var(--arca-surface-2)] hover:text-[var(--arca-ink-2)] disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+        {!yaConfirmado && (
+          <button
+            type="button"
+            onClick={() =>
+              setLineas((prev) => [...prev, { alicuota: '', ivaUsd: '' }])
+            }
+            className="w-full border-t border-[var(--arca-border)] px-3 py-1.5 text-left text-[11.5px] font-medium text-[var(--arca-accent)] hover:bg-[var(--arca-surface-2)]"
+          >
+            + Agregar otra alícuota
+          </button>
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--arca-border)] pt-3">
@@ -289,8 +355,7 @@ function CardDespacho({
                 confirmar.isPending ||
                 descartar.isPending ||
                 !numero.trim() ||
-                nums.alicuota <= 0 ||
-                nums.ivaUsd <= 0 ||
+                nums.lineas.length === 0 ||
                 nums.tipoCambio <= 0
               }
               title={
