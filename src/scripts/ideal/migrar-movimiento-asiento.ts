@@ -35,7 +35,7 @@ console.log(APPLY ? 'Modo: APLICAR\n' : 'Modo: dry-run\n');
 
 const estado = async () => {
   const [r] = await sql<
-    { asiento: boolean; noContab: boolean; indice: boolean }[]
+    { asiento: boolean; noContab: boolean; indice: boolean; check: boolean }[]
   >`
     select
       (select count(*) > 0 from information_schema.columns
@@ -46,7 +46,11 @@ const estado = async () => {
           and column_name = 'no_contabilizar') as "noContab",
       (select count(*) > 0 from pg_indexes
         where tablename = 'movimiento_bancario'
-          and indexname = 'idx_movimiento_bancario_asiento') as indice`;
+          and indexname = 'idx_movimiento_bancario_asiento') as indice,
+      -- El check viejo exige un origen_id para todo asiento no manual, y el
+      -- del banco no tiene uno solo: agrupa el mes entero.
+      (select position('movimiento_bancario' in pg_get_constraintdef(oid)) > 0
+        from pg_constraint where conname = 'asiento_origen_coherente') as check`;
   return r;
 };
 
@@ -61,7 +65,11 @@ console.log(
   `  índice idx_movimiento_bancario_asiento ${antes.indice ? 'ya está' : 'FALTA'}`
 );
 
-if (antes.asiento && antes.noContab && antes.indice) {
+console.log(
+  `  check asiento_origen_coherente        ${antes.check ? 'ya está' : 'FALTA'}`
+);
+
+if (antes.asiento && antes.noContab && antes.indice && antes.check) {
   console.log('\n✓ Nada que hacer.\n');
   await sql.end();
   process.exit(0);
@@ -73,7 +81,10 @@ if (!APPLY) {
     '  · alter table movimiento_bancario add column asiento_id uuid references asiento(id) on delete set null'
   );
   console.log('  · add column no_contabilizar boolean not null default false');
-  console.log('  · create index idx_movimiento_bancario_asiento\n');
+  console.log('  · create index idx_movimiento_bancario_asiento');
+  console.log(
+    '  · rehacer el check asiento_origen_coherente: el asiento de banco no tiene un origen_id único\n'
+  );
   await sql.end();
   process.exit(0);
 }
@@ -92,9 +103,20 @@ await sql.unsafe(`
     'Marcado a mano: este movimiento ya está contabilizado por otro lado y el asiento automático tiene que ignorarlo.';
 `);
 
+// El asiento del banco agrupa muchos movimientos, así que no hay un
+// `origen_id` que lo represente: la vuelta vive en `movimiento_bancario`.
+await sql.unsafe(`
+  alter table asiento drop constraint if exists asiento_origen_coherente;
+  alter table asiento add constraint asiento_origen_coherente check (
+    (origen_tipo = 'manual' and origen_id is null) or
+    (origen_tipo = 'movimiento_bancario') or
+    (origen_tipo not in ('manual', 'movimiento_bancario') and origen_id is not null)
+  );
+`);
+
 const final = await estado();
 console.log(
-  final.asiento && final.noContab && final.indice
+  final.asiento && final.noContab && final.indice && final.check
     ? '\n✓ Listo.\n'
     : '\n✗ Algo no quedó.\n'
 );

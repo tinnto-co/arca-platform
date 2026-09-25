@@ -21,6 +21,7 @@ import {
   ChartNoAxesColumn,
   Search,
   Scale,
+  BookOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AyudaIcono, ConAyuda } from '@/components/shared/ayuda';
@@ -97,6 +98,7 @@ import { ImportarExtractoDialog } from '@/components/banco/ImportarExtractoDialo
 import { AvisoExtractosEnCurso } from '@/components/banco/AvisoExtractosEnCurso';
 import { BandejaConciliacion } from '@/components/banco/BandejaConciliacion';
 import { ControlBancarioCard } from '@/components/banco/ControlBancarioCard';
+import { AsientosDelMes } from '@/components/banco/AsientosDelMes';
 import {
   CATEGORIAS_MOVIMIENTO,
   CATEGORIA_MOVIMIENTO_LABEL,
@@ -128,7 +130,7 @@ const bankSearchSchema = z.object({
   rango: z.enum(['mes', '3m', '12m', 'todo']).optional(),
   /** Qué pestaña se mira. Sin esto, Banco era una sola página larga. */
   vista: z
-    .enum(['control', 'movimientos', 'cuentas', 'conciliacion'])
+    .enum(['control', 'movimientos', 'cuentas', 'conciliacion', 'asientos'])
     .optional(),
 });
 type BankSearch = z.infer<typeof bankSearchSchema>;
@@ -1604,44 +1606,46 @@ function TarjetaCuenta({
         onClick={onClick}
         className="flex flex-col gap-2 px-4 py-3 text-left transition-colors hover:bg-[var(--arca-surface-2)]"
       >
-      <div className="flex items-center gap-2">
-        <Landmark
-          className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-3)]"
-          strokeWidth={2}
-        />
-        <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
-          {cuenta.banco}
-        </span>
-        {activa && (
-          <span className="ml-auto text-[10.5px] font-medium text-[var(--arca-ink-3)]">
-            viendo
+        <div className="flex items-center gap-2">
+          <Landmark
+            className="w-3.5 h-3.5 shrink-0 text-[var(--arca-ink-3)]"
+            strokeWidth={2}
+          />
+          <span className="text-[13px] font-semibold text-[var(--arca-ink)]">
+            {cuenta.banco}
           </span>
-        )}
-      </div>
-      <div className="text-[11.5px] text-[var(--arca-ink-3)] font-mono">
-        {cuenta.numero ?? 'sin número'}
-        {cuenta.alias ? ` · ${cuenta.alias}` : ''}
-      </div>
-      <div className="text-[10.5px] text-[var(--arca-ink-4)]">
-        {TIPO_CUENTA[cuenta.tipo ?? ''] ?? 'Cuenta'} · {cuenta.moneda}
-        {cuenta.cbu ? ` · CBU ${cuenta.cbu}` : ''}
-      </div>
-      <div className="flex items-center gap-3 border-t border-[var(--arca-border)] pt-2 text-[11.5px] tabular-nums">
-        <span style={{ color: 'oklch(0.45 0.14 145)' }}>
-          +{fmtPesos(ingresos)}
-        </span>
-        <span style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}>
-          −{fmtPesos(egresos)}
-        </span>
-      </div>
-      <div className="text-[10.5px] text-[var(--arca-ink-4)]">
-        {cuenta.movimientos} movimiento{cuenta.movimientos !== 1 ? 's' : ''}
-        {cuenta.ultimoMovimiento
-          ? ` · último ${fmtDate(cuenta.ultimoMovimiento)}`
-          : ' · sin movimientos'}
-        {cuenta.saldoUltimo
-          ? ` · saldo ${fmtPesos(parseFloat(cuenta.saldoUltimo))}`
-          : ''}
+          {activa && (
+            <span className="ml-auto text-[10.5px] font-medium text-[var(--arca-ink-3)]">
+              viendo
+            </span>
+          )}
+        </div>
+        <div className="text-[11.5px] text-[var(--arca-ink-3)] font-mono">
+          {cuenta.numero ?? 'sin número'}
+          {cuenta.alias ? ` · ${cuenta.alias}` : ''}
+        </div>
+        <div className="text-[10.5px] text-[var(--arca-ink-4)]">
+          {TIPO_CUENTA[cuenta.tipo ?? ''] ?? 'Cuenta'} · {cuenta.moneda}
+          {cuenta.cbu ? ` · CBU ${cuenta.cbu}` : ''}
+        </div>
+        <div className="flex items-center gap-3 border-t border-[var(--arca-border)] pt-2 text-[11.5px] tabular-nums">
+          <span style={{ color: 'oklch(0.45 0.14 145)' }}>
+            +{fmtPesos(ingresos)}
+          </span>
+          <span
+            style={{ color: 'var(--arca-accent-neg, oklch(0.55 0.18 25))' }}
+          >
+            −{fmtPesos(egresos)}
+          </span>
+        </div>
+        <div className="text-[10.5px] text-[var(--arca-ink-4)]">
+          {cuenta.movimientos} movimiento{cuenta.movimientos !== 1 ? 's' : ''}
+          {cuenta.ultimoMovimiento
+            ? ` · último ${fmtDate(cuenta.ultimoMovimiento)}`
+            : ' · sin movimientos'}
+          {cuenta.saldoUltimo
+            ? ` · saldo ${fmtPesos(parseFloat(cuenta.saldoUltimo))}`
+            : ''}
         </div>
       </button>
       {pie}
@@ -1871,6 +1875,7 @@ function BankPage() {
               ['movimientos', 'Movimientos', ArrowLeftRight],
               ['cuentas', 'Cuentas y extractos', Landmark],
               ['conciliacion', 'Conciliación', Scale],
+              ['asientos', 'Asientos', BookOpen],
             ] as const
           ).map(([id, label, Icono]) => (
             <button
@@ -1905,6 +1910,16 @@ function BankPage() {
                 search: (prev: BankSearch) => ({ ...prev, mes }),
               })
             }
+          />
+        </div>
+      )}
+
+      {vista === 'asientos' && accounts.length > 0 && search.mes && (
+        <div className="mb-5">
+          <AsientosDelMes
+            clienteId={clienteId}
+            periodo={search.mes}
+            cuentaBancariaId={accountId || undefined}
           />
         </div>
       )}

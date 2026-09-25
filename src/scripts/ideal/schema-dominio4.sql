@@ -223,9 +223,14 @@ create table asiento (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (cliente_id, ejercicio_id, numero),
+  -- El asiento del banco agrupa un mes, un concepto y una cuenta bancaria:
+  -- son muchos movimientos apuntando a un asiento, así que no hay un
+  -- `origen_id` que lo represente. La vuelta se guarda del otro lado, en
+  -- `movimiento_bancario.asiento_id`.
   constraint asiento_origen_coherente check (
     (origen_tipo = 'manual' and origen_id is null) or
-    (origen_tipo <> 'manual' and origen_id is not null)
+    (origen_tipo = 'movimiento_bancario') or
+    (origen_tipo not in ('manual', 'movimiento_bancario') and origen_id is not null)
   )
 );
 create index idx_asiento_cliente_fecha on asiento(cliente_id, fecha);
